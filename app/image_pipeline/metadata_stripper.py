@@ -13,6 +13,10 @@ import io
 import logging
 
 import PIL.Image
+import pillow_heif
+
+# Register HEIF/HEIC format support with Pillow
+pillow_heif.register_heif_opener()
 
 logger = logging.getLogger(__name__)
 

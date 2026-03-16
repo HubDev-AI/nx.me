@@ -75,15 +75,23 @@ class LocalStorageAdapter:
 
     _BASE_DIR = Path("local-storage")
 
+    def _safe_path(self, bucket: str, key: str) -> Path:
+        """Resolve path and guard against path traversal."""
+        base = self._BASE_DIR.resolve()
+        path = (self._BASE_DIR / bucket / key).resolve()
+        if not path.is_relative_to(base):
+            raise ValueError(f"Path traversal detected: {key}")
+        return path
+
     async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:  # noqa: ARG002
-        path = self._BASE_DIR / bucket / key
+        path = self._safe_path(bucket, key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         logger.info("Local storage: wrote %s (%d bytes)", path, len(data))
         return key
 
     async def create_signed_url(self, bucket: str, key: str, expires_in: int) -> str:  # noqa: ARG002
-        path = self._BASE_DIR / bucket / key
+        path = self._safe_path(bucket, key)
         if not path.exists():
             raise FileNotFoundError(f"Local file not found: {path}")
         return f"file://{path.resolve()}"

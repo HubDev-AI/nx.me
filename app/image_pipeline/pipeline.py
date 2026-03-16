@@ -2,7 +2,7 @@
 metadata stripping, and storage.
 
 Interface Contract (Story 3-1):
-  ImagePipeline.process(file_bytes, content_type, user_id, supabase) -> ProcessedImage
+  ImagePipeline.process(file_bytes, content_type, user_id) -> ProcessedImage
 
 Pipeline steps (synchronous, every upload):
   1. MagicBytesValidator — reject unsupported formats
@@ -15,23 +15,16 @@ Pipeline steps (synchronous, every upload):
 from __future__ import annotations
 
 import logging
-from uuid import UUID, uuid4
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from supabase import Client
 
 from app.config import settings
 from app.image_pipeline.metadata_stripper import MetadataStripper
 from app.image_pipeline.models import IMAGE_QUARANTINED, ProcessedImage
-from app.image_pipeline.nsfw_screener import (
-    MockNSFWAdapter,
-    NSFWScreenerPort,
-    RekognitionAdapter,
-)
-from app.image_pipeline.storage import (
-    LocalStorageAdapter,
-    StoragePort,
-    SupabaseStorageAdapter,
-)
+from app.image_pipeline.nsfw_screener import NSFWScreenerPort
+from app.image_pipeline.storage import StoragePort
 from app.image_pipeline.validators import DimensionValidator, MagicBytesValidator
 
 from fastapi import HTTPException, status
@@ -48,16 +41,20 @@ _CONTENT_TYPE_EXT = {
 
 
 def _get_nsfw_screener() -> NSFWScreenerPort:
-    """Resolve NSFW screener adapter from config."""
+    """Resolve NSFW screener adapter from config (lazy import)."""
     if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
+        from app.image_pipeline.nsfw_screener import RekognitionAdapter
         return RekognitionAdapter()
+    from app.image_pipeline.nsfw_screener import MockNSFWAdapter
     return MockNSFWAdapter()
 
 
 def _get_storage_adapter(supabase: Client) -> StoragePort:
-    """Resolve storage adapter from config."""
+    """Resolve storage adapter from config (lazy import)."""
     if settings.ADAPTER__STORAGE_ADAPTER == "supabase":
+        from app.image_pipeline.storage import SupabaseStorageAdapter
         return SupabaseStorageAdapter(supabase)
+    from app.image_pipeline.storage import LocalStorageAdapter
     return LocalStorageAdapter()
 
 
@@ -94,6 +91,7 @@ class ImagePipeline:
             HTTPException 422: IMAGE_FORMAT_REJECTED, IMAGE_TOO_LARGE, or IMAGE_QUARANTINED.
         """
         image_id = uuid4()
+        now_utc = datetime.now(tz=timezone.utc).isoformat()
 
         # Step 1: Magic bytes validation (AC-1)
         self._magic_validator.validate(file_bytes)
@@ -106,15 +104,19 @@ class ImagePipeline:
 
         if nsfw_result.is_explicit:
             # Write quarantined images row — no file written to storage
-            self._supabase.table("images").insert({
-                "id": str(image_id),
-                "user_id": user_id,
-                "storage_key": None,
-                "bucket": None,
-                "image_type": "selfie",
-                "status": "quarantined",
-                "screened_at": "now()",
-            }).execute()
+            try:
+                self._supabase.table("images").insert({
+                    "id": str(image_id),
+                    "user_id": user_id,
+                    "storage_key": None,
+                    "bucket": None,
+                    "image_type": "selfie",
+                    "status": "quarantined",
+                    "screened_at": now_utc,
+                }).execute()
+            except Exception as exc:
+                # DB failure must not mask the quarantine decision
+                logger.error("Failed to insert quarantined images row for user %s: %s", user_id, exc)
 
             logger.info(
                 "Image quarantined for user %s (confidence=%.1f%%, labels=%s)",
@@ -148,16 +150,27 @@ class ImagePipeline:
 
         await self._storage.upload(self.BUCKET, storage_key, clean_bytes, store_content_type)
 
-        # Step 6: Write images row
-        self._supabase.table("images").insert({
-            "id": str(image_id),
-            "user_id": user_id,
-            "storage_key": storage_key,
-            "bucket": self.BUCKET,
-            "image_type": "selfie",
-            "status": "cleared",
-            "screened_at": "now()",
-        }).execute()
+        # Step 6: Write images row — delete uploaded file on DB failure
+        try:
+            self._supabase.table("images").insert({
+                "id": str(image_id),
+                "user_id": user_id,
+                "storage_key": storage_key,
+                "bucket": self.BUCKET,
+                "image_type": "selfie",
+                "status": "cleared",
+                "screened_at": now_utc,
+            }).execute()
+        except Exception as exc:
+            logger.error("images INSERT failed for %s — deleting orphaned file %s: %s", user_id, storage_key, exc)
+            try:
+                self._supabase.storage.from_(self.BUCKET).remove([storage_key])
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to delete orphaned file %s/%s", self.BUCKET, storage_key)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Image processing failed.",
+            ) from exc
 
         logger.info("Image processed for user %s: %s (cleared)", user_id, storage_key)
 

@@ -10,11 +10,10 @@ Port/Adapter pattern:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Protocol
-
-import boto3
 
 from app.config import settings
 
@@ -36,6 +35,7 @@ class NSFWResult:
     is_explicit: bool
     confidence: float  # 0.0 – 100.0
     labels: list[str] = field(default_factory=list)
+    screened: bool = True  # False if screening was skipped due to error
 
 
 # ---------------------------------------------------------------------------
@@ -57,11 +57,13 @@ class NSFWScreenerPort(Protocol):
 class RekognitionAdapter:
     """AWS Rekognition adapter — real NSFW screening.
 
-    Calls detect_moderation_labels synchronously. Typical latency <=3s.
-    Cost: ~$0.001/image.
+    Calls detect_moderation_labels via thread executor to avoid blocking
+    the asyncio event loop. Typical latency <=3s. Cost: ~$0.001/image.
     """
 
     def __init__(self) -> None:
+        import boto3  # Lazy import — only loaded when rekognition adapter is used
+
         self._client = boto3.client(
             "rekognition",
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -70,15 +72,18 @@ class RekognitionAdapter:
         )
 
     async def screen(self, image_bytes: bytes) -> NSFWResult:
+        loop = asyncio.get_event_loop()
+
         try:
-            response = self._client.detect_moderation_labels(
-                Image={"Bytes": image_bytes},
+            response = await loop.run_in_executor(
+                None,
+                lambda: self._client.detect_moderation_labels(Image={"Bytes": image_bytes}),
             )
         except Exception as exc:
-            logger.error("Rekognition detect_moderation_labels failed: %s", exc)
-            # Fail open — allow the image through if Rekognition is unavailable.
-            # A quarantine-review queue can catch false negatives later.
-            return NSFWResult(is_explicit=False, confidence=0.0, labels=[])
+            # Fail closed — reject the image if Rekognition is unavailable.
+            # This prevents NSFW content from slipping through during outages.
+            logger.critical("Rekognition unavailable — failing closed: %s", exc)
+            return NSFWResult(is_explicit=True, confidence=0.0, labels=["SCREENING_UNAVAILABLE"], screened=False)
 
         labels = response.get("ModerationLabels", [])
         if not labels:
