@@ -1,0 +1,58 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # App
+    APP_ENV: str = "development"
+    SECRET_KEY: str
+    ADMIN_API_KEY: str
+
+    # Supabase
+    SUPABASE_URL: str
+    SUPABASE_ANON_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: str
+    SUPABASE_JWT_SECRET: str
+
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # External APIs
+    FAL_API_KEY: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    STRIPE_API_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    ANTHROPIC_API_KEY: str = ""
+
+    # Adapter selection
+    ADAPTER__NSFW_ADAPTER: str = "mock"
+    ADAPTER__FACE_ANALYSIS_ADAPTER: str = "mock"
+    ADAPTER__IMAGE_GENERATION_ADAPTER: str = "mock"
+    ADAPTER__LLM_ADAPTER: str = "mock"
+    ADAPTER__PAYMENT_ADAPTER: str = "mock"
+    ADAPTER__STORAGE_ADAPTER: str = "local"
+
+    # Advisor
+    ADVISOR_PERSONA_NAME: str = "TBD"
+    ADVISOR_CONTEXT_MEMORY_LIMIT: int = 20
+
+    # Entitlement constants (AC-3: must be named constants, not inline literals)
+    FREE_TRIAL_ANALYSES: int = 2
+    IDENTITY_SIMILARITY_THRESHOLD: float = 0.80
+    MAX_CONCURRENT_GENERATIONS_PER_USER: int = 3
+
+    # Upload limits
+    MAX_UPLOAD_SIZE_MB: int = 20
+    MAX_IMAGE_DIMENSION_PX: int = 8192
+    SIGNED_URL_EXPIRY_SECONDS: int = 3600
+
+    # Generation / cost
+    IMAGE_GEN_COST_CEILING_USD: float = 0.05
+    GENERATION_TIMEOUT_SECONDS: int = 60
+    CREDIT_COST_ALERT_USD: float = 0.04
+
+
+settings = Settings()
