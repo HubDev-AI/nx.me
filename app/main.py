@@ -12,7 +12,7 @@ from typing import AsyncIterator
 import redis.asyncio as aioredis
 from fastapi import FastAPI
 
-from app.api import auth, entitlement, health
+from app.api import analyses, auth, entitlement, health
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -68,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/auth")
     app.include_router(entitlement.router)
+    app.include_router(analyses.router)
 
     return app
 
