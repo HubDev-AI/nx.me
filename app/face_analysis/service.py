@@ -25,6 +25,8 @@ from app.face_analysis.landmark_extractor import (
     LandmarkExtractor,
     MockFaceAnalysisAdapter,
 )
+from fastapi import HTTPException, status
+
 from app.face_analysis.models import AnalysisResult
 from app.face_analysis.recommendation import RecommendationEngine
 from app.face_analysis.symmetry_scorer import SymmetryScorer
@@ -57,7 +59,7 @@ class _MediaPipeAdapter:
         We run the sync extraction in an executor to avoid blocking the
         event loop.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # CPU-bound: extract landmarks in executor
         landmarks = await loop.run_in_executor(
@@ -104,8 +106,33 @@ class FaceAnalysisService:
             HTTPException 422: FACE_NOT_DETECTED, MULTIPLE_FACES.
         """
         # Fetch image bytes from Supabase Storage
-        image_bytes = self._supabase.storage.from_("raw-selfies").download(
-            image_storage_key
-        )
+        try:
+            image_bytes = self._supabase.storage.from_("raw-selfies").download(
+                image_storage_key
+            )
+        except Exception as exc:
+            logger.error("Failed to download image %s: %s", image_storage_key, exc)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": {
+                        "code": "IMAGE_NOT_FOUND",
+                        "message": "Could not retrieve image for analysis.",
+                        "retry_eligible": False,
+                    }
+                },
+            ) from exc
+
+        if not image_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": {
+                        "code": "IMAGE_NOT_FOUND",
+                        "message": "Image file is empty or missing.",
+                        "retry_eligible": False,
+                    }
+                },
+            )
 
         return await self._adapter.analyze(image_bytes)

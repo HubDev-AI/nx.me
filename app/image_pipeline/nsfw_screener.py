@@ -72,7 +72,7 @@ class RekognitionAdapter:
         )
 
     async def screen(self, image_bytes: bytes) -> NSFWResult:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         try:
             response = await loop.run_in_executor(

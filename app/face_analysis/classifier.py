@@ -89,6 +89,11 @@ class FaceShapeClassifier:
         jaw_cheek_ratio = jaw_width / cheekbone_width
         forehead_jaw_ratio = forehead_width / jaw_width
 
+        # Rules applied in order, first match wins.
+        # Note: faces with length/cheek ratio in [1.1, 1.3] and forehead/jaw <= 1.2
+        # fall through to Oval (default). This is intentional — moderately elongated
+        # faces without other distinguishing features are classified as oval.
+
         # Rule 1: Oblong
         if length_cheek_ratio > 1.3:
             return FaceShape.OBLONG

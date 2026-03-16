@@ -69,14 +69,20 @@ def preload_model() -> None:
     # and caching. Subsequent instances reuse the cached weights.
     with mp.solutions.face_mesh.FaceMesh(
         static_image_mode=True,
-        max_num_faces=1,
-        refine_landmarks=False,
+        max_num_faces=2,
+        refine_landmarks=True,
         min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
     ) as _:
         pass
 
     _model_preloaded = True
     logger.info("MediaPipe FaceMesh model pre-loaded and cached")
+
+
+def is_model_preloaded() -> bool:
+    """Check if the MediaPipe model has been preloaded."""
+    return _model_preloaded
 
 
 # ---------------------------------------------------------------------------
@@ -106,8 +112,21 @@ class LandmarkExtractor:
         import mediapipe as mp
 
         # Load image as RGB numpy array
-        with PIL.Image.open(io.BytesIO(image_bytes)) as img:
-            rgb_image = np.array(img.convert("RGB"))
+        try:
+            with PIL.Image.open(io.BytesIO(image_bytes)) as img:
+                rgb_image = np.array(img.convert("RGB"))
+        except Exception as exc:
+            logger.warning("Failed to open image for landmark extraction: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": {
+                        "code": FACE_NOT_DETECTED,
+                        "message": "Could not read the image. The file may be corrupted.",
+                        "retry_eligible": True,
+                    }
+                },
+            ) from exc
 
         # Process with a fresh FaceMesh instance (reuses pre-loaded weights)
         with mp.solutions.face_mesh.FaceMesh(
