@@ -32,6 +32,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         encoding="utf-8",
     )
 
+    # Pre-load MediaPipe FaceMesh model (AC-2: health check gates on this)
+    if settings.ADAPTER__FACE_ANALYSIS_ADAPTER == "mediapipe":
+        from app.face_analysis.landmark_extractor import preload_model
+        preload_model()
+        logger.info("MediaPipe FaceMesh model pre-loaded")
+    else:
+        logger.info(
+            "Face analysis adapter is '%s' — skipping MediaPipe model load",
+            settings.ADAPTER__FACE_ANALYSIS_ADAPTER,
+        )
+
     logger.info("Supabase and Redis clients initialised")
 
     yield

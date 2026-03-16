@@ -320,10 +320,20 @@ PREMIUM (active subscription)
 
 | Class | Responsibility |
 |-------|---------------|
-| `FeedService` | Cursor-based pagination; sort strategies: `newest` (created_at DESC) / `trending` (reaction_count DESC + time factor) / `biggest_improvements` (reaction_count DESC — no AI score input per AC-U10) |
+| `FeedService` | Cursor-based pagination; sort strategies: `newest` (created_at DESC) / `trending` (HN-style time-decay ranking) / `biggest_improvements` (reaction_count DESC — no AI score input per AC-U10) |
 | `ReactionService` | Deduplication via UNIQUE constraints; Redis counter with retry-queue writes; reconciliation job |
 | `CommentService` | Authenticated create/delete; public read |
 | `ReportService` | Post reports queued for human review |
+
+**`trending` sort — HN-style time-decay ranking:**
+```sql
+score = reaction_count / POWER(hours_since_post + 2, 1.5)
+```
+- `hours_since_post = EXTRACT(EPOCH FROM NOW() - created_at) / 3600`
+- Gravity exponent `1.5` — lower than HN's `1.8` to keep posts relevant longer (lower volume feed)
+- `+ 2` offset prevents division by zero and gives fresh posts a small initial boost
+- A 100-reaction post at 1h scores 19.2; at 24h scores 0.75 — natural decay without cliff
+- Computed at query time (no background job) — PostgreSQL handles this efficiently with the existing `idx_posts_feed_trending` index as a fallback; for exact score ordering, a sequential scan on the filtered set is acceptable at <100K posts. At scale, add a materialized `trending_score` column updated by a periodic ARQ job.
 
 **`biggest_improvements` sort:** Ordered by `reaction_count DESC`. No AI-computed appearance score, symmetry delta, or any model output is used as an ordering input (AC-U10). Differs from `trending` only in the absence of the time-decay factor — `biggest_improvements` surfaces all-time high-reaction posts while `trending` weights recent engagement.
 
@@ -1114,7 +1124,12 @@ def test_reserve_commit_nets_minus_one(db):
 
 ### Social Feed
 
-**GET /feed?sort=newest&cursor={cursor}&limit=20**
+**GET /feed?sort={newest|trending|biggest_improvements}&cursor={cursor}&limit=20**
+
+Sort strategies:
+- `newest` — `ORDER BY created_at DESC`
+- `trending` — `ORDER BY (reaction_count / POWER(hours_since + 2, 1.5)) DESC`
+- `biggest_improvements` — `ORDER BY reaction_count DESC`
 ```json
 {
   "posts": [

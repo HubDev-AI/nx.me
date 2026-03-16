@@ -33,10 +33,10 @@ class Settings(BaseSettings):
     ADAPTER__IMAGE_GENERATION_ADAPTER: str = "mock"
     ADAPTER__LLM_ADAPTER: str = "mock"
     ADAPTER__PAYMENT_ADAPTER: str = "mock"
-    ADAPTER__STORAGE_ADAPTER: str = "local"
+    ADAPTER__STORAGE_ADAPTER: str = "supabase"
 
     # Advisor
-    ADVISOR_PERSONA_NAME: str = "TBD"
+    ADVISOR_PERSONA_NAME: str = "Ada"
     ADVISOR_CONTEXT_MEMORY_LIMIT: int = 20
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)

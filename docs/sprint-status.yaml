@@ -33,7 +33,7 @@ epics:
         slug: auth-social-login-logout-deletion
         title: Auth API — Social Login, JWT Validation, Logout & Account Deletion
         size: M
-        status: in-progress
+        status: done
         wave: 3
         dependencies: ["2-1"]
       - id: "2-3"
@@ -58,14 +58,14 @@ epics:
         slug: image-pipeline-service
         title: Image Pipeline Service — NSFW Screening, EXIF Strip & Storage
         size: M
-        status: backlog
+        status: done
         wave: 3
         dependencies: ["1-1"]
       - id: "3-2"
         slug: face-analysis-service
         title: Face Analysis Service — MediaPipe, Classification & Recommendations
         size: M
-        status: backlog
+        status: done
         wave: 4
         dependencies: ["1-1"]
       - id: "3-3"
