@@ -523,14 +523,46 @@ def delete_account(
     now_utc = datetime.now(tz=timezone.utc)
     reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
 
+    # --- Release active credit reservations (CS-1 AC-7) --------------------
+    try:
+        active_reservations = (
+            supabase.table("credit_reservations")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("status", "reserved")
+            .execute()
+        )
+        if active_reservations.data:
+            from app.entitlement.ledger import CreditLedger
+            from uuid import UUID as _UUID
+
+            ledger = CreditLedger(supabase)
+            for res in active_reservations.data:
+                try:
+                    ledger.release(_UUID(res["id"]))
+                    logger.info("Released reservation %s for deleting user %s", res["id"], user_id)
+                except (ValueError, Exception) as release_exc:  # noqa: BLE001
+                    logger.warning("Failed to release reservation %s: %s", res["id"], release_exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to query/release reservations for %s: %s", user_id, exc)
+
     # --- Soft delete + username reservation --------------------------------
     try:
-        supabase.table("users").update(
+        result = supabase.table("users").update(
             {
                 "deleted_at": now_utc.isoformat(),
                 "username_reserved_until": reserved_until.isoformat(),
             }
         ).eq("id", user_id).is_("deleted_at", "null").execute()
+
+        # CS-1 AC-6: Check if update affected any rows (already deleted?)
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Account is already deleted.",
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("users soft-delete failed for %s: %s", user_id, exc)
         raise HTTPException(
