@@ -83,18 +83,131 @@ These are NOT implemented yet. The story-creator agent must inline them when cre
 14. **Prompt sanitization:** Allowlist of recommendation keywords for prompt interpolation. Strip injection patterns.
 15. **Concurrent guard fix:** Replace read-only check with atomic INCR at API layer (INCR, check, DECR-if-over).
 
-#### AI Model Selection (from model evaluation, 2026-03-16)
+#### AI Generation Strategy (revised 2026-03-16, v3 — after model benchmarking)
 
-16. **Primary model: FLUX.1 Kontext [pro]** (`fal-ai/flux-pro/kontext`). Instruction-based editing — edits the existing photo rather than generating a new one. Best identity preservation (ArcFace cosine sim 0.88-0.95 for subtle changes). ~$0.04/image. Config: `FAL_MODEL_PRIMARY`, `FAL_PRIMARY_GUIDANCE_SCALE=3.5`, `FAL_PRIMARY_INFERENCE_STEPS=28`.
-17. **Fallback model: InstantID** (`fal-ai/instantid`). SDXL-based with face embedding + keypoint conditioning. Used when Kontext circuit breaker is open or cost ceiling approached. ~$0.02-0.03/image. Config: `FAL_MODEL_FALLBACK`, `FAL_FALLBACK_CONTROLNET_SCALE=0.85`, `FAL_FALLBACK_IP_ADAPTER_SCALE=0.70`.
-18. **Output resolution:** 1024x1024 for both models. ArcFace internally crops to 112x112 — any input above 256x256 is sufficient.
-19. **Prompt templates as files:** `prompts/glowup_kontext.txt` (instruction-based) and `prompts/glowup_instantid_positive.txt` + `prompts/glowup_instantid_negative.txt` (traditional). Templates loaded at runtime, not hardcoded.
-20. **Keyword allowlist:** `prompts/keyword_allowlist.py` — maps recommendation categories (hair, eyebrows, facial_hair, lighting, grooming) to fixed sets of allowed keywords. Only allowlisted keywords can appear in interpolated prompts. Prevents prompt injection.
-21. **Max prompt keywords:** `MAX_PROMPT_KEYWORDS=4` — limits improvement keywords per generation to reduce identity drift risk.
-22. **Identity retry strategy:** On ArcFace failure, retry once with `guidance_scale += 0.5` and reduce to top 2 keywords only. Do NOT switch to fallback model on first retry. Config: `IDENTITY_MAX_RETRIES=1`, `IDENTITY_RETRY_GUIDANCE_BUMP=0.5`.
-23. **ArcFace implementation:** `insightface` with `buffalo_l` model pack, `CPUExecutionProvider`. Pre-loaded at worker startup. Embedding extraction ~50-100ms per image on CPU. Both embeddings discarded immediately after comparison (ADR-1).
-24. **Face detection on output:** If ArcFace cannot detect a face in the generated image, treat as identity failure. Also run MediaPipe face detection confidence check — output must have confidence > 0.9.
-25. **Cost tracking per job:** Record actual cost per job including retries (sum of all attempts). Cost ceiling circuit breaker uses actual spend, not per-attempt estimates. A retry chain (Kontext + Kontext retry) costs up to $0.08, exceeding the $0.05 per-image ceiling — the ceiling applies to 24h rolling average, not individual jobs.
+**LESSONS LEARNED:**
+- Kontext [pro] was tested on fal.ai playground. It has NO `strength`/`denoise` parameter — the only control is prompt text. Conservative prompts produce zero visible change. Assertive prompts help but the model lacks the dials needed for controlled glow-ups.
+- The right approach needs: (1) a `strength` parameter to control how much the image changes, AND (2) face identity conditioning to prevent drift. Neither Kontext alone provides both.
+
+##### Recommended Primary Pipeline: Flux PuLID
+
+**Endpoint:** `fal-ai/flux-pulid`
+**Why:** Only model on fal.ai that combines Flux-quality generation with a dedicated `id_weight` parameter (0-1) for identity preservation. You can push styling changes via prompt while independently tuning identity strength. This decouples "how much to change" from "how much face to preserve" — exactly what glow-ups need.
+
+**Parameters:**
+```
+prompt: "{glow-up styling prompt}"
+reference_image_url: "{source selfie URL}"
+id_weight: 0.85              # Strong identity lock (tune: 0.75-0.95)
+guidance_scale: 4.0           # Prompt adherence
+num_inference_steps: 30       # Quality/speed balance
+negative_prompt: "plastic skin, beauty filter, airbrushed, cartoon, blurry, distorted face, extra fingers, different person, altered bone structure"
+image_size: "square_hd"       # 1024x1024
+```
+
+**Cost:** ~$0.033/megapixel = ~$0.035 at 1024x1024. Within budget.
+
+##### Enhancement Pass: REMOVED
+
+**`fal-ai/image-editing/face-enhancement` has been REMOVED from the pipeline.**
+**Why removed:** This model performs skin retouching — it smooths skin, removes freckles, removes blemishes, and produces the exact "beauty filter" effect NXME must avoid. Natural skin features (freckles, moles, texture, pores) are identity markers that must be preserved. The PuLID output is the final image — no post-processing step.
+
+**Total pipeline cost:** ~$0.035/generation (PuLID only). Well within ceiling.
+
+##### Fallback Pipeline: Flux Dev img2img + IP-Adapter
+
+**Endpoint:** `fal-ai/flux-general/image-to-image`
+**Why:** Has both `strength` parameter (0.01-1.0) for controlling change magnitude AND `ip_adapters` list for face conditioning. More complex to configure but full control.
+
+**Parameters:**
+```
+prompt: "{glow-up styling prompt}"
+image_url: "{source selfie URL}"
+strength: 0.55                # Sweet spot: visible change + identity preservation
+guidance_scale: 4.5
+num_inference_steps: 35
+negative_prompt: "plastic skin, beauty filter, airbrushed, cartoon, distorted"
+ip_adapters: [{               # Face identity conditioning
+    path: "h94/IP-Adapter-FaceID",
+    image_url: "{source selfie URL}",
+    scale: 0.6
+}]
+```
+
+**Cost:** ~$0.025/MP = ~$0.026 at 1024x1024. Cheapest option.
+
+##### Tertiary Fallback: InstantID (SDXL)
+
+**Endpoint:** `fal-ai/instantid`
+**Why:** SDXL-based, dedicated identity preservation, cheapest. Lower quality than Flux but reliable.
+
+**Parameters:**
+```
+prompt: "{glow-up styling prompt}"
+face_image_url: "{source selfie URL}"
+controlnet_conditioning_scale: 0.80
+guidance_scale: 5.0
+num_inference_steps: 30
+model_type: "SDXL-v2-plus"    # Best quality variant
+width: 1024, height: 1024
+negative_prompt: "plastic skin, beauty filter, airbrushed, blurry, cartoon"
+```
+
+**Cost:** ~$0.02/image.
+
+##### Model Selection Priority
+
+| Priority | Model | When Used | Cost |
+|----------|-------|-----------|------|
+| 1 | Flux PuLID (no post-processing) | Default pipeline | ~$0.035 |
+| 2 | Flux Dev img2img + IP-Adapter | PuLID circuit breaker open | ~$0.026 |
+| 3 | InstantID (SDXL) | Both Flux models down | ~$0.02 |
+
+16. **Primary model: Flux PuLID** (`fal-ai/flux-pulid`). `id_weight=0.85` for identity, prompt drives styling. `guidance_scale=4.0`, `num_inference_steps=30`.
+17. **NO enhancement pass.** Face Enhancement model REMOVED — it strips freckles, moles, and skin texture (beauty filter behavior). PuLID output is the final image.
+18. **Fallback 1: Flux Dev img2img** (`fal-ai/flux-general/image-to-image`). `strength=0.55`, IP-Adapter FaceID for identity. Used when PuLID unavailable.
+19. **Fallback 2: InstantID** (`fal-ai/instantid`). SDXL with face embedding. Used when both Flux models down.
+20. **Output resolution:** 1024x1024 (`square_hd` for PuLID, explicit `image_size` for others).
+
+##### Prompt Strategy
+
+21. **Prompt must be ASSERTIVE.** Tested: "do not change" / "preserve" language produces zero visible change with instruction-based models. Prompt describes what TO DO. Identity is enforced by `id_weight` (PuLID) / IP-Adapter (Flux Dev) / ArcFace post-check.
+22. **Prompt template:** `prompts/glowup_pulid.txt` — positive styling prompt with face shape context.
+23. **Negative prompt:** `prompts/glowup_negative.txt` — shared across all models. Targets: plastic skin, beauty filter, cartoon, identity drift, artifacts.
+24. **Face-focused crop strategy:** If the input image has full body + environment, crop to head+shoulders (face bbox * 2.5x padding) before generation. After generation, composite back into original frame. This forces the model to focus on face/hair/grooming instead of background.
+25. **Keyword allowlist:** `prompts/keyword_allowlist.py` — unchanged. Maps recommendation categories to allowed keywords.
+26. **Max prompt keywords:** `MAX_PROMPT_KEYWORDS=6`.
+
+##### Generation Parameters (by model)
+
+| Parameter | PuLID | Flux Dev img2img | InstantID |
+|-----------|-------|------------------|-----------|
+| identity control | `id_weight=0.85` | IP-Adapter `scale=0.6` | `controlnet_scale=0.80` |
+| guidance_scale | 4.0 | 4.5 | 5.0 |
+| steps | 30 | 35 | 30 |
+| strength/denoise | N/A (text-driven) | 0.55 | N/A |
+| resolution | 1024x1024 | 1024x1024 | 1024x1024 |
+
+##### Identity & Retry
+
+27. **Identity retry:** On ArcFace failure (<0.80), retry once with `id_weight=0.95` (PuLID) or `strength=0.40` (Flux Dev) — more conservative. If second attempt fails → `IDENTITY_PRESERVATION_FAILED`, release credit, `retry_eligible: true`.
+28. **ArcFace:** `insightface` buffalo_l, CPU, pre-loaded at startup. Embeddings ephemeral (ADR-1).
+29. **Face detection on output:** No face detected → treat as identity failure.
+
+##### Cost
+
+30. **Revise cost ceiling:** `IMAGE_GEN_COST_CEILING_USD=0.06` (was 0.05, small bump for retry margin). `CREDIT_COST_ALERT_USD=0.05`. Pipeline costs ~$0.035 base, retry adds ~$0.035.
+31. **Cost tracking:** Record actual cost per job including retries. Ceiling on 24h rolling average.
+
+##### Style Keyword Injection from Face Analysis
+
+32. **Face shape → prompt keywords mapping:**
+    - Round face → "layered hairstyle with volume on top, angular accessories, contoured jawline"
+    - Oval face → "versatile styling, soft waves, editorial portrait"
+    - Square face → "textured layers, softening styles, rounded accessories"
+    - Heart face → "side-swept styles, jaw-width accessories, forehead-balancing fringe"
+    - Oblong face → "width-adding layers, horizontal emphasis, wide frames"
+33. **Symmetry score influences lighting keyword:** High (>0.85) → "dramatic directional lighting". Lower → "soft even lighting, flattering angles".
 
 ### Story 5-2: Guest Session & Reactions (Wave 7)
 

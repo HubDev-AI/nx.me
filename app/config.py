@@ -50,9 +50,13 @@ class Settings(BaseSettings):
     SIGNED_URL_EXPIRY_SECONDS: int = 3600
 
     # Generation / cost
-    IMAGE_GEN_COST_CEILING_USD: float = 0.05
+    IMAGE_GEN_COST_CEILING_USD: float = 0.06  # 24h rolling avg ceiling (PuLID ~$0.035, retry ~$0.07)
     GENERATION_TIMEOUT_SECONDS: int = 60
-    CREDIT_COST_ALERT_USD: float = 0.04
+    CREDIT_COST_ALERT_USD: float = 0.05
+    GENERATION_OUTPUT_RESOLUTION: int = 1024
+    IDENTITY_MAX_RETRIES: int = 1
+    MAX_PROMPT_KEYWORDS: int = 6
+    FACE_CROP_THRESHOLD: float = 0.25  # Crop to head+shoulders if face < 25% of image area
 
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3       # max attempts per device fingerprint
