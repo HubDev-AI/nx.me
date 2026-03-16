@@ -20,5 +20,11 @@ httpx==0.28.1
 # Username slugification
 python-slugify==8.0.4
 
+# Image processing
+Pillow==12.1.1
+
+# AWS SDK (Rekognition NSFW screening)
+boto3==1.42.68
+
 # DB driver
 psycopg2-binary==2.9.10

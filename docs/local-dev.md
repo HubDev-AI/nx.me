@@ -28,8 +28,15 @@ arq app.worker.WorkerSettings
 |---------|-------|------|---------|
 | Redis | `redis:7.2-alpine` | 6379 | ARQ job queue + tier/entitlement cache |
 
-All other services use real APIs with test/dev credentials:
-- **Supabase** — `nxme-dev` free-tier project (Postgres + Auth + Storage)
+**Local Supabase CLI** provides real Postgres, Auth, and Storage locally:
+```bash
+supabase start   # starts local Supabase (DB + Auth + Storage)
+```
+- Supabase Studio: `http://127.0.0.1:54323`
+- API URL: `http://127.0.0.1:54321` (use as `SUPABASE_URL`)
+- Get keys: `supabase status` → copy `anon key`, `service_role key`, `JWT secret`
+
+External services that can't run locally use real APIs with test/dev credentials:
 - **fal.ai** — dev API key (real generations, billed per call)
 - **AWS Rekognition** — dev IAM user with Rekognition-only policy
 - **Stripe** — test mode (`sk_test_*` keys)
@@ -42,7 +49,7 @@ ADAPTER__FACE_ANALYSIS_ADAPTER=mock
 ADAPTER__IMAGE_GENERATION_ADAPTER=mock
 ADAPTER__LLM_ADAPTER=mock
 ADAPTER__PAYMENT_ADAPTER=mock
-ADAPTER__STORAGE_ADAPTER=local
+# ADAPTER__STORAGE_ADAPTER defaults to "supabase" (local CLI) — use "local" for offline dev
 ```
 
 ---
