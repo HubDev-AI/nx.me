@@ -15,7 +15,7 @@ epics:
         slug: adr-resolution
         title: ADR-1, ADR-2, and OQ-1 Resolution
         size: S
-        status: backlog
+        status: done
         wave: 1
         dependencies: []
 
