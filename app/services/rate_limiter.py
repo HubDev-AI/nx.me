@@ -55,3 +55,22 @@ async def check_ip_registration_rate_limit(
     results = await pipe.execute()
     count: int = results[0]
     return count <= settings.REGISTRATION_IP_LIMIT
+
+
+async def check_login_rate_limit(
+    ip: str,
+    r: aioredis.Redis,
+) -> bool:
+    """Per-IP rate limit for POST /login (CS-1 AC-4).
+
+    Reuses the same window/limit as registration IP rate limiting.
+    Returns False when the IP has exceeded REGISTRATION_IP_LIMIT login
+    attempts within REGISTRATION_IP_WINDOW_SECONDS.
+    """
+    key = f"login_ip_limit:{ip}"
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, settings.REGISTRATION_IP_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    count: int = results[0]
+    return count <= settings.REGISTRATION_IP_LIMIT

@@ -12,7 +12,7 @@ from typing import AsyncIterator
 import redis.asyncio as aioredis
 from fastapi import FastAPI
 
-from app.api import auth, entitlement, health
+from app.api import analyses, auth, entitlement, health
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -24,6 +24,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application-level resource lifecycle."""
     # ── Startup ─────────────────────────────────────────────────────────────
     logger.info("Starting NXME API (%s)", settings.APP_ENV)
+
+    # CS-1 AC-5: Block mock/local adapters in non-development environments
+    if settings.APP_ENV != "development":
+        _mock_adapters = []
+        for attr in dir(settings):
+            if attr.startswith("ADAPTER__") and getattr(settings, attr) in ("mock", "local"):
+                _mock_adapters.append(f"{attr}={getattr(settings, attr)}")
+        if _mock_adapters:
+            msg = f"FATAL: Mock/local adapters in {settings.APP_ENV}: {', '.join(_mock_adapters)}"
+            logger.critical(msg)
+            raise SystemExit(msg)
 
     app.state.supabase = get_supabase_service()
     app.state.redis = aioredis.from_url(
@@ -65,9 +76,16 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ──────────────────────────────────────────────────────────────
+    # Health check is unversioned (load balancer probes hit / directly)
     app.include_router(health.router)
-    app.include_router(auth.router, prefix="/auth")
-    app.include_router(entitlement.router)
+
+    # All API routes under /v1 prefix — single place to manage API version
+    from fastapi import APIRouter
+    v1 = APIRouter(prefix="/v1")
+    v1.include_router(auth.router, prefix="/auth")
+    v1.include_router(entitlement.router)
+    v1.include_router(analyses.router)
+    app.include_router(v1)
 
     return app
 

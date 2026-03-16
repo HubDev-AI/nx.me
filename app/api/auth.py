@@ -29,6 +29,7 @@ from app.services.disposable_email import is_disposable_email
 from slugify import slugify
 from app.services.rate_limiter import (
     check_ip_registration_rate_limit,
+    check_login_rate_limit,
     check_registration_rate_limit,
 )
 
@@ -89,7 +90,15 @@ async def register(
           (trial credited only after email verification via TrialGrantor.grant)
     """
     # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
     ip_allowed = await check_ip_registration_rate_limit(client_ip, r)
     if not ip_allowed:
         raise HTTPException(
@@ -349,9 +358,11 @@ class LoginResponse(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse)
-def social_login(
+async def social_login(
+    request: Request,
     body: LoginRequest,
     supabase: Client = Depends(get_supabase),
+    r: aioredis.Redis = Depends(get_redis),
 ) -> LoginResponse:
     """Authenticate via a social provider id_token (Google or Apple).
 
@@ -360,7 +371,25 @@ def social_login(
     never accepted because we only accept `id_token` — not `access_token`
     or `code`.  Custom URI scheme redirects are rejected because the backend
     does not implement a redirect URI callback flow at all.
+
+    CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
+    # Per-IP rate limit (CS-1 T-3)
+    client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
+    if not await check_login_rate_limit(client_ip, r):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this IP. Try again later.",
+        )
+
     if body.provider not in _ACCEPTED_PROVIDERS:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -510,14 +539,50 @@ def delete_account(
     now_utc = datetime.now(tz=timezone.utc)
     reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
 
+    # --- Release active credit reservations (CS-1 AC-7) --------------------
+    try:
+        active_reservations = (
+            supabase.table("credit_reservations")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("status", "reserved")
+            .execute()
+        )
+        if active_reservations.data:
+            from app.entitlement.ledger import CreditLedger
+            from uuid import UUID as _UUID
+
+            ledger = CreditLedger(supabase)
+            for res in active_reservations.data:
+                try:
+                    ledger.release(_UUID(res["id"]))
+                    logger.info("Released reservation %s for deleting user %s", res["id"], user_id)
+                except (ValueError, Exception) as release_exc:  # noqa: BLE001
+                    logger.warning("Failed to release reservation %s: %s", res["id"], release_exc)
+    except Exception as exc:
+        logger.error("Failed to release reservations for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed — could not release active credit reservations.",
+        ) from exc
+
     # --- Soft delete + username reservation --------------------------------
     try:
-        supabase.table("users").update(
+        result = supabase.table("users").update(
             {
                 "deleted_at": now_utc.isoformat(),
                 "username_reserved_until": reserved_until.isoformat(),
             }
         ).eq("id", user_id).is_("deleted_at", "null").execute()
+
+        # CS-1 AC-6: Check if update affected any rows (already deleted?)
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Account is already deleted.",
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("users soft-delete failed for %s: %s", user_id, exc)
         raise HTTPException(

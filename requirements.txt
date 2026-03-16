@@ -31,5 +31,8 @@ numpy==2.4.3
 # AWS SDK (Rekognition NSFW screening)
 boto3==1.42.68
 
+# Disposable email detection
+disposable-email-domains==0.0.128
+
 # DB driver
 psycopg2-binary==2.9.10
