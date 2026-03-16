@@ -247,6 +247,32 @@ Routes that use these dependencies:
 
 ---
 
+## A-7: Story 1-1 Code Review Deferred Fixes
+
+- **Date**: 2026-03-16
+- **Trigger**: Code review of Story 1-1 found three medium-severity issues deferred to future migrations.
+
+### A-7a: must_have Grep Exclusion List Update
+
+The Story 1-1 must_have verification requires: "grep for `0.80` or `0.800` outside `app/config.py` and `app/migrations/` returns zero matches." This guard is not satisfied because `app/config/tiers.py` legitimately contains per-tier identity_similarity_threshold values (`0.800`, `0.750`, `0.700`) as part of the tier seed data. Future stories that re-run this grep must also exclude `app/config/tiers.py`.
+
+### A-7b: CHECK Constraints on tiers Limit-Type Columns
+
+`tiers.generation_type` and `tiers.advisor_nudges_type` currently accept any TEXT value. A future migration should add:
+
+```sql
+ALTER TABLE tiers ADD CONSTRAINT chk_tiers_generation_type
+  CHECK (generation_type IN ('total','daily','weekly','monthly','period','credits','unlimited'));
+ALTER TABLE tiers ADD CONSTRAINT chk_tiers_advisor_nudges_type
+  CHECK (advisor_nudges_type IN ('total','daily','weekly','monthly','period','credits','unlimited'));
+```
+
+### A-7c: CHECK Constraints on usage_events action and status Columns
+
+`usage_events.action` and `usage_events.status` currently accept any TEXT value. A future migration should add constraints once the full set of valid values is confirmed during the generation and advisor services stories. Defer until domain values are finalized.
+
+---
+
 ### 5. Concurrent Generation Guard (Redis)
 
 Prevents a user from enqueueing more parallel jobs than `tier.max_concurrent_generations`.
