@@ -73,7 +73,7 @@ ADAPTER__PAYMENT_ADAPTER=mock
 | `STRIPE_API_KEY` | — | Stripe secret key (`sk_test_*`) |
 | `STRIPE_WEBHOOK_SECRET` | — | Stripe webhook signing secret |
 | `ANTHROPIC_API_KEY` | — | Claude API key |
-| `ADVISOR_PERSONA_NAME` | `TBD` | Advisor character name — set before Story 7-2 |
+| `ADVISOR_PERSONA_NAME` | `Ada` | Advisor persona name (she/her) |
 | `ADVISOR_CONTEXT_MEMORY_LIMIT` | `20` | Top-K memories per advisor turn |
 | `MAX_UPLOAD_SIZE_MB` | `20` | Image upload size cap |
 | `MAX_IMAGE_DIMENSION_PX` | `8192` | Max image dimension (pre-decode check) |

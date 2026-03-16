@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     ADAPTER__STORAGE_ADAPTER: str = "supabase"
 
     # Advisor
-    ADVISOR_PERSONA_NAME: str = "TBD"
+    ADVISOR_PERSONA_NAME: str = "Ada"
     ADVISOR_CONTEXT_MEMORY_LIMIT: int = 20
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)

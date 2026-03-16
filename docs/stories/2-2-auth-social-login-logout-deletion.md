@@ -1,6 +1,6 @@
 ---
 id: "2-2-auth-social-login-logout-deletion"
-status: in-progress
+status: complete
 created: 2026-03-16
 ---
 
