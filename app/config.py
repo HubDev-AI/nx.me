@@ -36,8 +36,10 @@ class Settings(BaseSettings):
     ADAPTER__STORAGE_ADAPTER: str = "supabase"
 
     # Advisor
+    # Advisor module (pluggable — set to False to disable entirely)
+    ADVISOR_ENABLED: bool = True
     ADVISOR_PERSONA_NAME: str = "Ada"
-    ADVISOR_CONTEXT_MEMORY_LIMIT: int = 20
+    ADVISOR_CONTEXT_MEMORY_LIMIT: int = 3   # Max memories per request. Less = more human.
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2

@@ -29,6 +29,10 @@
 
 ## Domain Notes
 - This repo defines skills in `AGENTS.md`; `napkin` is mandatory every session.
+- **CRITICAL: Feature specs are PRIMARY source for implementation:**
+  - `docs/generation-spec.md` — for ANY story touching generation (4-2, 4-3, etc.). Contains model selection, parameters, prompts, scoring, retry, cost, module architecture. 17 sections. READ THIS FIRST for generation stories.
+  - `docs/advisor-spec.md` — for ANY story touching advisor (7-1, 7-2, 7-3, 7-4). Contains SOUL.md integration, memory system, context assembly, nudges, cost, pluggable design. 17 sections. READ THIS FIRST for advisor stories.
+  - These specs override architecture.md for implementation details. Architecture.md is the system overview; these specs are the engineering blueprints.
 - **Advisor persona**: Ada (she/her) — personal style and self-improvement advisor
 - **Generation spec**: `docs/generation-spec.md` — single source of truth for all AI generation behavior
 - **Primary model**: Flux PuLID `fal-ai/flux-pulid` (id_weight=0.85). NO post-processing. ~$0.035/image.

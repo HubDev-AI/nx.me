@@ -38,10 +38,13 @@ docs/local-dev.md ───────┘              ▼
 | Local dev setup | `docs/local-dev.md` | If exists — from `/devops` Pass 1 |
 | Infrastructure | `docs/infrastructure.md` | If exists — from `/devops` Pass 2 or legacy |
 | Test strategy | `docs/test-strategy.md` | If exists — from `/qa` skill |
+| Generation spec | `docs/generation-spec.md` | If story touches generation (4-2, 4-3, or any generation-related story) — REQUIRED |
+| Advisor spec | `docs/advisor-spec.md` | If story touches advisor (7-1, 7-2, 7-3, 7-4, or any advisor-related story) — REQUIRED |
+| Corrections | `docs/corrections.md` | If exists — architecture risk fixes to inline into story ACs |
 
 **Not provided:** `docs/research.md`, `docs/spec.md` — their content is fully captured in architecture and plan. Do not request them.
 
-**Optional skill artifacts:** The design system, infrastructure, and test strategy documents are produced by standalone skills (`/designer`, `/devops`, `/qa`). If they exist, extract content relevant to this story and inline it. If they don't exist, proceed normally — the architecture document contains the baseline decisions.
+**Feature spec artifacts:** `generation-spec.md` and `advisor-spec.md` are comprehensive design documents that took significant effort to produce. They contain model selection, parameters, prompt templates, scoring systems, retry strategies, cost analysis, and module architecture. **When a story touches generation or advisor features, these specs are the PRIMARY source — not architecture.md.** The story-creator MUST read and inline relevant sections from these specs. Architecture.md provides the system-level overview; the feature specs provide the implementation detail.
 
 ## Output Specification
 
