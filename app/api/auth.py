@@ -1,20 +1,22 @@
 """Auth API — registration, email verification & trial grant.
 
-Story 2-1: POST /auth/register
+Story 2-1:
+  POST /auth/register      — create account
+  POST /auth/verify-email  — trigger trial grant after email confirmed
 """
 from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Annotated
+from typing import Annotated, NoReturn
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from supabase import Client
 
 import redis.asyncio as aioredis
 
-from app.api.deps import get_redis, get_supabase
+from app.api.deps import get_current_user, get_redis, get_supabase
 from app.entitlement.trial_grantor import TrialGrantor
 from app.services.disposable_email import is_disposable_email
 from app.services.rate_limiter import check_registration_rate_limit
@@ -25,7 +27,6 @@ router = APIRouter(tags=["auth"])
 
 # Minimum age for account creation (AC-U7)
 _MIN_AGE_YEARS = 13
-_CURRENT_YEAR = date.today().year
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,7 @@ class RegisterResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
 )
 async def register(
+    request: Request,
     body: RegisterRequest,
     x_device_fingerprint: Annotated[str | None, Header()] = None,
     supabase: Client = Depends(get_supabase),
@@ -73,7 +75,10 @@ async def register(
           (trial credited only after email verification via TrialGrantor.grant)
     """
     # --- Rate limiting (AC-3) ---------------------------------------------
-    fingerprint = x_device_fingerprint or "unknown"
+    # Prefer explicit fingerprint header; fall back to client IP to prevent
+    # a single shared "unknown" bucket locking out all fingerprint-less clients.
+    client_ip = request.client.host if request.client else "unknown"
+    fingerprint = x_device_fingerprint or client_ip
     allowed = await check_registration_rate_limit(fingerprint, r)
     if not allowed:
         raise HTTPException(
@@ -91,7 +96,9 @@ async def register(
     # --- Age gate (AC-6) --------------------------------------------------
     is_minor: bool | None = None
     if body.birth_year is not None:
-        age = _CURRENT_YEAR - body.birth_year
+        # Compute age at request time — avoid module-level constant that
+        # becomes stale across year boundaries (e.g. server started Dec 2026).
+        age = date.today().year - body.birth_year
         is_minor = age < _MIN_AGE_YEARS
 
     # --- Fetch default tier -----------------------------------------------
@@ -168,7 +175,82 @@ async def register(
     )
 
 
-def _handle_supabase_auth_error(exc: Exception) -> None:
+# ---------------------------------------------------------------------------
+# Email verification → trial grant (AC-2)
+# ---------------------------------------------------------------------------
+
+
+class VerifyEmailResponse(BaseModel):
+    trial_analyses_remaining: int
+    message: str
+
+
+@router.post("/verify-email", response_model=VerifyEmailResponse)
+def verify_email(
+    claims: dict = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+) -> VerifyEmailResponse:
+    """Trigger trial grant after email verification.
+
+    Called by the mobile client immediately after the user clicks the
+    verification link and the Supabase SDK exchanges the magic link for a
+    valid JWT session.
+
+    AC-2: TrialGrantor.grant(user_id) is idempotent — calling this endpoint
+    twice does not double-grant trial analyses.
+    """
+    from uuid import UUID
+
+    user_id_str: str = claims["sub"]
+
+    # Verify that Supabase auth has confirmed the email
+    try:
+        auth_user = supabase.auth.admin.get_user_by_id(user_id_str)
+    except Exception as exc:
+        logger.error("Failed to fetch auth user %s: %s", user_id_str, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not verify email status.",
+        )
+
+    if not auth_user.user or not auth_user.user.email_confirmed_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email address has not been verified yet.",
+        )
+
+    # Mark email_verified in our users table
+    supabase.table("users").update({"email_verified": True}).eq(
+        "id", user_id_str
+    ).execute()
+
+    # Grant trial analyses (idempotent)
+    grantor = TrialGrantor(supabase)
+    grantor.grant(UUID(user_id_str))
+
+    # Read updated count for response
+    user_result = (
+        supabase.table("users")
+        .select("trial_analyses_remaining")
+        .eq("id", user_id_str)
+        .single()
+        .execute()
+    )
+    remaining: int = user_result.data["trial_analyses_remaining"] if user_result.data else 0
+
+    logger.info("Email verified and trial granted for user %s", user_id_str)
+    return VerifyEmailResponse(
+        trial_analyses_remaining=remaining,
+        message="Email verified. Your free analyses are ready.",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _handle_supabase_auth_error(exc: Exception) -> NoReturn:
     """Map Supabase auth errors to appropriate HTTP responses."""
     msg = str(exc).lower()
     if "already registered" in msg or "unique" in msg or "duplicate" in msg:

@@ -13,6 +13,13 @@ from app.api.deps import get_current_user, get_supabase
 
 router = APIRouter(tags=["entitlement"])
 
+# Maps DB tier slug → public API tier identifier (AC-5)
+_SLUG_TO_TIER_NAME: dict[str, str] = {
+    "free": "TRIAL",
+    "credits": "CREDIT_HOLDER",
+    "premium": "PREMIUM",
+}
+
 
 class EntitlementResponse(BaseModel):
     tier: str
@@ -32,10 +39,10 @@ def get_entitlement(
     """
     user_id: str = claims["sub"]
 
-    # Fetch user row with tier display_name
+    # Fetch user row with tier slug (slug drives the public API identifier)
     user_result = (
         supabase.table("users")
-        .select("trial_analyses_remaining, tier_id, tiers(display_name)")
+        .select("trial_analyses_remaining, tier_id, tiers(slug)")
         .eq("id", user_id)
         .is_("deleted_at", "null")
         .single()
@@ -49,7 +56,8 @@ def get_entitlement(
 
     row = user_result.data
     trial_remaining: int = row["trial_analyses_remaining"]
-    tier_display: str = row["tiers"]["display_name"] if row.get("tiers") else "Unknown"
+    slug: str = row["tiers"]["slug"] if row.get("tiers") else ""
+    tier_name: str = _SLUG_TO_TIER_NAME.get(slug, slug.upper() or "UNKNOWN")
 
     # Credit balance: sum of credit_ledger deltas
     ledger_result = (
@@ -71,7 +79,7 @@ def get_entitlement(
     can_generate = trial_remaining > 0 or credit_balance > 0
 
     return EntitlementResponse(
-        tier=tier_display,
+        tier=tier_name,
         trial_analyses_remaining=trial_remaining,
         credit_balance=credit_balance,
         can_generate=can_generate,

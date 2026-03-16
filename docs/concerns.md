@@ -25,3 +25,14 @@ Low-severity deferred items and override log. Reviewed periodically.
 - **Action**: Change field types to `LimitType` in a future maintenance pass.
 
 ---
+
+## C-3: is_minor Flag Stored but Upload Blocking Not Enforced (Medium)
+
+- **Date**: 2026-03-16
+- **Story**: 2-1
+- **Severity**: MEDIUM
+- **Source**: Code review finding F8
+- **Detail**: `POST /auth/register` captures `birth_year` and derives `is_minor` (age < 13), storing the flag in `users.is_minor`. However, no enforcement exists at the upload/generation layer — a minor user can currently proceed through the full analysis flow unchecked. AC-6 requires the flag to be stored; upload blocking was intentionally deferred to the upload story.
+- **Action**: The upload story (Story 3-x) must gate `POST /analyses` or equivalent on `users.is_minor = false`. Add a `require_adult()` FastAPI dependency or check inside `require_entitlement()`.
+
+---

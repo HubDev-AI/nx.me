@@ -85,14 +85,20 @@ class TrialGrantor:
 
     def _grant_fallback(self, user_id_str: str) -> None:
         """Two-write fallback when the grant_trial RPC is unavailable."""
-        self._sb.table("users").update(
-            {"trial_analyses_remaining": settings.FREE_TRIAL_ANALYSES}
-        ).eq("id", user_id_str).execute()
+        try:
+            self._sb.table("users").update(
+                {"trial_analyses_remaining": settings.FREE_TRIAL_ANALYSES}
+            ).eq("id", user_id_str).execute()
 
-        self._sb.table("credit_ledger").insert(
-            {
-                "user_id": user_id_str,
-                "delta": settings.FREE_TRIAL_ANALYSES,
-                "type": "trial_grant",
-            }
-        ).execute()
+            self._sb.table("credit_ledger").insert(
+                {
+                    "user_id": user_id_str,
+                    "delta": settings.FREE_TRIAL_ANALYSES,
+                    "type": "trial_grant",
+                }
+            ).execute()
+        except Exception as exc:
+            logger.error("_grant_fallback failed for user %s: %s", user_id_str, exc)
+            raise RuntimeError(
+                f"Failed to grant trial for user {user_id_str}"
+            ) from exc
