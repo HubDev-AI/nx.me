@@ -10,15 +10,16 @@ from pydantic import BaseModel
 
 from app.api.deps import get_current_user, get_entitlement_service
 from app.api.middleware.auth import UserClaims
+from app.constants.tiers import CREDIT_HOLDER, PREMIUM, TRIAL
 from app.entitlement.service import EntitlementService
 
 router = APIRouter(tags=["entitlement"])
 
-# Maps DB tier slug → public API tier identifier (AC-5)
+# Maps DB tier slug → public API tier identifier (AC-5: named constants only)
 _SLUG_TO_TIER_NAME: dict[str, str] = {
-    "free": "TRIAL",
-    "credits": "CREDIT_HOLDER",
-    "premium": "PREMIUM",
+    "free": TRIAL,
+    "credits": CREDIT_HOLDER,
+    "premium": PREMIUM,
 }
 
 

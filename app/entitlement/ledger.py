@@ -66,9 +66,23 @@ class CreditLedger:
         """
         user_id_str = str(user_id)
         reservation_id = uuid4()
-        now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-        # Insert reservation record
+        # Atomic: reservation + ledger entry in one transaction via RPC
+        try:
+            self._sb.rpc("credit_reserve", {
+                "p_user_id": user_id_str,
+                "p_reservation_id": str(reservation_id),
+            }).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("credit_reserve RPC unavailable (%s) — using fallback writes", exc)
+            self._reserve_fallback(user_id_str, reservation_id)
+
+        logger.info("Credit reserved for user %s: reservation %s", user_id_str, reservation_id)
+        return reservation_id
+
+    def _reserve_fallback(self, user_id_str: str, reservation_id: UUID) -> None:
+        """Two-write fallback when credit_reserve RPC is unavailable."""
+        now_utc = datetime.now(tz=timezone.utc).isoformat()
         self._sb.table("credit_reservations").insert({
             "id": str(reservation_id),
             "user_id": user_id_str,
@@ -76,17 +90,12 @@ class CreditLedger:
             "status": "reserved",
             "created_at": now_utc,
         }).execute()
-
-        # Insert ledger entry
         self._sb.table("credit_ledger").insert({
             "user_id": user_id_str,
             "delta": -1,
             "type": "reserve",
             "reference_id": str(reservation_id),
         }).execute()
-
-        logger.info("Credit reserved for user %s: reservation %s", user_id_str, reservation_id)
-        return reservation_id
 
     def release(self, reservation_id: UUID) -> None:
         """Release a reservation — undo the hold (e.g., job failed).
@@ -98,9 +107,8 @@ class CreditLedger:
         Invariant: reserve + release = 0 (net)
         """
         res_id_str = str(reservation_id)
-        now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-        # Fetch reservation to get user_id
+        # Validate reservation exists and is in 'reserved' state
         result = (
             self._sb.table("credit_reservations")
             .select("user_id, status")
@@ -115,21 +123,30 @@ class CreditLedger:
 
         user_id_str: str = result.data["user_id"]
 
-        # Update reservation status
+        # Atomic: update reservation + insert ledger entry via RPC
+        try:
+            self._sb.rpc("credit_release", {
+                "p_reservation_id": res_id_str,
+            }).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("credit_release RPC unavailable (%s) — using fallback writes", exc)
+            self._release_fallback(res_id_str, user_id_str)
+
+        logger.info("Credit released for user %s: reservation %s", user_id_str, reservation_id)
+
+    def _release_fallback(self, res_id_str: str, user_id_str: str) -> None:
+        """Two-write fallback when credit_release RPC is unavailable."""
+        now_utc = datetime.now(tz=timezone.utc).isoformat()
         self._sb.table("credit_reservations").update({
             "status": "released",
             "resolved_at": now_utc,
         }).eq("id", res_id_str).execute()
-
-        # Insert release ledger entry
         self._sb.table("credit_ledger").insert({
             "user_id": user_id_str,
             "delta": 1,
             "type": "release",
             "reference_id": res_id_str,
         }).execute()
-
-        logger.info("Credit released for user %s: reservation %s", user_id_str, reservation_id)
 
     def commit(self, reservation_id: UUID) -> None:
         """Commit a reservation — credit is consumed (e.g., job succeeded).
@@ -142,9 +159,8 @@ class CreditLedger:
         the credit; commit records the consumption with delta=0.
         """
         res_id_str = str(reservation_id)
-        now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-        # Fetch reservation to get user_id
+        # Validate reservation exists and is in 'reserved' state
         result = (
             self._sb.table("credit_reservations")
             .select("user_id, status")
@@ -159,13 +175,24 @@ class CreditLedger:
 
         user_id_str: str = result.data["user_id"]
 
-        # Update reservation status
+        # Atomic: update reservation + insert ledger entry via RPC
+        try:
+            self._sb.rpc("credit_commit", {
+                "p_reservation_id": res_id_str,
+            }).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("credit_commit RPC unavailable (%s) — using fallback writes", exc)
+            self._commit_fallback(res_id_str, user_id_str)
+
+        logger.info("Credit committed for user %s: reservation %s", user_id_str, reservation_id)
+
+    def _commit_fallback(self, res_id_str: str, user_id_str: str) -> None:
+        """Two-write fallback when credit_commit RPC is unavailable."""
+        now_utc = datetime.now(tz=timezone.utc).isoformat()
         self._sb.table("credit_reservations").update({
             "status": "committed",
             "resolved_at": now_utc,
         }).eq("id", res_id_str).execute()
-
-        # Insert commit ledger entry (delta=0 — reserve already deducted)
         self._sb.table("credit_ledger").insert({
             "user_id": user_id_str,
             "delta": 0,

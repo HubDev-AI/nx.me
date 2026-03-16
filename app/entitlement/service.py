@@ -162,17 +162,6 @@ class EntitlementService:
         if used < limit:
             return CanGenerateResult(can_generate=True)
 
-        # Check trial analyses as fallback for free tier
-        user_result = (
-            self._sb.table("users")
-            .select("trial_analyses_remaining")
-            .eq("id", str(user_id))
-            .single()
-            .execute()
-        )
-        if user_result.data and user_result.data["trial_analyses_remaining"] > 0:
-            return CanGenerateResult(can_generate=True)
-
         return CanGenerateResult(can_generate=False, reason="Generation limit reached")
 
     # ------------------------------------------------------------------
@@ -200,6 +189,10 @@ class EntitlementService:
     async def _check_generation(self, user_id: UUID, tier: TierRecord) -> EntitlementResult:
         """Generation-specific check: concurrent guard + credits/window."""
         # 1. Concurrent guard (Redis)
+        # Note: this is a read-only check. The actual INCR/DECR happens in the
+        # ARQ worker at job start/end. A small race window exists between this
+        # check and the worker INCR, but it's acceptable — the worker also
+        # checks and rejects if over limit.
         concurrent_key = f"concurrent:{user_id}"
         current = int(await self._redis.get(concurrent_key) or 0)
         if current >= tier.max_concurrent_generations:
@@ -256,13 +249,17 @@ class EntitlementService:
         if used < limit:
             return EntitlementResult(allowed=True, limit=limit, used=used)
 
-        # Compute retry_after for time-windowed limits
+        # Compute retry_after from the earliest event in the window
+        # (when that event ages out, the user regains capacity)
         retry_after: datetime | None = None
         reset_in: int | None = None
         window = _LIMIT_WINDOW.get(limit_type)
-        if window is not None:
-            retry_after = datetime.now(tz=timezone.utc) + window
-            reset_in = int(window.total_seconds())
+        if window is not None and limit_type != LimitType.TOTAL:
+            window_seconds = _get_window_seconds(limit_type, period_seconds)
+            earliest = self._usage.earliest_in_window(user_id, action, window_seconds)
+            if earliest:
+                retry_after = earliest + window
+                reset_in = max(0, int((retry_after - datetime.now(tz=timezone.utc)).total_seconds()))
 
         return EntitlementResult(
             allowed=False,

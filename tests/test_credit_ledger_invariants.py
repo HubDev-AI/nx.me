@@ -7,152 +7,200 @@ These tests verify the mathematical invariants of the credit ledger:
 Architecture Section 10.4 requires these tests even though the project
 generally does not write automated tests during development.
 
-These tests validate the LOGIC of the ledger operations, not the DB
-layer. They use a minimal in-memory mock of the Supabase client to
-verify that the correct deltas are written for each operation.
+Tests exercise the production CreditLedger class with a mocked Supabase
+client that captures written rows in memory.
 """
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
+# Delay import to handle missing supabase dependency gracefully
+try:
+    from app.entitlement.ledger import CreditLedger
+    _HAS_SUPABASE = True
+except ImportError:
+    _HAS_SUPABASE = False
 
-class MockExecuteResult:
-    """Mock Supabase execute() result."""
+
+class _MockExecuteResult:
+    """Mock Supabase .execute() result."""
 
     def __init__(self, data=None, count=None):
-        self.data = data or []
+        self.data = data
         self.count = count
 
 
-class MockQueryBuilder:
-    """Minimal mock for Supabase table query builder."""
+class _InMemorySupabase:
+    """Minimal in-memory mock of the Supabase Client for ledger testing.
 
-    def __init__(self, rows: list[dict]):
-        self._rows = rows
+    Captures all inserts to credit_ledger and credit_reservations tables.
+    Supports select/single queries by id on credit_reservations.
+    """
+
+    def __init__(self) -> None:
+        self.ledger_rows: list[dict] = []
+        self.reservation_rows: list[dict] = []
+
+    def table(self, name: str) -> "_TableBuilder":
+        return _TableBuilder(self, name)
+
+    def rpc(self, name: str, params: dict) -> "_RpcBuilder":
+        # Simulate RPC unavailable — force fallback path
+        raise Exception(f"RPC {name} not available in test")
+
+
+class _TableBuilder:
+    """Mock table query builder that stores/retrieves from _InMemorySupabase."""
+
+    def __init__(self, db: _InMemorySupabase, table: str) -> None:
+        self._db = db
+        self._table = table
+        self._row: dict | None = None
         self._filters: dict = {}
+        self._update_data: dict | None = None
+        self._select_fields: str = "*"
 
-    def select(self, *args, **kwargs):
+    def select(self, fields: str = "*", **kwargs) -> "_TableBuilder":
+        self._select_fields = fields
         return self
 
-    def insert(self, row):
-        self._rows.append(row)
+    def insert(self, row: dict) -> "_TableBuilder":
+        self._row = row
         return self
 
-    def update(self, data):
+    def update(self, data: dict) -> "_TableBuilder":
         self._update_data = data
         return self
 
-    def eq(self, field, value):
+    def eq(self, field: str, value) -> "_TableBuilder":
         self._filters[field] = value
         return self
 
-    def single(self):
+    def single(self) -> "_TableBuilder":
         return self
 
-    def execute(self):
-        # For select queries with filters, find matching row
-        if self._filters:
-            for row in self._rows:
+    def execute(self) -> _MockExecuteResult:
+        rows = self._db.ledger_rows if self._table == "credit_ledger" else self._db.reservation_rows
+
+        # INSERT
+        if self._row is not None:
+            rows.append(self._row)
+            return _MockExecuteResult(data=self._row)
+
+        # UPDATE
+        if self._update_data is not None:
+            for row in rows:
                 if all(row.get(k) == v for k, v in self._filters.items()):
-                    return MockExecuteResult(data=row)
-        return MockExecuteResult(data=self._rows[-1] if self._rows else None)
+                    row.update(self._update_data)
+                    return _MockExecuteResult(data=row)
+            return _MockExecuteResult(data=None)
+
+        # SELECT with filters
+        if self._filters:
+            for row in rows:
+                if all(row.get(k) == v for k, v in self._filters.items()):
+                    return _MockExecuteResult(data=row)
+            return _MockExecuteResult(data=None)
+
+        # SELECT all (for balance computation)
+        return _MockExecuteResult(data=rows)
 
 
+@unittest.skipUnless(_HAS_SUPABASE, "supabase package not installed")
 class TestCreditLedgerInvariants(unittest.TestCase):
-    """Verify credit ledger reserve/release/commit invariants."""
+    """Verify credit ledger reserve/release/commit invariants using production CreditLedger."""
 
-    def _compute_balance(self, ledger_rows: list[dict]) -> int:
-        """Compute balance from ledger rows (same as CreditLedger.balance)."""
-        return sum(row["delta"] for row in ledger_rows)
+    def setUp(self) -> None:
+        self.db = _InMemorySupabase()
+        self.ledger = CreditLedger(self.db)  # type: ignore[arg-type]
+        self.user_id = uuid4()
+
+        # Seed initial balance of 5 credits
+        self.db.ledger_rows.append({
+            "user_id": str(self.user_id),
+            "delta": 5,
+            "type": "purchase",
+        })
 
     def test_invariant_1_reserve_plus_release_equals_zero(self):
         """reserve + release = 0 (net balance unchanged)."""
-        initial_balance = 5
-        ledger_rows: list[dict] = [
-            {"user_id": "user-1", "delta": initial_balance, "type": "purchase"},
-        ]
+        initial = self.ledger.balance(self.user_id)
+        self.assertEqual(initial, 5)
 
-        # Simulate reserve: delta = -1
-        ledger_rows.append({"user_id": "user-1", "delta": -1, "type": "reserve"})
-        balance_after_reserve = self._compute_balance(ledger_rows)
-        self.assertEqual(balance_after_reserve, initial_balance - 1)
+        reservation_id = self.ledger.reserve(self.user_id)
+        after_reserve = self.ledger.balance(self.user_id)
+        self.assertEqual(after_reserve, 4)
 
-        # Simulate release: delta = +1
-        ledger_rows.append({"user_id": "user-1", "delta": 1, "type": "release"})
-        balance_after_release = self._compute_balance(ledger_rows)
-
-        # Invariant: balance restored to initial
-        self.assertEqual(balance_after_release, initial_balance)
+        self.ledger.release(reservation_id)
+        after_release = self.ledger.balance(self.user_id)
+        self.assertEqual(after_release, 5)  # restored
 
     def test_invariant_2_reserve_plus_commit_equals_minus_one(self):
         """reserve + commit = -1 (net balance reduced by 1)."""
-        initial_balance = 5
-        ledger_rows: list[dict] = [
-            {"user_id": "user-1", "delta": initial_balance, "type": "purchase"},
-        ]
+        initial = self.ledger.balance(self.user_id)
+        self.assertEqual(initial, 5)
 
-        # Simulate reserve: delta = -1
-        ledger_rows.append({"user_id": "user-1", "delta": -1, "type": "reserve"})
-        balance_after_reserve = self._compute_balance(ledger_rows)
-        self.assertEqual(balance_after_reserve, initial_balance - 1)
+        reservation_id = self.ledger.reserve(self.user_id)
+        after_reserve = self.ledger.balance(self.user_id)
+        self.assertEqual(after_reserve, 4)
 
-        # Simulate commit: delta = 0 (no additional deduction)
-        ledger_rows.append({"user_id": "user-1", "delta": 0, "type": "commit"})
-        balance_after_commit = self._compute_balance(ledger_rows)
+        self.ledger.commit(reservation_id)
+        after_commit = self.ledger.balance(self.user_id)
+        self.assertEqual(after_commit, 4)  # same as after reserve (commit delta=0)
 
-        # Invariant: balance reduced by exactly 1
-        self.assertEqual(balance_after_commit, initial_balance - 1)
+    def test_multiple_reserves_mixed_outcomes(self):
+        """3 reserves: 2 committed, 1 released → balance reduced by 2."""
+        initial = self.ledger.balance(self.user_id)
+        self.assertEqual(initial, 5)
 
-    def test_multiple_reserves_and_mixed_outcomes(self):
-        """Multiple reservations with mixed release/commit outcomes."""
-        initial_balance = 10
-        ledger_rows: list[dict] = [
-            {"user_id": "user-1", "delta": initial_balance, "type": "purchase"},
-        ]
+        r1 = self.ledger.reserve(self.user_id)
+        r2 = self.ledger.reserve(self.user_id)
+        r3 = self.ledger.reserve(self.user_id)
+        self.assertEqual(self.ledger.balance(self.user_id), 2)  # 5 - 3
 
-        # Reserve 3 credits
-        for _ in range(3):
-            ledger_rows.append({"user_id": "user-1", "delta": -1, "type": "reserve"})
+        self.ledger.commit(r1)
+        self.ledger.commit(r2)
+        self.ledger.release(r3)
+        self.assertEqual(self.ledger.balance(self.user_id), 3)  # 5 - 2 consumed, 1 returned
 
-        self.assertEqual(self._compute_balance(ledger_rows), 7)  # 10 - 3
+    def test_reserve_writes_delta_negative_one(self):
+        """Reserve creates a ledger entry with delta = -1."""
+        self.ledger.reserve(self.user_id)
+        reserve_entries = [r for r in self.db.ledger_rows if r["type"] == "reserve"]
+        self.assertEqual(len(reserve_entries), 1)
+        self.assertEqual(reserve_entries[0]["delta"], -1)
 
-        # Commit 2 (consumed)
-        for _ in range(2):
-            ledger_rows.append({"user_id": "user-1", "delta": 0, "type": "commit"})
+    def test_release_writes_delta_positive_one(self):
+        """Release creates a ledger entry with delta = +1."""
+        rid = self.ledger.reserve(self.user_id)
+        self.ledger.release(rid)
+        release_entries = [r for r in self.db.ledger_rows if r["type"] == "release"]
+        self.assertEqual(len(release_entries), 1)
+        self.assertEqual(release_entries[0]["delta"], 1)
 
-        # Release 1 (returned)
-        ledger_rows.append({"user_id": "user-1", "delta": 1, "type": "release"})
+    def test_commit_writes_delta_zero(self):
+        """Commit creates a ledger entry with delta = 0."""
+        rid = self.ledger.reserve(self.user_id)
+        self.ledger.commit(rid)
+        commit_entries = [r for r in self.db.ledger_rows if r["type"] == "commit"]
+        self.assertEqual(len(commit_entries), 1)
+        self.assertEqual(commit_entries[0]["delta"], 0)
 
-        # Final: 10 - 3 + 0 + 0 + 1 = 8 (2 consumed, 1 returned)
-        self.assertEqual(self._compute_balance(ledger_rows), 8)
+    def test_release_already_released_raises(self):
+        """Releasing an already-released reservation raises ValueError."""
+        rid = self.ledger.reserve(self.user_id)
+        self.ledger.release(rid)
+        with self.assertRaises(ValueError):
+            self.ledger.release(rid)
 
-    def test_reserve_delta_is_negative_one(self):
-        """Reserve must always write delta = -1."""
-        rows = [
-            {"delta": 10, "type": "purchase"},
-            {"delta": -1, "type": "reserve"},
-        ]
-        self.assertEqual(sum(r["delta"] for r in rows), 9)
-
-    def test_release_delta_is_positive_one(self):
-        """Release must always write delta = +1."""
-        rows = [
-            {"delta": 10, "type": "purchase"},
-            {"delta": -1, "type": "reserve"},
-            {"delta": 1, "type": "release"},
-        ]
-        self.assertEqual(sum(r["delta"] for r in rows), 10)
-
-    def test_commit_delta_is_zero(self):
-        """Commit must always write delta = 0."""
-        rows = [
-            {"delta": 10, "type": "purchase"},
-            {"delta": -1, "type": "reserve"},
-            {"delta": 0, "type": "commit"},
-        ]
-        self.assertEqual(sum(r["delta"] for r in rows), 9)
+    def test_commit_already_committed_raises(self):
+        """Committing an already-committed reservation raises ValueError."""
+        rid = self.ledger.reserve(self.user_id)
+        self.ledger.commit(rid)
+        with self.assertRaises(ValueError):
+            self.ledger.commit(rid)
 
 
 if __name__ == "__main__":

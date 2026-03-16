@@ -57,3 +57,29 @@ class UsageRepository:
         )
 
         return result.count if result.count is not None else 0
+
+    def earliest_in_window(self, user_id: UUID, action: str, window_seconds: int) -> datetime | None:
+        """Get the earliest committed event's created_at within a time window.
+
+        Returns None if no events exist in the window.
+        """
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(seconds=window_seconds)).isoformat()
+
+        result = (
+            self._sb.table("usage_events")
+            .select("created_at")
+            .eq("user_id", str(user_id))
+            .eq("action", action)
+            .eq("status", "committed")
+            .gte("created_at", cutoff)
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+
+        if result.data and result.data[0].get("created_at"):
+            ts = datetime.fromisoformat(result.data[0]["created_at"])
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts
+        return None
