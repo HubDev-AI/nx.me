@@ -72,7 +72,7 @@ epics:
         slug: analysis-api-endpoint
         title: Analysis API Endpoint — POST /analyses
         size: S
-        status: backlog
+        status: done
         wave: 5
         dependencies: ["3-1", "3-2"]
       - id: "3-4"
@@ -90,16 +90,23 @@ epics:
         slug: entitlement-service
         title: Entitlement Service — Credit Ledger, State Machine & Trial Grant
         size: M
-        status: backlog
+        status: done
         wave: 4
         dependencies: ["1-1"]
+      - id: "CS-1"
+        slug: security-corrections
+        title: Security Corrections for Completed Stories
+        size: S
+        status: done
+        wave: 5
+        dependencies: ["4-1"]
       - id: "4-2"
         slug: generation-queue-arq-worker
         title: Generation Queue & ARQ Worker
         size: L
         status: backlog
         wave: 5
-        dependencies: ["4-1"]
+        dependencies: ["4-1", "CS-1"]
       - id: "4-3"
         slug: generation-api
         title: Generation API — POST /generate, Job Polling & Cancel

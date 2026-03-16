@@ -30,6 +30,10 @@
 ## Domain Notes
 - This repo defines skills in `AGENTS.md`; `napkin` is mandatory every session.
 - **Advisor persona**: Ada (she/her) — personal style and self-improvement advisor
+- **Generation primary model**: FLUX.1 Kontext [pro] (`fal-ai/flux-pro/kontext`) — instruction-based editing, best identity preservation
+- **Generation fallback model**: InstantID (`fal-ai/instantid`) — SDXL with face conditioning, lower cost
+- **Prompt templates**: `prompts/glowup_kontext.txt`, `prompts/glowup_instantid_positive.txt`, `prompts/glowup_instantid_negative.txt`
+- **Keyword allowlist**: `prompts/keyword_allowlist.py` — only allowlisted keywords in generation prompts
 - **High modularity required** — adapters for all external services (Rekognition, MediaPipe, fal.ai, Anthropic, Stripe, Supabase Storage), pipeline steps composable in `config/pipelines.py`, all LLM prompts in `prompts/*.txt` files loaded at runtime. Never inline prompts or call providers directly from services.
 - Amendment A-3 defines the full adapter pattern — read `docs/amendments.md#a-3` before implementing any service story.
 - Amendment A-4 defines the DB-driven tier system — no tier names in code, `user.tier_id: UUID` only, tiers seeded via migration, admin CRUD API at `/admin/tiers`.

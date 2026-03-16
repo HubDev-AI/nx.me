@@ -76,10 +76,16 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ──────────────────────────────────────────────────────────────
+    # Health check is unversioned (load balancer probes hit / directly)
     app.include_router(health.router)
-    app.include_router(auth.router, prefix="/auth")
-    app.include_router(entitlement.router)
-    app.include_router(analyses.router)
+
+    # All API routes under /v1 prefix — single place to manage API version
+    from fastapi import APIRouter
+    v1 = APIRouter(prefix="/v1")
+    v1.include_router(auth.router, prefix="/auth")
+    v1.include_router(entitlement.router)
+    v1.include_router(analyses.router)
+    app.include_router(v1)
 
     return app
 
