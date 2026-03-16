@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     MAX_PROMPT_KEYWORDS: int = 6
     FACE_CROP_THRESHOLD: float = 0.25  # Crop to head+shoulders if face < 25% of image area
 
+    # Transformation modules — pluggable feature flags
+    ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"
+
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3       # max attempts per device fingerprint
     REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours
