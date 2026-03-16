@@ -1,14 +1,19 @@
-"""Auth API — registration, email verification & trial grant.
+"""Auth API — registration, email verification, social login, logout & account deletion.
 
 Story 2-1:
   POST /auth/register      — create account
   POST /auth/verify-email  — trigger trial grant after email confirmed
+
+Story 2-2:
+  POST /auth/login         — social login via id_token (Google / Apple)
+  POST /auth/logout        — server-side session invalidation
+  DELETE /auth/account     — soft delete + 180-day username reservation
 """
 from __future__ import annotations
 
 import logging
-from datetime import date
-from typing import Annotated, NoReturn
+from datetime import date, datetime, timedelta, timezone
+from typing import Annotated, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
@@ -17,9 +22,14 @@ from supabase import Client
 import redis.asyncio as aioredis
 
 from app.api.deps import get_current_user, get_redis, get_supabase
+from app.api.middleware.auth import UserClaims
+from app.config import settings
 from app.entitlement.trial_grantor import TrialGrantor
 from app.services.disposable_email import is_disposable_email
-from app.services.rate_limiter import check_registration_rate_limit
+from app.services.rate_limiter import (
+    check_ip_registration_rate_limit,
+    check_registration_rate_limit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +37,9 @@ router = APIRouter(tags=["auth"])
 
 # Minimum age for account creation (AC-U7)
 _MIN_AGE_YEARS = 13
+
+# Social providers accepted by the login endpoint
+_ACCEPTED_PROVIDERS = frozenset({"google", "apple"})
 
 
 # ---------------------------------------------------------------------------
@@ -74,10 +87,18 @@ async def register(
     AC-1: User row created with tier = default, trial_analyses_remaining = 0
           (trial credited only after email verification via TrialGrantor.grant)
     """
-    # --- Rate limiting (AC-3) ---------------------------------------------
+    # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
+    client_ip = request.client.host if request.client else "unknown"
+    ip_allowed = await check_ip_registration_rate_limit(client_ip, r)
+    if not ip_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many registration attempts from this IP. Try again in 1 hour.",
+        )
+
+    # --- Rate limiting (AC-3): per-device fingerprint ≥3/24h → 429 ------
     # Prefer explicit fingerprint header; fall back to client IP to prevent
     # a single shared "unknown" bucket locking out all fingerprint-less clients.
-    client_ip = request.client.host if request.client else "unknown"
     fingerprint = x_device_fingerprint or client_ip
     allowed = await check_registration_rate_limit(fingerprint, r)
     if not allowed:
@@ -268,3 +289,196 @@ def _handle_supabase_auth_error(exc: Exception) -> NoReturn:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Account creation failed.",
     )
+
+
+# ===========================================================================
+# Story 2-2 — Social Login, Logout & Account Deletion
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Social Login — POST /auth/login
+# ---------------------------------------------------------------------------
+
+
+class LoginRequest(BaseModel):
+    """Social login via id_token (AC-1).
+
+    The mobile client completes the OAuth PKCE flow with the provider
+    (Google / Apple), receives an id_token, and sends it here.  The backend
+    never sees a redirect URI — implicit-flow tokens and custom URI schemes
+    are rejected at the endpoint level.
+    """
+
+    provider: Literal["google", "apple"]
+    id_token: str = Field(min_length=1)
+    nonce: str | None = None  # required by Apple; optional for Google
+
+
+class LoginResponse(BaseModel):
+    user_id: str
+    access_token: str
+    refresh_token: str
+    expires_at: int  # Unix timestamp
+
+
+@router.post("/login", response_model=LoginResponse)
+def social_login(
+    body: LoginRequest,
+    supabase: Client = Depends(get_supabase),
+) -> LoginResponse:
+    """Authenticate via a social provider id_token (Google or Apple).
+
+    AC-1: id_token claims (iss, aud, exp, nonce) are validated by Supabase
+    GoTrue when we call sign_in_with_id_token. Implicit-flow tokens are
+    never accepted because we only accept `id_token` — not `access_token`
+    or `code`.  Custom URI scheme redirects are rejected because the backend
+    does not implement a redirect URI callback flow at all.
+    """
+    if body.provider not in _ACCEPTED_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Provider '{body.provider}' is not supported.",
+        )
+
+    # Exchange id_token for a Supabase session.
+    # Supabase GoTrue validates iss, aud, exp, nonce internally (AC-A9).
+    credentials: dict = {"provider": body.provider, "token": body.id_token}
+    if body.nonce is not None:
+        credentials["nonce"] = body.nonce
+
+    try:
+        auth_response = supabase.auth.sign_in_with_id_token(credentials)
+    except Exception as exc:
+        msg = str(exc).lower()
+        logger.warning("sign_in_with_id_token failed for provider %s: %s", body.provider, exc)
+        if "invalid" in msg or "expired" in msg or "nonce" in msg or "claim" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Social login token is invalid or expired.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Authentication service error.",
+        )
+
+    if not auth_response.session or not auth_response.user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Social login failed.",
+        )
+
+    session = auth_response.session
+    user = auth_response.user
+    user_id = str(user.id)
+
+    # Upsert public.users row — new social users won't have a row yet.
+    # On conflict (existing account) do nothing to preserve existing data.
+    try:
+        supabase.table("users").upsert(
+            {
+                "id": user_id,
+                "email": user.email or "",
+                "username": user.email.split("@")[0] if user.email else user_id[:20],
+                "display_name": (user.user_metadata or {}).get("full_name", "") or (user.email or user_id),
+                "email_verified": True,
+                "trial_analyses_remaining": 0,
+            },
+            on_conflict="id",
+            ignore_duplicates=True,
+        ).execute()
+    except Exception as exc:
+        # Non-fatal: session was created, profile upsert is best-effort.
+        logger.error("users upsert failed for social user %s: %s", user_id, exc)
+
+    logger.info("Social login successful for user %s (provider=%s)", user_id, body.provider)
+    return LoginResponse(
+        user_id=user_id,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        expires_at=int(session.expires_at) if session.expires_at else 0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Logout — POST /auth/logout
+# ---------------------------------------------------------------------------
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    claims: UserClaims = Depends(get_current_user),
+    authorization: Annotated[str | None, Header()] = None,
+    supabase: Client = Depends(get_supabase),
+) -> None:
+    """Invalidate the current session server-side (AC-2).
+
+    Calls supabase.auth.admin.sign_out() which revokes the token in
+    Supabase GoTrue within ≤1 second.  Subsequent requests bearing this
+    token will receive HTTP 401.
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+
+    token = authorization.removeprefix("Bearer ").strip()
+    user_id: str = claims["sub"]
+
+    try:
+        supabase.auth.admin.sign_out(token)
+        logger.info("Session invalidated for user %s", user_id)
+    except Exception as exc:
+        logger.error("sign_out failed for user %s: %s", user_id, exc)
+        # Do not surface the error — the client should treat 204 as success.
+        # The token will expire naturally even if server revocation failed.
+
+
+# ---------------------------------------------------------------------------
+# Account Deletion — DELETE /auth/account
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    claims: UserClaims = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+) -> None:
+    """Permanently delete the authenticated user's account (AC-3).
+
+    Actions:
+    1. Soft-delete the public.users row (deleted_at = NOW()).
+    2. Reserve the username for 180 days (username_reserved_until).
+    3. Delete the Supabase auth identity (removes login capability).
+
+    Primary storage (images, glow-up results) is deleted asynchronously
+    within 72 hours by a background job (deferred to Story 6-x).
+    Shareable card URLs return HTTP 410 once deleted_at is set (Story 6-1).
+    """
+    user_id: str = claims["sub"]
+    now_utc = datetime.now(tz=timezone.utc)
+    reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
+
+    # --- Soft delete + username reservation --------------------------------
+    try:
+        supabase.table("users").update(
+            {
+                "deleted_at": now_utc.isoformat(),
+                "username_reserved_until": reserved_until.isoformat(),
+            }
+        ).eq("id", user_id).is_("deleted_at", "null").execute()
+    except Exception as exc:
+        logger.error("users soft-delete failed for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed.",
+        ) from exc
+
+    # --- Remove Supabase auth identity -----------------------------------
+    try:
+        supabase.auth.admin.delete_user(user_id)
+        logger.info("Account deleted for user %s; username reserved until %s", user_id, reserved_until.date())
+    except Exception as exc:
+        logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
+        # Soft delete already committed — log the failure, do not surface it.
+        # A cleanup job can retry auth deletion using the deleted_at flag.
