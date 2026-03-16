@@ -96,17 +96,24 @@ async def create_analysis(
         for s in result.recommendations
     ]
 
-    supabase.table("analyses").insert({
-        "id": str(analysis_id),
-        "user_id": user_id,
-        "original_image_id": str(processed.image_id),
-        "face_shape": result.face_shape.value,
-        "symmetry_score": result.symmetry_score,
-        "recommendations": recs_json,
-        "status": "completed",
-        "created_at": now_utc,
-        "updated_at": now_utc,
-    }).execute()
+    try:
+        supabase.table("analyses").insert({
+            "id": str(analysis_id),
+            "user_id": user_id,
+            "original_image_id": str(processed.image_id),
+            "face_shape": result.face_shape.value,
+            "symmetry_score": result.symmetry_score,
+            "recommendations": recs_json,
+            "status": "completed",
+            "created_at": now_utc,
+            "updated_at": now_utc,
+        }).execute()
+    except Exception as exc:
+        logger.error("analyses INSERT failed for user %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save analysis result. Please retry.",
+        ) from exc
 
     logger.info("Analysis %s created for user %s (shape=%s)", analysis_id, user_id, result.face_shape)
 
@@ -133,7 +140,7 @@ async def create_analysis(
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisDetailResponse)
 def get_analysis(
-    analysis_id: str,
+    analysis_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ) -> AnalysisDetailResponse:
@@ -143,8 +150,8 @@ def get_analysis(
     result = (
         supabase.table("analyses")
         .select("*")
-        .eq("id", analysis_id)
-        .single()
+        .eq("id", str(analysis_id))
+        .maybe_single()
         .execute()
     )
 
