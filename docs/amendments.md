@@ -4,6 +4,72 @@ Amendments capture deviations from `docs/architecture.md` discovered during impl
 
 ---
 
+## A-6: DB Transaction Convention (Cross-Cutting)
+
+- **Date**: 2026-03-16
+- **Trigger**: Pre-implementation requirement — all multi-step database writes must be atomic. If any step fails, no partial state should be stored.
+- **Applies to**: All stories that write to the database.
+
+### Rule
+
+**Always use explicit transactions for any DB operation involving 2+ writes or where partial failure is unacceptable.**
+
+Single-row INSERTs or pure SELECT queries do not require explicit transaction management (auto-commit is fine). All other cases use explicit `BEGIN`/`COMMIT`/`ROLLBACK`.
+
+### Migration Runner
+
+Each migration file runs as a single transaction. The `_schema_migrations` tracking record is inserted in the same transaction as the migration SQL:
+
+```python
+conn.autocommit = False
+try:
+    cur.execute(migration_sql)
+    cur.execute(
+        "INSERT INTO _schema_migrations (migration_id, applied_at) VALUES (%s, NOW())",
+        (migration_id,)
+    )
+    conn.commit()
+except Exception:
+    conn.rollback()
+    raise
+```
+
+### Service Layer
+
+Use `psycopg2` transaction blocks or Supabase RPC for multi-step writes. Examples of operations requiring transactions:
+
+| Operation | Why |
+|-----------|-----|
+| Register user + grant trial credits | Both rows must exist together |
+| Reserve credit + create job | Reservation meaningless without job |
+| Commit credit + update job status | Must be atomic — no committed credit without status update |
+| Release credit + update job status | Must be atomic |
+| Process webhook + update subscription | Idempotency record + state change together |
+| Stripe payment confirmed + tier upgrade | Payment recorded AND tier changed, or neither |
+
+### psycopg2 Pattern
+
+```python
+conn.autocommit = False
+try:
+    # all writes
+    conn.commit()
+except Exception:
+    conn.rollback()
+    raise
+```
+
+Or using context manager:
+```python
+with conn.cursor() as cur:
+    # psycopg2 wraps in transaction automatically when autocommit=False
+    cur.execute(...)
+    cur.execute(...)
+conn.commit()  # or conn.rollback() on except
+```
+
+---
+
 ## A-5: Usage Tracking, Entitlement Error Protocol & Tier Middleware
 
 - **Date**: 2026-03-16
@@ -1260,3 +1326,4 @@ POST   /advisor/nudges/{id}/read      # Mark nudge as read
 | 7-4 | Mobile Advisor UI — Chat Screen & Nudge Feed | M | 11 | 7-2, 6-5 |
 
 **Plan totals after amendment:** 30 stories, 11 waves, 8 waves unchanged, stories added into waves 1/8/9/11.
+

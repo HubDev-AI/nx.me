@@ -21,9 +21,24 @@
 ## Patterns That Don't Work
 - Proceeding before checking for required session skills creates avoidable cleanup.
 
+## DB Transaction Pattern
+- **Always use transactions for multi-step DB writes** — if any step fails, nothing is committed
+- Migration runner: each migration SQL + `_schema_migrations` INSERT in one transaction (`conn.autocommit = False` → `conn.commit()` or `conn.rollback()`)
+- Service layer: wrap multi-step operations (create user + grant credits, reserve + commit credit, etc.) in explicit transactions
+- Single-read queries or single-row INSERTs don't need explicit transaction wrappers (auto-commit is fine)
+
 ## Domain Notes
 - This repo defines skills in `AGENTS.md`; `napkin` is mandatory every session.
 - **High modularity required** — adapters for all external services (Rekognition, MediaPipe, fal.ai, Anthropic, Stripe, Supabase Storage), pipeline steps composable in `config/pipelines.py`, all LLM prompts in `prompts/*.txt` files loaded at runtime. Never inline prompts or call providers directly from services.
 - Amendment A-3 defines the full adapter pattern — read `docs/amendments.md#a-3` before implementing any service story.
 - Amendment A-4 defines the DB-driven tier system — no tier names in code, `user.tier_id: UUID` only, tiers seeded via migration, admin CRUD API at `/admin/tiers`.
 - Amendment A-5 defines usage tracking (`usage_events` table), `EntitlementResult`, error codes (TIER_LIMIT_DAILY etc.), and `require_entitlement()` / `require_feature()` FastAPI dependencies. **Read A-5 before implementing any story that touches generation, nudges, or advisor chat.**
+
+## Story Creator Patterns
+
+- **A-4 vs AC-3 tension**: AC-3 requires FREE_TRIAL_ANALYSES, IDENTITY_SIMILARITY_THRESHOLD, MAX_CONCURRENT_GENERATIONS_PER_USER in config module. A-4 says these are DB-driven. Resolution: keep them in config as global defaults/ceilings; per-tier values in DB take precedence in EntitlementService, but config values serve as circuit-breaker / non-tier paths (e.g., stuck-job watchdog).
+- **Circular FK pattern**: credit_reservations <-> glow_up_jobs. Create credit_reservations without FK first, create glow_up_jobs with FK to credit_reservations, then ALTER TABLE credit_reservations ADD CONSTRAINT FK.
+- **app/config.py vs app/config/ directory**: Two separate things. `app/config.py` = runtime Settings singleton. `app/config/` directory = seed-only data (e.g., tiers.py with SEED_TIERS). Never import from `app/config/tiers.py` at runtime.
+- **.env.example is blocked by LaiM hooks** — get env var names from local-dev.md instead (it has the full env var table).
+- **pydantic-settings latest stable**: 2.13.1 as of 2026-03-16.
+- **users.tier_id requires tiers table first**: In migrations, 0001_initial.sql creates users WITHOUT tier_id. 0002_tiers.sql creates tiers table, then ALTER TABLE users ADD COLUMN tier_id. 0004_seed_tiers.sql seeds tiers, then sets tier_id NOT NULL.
