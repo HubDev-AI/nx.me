@@ -24,6 +24,10 @@ python-slugify==8.0.4
 Pillow==12.1.1
 pillow-heif==0.21.0
 
+# Face analysis (MediaPipe FaceMesh)
+mediapipe==0.10.32
+numpy==2.4.3
+
 # AWS SDK (Rekognition NSFW screening)
 boto3==1.42.68
 
