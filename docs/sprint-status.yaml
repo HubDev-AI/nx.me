@@ -8,7 +8,7 @@ epics:
         slug: database-schema-migrations-app-config
         title: Database Schema, Migrations & App Config
         size: M
-        status: backlog
+        status: done
         wave: 1
         dependencies: []
       - id: "1-2"
