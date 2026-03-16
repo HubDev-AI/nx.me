@@ -15,10 +15,17 @@ logger = logging.getLogger(__name__)
 try:
     from disposable_email_domains import blocklist as _DISPOSABLE_DOMAINS
 
-    logger.info("Loaded disposable email blocklist: %d domains", len(_DISPOSABLE_DOMAINS))
+    if len(_DISPOSABLE_DOMAINS) < 100:
+        logger.critical(
+            "Disposable email blocklist suspiciously small (%d domains) — possible package issue",
+            len(_DISPOSABLE_DOMAINS),
+        )
+    else:
+        logger.info("Loaded disposable email blocklist: %d domains", len(_DISPOSABLE_DOMAINS))
 except ImportError:
-    logger.warning(
-        "disposable-email-domains package not installed — using minimal fallback blocklist"
+    logger.critical(
+        "disposable-email-domains package not installed — using minimal fallback blocklist. "
+        "Run: pip install disposable-email-domains"
     )
     _DISPOSABLE_DOMAINS: set[str] = {
         "mailinator.com", "guerrillamail.com", "yopmail.com",

@@ -90,7 +90,15 @@ async def register(
           (trial credited only after email verification via TrialGrantor.grant)
     """
     # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
     ip_allowed = await check_ip_registration_rate_limit(client_ip, r)
     if not ip_allowed:
         raise HTTPException(
@@ -367,7 +375,15 @@ async def social_login(
     CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
     # Per-IP rate limit (CS-1 T-3)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = (
+        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
     if not await check_login_rate_limit(client_ip, r):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -543,8 +559,12 @@ def delete_account(
                     logger.info("Released reservation %s for deleting user %s", res["id"], user_id)
                 except (ValueError, Exception) as release_exc:  # noqa: BLE001
                     logger.warning("Failed to release reservation %s: %s", res["id"], release_exc)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to query/release reservations for %s: %s", user_id, exc)
+    except Exception as exc:
+        logger.error("Failed to release reservations for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed — could not release active credit reservations.",
+        ) from exc
 
     # --- Soft delete + username reservation --------------------------------
     try:

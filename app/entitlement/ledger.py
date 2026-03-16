@@ -35,6 +35,9 @@ class CreditLedger:
 
         This is the authoritative balance — never read from a cached column.
         Uses the sum_credit_balance RPC for a DB-side atomic SUM.
+
+        Returns 0 for users with no ledger entries (RPC returns NULL → 0).
+        Raises on RPC failure (no fallback — CS-1 AC-1).
         """
         user_id_str = str(user_id)
 
@@ -42,10 +45,9 @@ class CreditLedger:
             "sum_credit_balance", {"p_user_id": user_id_str}
         ).execute()
 
-        if result.data is not None:
-            return int(result.data)
-
-        return 0
+        # RPC returns NULL (None) for users with no ledger entries → 0 is correct.
+        # RPC errors propagate as exceptions (no fallback path).
+        return int(result.data) if result.data is not None else 0
 
     def reserve(self, user_id: UUID) -> UUID:
         """Create a credit reservation (optimistic hold).

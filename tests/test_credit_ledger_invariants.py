@@ -163,5 +163,50 @@ class TestCreditLedgerInvariants(unittest.TestCase):
             self.ledger.commit(rid)
 
 
+@unittest.skipUnless(_HAS_SUPABASE, "supabase package not installed")
+class TestCreditLedgerRPCFailure(unittest.TestCase):
+    """CS-1 AC-1: RPC failure must propagate as exception (no silent fallback)."""
+
+    def test_balance_raises_on_rpc_failure(self):
+        """balance() propagates RPC exceptions."""
+        db = _FailingSupabase()
+        ledger = CreditLedger(db)  # type: ignore[arg-type]
+        with self.assertRaises(Exception):
+            ledger.balance(uuid4())
+
+    def test_reserve_raises_on_rpc_failure(self):
+        """reserve() propagates RPC exceptions."""
+        db = _FailingSupabase()
+        ledger = CreditLedger(db)  # type: ignore[arg-type]
+        with self.assertRaises(Exception):
+            ledger.reserve(uuid4())
+
+    def test_release_raises_on_rpc_failure(self):
+        """release() propagates RPC exceptions."""
+        db = _FailingSupabase()
+        ledger = CreditLedger(db)  # type: ignore[arg-type]
+        with self.assertRaises(Exception):
+            ledger.release(uuid4())
+
+    def test_commit_raises_on_rpc_failure(self):
+        """commit() propagates RPC exceptions."""
+        db = _FailingSupabase()
+        ledger = CreditLedger(db)  # type: ignore[arg-type]
+        with self.assertRaises(Exception):
+            ledger.commit(uuid4())
+
+
+class _FailingSupabase:
+    """Mock Supabase client where all RPCs fail."""
+
+    def rpc(self, name: str, params: dict) -> "_FailingRpc":
+        return _FailingRpc()
+
+
+class _FailingRpc:
+    def execute(self):
+        raise ConnectionError("Supabase RPC unavailable")
+
+
 if __name__ == "__main__":
     unittest.main()
