@@ -29,6 +29,7 @@ from app.services.disposable_email import is_disposable_email
 from slugify import slugify
 from app.services.rate_limiter import (
     check_ip_registration_rate_limit,
+    check_login_rate_limit,
     check_registration_rate_limit,
 )
 
@@ -349,9 +350,11 @@ class LoginResponse(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse)
-def social_login(
+async def social_login(
+    request: Request,
     body: LoginRequest,
     supabase: Client = Depends(get_supabase),
+    r: aioredis.Redis = Depends(get_redis),
 ) -> LoginResponse:
     """Authenticate via a social provider id_token (Google or Apple).
 
@@ -360,7 +363,17 @@ def social_login(
     never accepted because we only accept `id_token` — not `access_token`
     or `code`.  Custom URI scheme redirects are rejected because the backend
     does not implement a redirect URI callback flow at all.
+
+    CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
+    # Per-IP rate limit (CS-1 T-3)
+    client_ip = request.client.host if request.client else "unknown"
+    if not await check_login_rate_limit(client_ip, r):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this IP. Try again later.",
+        )
+
     if body.provider not in _ACCEPTED_PROVIDERS:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
