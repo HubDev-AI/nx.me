@@ -1,0 +1,21 @@
+# Web framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+
+# Config
+pydantic-settings==2.9.1
+
+# Supabase
+supabase==2.15.1
+
+# Redis
+redis==5.2.1
+
+# JWT validation
+PyJWT==2.10.1
+
+# HTTP client (used by supabase)
+httpx==0.28.1
+
+# DB driver
+psycopg2-binary==2.9.10
