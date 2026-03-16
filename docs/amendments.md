@@ -4,6 +4,32 @@ Amendments capture deviations from `docs/architecture.md` discovered during impl
 
 ---
 
+## A-8: UserClaims Required Fields (Story 2-2)
+
+- **Date**: 2026-03-16
+- **Trigger**: Code review F4 — `UserClaims(TypedDict, total=False)` made `sub` and `exp` optional at the type level, but PyJWT's `options={"require": ["sub", "exp"]}` guarantees they are always present. Callers access `claims["sub"]` without guards.
+- **Applies to**: `app/api/middleware/auth.py`
+
+### Change
+
+`sub` and `exp` are now typed as `Required[str]` and `Required[int]` respectively, while remaining fields stay optional (`total=False`):
+
+```python
+from typing import Required, TypedDict
+
+class UserClaims(TypedDict, total=False):
+    sub: Required[str]   # always present
+    exp: Required[int]   # always present
+    email: str
+    iat: int
+    role: str
+    aud: str
+```
+
+This aligns the static type with the runtime guarantee and removes the need for callers to guard against `KeyError` on `sub`/`exp`.
+
+---
+
 ## A-6: DB Transaction Convention (Cross-Cutting)
 
 - **Date**: 2026-03-16

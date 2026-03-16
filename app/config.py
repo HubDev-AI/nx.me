@@ -54,5 +54,14 @@ class Settings(BaseSettings):
     GENERATION_TIMEOUT_SECONDS: int = 60
     CREDIT_COST_ALERT_USD: float = 0.04
 
+    # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
+    REGISTRATION_FINGERPRINT_LIMIT: int = 3       # max attempts per device fingerprint
+    REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours
+    REGISTRATION_IP_LIMIT: int = 4                # max attempts per IP address
+    REGISTRATION_IP_WINDOW_SECONDS: int = 3_600   # 1 hour
+
+    # Account deletion (Story 2-2 AC-FR5)
+    USERNAME_RESERVATION_DAYS: int = 180          # days username is reserved post-deletion
+
 
 settings = Settings()
