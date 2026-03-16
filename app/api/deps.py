@@ -7,13 +7,12 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-import jwt
 from fastapi import Depends, Header, HTTPException, Request, status
 from supabase import Client
 
 import redis.asyncio as aioredis
 
-from app.config import settings
+from app.api.middleware.auth import UserClaims, validate_jwt
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +39,11 @@ def get_redis(request: Request) -> aioredis.Redis:
 
 def get_current_user(
     authorization: Annotated[str | None, Header()] = None,
-    supabase: Client = Depends(get_supabase),
-) -> dict:
+    supabase: Client = Depends(get_supabase),  # noqa: ARG001 — reserved for token introspection
+) -> UserClaims:
     """Validate the Bearer JWT and return the decoded claims.
 
+    Delegates to ``validate_jwt`` (Story 2-2 interface contract).
     Raises HTTP 401 if the token is missing, expired, or invalid.
     """
     if not authorization or not authorization.startswith("Bearer "):
@@ -54,26 +54,4 @@ def get_current_user(
         )
 
     token = authorization.removeprefix("Bearer ").strip()
-
-    try:
-        claims = jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            options={"require": ["sub", "exp"]},
-        )
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidTokenError as exc:
-        logger.debug("JWT validation failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return claims
+    return validate_jwt(token)
