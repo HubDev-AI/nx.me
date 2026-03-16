@@ -1,0 +1,59 @@
+{
+  "feature": "nxme",
+  "flow": "greenfield",
+  "version": "next-2.0",
+  "created": "2026-03-13T12:33:47.000Z",
+  "lastUpdated": "2026-03-16T01:30:00.000Z",
+  "currentPhase": "implement",
+  "currentStep": null,
+  "currentCheckpoint": null,
+  "phases": {
+    "research":     { "status": "complete", "startedAt": "2026-03-13T12:33:47.000Z", "completedAt": "2026-03-13T13:10:00.000Z", "gateResult": "pass" },
+    "specify":      { "status": "complete", "startedAt": "2026-03-13T13:10:00.000Z", "completedAt": "2026-03-14T09:00:00.000Z", "gateResult": "pass" },
+    "architecture": { "status": "complete", "startedAt": "2026-03-15T17:30:00.000Z", "completedAt": "2026-03-15T19:02:00.000Z", "gateResult": "pass" },
+    "plan":         { "status": "complete", "startedAt": "2026-03-15T20:00:00.000Z", "completedAt": "2026-03-15T21:30:00.000Z", "gateResult": "pass" }
+  },
+  "storiesDone": 0,
+  "storiesTotal": 30,
+  "changeStories": [],
+  "currentStory": null,
+  "tooling": {
+    "format": null,
+    "lint": null,
+    "lint_fix": null,
+    "build": null,
+    "test": null,
+    "test_changed": null,
+    "security": null
+  },
+  "metrics": {
+    "gates":    { "passes": 5, "fails": 0, "overrides": 0, "backNavigations": 1, "blockingFails": 0 },
+    "phases": {
+      "research":     { "durationMinutes": 36, "revisions": 1, "gateAttempts": 2 },
+      "specify":      { "durationMinutes": 70, "revisions": 1, "gateAttempts": 1, "personaCount": 4, "personaConcerns": 42 },
+      "architecture": { "durationMinutes": 92, "revisions": 1, "gateAttempts": 1, "deferredDecisions": 5, "resolvedDecisions": 5 },
+      "plan":         { "durationMinutes": 90, "revisions": 0, "gateAttempts": 1, "wavesPlanned": 11 }
+    },
+    "stories":  { "completed": 0, "skipped": 0, "changeStoriesCreated": 0, "gate5Passes": 0, "gate5Fails": 0, "gate5Overrides": 0, "avgTasksPerStory": 0, "sizeDistribution": { "S": 10, "M": 19, "L": 1 } },
+    "tasks":    { "totalCompleted": 0, "totalCompletedNoCommit": 0, "totalSkipped": 0, "totalRevisions": 0, "totalVerificationCycles": 0, "firstPassSuccess": 0, "tddCount": 0, "tddTotal": 0, "avgVerificationCycles": 0 },
+    "codeReview": { "reviewsRun": 0, "totalFindings": 0, "criticalFindings": 0, "highFindings": 0, "mediumFindings": 0, "lowFindings": 0, "findingsDeferred": 0 },
+    "quality":  { "interfaceAudits": 0, "interfaceMismatches": 0, "amendments": 5, "concerns": 0, "concernsBySeverity": { "critical": 0, "high": 0, "medium": 0, "low": 0 } },
+    "drift":    { "taskDeviations": 0, "storiesResizedDuringImpl": 0 },
+    "estimation": { "sizeAccuracy": { "S": { "planned": 10, "avgActualTasks": 0 }, "M": { "planned": 19, "avgActualTasks": 0 }, "L": { "planned": 1, "avgActualTasks": 0 } } },
+    "execution": { "totalSessions": 5, "pauseResumeCount": 2, "agentTeamsUsed": false, "parallelWaves": 0, "parallelStories": 0, "subagentSpawns": 11 },
+    "optionalSkills": {
+      "designer": { "used": true, "mode": "C", "completedAt": "2026-03-15T20:30:00.000Z" },
+      "devopsPass1": { "used": true, "completedAt": "2026-03-16T01:30:00.000Z" },
+      "devopsPass2": { "used": false, "completedAt": null },
+      "qa": { "used": true, "completedAt": "2026-03-16T00:17:00.000Z" },
+      "notion": { "used": false, "syncCount": 0, "completedAt": null }
+    },
+    "git":      { "totalCommits": 0, "totalFilesChanged": 0, "totalInsertions": 0, "totalDeletions": 0, "testsAdded": 0 }
+  },
+  "waveStrategy": {},
+  "devops": {
+    "pass1": "complete",
+    "pass2": "pending",
+    "pass2Partial": false
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "companyAnnouncements": [
+    "  ██╗               ███╗   ███╗\n  ██║      ▄▀▄  ▀█▀ ████╗ ████║\n  ██║      █▀█   █  ██╔████╔██║\n  ██║      ▀ ▀  ▀▀▀ ██║╚██╔╝██║\n  ███████╗          ██║ ╚═╝ ██║\n  ╚══════╝          ╚═╝     ╚═╝\n\n  LaiM v1.1.8 — AI development framework by LimeChain\n  Commands: /start · /quick · /status"
+  ],
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash(git:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(pnpm:*)",
+      "Bash(yarn:*)",
+      "Bash(bun:*)",
+      "Bash(deno:*)",
+      "Bash(go:*)",
+      "Bash(cargo:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip:*)",
+      "Bash(pytest:*)",
+      "Bash(make:*)",
+      "Bash(just:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf ~)",
+      "Bash(sudo:*)",
+      "Bash(curl * | sh)",
+      "Bash(wget * | sh)",
+      "Bash(cat *.env*)",
+      "Bash(cat */.env*)",
+      "Bash(head *.env*)",
+      "Bash(head */.env*)",
+      "Bash(tail *.env*)",
+      "Bash(tail */.env*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/suggest-compact.sh || bash ~/.claude/hooks/suggest-compact.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/validate-state.sh || bash ~/.claude/hooks/validate-state.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-sensitive-reads.sh || bash ~/.claude/hooks/block-sensitive-reads.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
