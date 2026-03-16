@@ -1142,7 +1142,255 @@ If an exploration output scores `final_score > 0.65` over 20+ samples, the A/B o
 
 ---
 
-## 16. What This Document Does NOT Cover
+## 16. Transformation Module Architecture
+
+### 16.1 Why modules
+
+The current glow-up is "styling" — hair, grooming, clothing, lighting. Future transformations could include teeth, eyes, body posture, skin treatment visualization, makeup, accessories, etc. Each needs its own keywords, prompt fragments, scoring, and possibly different model parameters — but they all share the same identity check, credit system, queue, and storage.
+
+Without modular design, adding a new transformation type means touching: the prompt builder, keyword allowlist, recommendation engine, adaptive parameter logic, wow scoring, A/B testing, and the worker — spaghetti.
+
+### 16.2 TransformationModule protocol
+
+```python
+# app/generation/modules/base.py
+
+from typing import Protocol
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class TransformationOutput:
+    """What a module contributes to the generation prompt."""
+    prompt_fragment: str       # Appended to the base prompt
+    negative_fragment: str     # Appended to the negative prompt
+    keywords_used: list[str]   # For tracking / A/B
+    wow_weight: float          # How much this module contributes to wow_score (0-1)
+
+
+class TransformationModule(Protocol):
+    """A pluggable transformation type."""
+
+    @property
+    def slug(self) -> str:
+        """Unique identifier: 'styling', 'teeth', 'eyes', etc."""
+        ...
+
+    @property
+    def display_name(self) -> str:
+        """User-facing name."""
+        ...
+
+    def is_applicable(self, analysis_result) -> bool:
+        """Whether this module should run for this face analysis."""
+        ...
+
+    def build_output(self, analysis_result, mode: str) -> TransformationOutput:
+        """Generate prompt fragments from face analysis data."""
+        ...
+
+    def get_allowed_keywords(self) -> frozenset[str]:
+        """Keywords this module can inject into prompts."""
+        ...
+
+    def get_blocked_keywords(self) -> frozenset[str]:
+        """Keywords this module explicitly blocks."""
+        ...
+
+    def adjust_params(self, base_params: dict) -> dict:
+        """Module-specific parameter adjustments (e.g., teeth needs higher guidance)."""
+        ...
+```
+
+### 16.3 Module registry
+
+```python
+# app/generation/modules/registry.py
+
+_MODULES: dict[str, TransformationModule] = {}
+
+
+def register(module: TransformationModule) -> None:
+    _MODULES[module.slug] = module
+
+
+def get_active_modules(analysis_result, enabled_slugs: list[str]) -> list[TransformationModule]:
+    """Return modules that are both enabled and applicable to this face."""
+    return [
+        m for slug, m in _MODULES.items()
+        if slug in enabled_slugs and m.is_applicable(analysis_result)
+    ]
+```
+
+Modules register themselves at import time. Enabling/disabling a module is a config change (`ENABLED_TRANSFORMATION_MODULES`), not a code change.
+
+### 16.4 Styling module (current glow-up = first module)
+
+```python
+# app/generation/modules/styling.py
+
+class StylingModule:
+    slug = "styling"
+    display_name = "Style Glow-Up"
+
+    def is_applicable(self, analysis_result) -> bool:
+        return True  # Always applicable
+
+    def build_output(self, analysis_result, mode: str) -> TransformationOutput:
+        keywords = extract_allowed_keywords(analysis_result.recommendations, max_count=6)
+        lighting = select_lighting_keyword(analysis_result.symmetry_score)
+        keywords.append(lighting)
+
+        template = load_template(f"prompts/glowup_{mode}.txt")
+        prompt = template.replace("{keywords}", ", ".join(keywords))
+        negative = load_template("prompts/glowup_negative.txt")
+
+        return TransformationOutput(
+            prompt_fragment=prompt,
+            negative_fragment=negative,
+            keywords_used=keywords,
+            wow_weight=1.0,
+        )
+
+    def get_allowed_keywords(self) -> frozenset[str]:
+        from prompts.keyword_allowlist import ALLOWED_KEYWORDS
+        return ALLOWED_KEYWORDS
+
+    def get_blocked_keywords(self) -> frozenset[str]:
+        from prompts.keyword_allowlist import BLOCKED_KEYWORDS
+        return BLOCKED_KEYWORDS
+
+    def adjust_params(self, base_params: dict) -> dict:
+        return base_params  # Styling uses the default adaptive params
+```
+
+### 16.5 Future module example: teeth
+
+```python
+# app/generation/modules/teeth.py (NOT built yet — shows the pattern)
+
+class TeethModule:
+    slug = "teeth"
+    display_name = "Smile Enhancement"
+
+    _TEETH_KEYWORDS = frozenset({"bright smile", "aligned teeth", "natural white teeth"})
+    _TEETH_BLOCKED = frozenset({"veneers", "perfect teeth", "bleached teeth"})
+
+    def is_applicable(self, analysis_result) -> bool:
+        # Only applicable if the face analysis detected an open-mouth smile
+        return getattr(analysis_result, "smile_detected", False)
+
+    def build_output(self, analysis_result, mode: str) -> TransformationOutput:
+        return TransformationOutput(
+            prompt_fragment="with a natural, bright smile showing clean teeth",
+            negative_fragment="fake teeth, veneers, over-whitened teeth, dental work",
+            keywords_used=["bright smile", "natural white teeth"],
+            wow_weight=0.3,  # Teeth is a minor enhancement, not the main event
+        )
+
+    def get_allowed_keywords(self) -> frozenset[str]:
+        return self._TEETH_KEYWORDS
+
+    def get_blocked_keywords(self) -> frozenset[str]:
+        return self._TEETH_BLOCKED
+
+    def adjust_params(self, base_params: dict) -> dict:
+        # Teeth changes need tighter identity to avoid mouth distortion
+        params = dict(base_params)
+        params["id_weight"] = min(params.get("id_weight", 0.85) + 0.03, 0.93)
+        return params
+```
+
+### 16.6 How the pipeline uses modules
+
+The prompt builder (Section 4.3) changes from building a single prompt to composing module outputs:
+
+```python
+def build_prompt(
+    analysis_result,
+    enabled_modules: list[str],  # e.g., ["styling"] or ["styling", "teeth"]
+    mode: str,
+) -> tuple[str, str, dict]:
+    """Compose prompt from active transformation modules."""
+
+    modules = get_active_modules(analysis_result, enabled_modules)
+    if not modules:
+        raise ValueError("No applicable transformation modules")
+
+    # Collect outputs from all modules
+    outputs = [m.build_output(analysis_result, mode) for m in modules]
+
+    # Compose prompt: identity phrase + module fragments joined
+    identity = random.choice(_IDENTITY_PHRASES)
+    prompt_parts = [identity] + [o.prompt_fragment for o in outputs]
+    prompt = ". ".join(prompt_parts)
+
+    # Compose negative: union of all module negatives
+    negative = ", ".join(set(
+        kw for o in outputs
+        for kw in o.negative_fragment.split(", ")
+    ))
+
+    # Merge allowed/blocked keywords
+    all_allowed = frozenset().union(*(m.get_allowed_keywords() for m in modules))
+    all_blocked = frozenset().union(*(m.get_blocked_keywords() for m in modules))
+
+    # Adaptive params: start with base, let each module adjust
+    params = compute_adaptive_params(...)
+    for m in modules:
+        params = m.adjust_params(params)
+
+    # Wow weight: weighted sum for multi-module scoring
+    total_wow_weight = sum(o.wow_weight for o in outputs)
+
+    return prompt, negative, params
+```
+
+### 16.7 Config
+
+```python
+# app/config.py
+
+# Which transformation modules are active (feature flags)
+ENABLED_TRANSFORMATION_MODULES: list[str] = ["styling"]
+# Future: ["styling", "teeth", "eyes", "makeup"]
+```
+
+Adding a new module means:
+1. Create `app/generation/modules/{slug}.py` implementing `TransformationModule`
+2. Register it in the module registry
+3. Add its slug to `ENABLED_TRANSFORMATION_MODULES`
+4. Add its prompt template file(s) to `prompts/`
+
+No changes to: pipeline, queue, identity check, credit system, storage, API, or worker.
+
+### 16.8 File structure
+
+```
+app/generation/
+    __init__.py
+    modules/
+        __init__.py          # Registers all modules
+        base.py              # TransformationModule protocol + TransformationOutput
+        registry.py          # Module registry
+        styling.py           # Current glow-up (MVP)
+        # teeth.py           # Future
+        # eyes.py            # Future
+        # makeup.py          # Future
+        # body.py            # Future
+prompts/
+    glowup_everyday.txt      # Styling module templates
+    glowup_polished.txt
+    glowup_editorial.txt
+    glowup_negative.txt
+    keyword_allowlist.py     # Styling module keywords
+    # teeth_keywords.py      # Future: teeth module keywords
+    # eyes_keywords.py       # Future
+```
+
+---
+
+## 17. What This Document Does NOT Cover
 
 - ARQ worker setup, queue lanes, priority (Story 4-2 ACs + architecture Section 2.5)
 - Credit ledger reserve/release/commit (Story 4-1, already built)
