@@ -13,5 +13,5 @@ CREATE INDEX IF NOT EXISTS idx_users_username_reserved
     WHERE deleted_at IS NOT NULL;
 
 -- === DOWN ===
--- DROP INDEX IF EXISTS idx_users_username_reserved;
--- ALTER TABLE users DROP COLUMN IF EXISTS username_reserved_until;
+DROP INDEX IF EXISTS idx_users_username_reserved;
+ALTER TABLE users DROP COLUMN IF EXISTS username_reserved_until;

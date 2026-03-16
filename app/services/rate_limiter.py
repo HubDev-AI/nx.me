@@ -22,13 +22,18 @@ async def check_registration_rate_limit(
     Returns False when the device has exceeded REGISTRATION_FINGERPRINT_LIMIT
     registration attempts within REGISTRATION_FINGERPRINT_WINDOW_SECONDS
     (Story 2-1 AC-3).
+
+    Uses a Redis pipeline so INCR and EXPIRE are sent atomically in a single
+    round-trip.  ``EXPIRE … NX`` sets the TTL only when the key has none,
+    which anchors the window to the *first* attempt rather than the most recent
+    and eliminates the permanent-lockout risk of a separate EXPIRE call.
     """
     key = f"reg_attempts:{fingerprint}"
-    count = await r.incr(key)
-    if count == 1:
-        # Set TTL only on the first increment so the window is anchored
-        # to the first attempt, not the most recent one.
-        await r.expire(key, settings.REGISTRATION_FINGERPRINT_WINDOW_SECONDS)
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, settings.REGISTRATION_FINGERPRINT_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    count: int = results[0]
     return count <= settings.REGISTRATION_FINGERPRINT_LIMIT
 
 
@@ -40,9 +45,13 @@ async def check_ip_registration_rate_limit(
 
     Returns False when the IP has exceeded REGISTRATION_IP_LIMIT registration
     attempts within REGISTRATION_IP_WINDOW_SECONDS (Story 2-2 AC-4).
+
+    See ``check_registration_rate_limit`` for the atomic pipeline rationale.
     """
     key = f"reg_ip_limit:{ip}"
-    count = await r.incr(key)
-    if count == 1:
-        await r.expire(key, settings.REGISTRATION_IP_WINDOW_SECONDS)
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, settings.REGISTRATION_IP_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    count: int = results[0]
     return count <= settings.REGISTRATION_IP_LIMIT

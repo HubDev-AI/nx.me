@@ -9,7 +9,7 @@ UserClaims is a TypedDict representing the decoded Supabase JWT payload.
 from __future__ import annotations
 
 import logging
-from typing import TypedDict
+from typing import Required, TypedDict
 
 import jwt
 from fastapi import HTTPException, status
@@ -20,14 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class UserClaims(TypedDict, total=False):
-    """Decoded Supabase JWT claims."""
+    """Decoded Supabase JWT claims.
 
-    sub: str           # User UUID (required)
-    email: str         # User email (optional — social login may omit)
-    exp: int           # Expiry timestamp
-    iat: int           # Issued-at timestamp
-    role: str          # Supabase role (e.g. "authenticated")
-    aud: str           # Audience
+    ``sub`` and ``exp`` are always present — PyJWT enforces their presence via
+    ``options={"require": ["sub", "exp"]}``.  All other claims are optional.
+    """
+
+    sub: Required[str]  # User UUID (always present)
+    exp: Required[int]  # Expiry Unix timestamp (always present)
+    email: str          # User email (optional — social login may omit)
+    iat: int            # Issued-at timestamp
+    role: str           # Supabase role (e.g. "authenticated")
+    aud: str            # Audience
 
 
 def validate_jwt(token: str) -> UserClaims:

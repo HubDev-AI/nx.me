@@ -17,5 +17,8 @@ PyJWT==2.10.1
 # HTTP client (used by supabase)
 httpx==0.28.1
 
+# Username slugification
+python-slugify==8.0.4
+
 # DB driver
 psycopg2-binary==2.9.10

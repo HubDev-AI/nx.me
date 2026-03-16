@@ -26,14 +26,14 @@ epics:
         slug: auth-registration-trial-grant
         title: Auth API — Registration, Email Verification & Trial Grant
         size: M
-        status: backlog
+        status: done
         wave: 2
         dependencies: ["1-1"]
       - id: "2-2"
         slug: auth-social-login-logout-deletion
         title: Auth API — Social Login, JWT Validation, Logout & Account Deletion
         size: M
-        status: backlog
+        status: in-progress
         wave: 3
         dependencies: ["2-1"]
       - id: "2-3"

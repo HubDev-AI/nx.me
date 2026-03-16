@@ -26,6 +26,7 @@ from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.entitlement.trial_grantor import TrialGrantor
 from app.services.disposable_email import is_disposable_email
+from slugify import slugify
 from app.services.rate_limiter import (
     check_ip_registration_rate_limit,
     check_registration_rate_limit,
@@ -113,6 +114,32 @@ async def register(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Disposable email addresses are not permitted.",
         )
+
+    # --- Username availability (AC-FR3: reservation enforcement) ----------
+    # Must be checked before auth user creation to avoid orphaned auth records.
+    username_rows = (
+        supabase.table("users")
+        .select("id, deleted_at, username_reserved_until")
+        .eq("username", body.username)
+        .execute()
+    )
+    if username_rows.data:
+        row = username_rows.data[0]
+        if row.get("deleted_at") is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username is already taken.",
+            )
+        reserved_until_str = row.get("username_reserved_until")
+        if reserved_until_str:
+            reserved_until = datetime.fromisoformat(reserved_until_str)
+            if reserved_until.tzinfo is None:
+                reserved_until = reserved_until.replace(tzinfo=timezone.utc)
+            if reserved_until > datetime.now(tz=timezone.utc):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username is temporarily reserved.",
+                )
 
     # --- Age gate (AC-6) --------------------------------------------------
     is_minor: bool | None = None
@@ -371,6 +398,29 @@ def social_login(
     user = auth_response.user
     user_id = str(user.id)
 
+    # Fetch default tier for new social users (existing users already have one;
+    # ignore_duplicates=True ensures we don't overwrite it).
+    tier_result = (
+        supabase.table("tiers")
+        .select("id")
+        .eq("is_default", True)
+        .eq("is_active", True)
+        .single()
+        .execute()
+    )
+    if not tier_result.data:
+        logger.error("No active default tier found — cannot create social user %s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Service configuration error.",
+        )
+    default_tier_id: str = tier_result.data["id"]
+
+    # Build a DB-safe username: email prefix slugified to [a-zA-Z0-9_],
+    # or fallback to first 20 chars of the UUID (also slugified).
+    raw_username = user.email.split("@")[0] if user.email else user_id[:20]
+    auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
+
     # Upsert public.users row — new social users won't have a row yet.
     # On conflict (existing account) do nothing to preserve existing data.
     try:
@@ -378,10 +428,11 @@ def social_login(
             {
                 "id": user_id,
                 "email": user.email or "",
-                "username": user.email.split("@")[0] if user.email else user_id[:20],
+                "username": auto_username,
                 "display_name": (user.user_metadata or {}).get("full_name", "") or (user.email or user_id),
                 "email_verified": True,
                 "trial_analyses_remaining": 0,
+                "tier_id": default_tier_id,
             },
             on_conflict="id",
             ignore_duplicates=True,
