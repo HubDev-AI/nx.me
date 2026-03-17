@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_supabase
+from app.api.deps import get_supabase, get_user_repo
+from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class CardResponse(BaseModel):
 def get_shareable_card(
     username: str,
     supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> CardResponse:
     """Return the shareable card for a user's latest published post.
 
@@ -57,23 +59,15 @@ def get_shareable_card(
         HTTP 404: user has no published posts.
     """
     # Step 1 — look up user by username
-    user_result = (
-        supabase.table("users")
-        .select("id, username, display_name, deleted_at")
-        .eq("username", username)
-        .maybe_single()
-        .execute()
-    )
+    user = user_repo.get_by_username_for_card(username)
 
-    if not user_result.data:
+    if not user:
         # Username not found — treat as Gone so callers don't leak enumeration
         # info while still being semantically correct for deleted accounts.
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="Account not found or has been deleted",
         )
-
-    user = user_result.data
 
     if user.get("deleted_at") is not None:
         logger.info("Shareable card requested for deleted account: %s", username)

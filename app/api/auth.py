@@ -22,10 +22,12 @@ from supabase import Client
 
 import redis.asyncio as aioredis
 
-from app.api.deps import get_current_user, get_redis, get_supabase
+from app.api.deps import get_current_user, get_redis, get_supabase, get_tier_repo, get_user_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.entitlement.trial_grantor import TrialGrantor
+from app.repositories.user_repo import UserRepository
 from app.services.disposable_email import is_disposable_email
 from app.services.rate_limiter import (
     check_ip_registration_rate_limit,
@@ -87,6 +89,8 @@ async def register(
     x_device_fingerprint: Annotated[str | None, Header()] = None,
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
+    user_repo: UserRepository = Depends(get_user_repo),
+    tier_repo=Depends(get_tier_repo),
 ) -> RegisterResponse:
     """Register a new account with email + password.
 
@@ -133,14 +137,8 @@ async def register(
 
     # --- Username availability (AC-FR3: reservation enforcement) ----------
     # Must be checked before auth user creation to avoid orphaned auth records.
-    username_rows = (
-        supabase.table("users")
-        .select("id, deleted_at, username_reserved_until")
-        .eq("username", body.username)
-        .execute()
-    )
-    if username_rows.data:
-        row = username_rows.data[0]
+    row = await run_sync(user_repo.check_username_availability, body.username)
+    if row:
         if row.get("deleted_at") is None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -165,32 +163,20 @@ async def register(
         age = date.today().year - body.birth_year
         is_minor = age < _MIN_AGE_YEARS
 
-    # --- Fetch default tier -----------------------------------------------
-    tier_result = (
-        supabase.table("tiers")
-        .select("id")
-        .eq("is_default", True)
-        .eq("is_active", True)
-        .single()
-        .execute()
-    )
-    if not tier_result.data:
+    # --- Fetch default tier (LE-3: use TierRepository with Redis caching) -
+    try:
+        default_tier = await tier_repo.get_default()
+    except ValueError:
         logger.error("No active default tier found in database")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Service configuration error.",
         )
-    default_tier_id: str = tier_result.data["id"]
+    default_tier_id: str = str(default_tier.id)
 
     # --- Create Supabase auth user ----------------------------------------
     try:
-        auth_response = supabase.auth.admin.create_user(
-            {
-                "email": str(body.email),
-                "password": body.password,
-                "email_confirm": False,  # require email verification
-            }
-        )
+        auth_response = await run_sync(user_repo.auth_create_user, str(body.email), body.password)
     except Exception as exc:
         _handle_supabase_auth_error(exc)
 
@@ -217,11 +203,11 @@ async def register(
         user_row["is_minor"] = is_minor
 
     try:
-        supabase.table("users").insert(user_row).execute()
+        await run_sync(user_repo.insert, user_row)
     except Exception as exc:
         # Roll back auth user to avoid orphaned auth records
         try:
-            supabase.auth.admin.delete_user(user_id)
+            await run_sync(user_repo.auth_delete_user, user_id)
         except Exception:  # noqa: BLE001
             logger.exception("Failed to roll back auth user %s after users insert failure", user_id)
         logger.error("users INSERT failed for %s: %s", user_id, exc)
@@ -253,6 +239,7 @@ class VerifyEmailResponse(BaseModel):
 def verify_email(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> VerifyEmailResponse:
     """Trigger trial grant after email verification.
 
@@ -269,7 +256,7 @@ def verify_email(
 
     # Verify that Supabase auth has confirmed the email
     try:
-        auth_user = supabase.auth.admin.get_user_by_id(user_id_str)
+        auth_user = user_repo.auth_get_user(user_id_str)
     except Exception as exc:
         logger.error("Failed to fetch auth user %s: %s", user_id_str, exc)
         raise HTTPException(
@@ -284,23 +271,14 @@ def verify_email(
         )
 
     # Mark email_verified in our users table
-    supabase.table("users").update({"email_verified": True}).eq(
-        "id", user_id_str
-    ).execute()
+    user_repo.set_email_verified(user_id_str)
 
     # Grant trial analyses (idempotent)
     grantor = TrialGrantor(supabase)
     grantor.grant(UUID(user_id_str))
 
     # Read updated count for response
-    user_result = (
-        supabase.table("users")
-        .select("trial_analyses_remaining")
-        .eq("id", user_id_str)
-        .single()
-        .execute()
-    )
-    remaining: int = user_result.data["trial_analyses_remaining"] if user_result.data else 0
+    remaining: int = user_repo.get_trial_analyses_remaining(user_id_str)
 
     logger.info("Email verified and trial granted for user %s", user_id_str)
     return VerifyEmailResponse(
@@ -370,6 +348,8 @@ async def social_login(
     body: LoginRequest,
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
+    user_repo: UserRepository = Depends(get_user_repo),
+    tier_repo=Depends(get_tier_repo),
 ) -> LoginResponse:
     """Authenticate via a social provider id_token (Google or Apple).
 
@@ -436,21 +416,16 @@ async def social_login(
 
     # Fetch default tier for new social users (existing users already have one;
     # ignore_duplicates=True ensures we don't overwrite it).
-    tier_result = (
-        supabase.table("tiers")
-        .select("id")
-        .eq("is_default", True)
-        .eq("is_active", True)
-        .single()
-        .execute()
-    )
-    if not tier_result.data:
+    # LE-3: use TierRepository.get_default() which has Redis caching.
+    try:
+        default_tier = await tier_repo.get_default()
+    except ValueError:
         logger.error("No active default tier found — cannot create social user %s", user_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Service configuration error.",
         )
-    default_tier_id: str = tier_result.data["id"]
+    default_tier_id: str = str(default_tier.id)
 
     # Build a DB-safe username: email prefix slugified to [a-zA-Z0-9_],
     # or fallback to first 20 chars of the UUID (also slugified).
@@ -458,15 +433,16 @@ async def social_login(
     auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
 
     # P2-5: Guarantee unique username — check if taken, append random suffix if so
-    existing = supabase.table("users").select("id").eq("username", auto_username).maybe_single().execute()
-    if existing.data and existing.data["id"] != user_id:
+    existing = await run_sync(user_repo.check_username_taken, auto_username, user_id)
+    if existing:
         from uuid import uuid4
         auto_username = f"{auto_username}_{uuid4().hex[:6]}"
 
     # Upsert public.users row — new social users won't have a row yet.
     # On conflict (existing account) do nothing to preserve existing data.
     try:
-        supabase.table("users").upsert(
+        await run_sync(
+            user_repo.upsert,
             {
                 "id": user_id,
                 "email": user.email or "",
@@ -476,9 +452,9 @@ async def social_login(
                 "trial_analyses_remaining": 0,
                 "tier_id": default_tier_id,
             },
-            on_conflict="id",
-            ignore_duplicates=True,
-        ).execute()
+            "id",
+            True,
+        )
     except Exception as exc:
         logger.error("users upsert failed for social user %s: %s", user_id, exc)
         raise HTTPException(
@@ -504,7 +480,7 @@ async def social_login(
 def logout(
     claims: UserClaims = Depends(get_current_user),
     authorization: Annotated[str | None, Header()] = None,
-    supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> None:
     """Invalidate the current session server-side (AC-2).
 
@@ -522,7 +498,7 @@ def logout(
     user_id: str = claims["sub"]
 
     try:
-        supabase.auth.admin.sign_out(token)
+        user_repo.auth_sign_out(token)
         logger.info("Session invalidated for user %s", user_id)
     except Exception as exc:
         logger.error("sign_out failed for user %s: %s", user_id, exc)
@@ -541,7 +517,7 @@ def logout(
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
 def delete_account(
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> None:
     """Permanently delete the authenticated user's account (AC-3).
 
@@ -560,19 +536,15 @@ def delete_account(
 
     # --- Release active credit reservations (CS-1 AC-7) --------------------
     try:
-        active_reservations = (
-            supabase.table("credit_reservations")
-            .select("id")
-            .eq("user_id", user_id)
-            .eq("status", "reserved")
-            .execute()
-        )
-        if active_reservations.data:
+        active_reservations = user_repo.get_active_reservations(user_id)
+        if active_reservations:
             from app.entitlement.ledger import CreditLedger
             from uuid import UUID as _UUID
+            from app.api.deps import get_supabase as _get_supabase
 
-            ledger = CreditLedger(supabase)
-            for res in active_reservations.data:
+            # We need supabase for CreditLedger — fetch it from the repository's client
+            ledger = CreditLedger(user_repo._sb)
+            for res in active_reservations:
                 try:
                     ledger.release(_UUID(res["id"]))
                     logger.info("Released reservation %s for deleting user %s", res["id"], user_id)
@@ -587,15 +559,10 @@ def delete_account(
 
     # --- Soft delete + username reservation --------------------------------
     try:
-        result = supabase.table("users").update(
-            {
-                "deleted_at": now_utc.isoformat(),
-                "username_reserved_until": reserved_until.isoformat(),
-            }
-        ).eq("id", user_id).is_("deleted_at", "null").execute()
+        updated = user_repo.soft_delete(user_id, now_utc, reserved_until)
 
         # CS-1 AC-6: Check if update affected any rows (already deleted?)
-        if not result.data:
+        if not updated:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Account is already deleted.",
@@ -611,7 +578,7 @@ def delete_account(
 
     # --- Remove Supabase auth identity -----------------------------------
     try:
-        supabase.auth.admin.delete_user(user_id)
+        user_repo.auth_delete_user(user_id)
         logger.info("Account deleted for user %s; username reserved until %s", user_id, reserved_until.date())
     except Exception as exc:
         logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)

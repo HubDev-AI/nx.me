@@ -14,9 +14,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_current_user, get_supabase
+from app.api.deps import get_current_user, get_supabase, get_user_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.repositories.user_repo import UserRepository
 from app.services.public_url import build_avatar_url
 
 logger = logging.getLogger(__name__)
@@ -73,23 +74,15 @@ class UpdateProfileResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _lookup_user(supabase: Client, username: str) -> dict:
+def _lookup_user(user_repo: UserRepository, username: str) -> dict:
     """Fetch a non-deleted user by username. Raises 404 if missing."""
-    result = (
-        supabase.table("users")
-        .select("id, username, display_name, avatar_storage_key, created_at")
-        .eq("username", username)
-        .is_("deleted_at", "null")
-        .maybe_single()
-        .execute()
-    )
-    if not result.data:
+    data = user_repo.get_by_username(username)
+    if not data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    return result.data
-
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -101,12 +94,13 @@ def _lookup_user(supabase: Client, username: str) -> dict:
 def get_user_profile(
     username: str,
     supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> ProfileResponse:
     """Return public profile stats for the given username.
 
     No auth required. Returns 404 for deleted or non-existent users.
     """
-    user = _lookup_user(supabase, username)
+    user = _lookup_user(user_repo, username)
     user_id: str = user["id"]
 
     # Aggregate post_count and total_reactions via DB function (single query)
@@ -148,13 +142,14 @@ def get_user_history(
     ),
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> HistoryResponse:
     """Return the authenticated user's analysis history in reverse chronological order.
 
     Owner only — returns 403 if the token does not belong to the requested user.
     Cursor-paginated using created_at timestamp.
     """
-    user = _lookup_user(supabase, username)
+    user = _lookup_user(user_repo, username)
     user_id: str = user["id"]
 
     if claims["sub"] != user_id:
@@ -306,6 +301,7 @@ def update_user_profile(
     body: UpdateProfileRequest,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> UpdateProfileResponse:
     """Update the authenticated user's display_name and/or avatar.
 
@@ -313,7 +309,7 @@ def update_user_profile(
     Username cannot be changed via this endpoint; any username field in the body
     is silently ignored per AC.
     """
-    user = _lookup_user(supabase, username)
+    user = _lookup_user(user_repo, username)
     user_id: str = user["id"]
 
     if claims["sub"] != user_id:
@@ -335,11 +331,11 @@ def update_user_profile(
 
     if updates:
         updates["updated_at"] = datetime.now(tz=timezone.utc).isoformat()
-        supabase.table("users").update(updates).eq("id", user_id).execute()
+        user_repo.update_profile(user_id, updates)
         logger.info("Profile updated for user %s: fields=%s", user_id, list(updates.keys()))
 
     # Re-fetch to return the current state
-    refreshed = _lookup_user(supabase, username)
+    refreshed = _lookup_user(user_repo, username)
     avatar_url = build_avatar_url(supabase, refreshed.get("avatar_storage_key"))
 
     return UpdateProfileResponse(

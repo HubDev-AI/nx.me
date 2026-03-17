@@ -63,6 +63,20 @@ def get_current_user(
 # ---------------------------------------------------------------------------
 
 
+def get_user_repo(request: Request) -> "UserRepository":
+    """Return a UserRepository wired to the app's Supabase client."""
+    from app.repositories.user_repo import UserRepository
+
+    return UserRepository(request.app.state.supabase)
+
+
+def get_tier_repo(request: Request) -> "TierRepository":
+    """Return a TierRepository wired to the app's Supabase + Redis clients."""
+    from app.entitlement.tier_repo import TierRepository
+
+    return TierRepository(request.app.state.supabase, request.app.state.redis)
+
+
 def get_entitlement_service(
     request: Request,
 ) -> "EntitlementService":
