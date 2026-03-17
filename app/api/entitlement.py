@@ -12,14 +12,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from supabase import Client
 
-from app.api.deps import get_current_user, get_entitlement_service, get_payment_adapter, get_supabase
+from app.api.deps import get_current_user, get_entitlement_service, get_payment_adapter, get_subscription_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.constants.tiers import SLUG_TO_TIER_NAME
 from app.entitlement.service import EntitlementService
 from app.payment.ports import PaymentPort
+from app.repositories.subscription_repo import SubscriptionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +235,7 @@ async def create_subscription(
 @router.delete("/subscriptions", response_model=SubscriptionResponse)
 async def cancel_subscription(
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    sub_repo: SubscriptionRepository = Depends(get_subscription_repo),
     payment: PaymentPort = Depends(get_payment_adapter),
 ) -> SubscriptionResponse:
     """Cancel active subscription at period end.
@@ -245,22 +245,15 @@ async def cancel_subscription(
     user_id = claims["sub"]
 
     # Find active subscription
-    sub_result = (
-        supabase.table("subscriptions")
-        .select("provider_subscription_id, status")
-        .eq("user_id", user_id)
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
+    active_sub = sub_repo.get_active_subscription(user_id)
 
-    if not sub_result.data:
+    if not active_sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error": {"code": "NO_ACTIVE_SUBSCRIPTION", "message": "No active subscription found."}},
         )
 
-    provider_sub_id = sub_result.data[0]["provider_subscription_id"]
+    provider_sub_id = active_sub["provider_subscription_id"]
 
     # Cancel at period end via Stripe
     await payment.cancel_subscription(provider_sub_id)

@@ -98,6 +98,13 @@ def get_feed_repo(request: Request) -> "FeedRepository":
     return FeedRepository(request.app.state.supabase)
 
 
+def get_subscription_repo(request: Request) -> "SubscriptionRepository":
+    """Return a SubscriptionRepository wired to the app's Supabase client."""
+    from app.repositories.subscription_repo import SubscriptionRepository
+
+    return SubscriptionRepository(request.app.state.supabase)
+
+
 def get_tier_repo(request: Request) -> "TierRepository":
     """Return a TierRepository wired to the app's Supabase + Redis clients."""
     from app.entitlement.tier_repo import TierRepository

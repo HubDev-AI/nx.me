@@ -14,12 +14,10 @@ from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, status
-from supabase import Client
 
 from app.api.deps import get_payment_adapter
-from app.config import settings
 from app.constants.tiers import TIER_ID_CREDIT_HOLDER, TIER_ID_PREMIUM, TIER_ID_TRIAL
-from app.entitlement.ledger import CreditLedger
+from app.repositories.subscription_repo import SubscriptionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +53,10 @@ async def stripe_webhook(request: Request) -> dict:
     logger.info("Stripe webhook received: type=%s, id=%s", event_type, event_id)
 
     # --- Idempotency check ---
-    supabase: Client = request.app.state.supabase
+    sub_repo = SubscriptionRepository(request.app.state.supabase)
 
     try:
-        supabase.table("processed_webhook_events").insert({
-            "provider": "stripe",
-            "event_id": event_id,
-        }).execute()
+        sub_repo.record_webhook_event(provider="stripe", event_id=event_id)
     except Exception as exc:
         # UNIQUE constraint violation = duplicate event
         if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
@@ -74,15 +69,15 @@ async def stripe_webhook(request: Request) -> dict:
         data = event.get("data", {}).get("object", {})
 
         if event_type == "checkout.session.completed":
-            await _handle_checkout_completed(supabase, data, event_id)
+            await _handle_checkout_completed(sub_repo, data, event_id)
         elif event_type == "customer.subscription.created":
-            _handle_subscription_created(supabase, data)
+            _handle_subscription_created(sub_repo, data)
         elif event_type == "customer.subscription.updated":
-            _handle_subscription_updated(supabase, data)
+            _handle_subscription_updated(sub_repo, data)
         elif event_type == "customer.subscription.deleted":
-            _handle_subscription_deleted(supabase, data)
+            _handle_subscription_deleted(sub_repo, data)
         elif event_type == "invoice.payment_failed":
-            _handle_payment_failed(supabase, data)
+            _handle_payment_failed(sub_repo, data)
         else:
             logger.info("Unhandled webhook event type: %s", event_type)
 
@@ -100,7 +95,7 @@ async def stripe_webhook(request: Request) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _handle_checkout_completed(supabase: Client, session: dict, event_id: str) -> None:
+async def _handle_checkout_completed(sub_repo: SubscriptionRepository, session: dict, event_id: str) -> None:
     """Handle checkout.session.completed — credit purchase or subscription."""
     mode = session.get("mode")
     metadata = session.get("metadata", {})
@@ -129,15 +124,15 @@ async def _handle_checkout_completed(supabase: Client, session: dict, event_id: 
             return
 
         # Atomic: insert ledger entry + conditional tier upgrade
-        result = supabase.rpc("handle_checkout_credit_atomic", {
-            "p_user_id": user_id,
-            "p_credits": credits,
-            "p_event_id": event_id,
-            "p_trial_tier_id": TIER_ID_TRIAL,
-            "p_credit_holder_tier_id": TIER_ID_CREDIT_HOLDER,
-        }).execute()
+        rpc_result = sub_repo.handle_checkout_credit_atomic(
+            user_id=user_id,
+            credits=credits,
+            event_id=event_id,
+            trial_tier_id=TIER_ID_TRIAL,
+            credit_holder_tier_id=TIER_ID_CREDIT_HOLDER,
+        )
 
-        tier_upgraded = result.data[0]["tier_upgraded"] if result.data else False
+        tier_upgraded = rpc_result.get("tier_upgraded", False)
         logger.info(
             "Credit purchase: user=%s, credits=%d, event=%s, tier_upgraded=%s",
             user_id, credits, event_id, tier_upgraded,
@@ -148,10 +143,9 @@ async def _handle_checkout_completed(supabase: Client, session: dict, event_id: 
         logger.info("Subscription checkout completed for user=%s", user_id)
 
 
-def _handle_subscription_created(supabase: Client, subscription: dict) -> None:
+def _handle_subscription_created(sub_repo: SubscriptionRepository, subscription: dict) -> None:
     """Handle customer.subscription.created — insert subscription row."""
     sub_id = subscription.get("id", "")
-    customer = subscription.get("customer", "")
     metadata = subscription.get("metadata", {})
     user_id = metadata.get("user_id")
 
@@ -172,7 +166,7 @@ def _handle_subscription_created(supabase: Client, subscription: dict) -> None:
     start_iso = datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat() if period_start else now_utc
     end_iso = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat() if period_end else now_utc
 
-    supabase.table("subscriptions").insert({
+    sub_repo.insert_subscription({
         "user_id": user_id,
         "provider": "stripe",
         "provider_subscription_id": sub_id,
@@ -181,17 +175,15 @@ def _handle_subscription_created(supabase: Client, subscription: dict) -> None:
         "billing_period_end": end_iso,
         "created_at": now_utc,
         "updated_at": now_utc,
-    }).execute()
+    })
 
     # Upgrade tier to premium
-    supabase.table("users").update({
-        "tier_id": TIER_ID_PREMIUM,
-    }).eq("id", user_id).execute()
+    sub_repo.update_user_tier(user_id, TIER_ID_PREMIUM)
 
     logger.info("Subscription created: user=%s, sub=%s", user_id, sub_id)
 
 
-def _handle_subscription_updated(supabase: Client, subscription: dict) -> None:
+def _handle_subscription_updated(sub_repo: SubscriptionRepository, subscription: dict) -> None:
     """Handle customer.subscription.updated — cancel_at_period_end or plan change."""
     sub_id = subscription.get("id", "")
     cancel_at_period_end = subscription.get("cancel_at_period_end", False)
@@ -216,12 +208,10 @@ def _handle_subscription_updated(supabase: Client, subscription: dict) -> None:
             period_end, tz=timezone.utc
         ).isoformat()
 
-    supabase.table("subscriptions").update(
-        update_data
-    ).eq("provider_subscription_id", sub_id).execute()
+    sub_repo.update_subscription_by_provider_id(sub_id, update_data)
 
 
-def _handle_subscription_deleted(supabase: Client, subscription: dict) -> None:
+def _handle_subscription_deleted(sub_repo: SubscriptionRepository, subscription: dict) -> None:
     """Handle customer.subscription.deleted — expire and recompute tier.
 
     AC-3: subscriptions.status = 'expired'; EntitlementService recomputes tier.
@@ -230,41 +220,31 @@ def _handle_subscription_deleted(supabase: Client, subscription: dict) -> None:
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
     # Fetch user_id BEFORE updating status (needed for tier recomputation)
-    sub_row = (
-        supabase.table("subscriptions")
-        .select("user_id")
-        .eq("provider_subscription_id", sub_id)
-        .maybe_single()
-        .execute()
-    )
-    if not sub_row.data:
+    user_id = sub_repo.get_subscription_user_id(sub_id)
+    if not user_id:
         logger.warning("subscription.deleted: no subscription found for %s", sub_id)
         return
 
-    user_id = sub_row.data["user_id"]
-
     # Mark subscription expired
-    supabase.table("subscriptions").update({
+    sub_repo.update_subscription_by_provider_id(sub_id, {
         "status": "expired",
         "updated_at": now_utc,
-    }).eq("provider_subscription_id", sub_id).execute()
+    })
 
     # Recompute tier based on credit balance
-    ledger = CreditLedger(supabase)
-    balance = ledger.balance(UUID(user_id))
-
-    new_tier_id = TIER_ID_CREDIT_HOLDER if balance > 0 else TIER_ID_TRIAL
-    supabase.table("users").update({
-        "tier_id": new_tier_id,
-    }).eq("id", user_id).execute()
+    new_tier_id = sub_repo.recompute_tier_after_subscription_deleted(
+        user_id=user_id,
+        credit_holder_tier_id=TIER_ID_CREDIT_HOLDER,
+        trial_tier_id=TIER_ID_TRIAL,
+    )
 
     logger.info(
-        "Subscription deleted: user=%s, sub=%s, new_tier=%s (balance=%d)",
-        user_id, sub_id, new_tier_id, balance,
+        "Subscription deleted: user=%s, sub=%s, new_tier=%s",
+        user_id, sub_id, new_tier_id,
     )
 
 
-def _handle_payment_failed(supabase: Client, invoice: dict) -> None:
+def _handle_payment_failed(sub_repo: SubscriptionRepository, invoice: dict) -> None:
     """Handle invoice.payment_failed — set subscription to past_due."""
     sub_id = invoice.get("subscription", "")
     if not sub_id:
@@ -273,9 +253,9 @@ def _handle_payment_failed(supabase: Client, invoice: dict) -> None:
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-    supabase.table("subscriptions").update({
+    sub_repo.update_subscription_by_provider_id(sub_id, {
         "status": "past_due",
         "updated_at": now_utc,
-    }).eq("provider_subscription_id", sub_id).execute()
+    })
 
     logger.warning("Payment failed for subscription %s — set to past_due", sub_id)
