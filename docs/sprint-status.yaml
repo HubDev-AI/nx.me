@@ -40,7 +40,7 @@ epics:
         slug: mobile-auth-ui
         title: Mobile Auth UI — Login, Signup Screens
         size: M
-        status: backlog
+        status: done
         wave: 9
         dependencies: ["2-2", "6-5"]
       - id: "2-4"

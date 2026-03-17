@@ -66,3 +66,18 @@ export const BG_ELEVATED = COLORS.neutral.dark[200];
 export const TEXT_PRIMARY = COLORS.neutral.dark[900];
 export const TEXT_SECONDARY = COLORS.neutral.dark[700];
 export const TEXT_DISABLED = COLORS.neutral.dark[600];
+
+/** Input */
+export const INPUT_FILL = COLORS.neutral.dark[150];
+export const BORDER_DEFAULT = COLORS.neutral.dark[400];
+export const BORDER_STRONG = COLORS.neutral.dark[500];
+
+/** CTA / Accent */
+export const CTA_PRIMARY = COLORS.after[500];
+export const CTA_PRESSED = COLORS.after[600];
+export const CTA_ACTIVE = COLORS.after[700];
+
+/** Feedback */
+export const ERROR_DARK = "#F87171";
+export const ERROR_LIGHT = "#DC2626";
+export const SUCCESS_DARK = "#4ADE80";

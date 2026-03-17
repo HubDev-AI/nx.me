@@ -19,3 +19,27 @@ export const SECURE_STORE_KEYS = {
   JWT: "nxme_jwt",
   PUSH_TOKEN: "nxme_push_token",
 } as const;
+
+/** OAuth Client IDs — sourced from env / Expo config extras */
+export const GOOGLE_CLIENT_ID: string =
+  (extra.googleClientId as string) ?? "";
+
+export const APPLE_CLIENT_ID: string =
+  (extra.appleClientId as string) ?? "";
+
+/** Auth API paths */
+export const AUTH_ENDPOINTS = {
+  REGISTER: "/v1/auth/register",
+  LOGIN: "/v1/auth/login",
+  SOCIAL_LOGIN: "/v1/auth/social",
+} as const;
+
+/** Validation constants */
+export const AUTH_VALIDATION = {
+  PASSWORD_MIN_LENGTH: 8,
+  USERNAME_MIN_LENGTH: 3,
+  USERNAME_MAX_LENGTH: 30,
+  /** Alphanumeric + underscores, starts with letter */
+  USERNAME_PATTERN: /^[a-zA-Z][a-zA-Z0-9_]*$/,
+  EMAIL_PATTERN: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+} as const;
