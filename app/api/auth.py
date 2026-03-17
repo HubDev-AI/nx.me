@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from slugify import slugify
 from supabase import Client
 
@@ -56,6 +56,13 @@ class RegisterRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=50)
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
     guest_session_token: str | None = None
+
+    @field_validator("display_name")
+    @classmethod
+    def display_name_no_html_chars(cls, v: str) -> str:
+        if any(ch in v for ch in '<>"'):
+            raise ValueError('display_name must not contain <, >, or " characters')
+        return v
 
 
 class RegisterResponse(BaseModel):
