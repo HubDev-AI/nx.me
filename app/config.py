@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     # Advisor module (pluggable — set to False to disable entirely)
     ADVISOR_ENABLED: bool = True
     ADVISOR_PERSONA_NAME: str = "Ada"
-    ADVISOR_CONTEXT_MEMORY_LIMIT: int = 3   # Max memories per request. Less = more human.
+    ADVISOR_CONTEXT_MEMORY_LIMIT: int = 3        # Max memories per request. Less = more human.
+    ADVISOR_MAX_MESSAGE_LENGTH: int = 2000        # Max chars per user message
+    ADVISOR_CHAT_RATE_LIMIT: int = 30             # Max messages per hour per user
+    ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30   # Messages before auto-summarize
+    ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7   # Days before auto-new conversation
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2

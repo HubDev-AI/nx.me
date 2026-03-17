@@ -182,14 +182,14 @@ epics:
         slug: advisor-memory-schema-pgvector
         title: Advisor Memory Schema & pgvector Setup
         size: S
-        status: backlog
+        status: done
         wave: 1
         dependencies: []
       - id: "7-2"
         slug: advisor-api-chat-nudges-memory
         title: Advisor API — Chat, Nudges & Memory Management
         size: M
-        status: backlog
+        status: done
         wave: 8
         dependencies: ["4-1", "3-3", "2-1"]
       - id: "7-3"

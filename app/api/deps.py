@@ -97,6 +97,20 @@ def get_payment_adapter() -> "PaymentPort":
     return MockPaymentAdapter()
 
 
+def get_llm_adapter() -> "LLMPort":
+    """Return the configured LLM adapter (Anthropic or mock).
+
+    Selection driven by ADAPTER__LLM_ADAPTER config value.
+    """
+    from app.config import settings
+
+    if settings.ADAPTER__LLM_ADAPTER == "anthropic":
+        from app.advisor.adapters.anthropic_adapter import AnthropicAdapter
+        return AnthropicAdapter()
+    from app.advisor.adapters.mock import MockLLMAdapter
+    return MockLLMAdapter()
+
+
 def require_entitlement(action: str):
     """FastAPI dependency: check entitlement before route execution (A-5).
 

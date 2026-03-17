@@ -103,6 +103,14 @@ def create_app() -> FastAPI:
     v1.include_router(social.router)
     v1.include_router(posts.router)
     v1.include_router(users.router)
+
+    if settings.ADVISOR_ENABLED:
+        from app.api import advisor
+        v1.include_router(advisor.router)
+        logger.info("Advisor module enabled — routes registered")
+    else:
+        logger.info("Advisor module disabled (ADVISOR_ENABLED=False)")
+
     app.include_router(v1)
 
     return app
