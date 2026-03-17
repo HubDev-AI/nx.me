@@ -98,14 +98,8 @@ export function ProfileHeader({
         <View style={styles.statDivider} />
         <StatItem
           icon="heart-outline"
-          value={profile.reaction_count}
+          value={profile.total_reactions}
           label="Reactions"
-        />
-        <View style={styles.statDivider} />
-        <StatItem
-          icon="flame-outline"
-          value={profile.streak_days}
-          label="Streak"
         />
       </View>
 

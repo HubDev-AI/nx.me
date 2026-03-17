@@ -6,30 +6,23 @@ import type {
   UserProfile,
   GlowUpItem,
   GlowUpHistoryResponse,
-  ReactedPost,
-  ReactedPostsResponse,
   UpdateProfilePayload,
-  ProfileTab,
+  UpdateProfileResponse,
 } from "./types";
 
 interface UseProfileReturn {
   profile: UserProfile | null;
   glowUps: GlowUpItem[];
-  reactedPosts: ReactedPost[];
   isLoading: boolean;
   isRefreshing: boolean;
   isLoadingMore: boolean;
   hasMoreGlowUps: boolean;
-  hasMoreReactions: boolean;
   error: string | null;
-  activeTab: ProfileTab;
   isUpdating: boolean;
   updateError: string | null;
   loadProfile: (username: string) => Promise<void>;
   refresh: (username: string) => Promise<void>;
   loadMoreGlowUps: (username: string) => Promise<void>;
-  loadMoreReactions: (username: string) => Promise<void>;
-  changeTab: (tab: ProfileTab) => void;
   updateProfile: (
     username: string,
     payload: UpdateProfilePayload,
@@ -38,24 +31,25 @@ interface UseProfileReturn {
 
 /**
  * Custom hook for profile screen state management.
- * Handles profile data, glow-up history, reactions, and profile editing.
+ * Handles profile data, glow-up history, and profile editing.
+ *
+ * Backed by:
+ *   GET  /v1/users/{username}/profile  (ProfileResponse)
+ *   GET  /v1/users/{username}/history  (HistoryResponse)
+ *   PATCH /v1/users/{username}         (UpdateProfileResponse)
  */
 export function useProfile(): UseProfileReturn {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [glowUps, setGlowUps] = useState<GlowUpItem[]>([]);
-  const [reactedPosts, setReactedPosts] = useState<ReactedPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreGlowUps, setHasMoreGlowUps] = useState(true);
-  const [hasMoreReactions, setHasMoreReactions] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ProfileTab>("glowups");
   const [isUpdating, setIsUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   const glowUpCursorRef = useRef<string | null>(null);
-  const reactionCursorRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
 
   const fetchProfile = useCallback(async (username: string) => {
@@ -77,21 +71,6 @@ export function useProfile(): UseProfileReturn {
     [],
   );
 
-  const fetchReactions = useCallback(
-    async (username: string, cursor: string | null) => {
-      const params = new URLSearchParams({
-        limit: String(PROFILE_CONFIG.PAGE_SIZE),
-      });
-      if (cursor) {
-        params.set("cursor", cursor);
-      }
-      return apiFetch<ReactedPostsResponse>(
-        `${PROFILE_ENDPOINTS.REACTIONS(username)}?${params.toString()}`,
-      );
-    },
-    [],
-  );
-
   const loadProfile = useCallback(
     async (username: string) => {
       if (isLoadingRef.current) return;
@@ -106,7 +85,7 @@ export function useProfile(): UseProfileReturn {
         ]);
 
         setProfile(profileData);
-        setGlowUps(historyData.items);
+        setGlowUps(historyData.entries);
         glowUpCursorRef.current = historyData.next_cursor;
         setHasMoreGlowUps(historyData.has_more);
       } catch (err) {
@@ -133,14 +112,9 @@ export function useProfile(): UseProfileReturn {
         ]);
 
         setProfile(profileData);
-        setGlowUps(historyData.items);
+        setGlowUps(historyData.entries);
         glowUpCursorRef.current = historyData.next_cursor;
         setHasMoreGlowUps(historyData.has_more);
-
-        // Reset reactions tab
-        setReactedPosts([]);
-        reactionCursorRef.current = null;
-        setHasMoreReactions(true);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to refresh profile",
@@ -164,7 +138,7 @@ export function useProfile(): UseProfileReturn {
           username,
           glowUpCursorRef.current,
         );
-        setGlowUps((prev) => [...prev, ...response.items]);
+        setGlowUps((prev) => [...prev, ...response.entries]);
         glowUpCursorRef.current = response.next_cursor;
         setHasMoreGlowUps(response.has_more);
       } catch {
@@ -177,62 +151,6 @@ export function useProfile(): UseProfileReturn {
     [fetchGlowUps, hasMoreGlowUps],
   );
 
-  const loadMoreReactions = useCallback(
-    async (username: string) => {
-      if (
-        isLoadingRef.current ||
-        !hasMoreReactions ||
-        !reactionCursorRef.current
-      )
-        return;
-      isLoadingRef.current = true;
-      setIsLoadingMore(true);
-
-      try {
-        const response = await fetchReactions(
-          username,
-          reactionCursorRef.current,
-        );
-        setReactedPosts((prev) => [...prev, ...response.items]);
-        reactionCursorRef.current = response.next_cursor;
-        setHasMoreReactions(response.has_more);
-      } catch {
-        // Silently fail on load-more
-      } finally {
-        setIsLoadingMore(false);
-        isLoadingRef.current = false;
-      }
-    },
-    [fetchReactions, hasMoreReactions],
-  );
-
-  const changeTab = useCallback(
-    (tab: ProfileTab) => {
-      if (tab === activeTab) return;
-      setActiveTab(tab);
-
-      // Lazy-load reactions tab on first switch
-      if (tab === "reactions" && reactedPosts.length === 0 && profile) {
-        isLoadingRef.current = true;
-        setIsLoadingMore(true);
-        fetchReactions(profile.username, null)
-          .then((response) => {
-            setReactedPosts(response.items);
-            reactionCursorRef.current = response.next_cursor;
-            setHasMoreReactions(response.has_more);
-          })
-          .catch(() => {
-            // Silent failure for tab switch
-          })
-          .finally(() => {
-            setIsLoadingMore(false);
-            isLoadingRef.current = false;
-          });
-      }
-    },
-    [activeTab, reactedPosts.length, profile, fetchReactions],
-  );
-
   const updateProfile = useCallback(
     async (
       username: string,
@@ -242,14 +160,23 @@ export function useProfile(): UseProfileReturn {
       setUpdateError(null);
 
       try {
-        const updated = await apiFetch<UserProfile>(
+        const updated = await apiFetch<UpdateProfileResponse>(
           PROFILE_ENDPOINTS.UPDATE(username),
           {
             method: "PATCH",
             body: JSON.stringify(payload),
           },
         );
-        setProfile(updated);
+        // Merge the updated fields back into the current profile snapshot
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                display_name: updated.display_name,
+                avatar_url: updated.avatar_url,
+              }
+            : prev,
+        );
         return true;
       } catch (err) {
         setUpdateError(
@@ -266,21 +193,16 @@ export function useProfile(): UseProfileReturn {
   return {
     profile,
     glowUps,
-    reactedPosts,
     isLoading,
     isRefreshing,
     isLoadingMore,
     hasMoreGlowUps,
-    hasMoreReactions,
     error,
-    activeTab,
     isUpdating,
     updateError,
     loadProfile,
     refresh,
     loadMoreGlowUps,
-    loadMoreReactions,
-    changeTab,
     updateProfile,
   };
 }

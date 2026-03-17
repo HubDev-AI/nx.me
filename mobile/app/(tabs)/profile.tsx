@@ -13,28 +13,22 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   BG_PAGE,
-  BG_CARD,
-  BG_ELEVATED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   TEXT_DISABLED,
   CTA_PRIMARY,
-  COLORS,
   ERROR_DARK,
 } from "../../constants/colors";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { getStoredJwt } from "../../lib/auth";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
-import { ReactionsTab } from "../../components/profile/ReactionsTab";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
 import { useProfile } from "../../components/profile/useProfile";
-import type { ProfileTab, UpdateProfilePayload } from "../../components/profile/types";
-
-const TAB_INDICATOR_HEIGHT = 2;
+import type { UpdateProfilePayload } from "../../components/profile/types";
 
 /**
- * Profile screen: shows user avatar, stats, glow-up grid, reactions tab,
+ * Profile screen: shows user avatar, stats, glow-up history grid,
  * and edit profile sheet.
  */
 export default function ProfileScreen() {
@@ -45,21 +39,16 @@ export default function ProfileScreen() {
   const {
     profile,
     glowUps,
-    reactedPosts,
     isLoading,
     isRefreshing,
     isLoadingMore,
     hasMoreGlowUps,
-    hasMoreReactions,
     error,
-    activeTab,
     isUpdating,
     updateError,
     loadProfile,
     refresh,
     loadMoreGlowUps,
-    loadMoreReactions,
-    changeTab,
     updateProfile,
   } = useProfile();
 
@@ -89,12 +78,6 @@ export default function ProfileScreen() {
       loadMoreGlowUps(profile.username);
     }
   }, [profile, loadMoreGlowUps]);
-
-  const handleLoadMoreReactions = useCallback(() => {
-    if (profile) {
-      loadMoreReactions(profile.username);
-    }
-  }, [profile, loadMoreReactions]);
 
   const handleEditProfile = useCallback(() => {
     setEditSheetVisible(true);
@@ -132,7 +115,7 @@ export default function ProfileScreen() {
         />
         <Text style={styles.signInTitle}>Sign in to see your profile</Text>
         <Text style={styles.signInSubtitle}>
-          Track your glow-ups, reactions, and streak
+          Track your glow-ups and reactions
         </Text>
       </View>
     );
@@ -194,38 +177,13 @@ export default function ProfileScreen() {
           onEditProfile={handleEditProfile}
         />
 
-        {/* Tab segments */}
-        <View style={styles.tabBar}>
-          <TabSegment
-            label="All Glow-Ups"
-            icon="images-outline"
-            isActive={activeTab === "glowups"}
-            onPress={() => changeTab("glowups")}
-          />
-          <TabSegment
-            label="Reactions"
-            icon="heart-outline"
-            isActive={activeTab === "reactions"}
-            onPress={() => changeTab("reactions")}
-          />
-        </View>
-
-        {/* Tab content */}
-        {activeTab === "glowups" ? (
-          <GlowUpGrid
-            items={glowUps}
-            isLoadingMore={isLoadingMore}
-            hasMore={hasMoreGlowUps}
-            onLoadMore={handleLoadMoreGlowUps}
-          />
-        ) : (
-          <ReactionsTab
-            items={reactedPosts}
-            isLoadingMore={isLoadingMore}
-            hasMore={hasMoreReactions}
-            onLoadMore={handleLoadMoreReactions}
-          />
-        )}
+        {/* Glow-up history grid */}
+        <GlowUpGrid
+          items={glowUps}
+          isLoadingMore={isLoadingMore}
+          hasMore={hasMoreGlowUps}
+          onLoadMore={handleLoadMoreGlowUps}
+        />
       </ScrollView>
 
       {/* Edit Profile sheet */}
@@ -238,49 +196,6 @@ export default function ProfileScreen() {
         onClose={handleCloseEditSheet}
       />
     </View>
-  );
-}
-
-interface TabSegmentProps {
-  label: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  isActive: boolean;
-  onPress: () => void;
-}
-
-function TabSegment({ label, icon, isActive, onPress }: TabSegmentProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={styles.tabSegment}
-      accessibilityLabel={label}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: isActive }}
-    >
-      <View style={styles.tabSegmentContent}>
-        <Ionicons
-          name={icon}
-          size={18}
-          color={isActive ? CTA_PRIMARY : TEXT_SECONDARY}
-        />
-        <Text
-          style={[
-            styles.tabSegmentLabel,
-            isActive && styles.tabSegmentLabelActive,
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-      <View
-        style={[
-          styles.tabIndicator,
-          {
-            backgroundColor: isActive ? CTA_PRIMARY : "transparent",
-          },
-        ]}
-      />
-    </Pressable>
   );
 }
 
@@ -345,39 +260,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
-  },
-  tabBar: {
-    flexDirection: "row",
-    marginHorizontal: 16,
-    backgroundColor: BG_CARD,
-    borderRadius: 10,
-    marginBottom: 8,
-    overflow: "hidden",
-  },
-  tabSegment: {
-    flex: 1,
-    alignItems: "center",
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  tabSegmentContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
-    flex: 1,
-  },
-  tabSegmentLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: TEXT_SECONDARY,
-  },
-  tabSegmentLabelActive: {
-    color: CTA_PRIMARY,
-  },
-  tabIndicator: {
-    height: TAB_INDICATOR_HEIGHT,
-    width: "100%",
-    borderRadius: TAB_INDICATOR_HEIGHT / 2,
   },
 });

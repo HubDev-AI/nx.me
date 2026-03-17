@@ -23,7 +23,7 @@ echo "  API:  http://localhost:8000"
 echo "  Docs: http://localhost:8000/docs"
 echo ""
 echo "  Start the ARQ worker in a second terminal:"
-echo "  arq app.worker.WorkerSettings"
+echo "  arq app.worker_settings.WorkerSettings"
 echo ""
 
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

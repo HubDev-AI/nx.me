@@ -19,6 +19,7 @@ from supabase import Client
 
 from app.api.deps import get_current_user, get_supabase
 from app.api.middleware.auth import UserClaims
+from app.services.public_url import build_avatar_url, publish_post_images
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +50,13 @@ class CreateCommentRequest(BaseModel):
 
 class CommentResponse(BaseModel):
     comment_id: str
+    post_id: str
     user_id: str
     content: str
+    is_deleted: bool
     created_at: str
+    display_name: str | None
+    avatar_url: str | None
 
 
 class CommentsListResponse(BaseModel):
@@ -119,31 +124,23 @@ def create_post(
         .eq("id", job.data["generated_image_id"]).single().execute()
     )
 
-    # Copy BOTH images from private buckets to the public post-images bucket.
-    # Images stay private until the user explicitly creates a post.
-    from app.services.public_url import PUBLIC_BUCKET, get_public_url
+    # Copy images from private buckets to public bucket and get CDN URLs
+    try:
+        published = publish_post_images(
+            supabase,
+            user_id=user_id,
+            before_image=before_img.data,
+            after_image=after_img.data,
+        )
+    except Exception as exc:
+        logger.error("Failed to publish post images: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to publish post images. Please try again.",
+        ) from exc
 
-    before_public_key = f"before/{user_id}/{before_img.data['storage_key'].split('/')[-1]}"
-    after_public_key = f"after/{user_id}/{after_img.data['storage_key'].split('/')[-1]}"
-
-    for src_img, public_key in [
-        (before_img.data, before_public_key),
-        (after_img.data, after_public_key),
-    ]:
-        try:
-            raw_bytes = supabase.storage.from_(src_img.get("bucket", "raw-selfies")).download(
-                src_img["storage_key"]
-            )
-            supabase.storage.from_(PUBLIC_BUCKET).upload(
-                path=public_key,
-                file=raw_bytes,
-                file_options={"content-type": "image/jpeg", "upsert": "true"},
-            )
-        except Exception as exc:
-            logger.warning("Failed to copy %s to public bucket: %s", public_key, exc)
-
-    before_url = get_public_url(before_public_key)
-    after_url = get_public_url(after_public_key)
+    before_url = published.before_url
+    after_url = published.after_url
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
@@ -232,7 +229,7 @@ def create_comment(
     # Verify post exists and is not deleted
     post = (
         supabase.table("posts")
-        .select("id, comment_count")
+        .select("id")
         .eq("id", str(post_id))
         .eq("is_deleted", False)
         .maybe_single()
@@ -251,19 +248,34 @@ def create_comment(
 
     comment = result.data[0]
 
-    # Increment comment count
-    supabase.table("posts").update({
-        "comment_count": (post.data.get("comment_count") or 0) + 1,
-        "updated_at": now_utc,
-    }).eq("id", str(post_id)).execute()
+    # Increment comment count atomically to avoid race conditions
+    supabase.rpc("increment_comment_count", {"p_post_id": str(post_id)}).execute()
 
     logger.info("Comment %s on post %s by user %s", comment["id"], post_id, user_id)
 
+    # Fetch author profile for display name and avatar
+    author = (
+        supabase.table("users")
+        .select("display_name, avatar_storage_key")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    display_name: str | None = None
+    avatar_url: str | None = None
+    if author.data:
+        display_name = author.data.get("display_name")
+        avatar_url = build_avatar_url(supabase, author.data.get("avatar_storage_key"))
+
     return CommentResponse(
         comment_id=comment["id"],
+        post_id=str(post_id),
         user_id=user_id,
         content=body.content,
+        is_deleted=False,
         created_at=now_utc,
+        display_name=display_name,
+        avatar_url=avatar_url,
     )
 
 
@@ -284,7 +296,7 @@ def get_comments(
 
     query = (
         supabase.table("comments")
-        .select("id, user_id, content, created_at")
+        .select("id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)")
         .eq("post_id", str(post_id))
         .eq("is_deleted", False)
         .order("created_at", desc=False)
@@ -303,13 +315,25 @@ def get_comments(
 
     next_cursor = comments[-1]["created_at"] if has_more and comments else None
 
+    # Build signed avatar URLs — batch unique storage keys to minimise signed URL calls
+    unique_keys: dict[str, str | None] = {}
+    for c in comments:
+        author = c.get("users") or {}
+        key = author.get("avatar_storage_key")
+        if key and key not in unique_keys:
+            unique_keys[key] = build_avatar_url(supabase, key)
+
     return CommentsListResponse(
         comments=[
             CommentResponse(
                 comment_id=c["id"],
+                post_id=c["post_id"],
                 user_id=c["user_id"],
                 content=c["content"],
+                is_deleted=c["is_deleted"],
                 created_at=c["created_at"],
+                display_name=(c.get("users") or {}).get("display_name"),
+                avatar_url=unique_keys.get((c.get("users") or {}).get("avatar_storage_key") or ""),
             )
             for c in comments
         ],

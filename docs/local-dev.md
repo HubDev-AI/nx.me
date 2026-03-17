@@ -17,7 +17,7 @@ cp .env.example .env        # fill in API keys (see Environment Variables below)
 
 # Second terminal — ARQ worker:
 source .venv/bin/activate
-arq app.worker.WorkerSettings
+arq app.worker_settings.WorkerSettings
 ```
 
 ---
@@ -113,7 +113,7 @@ docker compose exec redis redis-cli
 **Tail ARQ worker logs:**
 ```bash
 source .venv/bin/activate
-arq app.worker.WorkerSettings --verbose
+arq app.worker_settings.WorkerSettings --verbose
 ```
 
 **Stripe webhook forwarding (local testing):**

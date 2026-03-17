@@ -117,7 +117,8 @@ def get_feed(
             next_cursor = last["created_at"]
         elif sort == FeedSort.TRENDING:
             # Composite cursor: score|created_at|id
-            score = _compute_trending_score(last)
+            # trending_score is computed by the SQL function
+            score = last.get("trending_score", 0.0)
             next_cursor = f"{score:.6f}|{last['created_at']}|{last['id']}"
         elif sort == FeedSort.BIGGEST_IMPROVEMENTS:
             # Composite cursor: reaction_count|created_at|id
@@ -142,11 +143,14 @@ _POST_COLUMNS = (
 
 
 def _fetch_newest(supabase: Client, cursor: str | None, limit: int) -> list[dict]:
-    """Fetch posts ordered by created_at DESC."""
+    """Fetch posts ordered by created_at DESC.
+
+    Uses v_feed_posts view which JOINs images to enforce AC-D7
+    (both images must be 'cleared') at the database level.
+    """
     query = (
-        supabase.table("posts")
+        supabase.table("v_feed_posts")
         .select(_POST_COLUMNS)
-        .eq("is_deleted", False)
         .order("created_at", desc=True)
         .limit(limit)
     )
@@ -155,150 +159,46 @@ def _fetch_newest(supabase: Client, cursor: str | None, limit: int) -> list[dict
         query = query.lt("created_at", cursor)
 
     result = query.execute()
-    return _filter_cleared_images(supabase, result.data or [])
+    return result.data or []
 
 
 def _fetch_trending(supabase: Client, cursor: str | None, limit: int) -> list[dict]:
     """Fetch posts ordered by HN-style time-decay score.
 
     score = reaction_count / POWER(hours_since_post + 2, 1.5)
-    Computed in Python since Supabase PostgREST doesn't support computed ORDER BY.
+    Computed in SQL via the feed_trending() function so sorting, filtering,
+    and pagination all happen in the database.
     """
-    # Fetch recent posts (last 7 days for trending, or more if cursor indicates)
-    query = (
-        supabase.table("posts")
-        .select(_POST_COLUMNS)
-        .eq("is_deleted", False)
-        .order("created_at", desc=True)
-        .limit(500)  # Pool for trending calculation
-    )
+    params: dict = {"p_limit": limit}
 
-    result = query.execute()
-    posts = _filter_cleared_images(supabase, result.data or [])
-
-    # Compute trending scores
-    now = datetime.now(tz=timezone.utc)
-    for post in posts:
-        post["_trending_score"] = _compute_trending_score(post, now)
-
-    # Sort by trending score descending
-    posts.sort(key=lambda p: p["_trending_score"], reverse=True)
-
-    # Apply cursor (skip past cursor position)
     if cursor:
         parts = cursor.split("|", 2)
         if len(parts) == 3:
-            cursor_score = float(parts[0])
-            cursor_created = parts[1]
-            cursor_id = parts[2]
-            # Skip posts until we're past the cursor
-            found = False
-            filtered = []
-            for p in posts:
-                if found:
-                    filtered.append(p)
-                elif p["id"] == cursor_id:
-                    found = True
-            posts = filtered
+            params["p_cursor_score"] = float(parts[0])
+            params["p_cursor_created"] = parts[1]
+            params["p_cursor_id"] = parts[2]
 
-    return posts[:limit]
+    result = supabase.rpc("feed_trending", params).execute()
+    return result.data or []
 
 
 def _fetch_biggest_improvements(supabase: Client, cursor: str | None, limit: int) -> list[dict]:
-    """Fetch posts ordered by reaction_count DESC (AC-U10: no AI scores)."""
-    query = (
-        supabase.table("posts")
-        .select(_POST_COLUMNS)
-        .eq("is_deleted", False)
-        .order("reaction_count", desc=True)
-        .order("created_at", desc=True)
-        .limit(limit)
-    )
+    """Fetch posts ordered by reaction_count DESC (AC-U10: no AI scores).
+
+    Uses feed_biggest_improvements() SQL function with proper tuple-based
+    cursor pagination — no over-fetching required.
+    """
+    params: dict = {"p_limit": limit}
 
     if cursor:
         parts = cursor.split("|", 2)
         if len(parts) == 3:
-            cursor_reactions = int(parts[0])
-            cursor_created = parts[1]
-            cursor_id = parts[2]
-            # Posts with fewer reactions, or same reactions but older
-            query = (
-                supabase.table("posts")
-                .select(_POST_COLUMNS)
-                .eq("is_deleted", False)
-                .lte("reaction_count", cursor_reactions)
-                .order("reaction_count", desc=True)
-                .order("created_at", desc=True)
-                .limit(limit + cursor_reactions)  # Over-fetch to skip past cursor
-            )
-            result = query.execute()
-            posts = _filter_cleared_images(supabase, result.data or [])
+            params["p_cursor_reactions"] = int(parts[0])
+            params["p_cursor_created"] = parts[1]
+            params["p_cursor_id"] = parts[2]
 
-            # Skip past the cursor position
-            found = False
-            filtered = []
-            for p in posts:
-                if found:
-                    filtered.append(p)
-                elif p["id"] == cursor_id:
-                    found = True
-            return filtered[:limit]
-
-    result = query.execute()
-    return _filter_cleared_images(supabase, result.data or [])
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _compute_trending_score(post: dict, now: datetime | None = None) -> float:
-    """HN-style time-decay: reaction_count / POWER(hours + 2, 1.5)."""
-    if now is None:
-        now = datetime.now(tz=timezone.utc)
-
-    created = datetime.fromisoformat(post["created_at"])
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=timezone.utc)
-
-    hours = max(0, (now - created).total_seconds() / 3600)
-    reactions = post.get("reaction_count", 0)
-    return reactions / pow(hours + 2, 1.5)
-
-
-def _filter_cleared_images(supabase: Client, posts: list[dict]) -> list[dict]:
-    """Exclude posts where before or after image is not 'cleared' (AC-D7)."""
-    if not posts:
-        return posts
-
-    # Collect all image IDs
-    image_ids: set[str] = set()
-    for p in posts:
-        image_ids.add(p["before_image_id"])
-        image_ids.add(p["after_image_id"])
-
-    if not image_ids:
-        return posts
-
-    # Batch-fetch image statuses
-    result = (
-        supabase.table("images")
-        .select("id, status")
-        .in_("id", list(image_ids))
-        .execute()
-    )
-
-    cleared_ids: set[str] = set()
-    for img in (result.data or []):
-        if img["status"] == "cleared":
-            cleared_ids.add(img["id"])
-
-    # Filter: both images must be cleared
-    return [
-        p for p in posts
-        if p["before_image_id"] in cleared_ids and p["after_image_id"] in cleared_ids
-    ]
+    result = supabase.rpc("feed_biggest_improvements", params).execute()
+    return result.data or []
 
 
 # ---------------------------------------------------------------------------
@@ -433,17 +333,8 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
             "guest_session_token": reaction_data.get("guest_session_token"),
         }).execute()
 
-        # Update canonical counter: read current count from reactions table
-        count_result = (
-            supabase.table("reactions")
-            .select("id", count="exact")
-            .eq("post_id", post_id)
-            .execute()
-        )
-        actual_count = count_result.count or 0
-        supabase.table("posts").update({
-            "reaction_count": actual_count,
-        }).eq("id", post_id).execute()
+        # Atomic increment — O(1) instead of full recount
+        supabase.rpc("increment_reaction_count", {"p_post_id": post_id}).execute()
 
     except Exception as exc:
         if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
@@ -453,12 +344,17 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
                 await redis_client.decr(f"posts:{post_id}:reactions")
             logger.info("Duplicate reaction for post %s — Redis counter decremented", post_id)
             return
+        # Transient failure: undo Redis optimistic increment before retry
+        redis_client = ctx.get("redis")
+        if redis_client:
+            await redis_client.decr(f"posts:{post_id}:reactions")
         raise  # Let ARQ retry
 
 
 async def reconcile_reaction_counts(ctx: dict) -> None:
-    """Nightly reconciliation: sync posts.reaction_count and Redis from DB truth.
+    """Nightly reconciliation: sync posts.reaction_count from DB truth.
 
+    Single SQL statement via RPC — no per-post loop.
     Runs for all posts with reactions in the previous 48 hours.
     """
     from app.db.client import get_supabase_service
@@ -466,34 +362,18 @@ async def reconcile_reaction_counts(ctx: dict) -> None:
     supabase = get_supabase_service()
     redis_client = ctx.get("redis")
 
-    # Find posts with recent reaction activity (48h)
     cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=2)).isoformat()
-    recent_reactions = (
-        supabase.table("reactions")
-        .select("post_id")
-        .gte("created_at", cutoff)
-        .execute()
-    )
 
-    post_ids: set[str] = {r["post_id"] for r in (recent_reactions.data or [])}
+    # Single bulk UPDATE — returns list of updated post IDs
+    result = supabase.rpc(
+        "reconcile_reaction_counts", {"cutoff_iso": cutoff}
+    ).execute()
 
-    for pid in post_ids:
-        # Count actual reactions from DB
-        count_result = (
-            supabase.table("reactions")
-            .select("id", count="exact")
-            .eq("post_id", pid)
-            .execute()
-        )
-        actual_count = count_result.count or 0
+    updated_ids = [row["id"] for row in (result.data or [])]
 
-        # Update posts.reaction_count
-        supabase.table("posts").update({
-            "reaction_count": actual_count,
-        }).eq("id", pid).execute()
+    # Invalidate Redis for reconciled posts so next read fetches fresh count
+    if redis_client and updated_ids:
+        keys = [f"posts:{pid}:reactions" for pid in updated_ids]
+        await redis_client.delete(*keys)
 
-        # Update Redis
-        if redis_client:
-            await redis_client.set(f"posts:{pid}:reactions", actual_count, ex=60)
-
-    logger.info("Reconciled reaction counts for %d posts", len(post_ids))
+    logger.info("Reconciled reaction counts for %d posts", len(updated_ids))

@@ -3,7 +3,7 @@
 Story 6-3:
   GET  /users/{username}/profile  — public, no auth required
   GET  /users/{username}/history  — private, owner only
-  PATCH /users/{username}         — update display_name, owner only
+  PATCH /users/{username}         — update display_name and/or avatar, owner only
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from supabase import Client
 from app.api.deps import get_current_user, get_supabase
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.services.public_url import build_avatar_url
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class HistoryResponse(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     display_name: Optional[str] = None
+    avatar_storage_key: Optional[str] = None
 
 
 class UpdateProfileResponse(BaseModel):
@@ -89,18 +91,6 @@ def _lookup_user(supabase: Client, username: str) -> dict:
     return result.data
 
 
-def _build_avatar_url(supabase: Client, avatar_storage_key: str | None) -> str | None:
-    """Generate a signed URL for an avatar if the storage key is present."""
-    if not avatar_storage_key:
-        return None
-    try:
-        return supabase.storage.from_("avatars").create_signed_url(
-            avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS
-        )["signedURL"]
-    except Exception:
-        logger.warning("Failed to generate signed URL for avatar key: %s", avatar_storage_key)
-        return None
-
 
 # ---------------------------------------------------------------------------
 # GET /users/{username}/profile  (public)
@@ -119,19 +109,15 @@ def get_user_profile(
     user = _lookup_user(supabase, username)
     user_id: str = user["id"]
 
-    # Count non-deleted posts and sum reaction_count
-    posts_result = (
-        supabase.table("posts")
-        .select("reaction_count")
-        .eq("user_id", user_id)
-        .eq("is_deleted", False)
-        .execute()
-    )
-    posts = posts_result.data or []
-    post_count = len(posts)
-    total_reactions = sum(p.get("reaction_count", 0) for p in posts)
+    # Aggregate post_count and total_reactions via DB function (single query)
+    stats_result = supabase.rpc(
+        "user_post_stats", {"p_user_id": user_id}
+    ).execute()
+    stats = (stats_result.data or [{}])[0]
+    post_count = stats.get("post_count", 0)
+    total_reactions = stats.get("total_reactions", 0)
 
-    avatar_url = _build_avatar_url(supabase, user.get("avatar_storage_key"))
+    avatar_url = build_avatar_url(supabase, user.get("avatar_storage_key"))
 
     logger.info("Profile viewed for user %s", user_id)
 
@@ -199,67 +185,92 @@ def get_user_history(
 
     next_cursor: str | None = analyses[-1]["created_at"] if has_more and analyses else None
 
-    # Build entries — attempt to fetch before/after image URLs per analysis
-    entries: list[HistoryEntry] = []
-    for row in analyses:
-        before_image_url: str | None = None
-        after_image_url: str | None = None
+    # -- Batch-fetch related data instead of N+1 per-analysis queries ----------
 
-        # Fetch original image (before) from the analysis
-        original_image_id: str | None = row.get("original_image_id")
-        if original_image_id:
-            img_result = (
-                supabase.table("images")
-                .select("storage_key, bucket")
-                .eq("id", original_image_id)
-                .maybe_single()
-                .execute()
-            )
-            if img_result.data and img_result.data.get("storage_key"):
-                img = img_result.data
-                bucket = img.get("bucket") or "raw-selfies"
-                try:
-                    before_image_url = supabase.storage.from_(bucket).create_signed_url(
-                        img["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
-                    )["signedURL"]
-                except Exception:
-                    logger.warning(
-                        "Failed to sign before-image URL for analysis %s", row["id"]
-                    )
+    analysis_ids = [row["id"] for row in analyses]
 
-        # Fetch after image from a completed glow_up_job linked to this analysis
-        job_result = (
-            supabase.table("glow_up_jobs")
-            .select("generated_image_id")
-            .eq("analysis_id", row["id"])
-            .eq("status", "completed")
-            .order("created_at", desc=True)
-            .limit(1)
-            .maybe_single()
+    # 1. Collect original_image_ids from analyses and fetch all in one query
+    original_image_ids = [
+        row["original_image_id"] for row in analyses if row.get("original_image_id")
+    ]
+    before_images_by_id: dict[str, dict] = {}
+    if original_image_ids:
+        before_img_result = (
+            supabase.table("images")
+            .select("id, storage_key, bucket")
+            .in_("id", original_image_ids)
             .execute()
         )
-        generated_image_id: str | None = (
-            job_result.data.get("generated_image_id") if job_result.data else None
+        for img in before_img_result.data or []:
+            if img.get("storage_key"):
+                before_images_by_id[img["id"]] = img
+
+    # 2. Fetch latest completed glow_up_job per analysis in one query.
+    #    PostgREST doesn't support DISTINCT ON, so fetch all completed jobs
+    #    for these analyses and pick the latest per analysis_id in Python.
+    jobs_by_analysis: dict[str, str] = {}  # analysis_id -> generated_image_id
+    if analysis_ids:
+        jobs_result = (
+            supabase.table("glow_up_jobs")
+            .select("analysis_id, generated_image_id, created_at")
+            .in_("analysis_id", analysis_ids)
+            .eq("status", "completed")
+            .order("created_at", desc=True)
+            .execute()
         )
-        if generated_image_id:
-            gen_img_result = (
-                supabase.table("images")
-                .select("storage_key, bucket")
-                .eq("id", generated_image_id)
-                .maybe_single()
-                .execute()
-            )
-            if gen_img_result.data and gen_img_result.data.get("storage_key"):
-                gen_img = gen_img_result.data
-                gen_bucket = gen_img.get("bucket") or "generated-images"
-                try:
-                    after_image_url = supabase.storage.from_(gen_bucket).create_signed_url(
-                        gen_img["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
-                    )["signedURL"]
-                except Exception:
-                    logger.warning(
-                        "Failed to sign after-image URL for analysis %s", row["id"]
-                    )
+        for job in jobs_result.data or []:
+            aid = job["analysis_id"]
+            # First seen per analysis_id is the latest (ordered desc)
+            if aid not in jobs_by_analysis and job.get("generated_image_id"):
+                jobs_by_analysis[aid] = job["generated_image_id"]
+
+    # 3. Fetch all generated images in one query
+    generated_image_ids = list(jobs_by_analysis.values())
+    after_images_by_id: dict[str, dict] = {}
+    if generated_image_ids:
+        after_img_result = (
+            supabase.table("images")
+            .select("id, storage_key, bucket")
+            .in_("id", generated_image_ids)
+            .execute()
+        )
+        for img in after_img_result.data or []:
+            if img.get("storage_key"):
+                after_images_by_id[img["id"]] = img
+
+    # 4. Batch-sign all URLs, grouped by bucket to minimise overhead
+    def _sign_url(bucket: str, storage_key: str) -> str | None:
+        try:
+            return supabase.storage.from_(bucket).create_signed_url(
+                storage_key, settings.SIGNED_URL_EXPIRY_SECONDS
+            )["signedURL"]
+        except Exception:
+            logger.warning("Failed to sign URL: bucket=%s key=%s", bucket, storage_key)
+            return None
+
+    signed_before: dict[str, str | None] = {}
+    for img_id, img in before_images_by_id.items():
+        bucket = img.get("bucket") or "raw-selfies"
+        signed_before[img_id] = _sign_url(bucket, img["storage_key"])
+
+    signed_after: dict[str, str | None] = {}
+    for img_id, img in after_images_by_id.items():
+        bucket = img.get("bucket") or "generated-images"
+        signed_after[img_id] = _sign_url(bucket, img["storage_key"])
+
+    # 5. Assemble entries using the pre-fetched lookups
+    entries: list[HistoryEntry] = []
+    for row in analyses:
+        before_url: str | None = None
+        after_url: str | None = None
+
+        orig_id = row.get("original_image_id")
+        if orig_id and orig_id in signed_before:
+            before_url = signed_before[orig_id]
+
+        gen_id = jobs_by_analysis.get(row["id"])
+        if gen_id and gen_id in signed_after:
+            after_url = signed_after[gen_id]
 
         entries.append(
             HistoryEntry(
@@ -267,8 +278,8 @@ def get_user_history(
                 face_shape=row.get("face_shape"),
                 symmetry_score=row.get("symmetry_score"),
                 recommendations=row.get("recommendations") or [],
-                before_image_url=before_image_url,
-                after_image_url=after_image_url,
+                before_image_url=before_url,
+                after_image_url=after_url,
                 created_at=row["created_at"],
             )
         )
@@ -296,7 +307,7 @@ def update_user_profile(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ) -> UpdateProfileResponse:
-    """Update the authenticated user's display_name.
+    """Update the authenticated user's display_name and/or avatar.
 
     Owner only — returns 403 if the token does not belong to the requested user.
     Username cannot be changed via this endpoint; any username field in the body
@@ -314,6 +325,8 @@ def update_user_profile(
     updates: dict = {}
     if body.display_name is not None:
         updates["display_name"] = body.display_name
+    if body.avatar_storage_key is not None:
+        updates["avatar_storage_key"] = body.avatar_storage_key
 
     if updates:
         from datetime import datetime, timezone
@@ -324,7 +337,7 @@ def update_user_profile(
 
     # Re-fetch to return the current state
     refreshed = _lookup_user(supabase, username)
-    avatar_url = _build_avatar_url(supabase, refreshed.get("avatar_storage_key"))
+    avatar_url = build_avatar_url(supabase, refreshed.get("avatar_storage_key"))
 
     return UpdateProfileResponse(
         username=refreshed["username"],

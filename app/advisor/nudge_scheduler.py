@@ -1,79 +1,42 @@
-"""Nudge scheduler — ARQ jobs for advisor-initiated nudges.
+"""Nudge scheduler — thin orchestrator for advisor-initiated nudges.
 
-Spec Section 7: Ada-initiated messages, all tiers (capped). In-app feed only.
+Wires together policy, templates, eligibility scans, and queue dispatch.
+The public interface (ARQ job names) is unchanged:
 
 Jobs:
   generate_nudge            — generate + save a single nudge via Haiku
   schedule_post_analysis_nudge — lightweight wrapper called from analyses endpoint
   check_nudge_eligibility   — daily cron: scans all active users, enqueues eligible nudges
 
-Trigger types (spec Section 7.1):
-  post_analysis   — after face analysis completes
-  weekly_checkin  — 7 days since last nudge, if goals exist
-  milestone       — 5th or 10th analysis
-  re_engagement   — 14 days since last activity
+See nudge_policy.py, nudge_templates.py, nudge_eligibility.py for the
+extracted concerns.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import redis.asyncio as aioredis
 from arq import ArqRedis
 from supabase import Client
 
+from app.advisor.nudge_eligibility import (
+    find_milestone_eligible,
+    find_re_engagement_eligible,
+    find_weekly_checkin_eligible,
+)
+from app.advisor.nudge_policy import (
+    MAX_TOKENS_NUDGE,
+    MODEL_HAIKU,
+    TRIGGER_MILESTONE,
+    TRIGGER_POST_ANALYSIS,
+    TRIGGER_RE_ENGAGEMENT,
+    TRIGGER_WEEKLY_CHECKIN,
+)
+from app.advisor.nudge_templates import get_prompt
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# Model used for nudge generation (spec Section 10)
-_MODEL_HAIKU = "claude-3-haiku-20240307"
-
-# Max tokens per nudge — keep short and warm (spec Section 11 brevity principle)
-_MAX_TOKENS_NUDGE = 128
-
-# Trigger string constants — spec Section 7.1
-TRIGGER_POST_ANALYSIS = "post_analysis"
-TRIGGER_WEEKLY_CHECKIN = "weekly_checkin"
-TRIGGER_MILESTONE = "milestone"
-TRIGGER_RE_ENGAGEMENT = "re_engagement"
-
-# Milestone analysis counts that trigger a nudge (spec Section 7.1)
-_MILESTONE_COUNTS = {5, 10}
-
-# Eligibility windows (spec Section 7.1)
-_WEEKLY_CHECKIN_DAYS = 7
-_RE_ENGAGEMENT_DAYS = 14
-
-
-# ---------------------------------------------------------------------------
-# Prompt templates — inline for MVP (spec Section 7.3)
-# ---------------------------------------------------------------------------
-
-_NUDGE_PROMPTS: dict[str, str] = {
-    TRIGGER_POST_ANALYSIS: (
-        "The user just completed a face analysis. "
-        "Give a single warm, encouraging tip based on their latest result. "
-        "One sentence. No greetings. No sign-offs."
-    ),
-    TRIGGER_WEEKLY_CHECKIN: (
-        "It has been a week since the user's last nudge. "
-        "They have active style goals. "
-        "Check in with a brief, motivating observation. "
-        "One sentence. No greetings. No sign-offs."
-    ),
-    TRIGGER_MILESTONE: (
-        "The user has just reached an analysis milestone. "
-        "Celebrate their consistency with one warm sentence. "
-        "No greetings. No sign-offs."
-    ),
-    TRIGGER_RE_ENGAGEMENT: (
-        "The user has been away for two weeks. "
-        "Gently invite them back with something fresh to try. "
-        "One sentence. No greetings. No sign-offs."
-    ),
-}
 
 
 # ---------------------------------------------------------------------------
@@ -133,19 +96,19 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
         return
 
     # Build nudge prompt
-    prompt = _NUDGE_PROMPTS.get(trigger, _NUDGE_PROMPTS[TRIGGER_POST_ANALYSIS])
+    prompt = get_prompt(trigger)
 
     # Generate via Haiku
     llm = _get_llm_adapter()
     try:
         response = await llm.create_message(
-            model=_MODEL_HAIKU,
+            model=MODEL_HAIKU,
             system=(
                 f"You are {settings.ADVISOR_PERSONA_NAME}, a warm personal style advisor. "
                 "Keep responses brief and human. Never use generic phrases."
             ),
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=_MAX_TOKENS_NUDGE,
+            max_tokens=MAX_TOKENS_NUDGE,
         )
         nudge_content = response.content.strip()
     except Exception as exc:
@@ -203,6 +166,24 @@ async def schedule_post_analysis_nudge(ctx: dict, user_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Queue dispatch helper
+# ---------------------------------------------------------------------------
+
+
+async def _dispatch(
+    ctx: dict,
+    arq_pool: ArqRedis | None,
+    user_id: str,
+    trigger: str,
+) -> None:
+    """Dispatch a nudge job via ARQ pool or run inline as fallback."""
+    if arq_pool is not None:
+        await arq_pool.enqueue_job("generate_nudge", user_id, trigger)
+    else:
+        await generate_nudge(ctx, user_id, trigger)
+
+
+# ---------------------------------------------------------------------------
 # ARQ cron job: check_nudge_eligibility
 # ---------------------------------------------------------------------------
 
@@ -210,10 +191,8 @@ async def schedule_post_analysis_nudge(ctx: dict, user_id: str) -> None:
 async def check_nudge_eligibility(ctx: dict) -> None:
     """Daily cron: scan active users and enqueue nudge jobs for eligible ones.
 
-    Eligibility rules (spec Section 7.1):
-      weekly_checkin  — last nudge > WEEKLY_CHECKIN_DAYS ago, user has goals
-      milestone       — completed analysis count is exactly in MILESTONE_COUNTS
-      re_engagement   — last activity > RE_ENGAGEMENT_DAYS ago
+    Delegates eligibility queries to nudge_eligibility module, then dispatches
+    generate_nudge jobs for each eligible user.
 
     Post-analysis nudges are triggered directly from the analysis endpoint,
     not from this cron job.
@@ -228,168 +207,32 @@ async def check_nudge_eligibility(ctx: dict) -> None:
     supabase: Client = ctx["supabase"]
     arq_pool: ArqRedis | None = ctx.get("arq_pool")
 
-    now_utc = datetime.now(tz=timezone.utc)
-    weekly_cutoff = (now_utc - timedelta(days=_WEEKLY_CHECKIN_DAYS)).isoformat()
-    re_engagement_cutoff = (now_utc - timedelta(days=_RE_ENGAGEMENT_DAYS)).isoformat()
-
     enqueued = 0
 
-    # ------------------------------------------------------------------
-    # 1. Weekly check-in: users with goals, last nudge > 7 days ago
-    # ------------------------------------------------------------------
+    # 1. Weekly check-in
     try:
-        # Fetch users who have at least one 'goal' memory
-        goal_users_result = (
-            supabase.table("user_memories")
-            .select("user_id")
-            .eq("type", "goal")
-            .execute()
-        )
-        user_ids_with_goals = {
-            row["user_id"] for row in (goal_users_result.data or [])
-        }
-
-        for uid_str in user_ids_with_goals:
-            # Find most recent nudge for this user
-            last_nudge_result = (
-                supabase.table("advisor_nudges")
-                .select("created_at")
-                .eq("user_id", uid_str)
-                .order("created_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            last_nudge_rows = last_nudge_result.data or []
-
-            if not last_nudge_rows:
-                # Never had a nudge — eligible
-                eligible = True
-            else:
-                last_nudge_at = last_nudge_rows[0]["created_at"]
-                eligible = last_nudge_at < weekly_cutoff
-
-            if eligible:
-                if arq_pool is not None:
-                    await arq_pool.enqueue_job("generate_nudge", uid_str, TRIGGER_WEEKLY_CHECKIN)
-                else:
-                    await generate_nudge(ctx, uid_str, TRIGGER_WEEKLY_CHECKIN)
-                enqueued += 1
-
+        weekly_users = await find_weekly_checkin_eligible(supabase)
+        for uid_str in weekly_users:
+            await _dispatch(ctx, arq_pool, uid_str, TRIGGER_WEEKLY_CHECKIN)
+            enqueued += 1
     except Exception as exc:
         logger.error("Weekly check-in eligibility scan failed: %s", exc)
 
-    # ------------------------------------------------------------------
-    # 2. Milestone: users with exactly 5 or 10 completed analyses
-    # ------------------------------------------------------------------
+    # 2. Milestone
     try:
-        for milestone_count in _MILESTONE_COUNTS:
-            # Fetch users whose analysis insight count equals the milestone
-            # We use a count query per user — approach: fetch all analysis
-            # insights grouped by user_id and filter by count.
-            # Supabase does not support GROUP BY with aggregate filters directly
-            # in the SDK, so we fetch users who have exactly `milestone_count`
-            # analysis insights by counting per user.
-            all_insights_result = (
-                supabase.table("user_memories")
-                .select("user_id")
-                .eq("type", "analysis_insight")
-                .execute()
-            )
-            insight_rows = all_insights_result.data or []
-
-            # Count per user
-            count_per_user: dict[str, int] = {}
-            for row in insight_rows:
-                uid_str = row["user_id"]
-                count_per_user[uid_str] = count_per_user.get(uid_str, 0) + 1
-
-            milestone_users = [
-                uid_str
-                for uid_str, cnt in count_per_user.items()
-                if cnt == milestone_count
-            ]
-
-            for uid_str in milestone_users:
-                # Avoid duplicate milestone nudges: check if a milestone nudge
-                # was already sent when count was at this level.
-                # Heuristic: if a milestone nudge exists from the last 48 hours,
-                # skip (the milestone was already celebrated).
-                recent_milestone_cutoff = (
-                    now_utc - timedelta(hours=settings.ADVISOR_MILESTONE_DEDUP_HOURS)
-                ).isoformat()
-                existing = (
-                    supabase.table("advisor_nudges")
-                    .select("id")
-                    .eq("user_id", uid_str)
-                    .eq("trigger", TRIGGER_MILESTONE)
-                    .gt("created_at", recent_milestone_cutoff)
-                    .limit(1)
-                    .execute()
-                )
-                if existing.data:
-                    continue
-
-                if arq_pool is not None:
-                    await arq_pool.enqueue_job("generate_nudge", uid_str, TRIGGER_MILESTONE)
-                else:
-                    await generate_nudge(ctx, uid_str, TRIGGER_MILESTONE)
-                enqueued += 1
-
+        milestone_users = await find_milestone_eligible(supabase)
+        for uid_str in milestone_users:
+            await _dispatch(ctx, arq_pool, uid_str, TRIGGER_MILESTONE)
+            enqueued += 1
     except Exception as exc:
         logger.error("Milestone eligibility scan failed: %s", exc)
 
-    # ------------------------------------------------------------------
-    # 3. Re-engagement: users with last activity > 14 days ago
-    # ------------------------------------------------------------------
+    # 3. Re-engagement
     try:
-        # "Last activity" = most recent analysis insight (proxy for app usage).
-        # Fetch users whose most recent analysis insight is older than the cutoff.
-        all_insight_dates_result = (
-            supabase.table("user_memories")
-            .select("user_id, created_at")
-            .eq("type", "analysis_insight")
-            .execute()
-        )
-        insight_date_rows = all_insight_dates_result.data or []
-
-        # Latest insight per user
-        latest_activity: dict[str, str] = {}
-        for row in insight_date_rows:
-            uid_str = row["user_id"]
-            row_ts = row["created_at"]
-            if uid_str not in latest_activity or row_ts > latest_activity[uid_str]:
-                latest_activity[uid_str] = row_ts
-
-        inactive_users = [
-            uid_str
-            for uid_str, last_ts in latest_activity.items()
-            if last_ts < re_engagement_cutoff
-        ]
-
-        for uid_str in inactive_users:
-            # Avoid spamming: skip if a re-engagement nudge was sent in the
-            # last RE_ENGAGEMENT_DAYS to prevent back-to-back nudges.
-            last_re_engagement_cutoff = (
-                now_utc - timedelta(days=_RE_ENGAGEMENT_DAYS)
-            ).isoformat()
-            existing = (
-                supabase.table("advisor_nudges")
-                .select("id")
-                .eq("user_id", uid_str)
-                .eq("trigger", TRIGGER_RE_ENGAGEMENT)
-                .gt("created_at", last_re_engagement_cutoff)
-                .limit(1)
-                .execute()
-            )
-            if existing.data:
-                continue
-
-            if arq_pool is not None:
-                await arq_pool.enqueue_job("generate_nudge", uid_str, TRIGGER_RE_ENGAGEMENT)
-            else:
-                await generate_nudge(ctx, uid_str, TRIGGER_RE_ENGAGEMENT)
+        re_engagement_users = await find_re_engagement_eligible(supabase)
+        for uid_str in re_engagement_users:
+            await _dispatch(ctx, arq_pool, uid_str, TRIGGER_RE_ENGAGEMENT)
             enqueued += 1
-
     except Exception as exc:
         logger.error("Re-engagement eligibility scan failed: %s", exc)
 

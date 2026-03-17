@@ -27,11 +27,16 @@ export const GOOGLE_CLIENT_ID: string =
 export const APPLE_CLIENT_ID: string =
   (extra.appleClientId as string) ?? "";
 
+/** Google Web Client ID — required by @react-native-google-signin to get idToken */
+export const GOOGLE_WEB_CLIENT_ID: string =
+  (extra.googleWebClientId as string) ?? "";
+
 /** Auth API paths */
 export const AUTH_ENDPOINTS = {
   REGISTER: "/v1/auth/register",
   LOGIN: "/v1/auth/login",
-  SOCIAL_LOGIN: "/v1/auth/social",
+  /** Social login uses the same /login endpoint — backend accepts { provider, id_token, nonce? } */
+  SOCIAL_LOGIN: "/v1/auth/login",
 } as const;
 
 /** Analysis API paths */
@@ -168,11 +173,15 @@ export const PAYWALL_ANIMATION = {
   COUNT_ANIMATION_DURATION_MS: 600,
 } as const;
 
+/** Public card API paths (no auth required) */
+export const CARD_ENDPOINTS = {
+  PUBLIC: (username: string) => `/api/public/cards/${username}`,
+} as const;
+
 /** Profile API paths */
 export const PROFILE_ENDPOINTS = {
   PROFILE: (username: string) => `/v1/users/${username}/profile`,
   HISTORY: (username: string) => `/v1/users/${username}/history`,
-  REACTIONS: (username: string) => `/v1/users/${username}/reactions`,
   UPDATE: (username: string) => `/v1/users/${username}`,
 } as const;
 

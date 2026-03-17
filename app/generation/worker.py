@@ -47,10 +47,10 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     1. Fetch job + source image
     2. Build prompt from analysis
     3. Call generator (GlowUpGeneratorPort)
-    4. NSFW screen output
-    5. ArcFace identity check
-    6. Wow score + optional second candidate
-    7. Write to storage
+    4. Write generated image to NXME storage (fal.ai URL not used after this)
+    5. NSFW screen output (from in-memory bytes)
+    6. ArcFace identity check (from in-memory bytes)
+    7. Color normalization + overwrite in storage
     8. Commit credit, update job → COMPLETED
     """
     supabase: Client = ctx["supabase"]
@@ -168,34 +168,45 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             await cost_tracker.record_cost(gen_result.estimated_cost_usd)
             await cost_tracker.increment_user_daily(user_id)
 
-        # NSFW screen output
-        if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
-            import httpx
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(gen_result.image_url)
-                gen_image_bytes = resp.content
+        # Download generated image from provider immediately — the fal.ai
+        # URL must not be used for any downstream processing after this point.
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(gen_result.image_url)
+            gen_image_bytes = resp.content
 
+        # Write raw generated image to NXME storage before any checks
+        # (architecture.md §160: write to storage first, never use provider
+        # URL for downstream processing).  The file is overwritten later
+        # after color normalization.
+        storage_key = f"{user_id}/{job_id}.jpg"
+        supabase.storage.from_("generated-images").upload(
+            path=storage_key,
+            file=gen_image_bytes,
+            file_options={"content-type": "image/jpeg"},
+        )
+
+        # NSFW screen output — uses in-memory bytes (from NXME storage write)
+        if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
             from app.image_pipeline.nsfw_screener import RekognitionAdapter
             screener = RekognitionAdapter()
             nsfw_result = await screener.screen(gen_image_bytes)
 
             if nsfw_result.is_explicit:
+                # Clean up the already-uploaded image before failing
+                try:
+                    supabase.storage.from_("generated-images").remove([storage_key])
+                except Exception:
+                    logger.warning("Failed to remove NSFW image %s from storage", storage_key)
                 await _fail_job(supabase, job_id, job_data, FAILURE_NSFW)
                 return
-        else:
-            # Download generated image for identity check
-            import httpx
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(gen_result.image_url)
-                gen_image_bytes = resp.content
 
         # Download source for identity check
-        import httpx
         async with httpx.AsyncClient() as client:
             resp = await client.get(source_url)
             source_image_bytes = resp.content
 
-        # Identity check
+        # Identity check — uses in-memory bytes, not provider URLs
         loop = asyncio.get_running_loop()
         identity_result = await loop.run_in_executor(
             None,
@@ -225,9 +236,16 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             if retry_result.estimated_cost_usd:
                 await cost_tracker.record_cost(retry_result.estimated_cost_usd)
 
+            # Download retry image from provider and overwrite storage
             async with httpx.AsyncClient() as client:
                 resp = await client.get(retry_result.image_url)
                 retry_image_bytes = resp.content
+
+            supabase.storage.from_("generated-images").update(
+                path=storage_key,
+                file=retry_image_bytes,
+                file_options={"content-type": "image/jpeg"},
+            )
 
             retry_identity = await loop.run_in_executor(
                 None,
@@ -242,26 +260,28 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
                 gen_image_bytes = retry_image_bytes
                 identity_result = retry_identity
             else:
+                # Clean up stored image on identity failure
+                try:
+                    supabase.storage.from_("generated-images").remove([storage_key])
+                except Exception:
+                    logger.warning("Failed to remove image %s after identity failure", storage_key)
                 await _fail_job(supabase, job_id, job_data, FAILURE_IDENTITY,
                                 identity_score=retry_identity.similarity_score)
                 return
 
-        # Write generated image to storage
+        # Color normalization and final storage overwrite
         import PIL.Image
         gen_img = PIL.Image.open(io.BytesIO(gen_image_bytes))
         source_img_pil = PIL.Image.open(io.BytesIO(source_image_bytes))
 
-        # Color normalization
         gen_img = normalize_output(source_img_pil, gen_img)
 
-        # Save to buffer
         output_buffer = io.BytesIO()
         gen_img.save(output_buffer, format="JPEG", quality=95)
         output_bytes = output_buffer.getvalue()
 
-        # Upload to generated-images bucket
-        storage_key = f"{user_id}/{job_id}.jpg"
-        supabase.storage.from_("generated-images").upload(
+        # Overwrite with color-normalized version
+        supabase.storage.from_("generated-images").update(
             path=storage_key,
             file=output_bytes,
             file_options={"content-type": "image/jpeg"},

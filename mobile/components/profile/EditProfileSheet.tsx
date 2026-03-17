@@ -133,9 +133,9 @@ export function EditProfileSheet({
     (text: string) => {
       setDisplayName(text);
       const original = profile.display_name ?? "";
-      setHasChanges(text !== original || avatarUri !== (profile.avatar_url ?? ""));
+      setHasChanges(text !== original);
     },
-    [profile.display_name, profile.avatar_url, avatarUri],
+    [profile.display_name],
   );
 
   const handlePickAvatar = useCallback(async () => {
@@ -161,11 +161,6 @@ export function EditProfileSheet({
       payload.display_name = displayName.trim();
     }
 
-    const originalAvatarUrl = profile.avatar_url ?? "";
-    if (avatarUri !== originalAvatarUrl) {
-      payload.avatar_url = avatarUri;
-    }
-
     if (Object.keys(payload).length === 0) {
       animateClose(onClose);
       return;
@@ -175,7 +170,7 @@ export function EditProfileSheet({
     if (success) {
       animateClose(onClose);
     }
-  }, [displayName, avatarUri, profile, onSave, animateClose, onClose]);
+  }, [displayName, profile, onSave, animateClose, onClose]);
 
   const translateY = slideAnim.interpolate({
     inputRange: [0, 1],
