@@ -14,7 +14,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
 
-from app.api import analyses, auth, entitlement, generation, health, webhooks
+from app.api import analyses, auth, entitlement, generation, health, social, webhooks
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -97,6 +97,7 @@ def create_app() -> FastAPI:
     v1.include_router(entitlement.router)
     v1.include_router(analyses.router)
     v1.include_router(generation.router)
+    v1.include_router(social.router)
     app.include_router(v1)
 
     return app

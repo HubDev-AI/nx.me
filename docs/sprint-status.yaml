@@ -125,7 +125,7 @@ epics:
         slug: monetization-api
         title: Monetization API — Subscription CRUD & Credits Entitlement Endpoint
         size: S
-        status: in-progress
+        status: done
         wave: 7
         dependencies: ["4-4"]
       - id: "4-6"
@@ -143,7 +143,7 @@ epics:
         slug: social-feed-api
         title: Social Feed API — Paginated Feed & Sort Strategies
         size: M
-        status: backlog
+        status: in-progress
         wave: 7
         dependencies: ["1-1"]
       - id: "5-2"
