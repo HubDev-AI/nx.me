@@ -20,10 +20,10 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
-from supabase import Client
 
-from app.api.deps import get_current_user, get_redis, get_supabase
-from app.api.middleware.auth import UserClaims
+from app.api.deps import get_feed_repo, get_redis
+from app.db.async_helpers import run_sync
+from app.repositories.feed_repo import FeedRepository
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def get_feed(
     sort: FeedSort = Query(FeedSort.NEWEST, description="Sort strategy"),
     cursor: str | None = Query(None, description="Cursor for pagination (ISO timestamp or composite)"),
     limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"),
-    supabase: Client = Depends(get_supabase),
+    feed_repo: FeedRepository = Depends(get_feed_repo),
 ) -> FeedResponse:
     """Public feed endpoint — no auth required.
 
@@ -85,13 +85,13 @@ def get_feed(
     fetch_limit = limit + 1
 
     if sort == FeedSort.NEWEST:
-        posts = _fetch_newest(supabase, cursor, fetch_limit)
+        posts = feed_repo.fetch_newest(cursor, fetch_limit)
     elif sort == FeedSort.TRENDING:
-        posts = _fetch_trending(supabase, cursor, fetch_limit)
+        posts = feed_repo.fetch_trending(cursor, fetch_limit)
     elif sort == FeedSort.BIGGEST_IMPROVEMENTS:
-        posts = _fetch_biggest_improvements(supabase, cursor, fetch_limit)
+        posts = feed_repo.fetch_biggest_improvements(cursor, fetch_limit)
     else:
-        posts = _fetch_newest(supabase, cursor, fetch_limit)
+        posts = feed_repo.fetch_newest(cursor, fetch_limit)
 
     has_more = len(posts) > limit
     if has_more:
@@ -135,76 +135,6 @@ def get_feed(
 
 
 # ---------------------------------------------------------------------------
-# Sort strategy implementations
-# ---------------------------------------------------------------------------
-
-_POST_COLUMNS = (
-    "id, user_id, caption, before_image_url, after_image_url, "
-    "reaction_count, comment_count, created_at, "
-    "before_image_id, after_image_id"
-)
-
-
-def _fetch_newest(supabase: Client, cursor: str | None, limit: int) -> list[dict]:
-    """Fetch posts ordered by created_at DESC.
-
-    Uses v_feed_posts view which JOINs images to enforce AC-D7
-    (both images must be 'cleared') at the database level.
-    """
-    query = (
-        supabase.table("v_feed_posts")
-        .select(_POST_COLUMNS)
-        .order("created_at", desc=True)
-        .limit(limit)
-    )
-
-    if cursor:
-        query = query.lt("created_at", cursor)
-
-    result = query.execute()
-    return result.data or []
-
-
-def _fetch_trending(supabase: Client, cursor: str | None, limit: int) -> list[dict]:
-    """Fetch posts ordered by HN-style time-decay score.
-
-    score = reaction_count / POWER(hours_since_post + 2, 1.5)
-    Computed in SQL via the feed_trending() function so sorting, filtering,
-    and pagination all happen in the database.
-    """
-    params: dict = {"p_limit": limit}
-
-    if cursor:
-        parts = cursor.split("|", 2)
-        if len(parts) == 3:
-            params["p_cursor_score"] = float(parts[0])
-            params["p_cursor_created"] = parts[1]
-            params["p_cursor_id"] = parts[2]
-
-    result = supabase.rpc("feed_trending", params).execute()
-    return result.data or []
-
-
-def _fetch_biggest_improvements(supabase: Client, cursor: str | None, limit: int) -> list[dict]:
-    """Fetch posts ordered by reaction_count DESC (AC-U10: no AI scores).
-
-    Uses feed_biggest_improvements() SQL function with proper tuple-based
-    cursor pagination — no over-fetching required.
-    """
-    params: dict = {"p_limit": limit}
-
-    if cursor:
-        parts = cursor.split("|", 2)
-        if len(parts) == 3:
-            params["p_cursor_reactions"] = int(parts[0])
-            params["p_cursor_created"] = parts[1]
-            params["p_cursor_id"] = parts[2]
-
-    result = supabase.rpc("feed_biggest_improvements", params).execute()
-    return result.data or []
-
-
-# ---------------------------------------------------------------------------
 # POST /posts/{post_id}/react (Story 5-2)
 # ---------------------------------------------------------------------------
 
@@ -223,7 +153,7 @@ async def react_to_post(
     request: Request,
     x_guest_token: Annotated[str | None, Header()] = None,
     authorization: Annotated[str | None, Header()] = None,
-    supabase: Client = Depends(get_supabase),
+    feed_repo: FeedRepository = Depends(get_feed_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
 ) -> ReactionResponse:
     """React to a post — guest (X-Guest-Token) or authenticated (JWT).
@@ -273,15 +203,8 @@ async def react_to_post(
         )
 
     # --- Verify post exists ---
-    post = (
-        supabase.table("posts")
-        .select("id, reaction_count")
-        .eq("id", str(post_id))
-        .eq("is_deleted", False)
-        .maybe_single()
-        .execute()
-    )
-    if not post.data:
+    post = await run_sync(feed_repo.get_post_for_reaction, str(post_id))
+    if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Post not found",
@@ -293,7 +216,7 @@ async def react_to_post(
     # Load from DB on cache miss
     cached = await redis_client.get(redis_counter_key)
     if cached is None:
-        await redis_client.set(redis_counter_key, post.data["reaction_count"], ex=60)
+        await redis_client.set(redis_counter_key, post["reaction_count"], ex=60)
 
     new_count = await redis_client.incr(redis_counter_key)
 
@@ -325,18 +248,21 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
     On duplicate (UNIQUE constraint), RPC returns empty set — decrement Redis.
     """
     from app.db.client import get_supabase_service
+    from app.repositories.feed_repo import FeedRepository
 
     supabase = get_supabase_service()
+    feed_repo = FeedRepository(supabase)
     post_id = reaction_data["post_id"]
 
     try:
-        result = supabase.rpc("persist_reaction_atomic", {
-            "p_post_id": post_id,
-            "p_user_id": reaction_data.get("user_id"),
-            "p_guest_session_token": reaction_data.get("guest_session_token"),
-        }).execute()
+        result = await run_sync(
+            feed_repo.persist_reaction_atomic,
+            post_id,
+            reaction_data.get("user_id"),
+            reaction_data.get("guest_session_token"),
+        )
 
-        if not result.data:
+        if not result:
             # Duplicate reaction — undo optimistic Redis INCR
             redis_client = ctx.get("redis")
             if redis_client:
@@ -358,18 +284,16 @@ async def reconcile_reaction_counts(ctx: dict) -> None:
     Runs for all posts with reactions in the previous 48 hours.
     """
     from app.db.client import get_supabase_service
+    from app.repositories.feed_repo import FeedRepository
 
     supabase = get_supabase_service()
+    feed_repo = FeedRepository(supabase)
     redis_client = ctx.get("redis")
 
     cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=2)).isoformat()
 
-    # Single bulk UPDATE — returns list of updated post IDs
-    result = supabase.rpc(
-        "reconcile_reaction_counts", {"cutoff_iso": cutoff}
-    ).execute()
-
-    updated_ids = [row["id"] for row in (result.data or [])]
+    updated_rows = await run_sync(feed_repo.reconcile_reaction_counts, cutoff)
+    updated_ids = [row["id"] for row in updated_rows]
 
     # Invalidate Redis for reconciled posts so next read fetches fresh count
     if redis_client and updated_ids:
