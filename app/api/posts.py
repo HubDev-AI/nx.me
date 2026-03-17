@@ -238,18 +238,14 @@ def create_comment(
     if not post.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
-    now_utc = datetime.now(tz=timezone.utc).isoformat()
-    result = supabase.table("comments").insert({
-        "post_id": str(post_id),
-        "user_id": user_id,
-        "content": body.content,
-        "created_at": now_utc,
+    # Atomic: insert comment + increment count in single transaction
+    result = supabase.rpc("insert_comment_atomic", {
+        "p_post_id": str(post_id),
+        "p_user_id": user_id,
+        "p_content": body.content,
     }).execute()
 
     comment = result.data[0]
-
-    # Increment comment count atomically to avoid race conditions
-    supabase.rpc("increment_comment_count", {"p_post_id": str(post_id)}).execute()
 
     logger.info("Comment %s on post %s by user %s", comment["id"], post_id, user_id)
 

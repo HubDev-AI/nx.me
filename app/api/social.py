@@ -320,10 +320,9 @@ async def react_to_post(
 
 
 async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
-    """Background task: insert reaction row and update post counter.
+    """Background task: atomically insert reaction + update counter.
 
-    On duplicate (UNIQUE constraint), decrements Redis counter.
-    Retries up to 3 times on transient failures.
+    On duplicate (UNIQUE constraint), RPC returns empty set — decrement Redis.
     """
     from app.db.client import get_supabase_service
 
@@ -331,23 +330,20 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
     post_id = reaction_data["post_id"]
 
     try:
-        supabase.table("reactions").insert({
-            "post_id": post_id,
-            "user_id": reaction_data.get("user_id"),
-            "guest_session_token": reaction_data.get("guest_session_token"),
+        result = supabase.rpc("persist_reaction_atomic", {
+            "p_post_id": post_id,
+            "p_user_id": reaction_data.get("user_id"),
+            "p_guest_session_token": reaction_data.get("guest_session_token"),
         }).execute()
 
-        # Atomic increment — O(1) instead of full recount
-        supabase.rpc("increment_reaction_count", {"p_post_id": post_id}).execute()
-
-    except Exception as exc:
-        if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
-            # Dedup: decrement the optimistic Redis INCR
+        if not result.data:
+            # Duplicate reaction — undo optimistic Redis INCR
             redis_client = ctx.get("redis")
             if redis_client:
                 await redis_client.decr(f"posts:{post_id}:reactions")
             logger.info("Duplicate reaction for post %s — Redis counter decremented", post_id)
-            return
+
+    except Exception:
         # Transient failure: undo Redis optimistic increment before retry
         redis_client = ctx.get("redis")
         if redis_client:

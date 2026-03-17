@@ -128,22 +128,20 @@ async def _handle_checkout_completed(supabase: Client, session: dict, event_id: 
             logger.warning("checkout.session.completed with invalid credits=%s", credits_str)
             return
 
-        # Insert credit_ledger entry (direct INSERT, not CreditLedger.reserve/commit)
-        supabase.table("credit_ledger").insert({
-            "user_id": user_id,
-            "delta": credits,
-            "type": "purchase",
-            "note": f"Stripe event {event_id}",
+        # Atomic: insert ledger entry + conditional tier upgrade
+        result = supabase.rpc("handle_checkout_credit_atomic", {
+            "p_user_id": user_id,
+            "p_credits": credits,
+            "p_event_id": event_id,
+            "p_trial_tier_id": TIER_ID_TRIAL,
+            "p_credit_holder_tier_id": TIER_ID_CREDIT_HOLDER,
         }).execute()
 
-        # If user is on free tier, upgrade to credit_holder
-        user_result = supabase.table("users").select("tier_id").eq("id", user_id).single().execute()
-        if user_result.data and user_result.data["tier_id"] == TIER_ID_TRIAL:
-            supabase.table("users").update({
-                "tier_id": TIER_ID_CREDIT_HOLDER,
-            }).eq("id", user_id).execute()
-
-        logger.info("Credit purchase: user=%s, credits=%d, event=%s", user_id, credits, event_id)
+        tier_upgraded = result.data[0]["tier_upgraded"] if result.data else False
+        logger.info(
+            "Credit purchase: user=%s, credits=%d, event=%s, tier_upgraded=%s",
+            user_id, credits, event_id, tier_upgraded,
+        )
 
     elif mode == "subscription":
         # Subscription activation handled by customer.subscription.created webhook
