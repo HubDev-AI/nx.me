@@ -84,6 +84,13 @@ def get_image_repo(request: Request) -> "ImageRepository":
     return ImageRepository(request.app.state.supabase)
 
 
+def get_analysis_repo(request: Request) -> "AnalysisRepository":
+    """Return an AnalysisRepository wired to the app's Supabase client."""
+    from app.repositories.analysis_repo import AnalysisRepository
+
+    return AnalysisRepository(request.app.state.supabase)
+
+
 def get_post_repo(request: Request) -> "PostRepository":
     """Return a PostRepository wired to the app's Supabase client."""
     from app.repositories.post_repo import PostRepository

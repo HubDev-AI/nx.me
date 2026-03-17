@@ -1,0 +1,84 @@
+"""Analysis repository — all supabase.table('analyses') queries in one place.
+
+Follows the same pattern as UserRepository: constructor takes a Client,
+methods are synchronous (callers use run_sync for async handlers).
+"""
+from __future__ import annotations
+
+import logging
+
+from supabase import Client
+
+logger = logging.getLogger(__name__)
+
+
+class AnalysisRepository:
+    """Encapsulates all DB calls related to the analyses table."""
+
+    def __init__(self, supabase: Client) -> None:
+        self._sb = supabase
+
+    # ------------------------------------------------------------------
+    # Read
+    # ------------------------------------------------------------------
+
+    def get_by_id(self, analysis_id: str) -> dict | None:
+        """Fetch an analysis by ID, or None if not found."""
+        result = (
+            self._sb.table("analyses")
+            .select("*")
+            .eq("id", analysis_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
+    def list_for_user(
+        self,
+        user_id: str,
+        limit: int,
+        cursor: str | None = None,
+    ) -> list[dict]:
+        """Return analyses for a user in reverse chronological order.
+
+        Args:
+            user_id: Owner's user ID.
+            limit: Maximum number of rows to fetch.
+            cursor: Optional created_at ISO timestamp; only rows older than
+                this value are returned (exclusive, for cursor pagination).
+        """
+        query = (
+            self._sb.table("analyses")
+            .select("id, original_image_id, face_shape, symmetry_score, recommendations, status, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if cursor:
+            query = query.lt("created_at", cursor)
+        result = query.execute()
+        return result.data or []
+
+    def get_recommendations(self, analysis_id: str) -> list[dict]:
+        """Fetch the recommendations JSON array for a single analysis.
+
+        Returns an empty list if the analysis is not found.
+        """
+        result = (
+            self._sb.table("analyses")
+            .select("recommendations")
+            .eq("id", analysis_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result.data:
+            return []
+        return result.data.get("recommendations") or []
+
+    # ------------------------------------------------------------------
+    # Write
+    # ------------------------------------------------------------------
+
+    def insert(self, row: dict) -> None:
+        """Insert a new analyses row."""
+        self._sb.table("analyses").insert(row).execute()

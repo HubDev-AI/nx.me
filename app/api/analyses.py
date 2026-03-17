@@ -15,13 +15,14 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
-from supabase import Client
 
-from app.api.deps import get_current_user, get_supabase
+from app.api.deps import get_analysis_repo, get_current_user
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.face_analysis.service import FaceAnalysisService
 from app.image_pipeline.pipeline import ImagePipeline
+from app.repositories.analysis_repo import AnalysisRepository
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ async def create_analysis(
     request: Request,
     file: UploadFile,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
 ) -> AnalysisResponse:
     """Upload a selfie for face analysis.
 
@@ -70,6 +71,7 @@ async def create_analysis(
     AC-2: Quarantined images raise HTTPException 422 from pipeline — analyze() never called.
     AC-4: Face validation failures raise HTTPException 422 from analysis service.
     """
+    supabase = request.app.state.supabase
     user_id: str = claims["sub"]
     file_bytes = await file.read()
     content_type = file.content_type or "application/octet-stream"
@@ -99,17 +101,20 @@ async def create_analysis(
     ]
 
     try:
-        supabase.table("analyses").insert({
-            "id": str(analysis_id),
-            "user_id": user_id,
-            "original_image_id": str(processed.image_id),
-            "face_shape": result.face_shape.value,
-            "symmetry_score": result.symmetry_score,
-            "recommendations": recs_json,
-            "status": "completed",
-            "created_at": now_utc,
-            "updated_at": now_utc,
-        }).execute()
+        await run_sync(
+            analysis_repo.insert,
+            {
+                "id": str(analysis_id),
+                "user_id": user_id,
+                "original_image_id": str(processed.image_id),
+                "face_shape": result.face_shape.value,
+                "symmetry_score": result.symmetry_score,
+                "recommendations": recs_json,
+                "status": "completed",
+                "created_at": now_utc,
+                "updated_at": now_utc,
+            },
+        )
     except Exception as exc:
         logger.error("analyses INSERT failed for user %s: %s", user_id, exc)
         raise HTTPException(
@@ -156,35 +161,28 @@ async def create_analysis(
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisDetailResponse)
-def get_analysis(
+async def get_analysis(
     analysis_id: UUID,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
 ) -> AnalysisDetailResponse:
     """Retrieve an analysis by ID. Owner only (AC-3)."""
     user_id: str = claims["sub"]
 
-    result = (
-        supabase.table("analyses")
-        .select("*")
-        .eq("id", str(analysis_id))
-        .maybe_single()
-        .execute()
-    )
+    row = await run_sync(analysis_repo.get_by_id, str(analysis_id))
 
-    if not result.data:
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Analysis not found",
         )
 
-    if result.data["user_id"] != user_id:
+    if row["user_id"] != user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to view this analysis",
         )
 
-    row = result.data
     recs = row.get("recommendations") or []
 
     return AnalysisDetailResponse(

@@ -16,7 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_supabase, get_user_repo
+from app.api.deps import get_analysis_repo, get_supabase, get_user_repo
+from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def get_shareable_card(
     username: str,
     supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
+    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
 ) -> CardResponse:
     """Return the shareable card for a user's latest published post.
 
@@ -117,15 +119,7 @@ def get_shareable_card(
         if job_result.data:
             analysis_id: str | None = job_result.data.get("analysis_id")
             if analysis_id:
-                analysis_result = (
-                    supabase.table("analyses")
-                    .select("recommendations")
-                    .eq("id", analysis_id)
-                    .maybe_single()
-                    .execute()
-                )
-                if analysis_result.data:
-                    recommendations = analysis_result.data.get("recommendations") or []
+                recommendations = analysis_repo.get_recommendations(analysis_id)
 
     logger.info(
         "Shareable card served for user %s (post %s, %d recommendations)",

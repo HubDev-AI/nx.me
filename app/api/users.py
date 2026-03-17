@@ -14,9 +14,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_supabase, get_user_repo
+from app.api.deps import get_analysis_repo, get_current_user, get_image_repo, get_job_repo, get_supabase, get_user_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.user_repo import UserRepository
@@ -149,10 +150,10 @@ def get_user_history(
         description="Page size",
     ),
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
+    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
 ) -> HistoryResponse:
     """Return the authenticated user's analysis history in reverse chronological order.
 
@@ -170,19 +171,7 @@ def get_user_history(
 
     fetch_limit = limit + 1
 
-    query = (
-        supabase.table("analyses")
-        .select("id, original_image_id, face_shape, symmetry_score, recommendations, status, created_at")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(fetch_limit)
-    )
-
-    if cursor:
-        query = query.lt("created_at", cursor)
-
-    result = query.execute()
-    analyses = result.data or []
+    analyses = analysis_repo.list_for_user(user_id, fetch_limit, cursor)
 
     has_more = len(analyses) > limit
     if has_more:
