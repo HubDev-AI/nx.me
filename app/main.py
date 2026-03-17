@@ -14,7 +14,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
 
-from app.api import analyses, auth, entitlement, generation, health, posts, social, webhooks
+from app.api import analyses, auth, entitlement, generation, health, posts, public, social, users, webhooks
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -90,6 +90,9 @@ def create_app() -> FastAPI:
     # Webhooks are unversioned (external providers call fixed URLs)
     app.include_router(webhooks.router)
 
+    # Public endpoints — no auth, no versioning, under /api prefix
+    app.include_router(public.router, prefix="/api")
+
     # All API routes under /v1 prefix — single place to manage API version
     from fastapi import APIRouter
     v1 = APIRouter(prefix="/v1")
@@ -99,6 +102,7 @@ def create_app() -> FastAPI:
     v1.include_router(generation.router)
     v1.include_router(social.router)
     v1.include_router(posts.router)
+    v1.include_router(users.router)
     app.include_router(v1)
 
     return app
