@@ -50,11 +50,11 @@ def _get_nsfw_screener() -> NSFWScreenerPort:
     return MockNSFWAdapter()
 
 
-def _get_storage_adapter(supabase: Client) -> StoragePort:
+def _get_storage_adapter(image_repo: ImageRepository) -> StoragePort:
     """Resolve storage adapter from config (lazy import)."""
     if settings.ADAPTER__STORAGE_ADAPTER == "supabase":
         from app.image_pipeline.storage import SupabaseStorageAdapter
-        return SupabaseStorageAdapter(supabase)
+        return SupabaseStorageAdapter(image_repo)
     from app.image_pipeline.storage import LocalStorageAdapter
     return LocalStorageAdapter()
 
@@ -65,13 +65,12 @@ class ImagePipeline:
     BUCKET = "raw-selfies"
 
     def __init__(self, supabase: Client) -> None:
-        self._supabase = supabase
         self._image_repo = ImageRepository(supabase)
         self._magic_validator = MagicBytesValidator()
         self._dimension_validator = DimensionValidator()
         self._nsfw_screener = _get_nsfw_screener()
         self._metadata_stripper = MetadataStripper()
-        self._storage = _get_storage_adapter(supabase)
+        self._storage = _get_storage_adapter(self._image_repo)
 
     async def process(
         self,

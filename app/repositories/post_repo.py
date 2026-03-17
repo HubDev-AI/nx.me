@@ -22,6 +22,27 @@ class PostRepository:
     # posts table — reads
     # ------------------------------------------------------------------
 
+    def get_latest_for_user(self, user_id: str) -> dict | None:
+        """Fetch the latest non-deleted post for a user (for shareable card).
+
+        Returns id, before_image_url, after_image_url, reaction_count,
+        comment_count, and glow_up_job_id; or None if the user has no posts.
+        """
+        result = (
+            self._sb.table("posts")
+            .select(
+                "id, before_image_url, after_image_url, "
+                "reaction_count, comment_count, glow_up_job_id"
+            )
+            .eq("user_id", user_id)
+            .eq("is_deleted", False)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        data = result.data or []
+        return data[0] if data else None
+
     def get_post_with_ownership(self, post_id: str) -> dict | None:
         """Fetch post id, user_id, is_deleted fields for ownership checks."""
         result = (

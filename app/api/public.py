@@ -14,10 +14,11 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from supabase import Client
 
-from app.api.deps import get_analysis_repo, get_supabase, get_user_repo
+from app.api.deps import get_analysis_repo, get_job_repo, get_post_repo, get_user_repo
 from app.repositories.analysis_repo import AnalysisRepository
+from app.repositories.job_repo import JobRepository
+from app.repositories.post_repo import PostRepository
 from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
@@ -48,8 +49,9 @@ class CardResponse(BaseModel):
 @router.get("/public/cards/{username}", response_model=CardResponse)
 def get_shareable_card(
     username: str,
-    supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
+    post_repo: PostRepository = Depends(get_post_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
     analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
 ) -> CardResponse:
     """Return the shareable card for a user's latest published post.
@@ -81,43 +83,23 @@ def get_shareable_card(
     user_id: str = user["id"]
 
     # Step 2 — latest non-deleted post for this user
-    post_result = (
-        supabase.table("posts")
-        .select(
-            "id, before_image_url, after_image_url, "
-            "reaction_count, comment_count, glow_up_job_id"
-        )
-        .eq("user_id", user_id)
-        .eq("is_deleted", False)
-        .order("created_at", desc=True)
-        .limit(1)
-        .execute()
-    )
+    post = post_repo.get_latest_for_user(user_id)
 
-    posts = post_result.data or []
-    if not posts:
+    if not post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No published posts found for this user",
         )
-
-    post = posts[0]
 
     # Step 3 — find the analysis for the post's glow_up_job
     recommendations: list[dict] = []
 
     glow_up_job_id: str | None = post.get("glow_up_job_id")
     if glow_up_job_id:
-        job_result = (
-            supabase.table("glow_up_jobs")
-            .select("analysis_id")
-            .eq("id", glow_up_job_id)
-            .maybe_single()
-            .execute()
-        )
+        job_data = job_repo.get_for_analysis(glow_up_job_id)
 
-        if job_result.data:
-            analysis_id: str | None = job_result.data.get("analysis_id")
+        if job_data:
+            analysis_id: str | None = job_data.get("analysis_id")
             if analysis_id:
                 recommendations = analysis_repo.get_recommendations(analysis_id)
 

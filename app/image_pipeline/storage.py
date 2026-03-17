@@ -15,8 +15,6 @@ import os
 from pathlib import Path
 from typing import Protocol
 
-from supabase import Client
-
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -45,26 +43,20 @@ class SupabaseStorageAdapter:
 
     Default for all environments. Local dev uses `supabase start` which
     provides a real Storage instance at http://127.0.0.1:54321.
+
+    Delegates to ImageRepository so all storage calls go through one place.
     """
 
-    def __init__(self, supabase: Client) -> None:
-        self._supabase = supabase
+    def __init__(self, image_repo: "ImageRepository") -> None:
+        from app.repositories.image_repo import ImageRepository  # noqa: F401 (type hint)
+        self._image_repo = image_repo
 
     async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:
-        self._supabase.storage.from_(bucket).upload(
-            path=key,
-            file=data,
-            file_options={"content-type": content_type},
-        )
-        logger.info("Uploaded %s/%s (%d bytes)", bucket, key, len(data))
+        self._image_repo.upload(bucket, key, data, content_type)
         return key
 
     async def create_signed_url(self, bucket: str, key: str, expires_in: int) -> str:
-        result = self._supabase.storage.from_(bucket).create_signed_url(
-            path=key,
-            expires_in=expires_in,
-        )
-        return result["signedURL"]
+        return self._image_repo.create_signed_url(bucket, key, expires_in)
 
 
 class LocalStorageAdapter:

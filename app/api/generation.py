@@ -14,16 +14,15 @@ from uuid import UUID, uuid4
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from supabase import Client
 
 from app.api.deps import (
+    get_analysis_repo,
     get_credit_ledger,
     get_current_user,
     get_entitlement_service,
     get_image_repo,
     get_job_repo,
     get_redis,
-    get_supabase,
 )
 from app.api.middleware.auth import UserClaims
 from app.config import settings
@@ -41,6 +40,7 @@ from app.generation.models import (
     LANE_PREMIUM,
     LANE_TRIAL,
 )
+from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 
@@ -116,10 +116,10 @@ async def create_generation(
     body: GenerateRequest,
     request: Request,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
     redis_client: aioredis.Redis = Depends(get_redis),
     ent_svc: EntitlementService = Depends(get_entitlement_service),
     job_repo: JobRepository = Depends(get_job_repo),
+    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> GenerateResponse:
     """Trigger a glow-up generation job.
@@ -165,24 +165,18 @@ async def create_generation(
         )
 
     # --- Validate analysis exists, is owned, and is completed ---
-    analysis = (
-        supabase.table("analyses")
-        .select("id, user_id, status, original_image_id")
-        .eq("id", str(analysis_id))
-        .maybe_single()
-        .execute()
-    )
-    if not analysis.data:
+    analysis_data = await run_sync(analysis_repo.get_for_generation, str(analysis_id))
+    if not analysis_data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Analysis not found",
         )
-    if analysis.data["user_id"] != user_id_str:
+    if analysis_data["user_id"] != user_id_str:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Analysis not found",
         )
-    if analysis.data["status"] != "completed":
+    if analysis_data["status"] != "completed":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -281,7 +275,7 @@ async def create_generation(
             "id": str(job_id),
             "user_id": user_id_str,
             "analysis_id": str(analysis_id),
-            "original_image_id": analysis.data["original_image_id"],
+            "original_image_id": analysis_data["original_image_id"],
             "credit_reservation_id": str(reservation_id) if reservation_id else None,
             "user_tier_at_enqueue": tier_name,
             "status": JobStatus.QUEUED,
@@ -460,7 +454,6 @@ async def get_job(
 async def cancel_job(
     job_id: UUID,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
     job_repo: JobRepository = Depends(get_job_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> CancelResponse:

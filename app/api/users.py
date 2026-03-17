@@ -12,9 +12,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from supabase import Client
 
-from app.api.deps import get_analysis_repo, get_current_user, get_image_repo, get_job_repo, get_supabase, get_user_repo
+from app.api.deps import get_analysis_repo, get_current_user, get_image_repo, get_job_repo, get_user_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.repositories.analysis_repo import AnalysisRepository
@@ -96,7 +95,6 @@ def _lookup_user(user_repo: UserRepository, username: str) -> dict:
 @router.get("/users/{username}/profile", response_model=ProfileResponse)
 def get_user_profile(
     username: str,
-    supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> ProfileResponse:
@@ -108,10 +106,7 @@ def get_user_profile(
     user_id: str = user["id"]
 
     # Aggregate post_count and total_reactions via DB function (single query)
-    stats_result = supabase.rpc(
-        "user_post_stats", {"p_user_id": user_id}
-    ).execute()
-    stats = (stats_result.data or [{}])[0]
+    stats = user_repo.get_user_post_stats(user_id)
     post_count = stats.get("post_count", 0)
     total_reactions = stats.get("total_reactions", 0)
 
@@ -277,7 +272,6 @@ def update_user_profile(
     username: str,
     body: UpdateProfileRequest,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> UpdateProfileResponse:

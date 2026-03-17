@@ -30,6 +30,20 @@ class JobRepository:
     # glow_up_jobs — read
     # ------------------------------------------------------------------
 
+    def get_for_analysis(self, job_id: str) -> dict | None:
+        """Fetch analysis_id from a glow_up_job row (for shareable card).
+
+        Returns a dict with analysis_id, or None if the job is not found.
+        """
+        result = (
+            self._sb.table("glow_up_jobs")
+            .select("analysis_id")
+            .eq("id", job_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
     def get_by_id(self, job_id: str) -> dict | None:
         """Fetch a single job by ID. Returns None if not found."""
         result = (

@@ -28,6 +28,7 @@ from app.generation.models import (
 )
 from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
+from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 
@@ -61,6 +62,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     generator = _get_generator()
     job_repo = JobRepository(supabase)
     image_repo = ImageRepository(supabase)
+    analysis_repo = AnalysisRepository(supabase)
     from app.entitlement.ledger import CreditLedger
     ledger = CreditLedger(supabase)
     user_id_for_concurrent: str | None = None
@@ -106,19 +108,13 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         # Fetch analysis for prompt building
         analysis = None
         if job_data.get("analysis_id"):
-            analysis_row = (
-                supabase.table("analyses")
-                .select("face_shape, symmetry_score, recommendations")
-                .eq("id", job_data["analysis_id"])
-                .single()
-                .execute()
-            )
-            if analysis_row.data:
+            analysis_row = analysis_repo.get_for_worker(job_data["analysis_id"])
+            if analysis_row:
                 from app.face_analysis.models import AnalysisResult, FaceShape, Suggestion
-                recs = analysis_row.data.get("recommendations") or []
+                recs = analysis_row.get("recommendations") or []
                 analysis = AnalysisResult(
-                    face_shape=FaceShape(analysis_row.data["face_shape"]),
-                    symmetry_score=analysis_row.data["symmetry_score"],
+                    face_shape=FaceShape(analysis_row["face_shape"]),
+                    symmetry_score=analysis_row["symmetry_score"],
                     recommendations=[
                         Suggestion(
                             rank=r.get("rank", i + 1),

@@ -71,6 +71,15 @@ class UserRepository:
         )
         return result.data["trial_analyses_remaining"] if result.data else 0
 
+    def get_user_post_stats(self, user_id: str) -> dict:
+        """Call the user_post_stats RPC to get post_count and total_reactions.
+
+        Returns a dict with post_count and total_reactions (both default to 0).
+        """
+        result = self._sb.rpc("user_post_stats", {"p_user_id": user_id}).execute()
+        rows = result.data or [{}]
+        return rows[0] if rows else {}
+
     def get_by_username_for_card(self, username: str) -> dict | None:
         """Fetch user fields needed by the shareable card endpoint (includes deleted_at)."""
         result = (

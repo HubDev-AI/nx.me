@@ -22,6 +22,36 @@ class AnalysisRepository:
     # Read
     # ------------------------------------------------------------------
 
+    def get_for_generation(self, analysis_id: str) -> dict | None:
+        """Fetch analysis fields needed for generation validation.
+
+        Returns id, user_id, status, and original_image_id; or None if
+        the analysis does not exist.
+        """
+        result = (
+            self._sb.table("analyses")
+            .select("id, user_id, status, original_image_id")
+            .eq("id", analysis_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
+    def get_for_worker(self, analysis_id: str) -> dict | None:
+        """Fetch analysis fields needed by the generation worker.
+
+        Returns face_shape, symmetry_score, and recommendations; or None
+        if the analysis does not exist.
+        """
+        result = (
+            self._sb.table("analyses")
+            .select("face_shape, symmetry_score, recommendations")
+            .eq("id", analysis_id)
+            .single()
+            .execute()
+        )
+        return result.data or None
+
     def get_by_id(self, analysis_id: str) -> dict | None:
         """Fetch an analysis by ID, or None if not found."""
         result = (
