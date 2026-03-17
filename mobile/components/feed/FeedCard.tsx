@@ -38,6 +38,7 @@ interface FeedCardProps {
   hasReacted: boolean;
   onReact: (postId: string) => void;
   onReport: (postId: string) => void;
+  onCommentPress: (postId: string) => void;
 }
 
 /**
@@ -51,6 +52,7 @@ export function FeedCard({
   hasReacted,
   onReact,
   onReport,
+  onCommentPress,
 }: FeedCardProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateAnim = useRef(new Animated.Value(20)).current;
@@ -79,6 +81,10 @@ export function FeedCard({
   const handleReact = useCallback(() => {
     onReact(post.post_id);
   }, [onReact, post.post_id]);
+
+  const handleComment = useCallback(() => {
+    onCommentPress(post.post_id);
+  }, [onCommentPress, post.post_id]);
 
   const handleLongPress = useCallback(() => {
     const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${post.post_id}`;
@@ -178,14 +184,19 @@ export function FeedCard({
             onReact={handleReact}
           />
 
-          <View style={styles.commentBadge}>
+          <Pressable
+            onPress={handleComment}
+            style={styles.commentBadge}
+            accessibilityLabel={`${post.comment_count} comments, tap to view`}
+            accessibilityRole="button"
+          >
             <Ionicons
               name="chatbubble-outline"
               size={18}
               color={TEXT_SECONDARY}
             />
             <Text style={styles.commentCount}>{post.comment_count}</Text>
-          </View>
+          </Pressable>
 
           <Text style={styles.timestamp}>{timeAgo}</Text>
         </View>

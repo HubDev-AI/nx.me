@@ -62,6 +62,25 @@ export const IMAGE_PICKER = {
 export const FEED_ENDPOINTS = {
   FEED: "/v1/feed",
   REACT: (postId: string) => `/v1/posts/${postId}/react`,
+  COMMENTS: (postId: string) => `/v1/posts/${postId}/comments`,
+} as const;
+
+/** Comments configuration */
+export const COMMENTS_CONFIG = {
+  /** Number of comments per page */
+  PAGE_SIZE: 20,
+  /** Max comment length (characters) */
+  MAX_COMMENT_LENGTH: 500,
+  /** Bottom sheet scrim opacity */
+  SCRIM_OPACITY: 0.5,
+  /** Sheet entry animation duration (ms) */
+  ENTER_DURATION_MS: 300,
+  /** Sheet exit animation duration (ms) */
+  EXIT_DURATION_MS: 200,
+  /** Swipe-down dismiss threshold (px) */
+  SWIPE_DISMISS_THRESHOLD: 100,
+  /** Placeholder text for deleted comments */
+  DELETED_PLACEHOLDER: "Comment removed",
 } as const;
 
 /** Feed configuration */
@@ -104,6 +123,35 @@ export const ENTITLEMENT_ENDPOINTS = {
   SUBSCRIBE: "/v1/subscriptions",
 } as const;
 
+/** Advisor API paths */
+export const ADVISOR_ENDPOINTS = {
+  MESSAGES: "/v1/advisor/messages",
+  NUDGES: "/v1/advisor/nudges",
+  NUDGE_READ: (id: string) => `/v1/advisor/nudges/${id}/read`,
+  MEMORIES: "/v1/memories",
+  MEMORY_DELETE: (id: string) => `/v1/memories/${id}`,
+} as const;
+
+/** Advisor configuration */
+export const ADVISOR_CONFIG = {
+  /** Number of nudges per page */
+  NUDGE_PAGE_SIZE: 20,
+  /** Number of messages per page */
+  MESSAGE_PAGE_SIZE: 30,
+  /** Typing indicator dot animation duration (ms) */
+  TYPING_DOT_DURATION_MS: 400,
+  /** Typing indicator dot delay between dots (ms) */
+  TYPING_DOT_DELAY_MS: 150,
+  /** Auto-scroll debounce (ms) */
+  AUTO_SCROLL_DELAY_MS: 100,
+  /** FlatList performance: items to render per batch */
+  MAX_TO_RENDER_PER_BATCH: 15,
+  /** FlatList performance: batching period (ms) */
+  UPDATE_CELLS_BATCHING_PERIOD_MS: 50,
+  /** FlatList performance: window size */
+  WINDOW_SIZE: 21,
+} as const;
+
 /** Paywall animation configuration */
 export const PAYWALL_ANIMATION = {
   /** Modal backdrop opacity */
@@ -118,6 +166,26 @@ export const PAYWALL_ANIMATION = {
   PRESS_DURATION_MS: 150,
   /** Credit badge count animation duration (ms) */
   COUNT_ANIMATION_DURATION_MS: 600,
+} as const;
+
+/** Profile API paths */
+export const PROFILE_ENDPOINTS = {
+  PROFILE: (username: string) => `/v1/users/${username}/profile`,
+  HISTORY: (username: string) => `/v1/users/${username}/history`,
+  REACTIONS: (username: string) => `/v1/users/${username}/reactions`,
+  UPDATE: (username: string) => `/v1/users/${username}`,
+} as const;
+
+/** Profile grid configuration */
+export const PROFILE_CONFIG = {
+  /** Number of columns in the glow-up grid */
+  GRID_COLUMNS: 3,
+  /** Gap between grid items (dp) */
+  GRID_GAP: 4,
+  /** Number of items per page for history / reactions */
+  PAGE_SIZE: 18,
+  /** Display name max length */
+  DISPLAY_NAME_MAX_LENGTH: 50,
 } as const;
 
 /** Touch target minimum (pt) — WCAG / platform guidelines */

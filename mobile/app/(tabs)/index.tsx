@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import {
   View,
   FlatList,
@@ -22,6 +22,7 @@ import { FEED_CONFIG } from "../../constants/config";
 import { FeedCard } from "../../components/feed/FeedCard";
 import { FeedSkeleton } from "../../components/feed/FeedSkeleton";
 import { SortTabs } from "../../components/feed/SortTabs";
+import { CommentsSheet } from "../../components/comments/CommentsSheet";
 import { useFeed } from "../../components/feed/useFeed";
 import type { FeedPost } from "../../components/feed/types";
 
@@ -43,10 +44,29 @@ export default function HomeScreen() {
     reactToPost,
   } = useFeed();
 
+  // Comments sheet state
+  const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
+  const isCommentsVisible = commentsPostId !== null;
+
   // Load feed on mount
   useEffect(() => {
     loadFeed();
   }, [loadFeed]);
+
+  const handleCommentPress = useCallback((postId: string) => {
+    setCommentsPostId(postId);
+  }, []);
+
+  const handleCloseComments = useCallback(() => {
+    setCommentsPostId(null);
+  }, []);
+
+  const handleCommentPosted = useCallback((postId: string) => {
+    // Optimistically increment comment_count on the feed card
+    // The useFeed hook doesn't expose a setter, so we rely on the
+    // feed data being refreshed eventually. For now, this is a no-op
+    // placeholder that the parent can use for future enhancements.
+  }, []);
 
   const handleReport = useCallback((postId: string) => {
     Alert.alert(
@@ -79,9 +99,10 @@ export default function HomeScreen() {
         hasReacted={reactedPostIds.has(item.post_id)}
         onReact={reactToPost}
         onReport={handleReport}
+        onCommentPress={handleCommentPress}
       />
     ),
-    [reactedPostIds, reactToPost, handleReport],
+    [reactedPostIds, reactToPost, handleReport, handleCommentPress],
   );
 
   const renderFooter = useCallback(() => {
@@ -165,6 +186,13 @@ export default function HomeScreen() {
         updateCellsBatchingPeriod={FEED_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
         windowSize={FEED_CONFIG.WINDOW_SIZE}
         contentContainerStyle={styles.listContent}
+      />
+
+      <CommentsSheet
+        visible={isCommentsVisible}
+        postId={commentsPostId ?? ""}
+        onClose={handleCloseComments}
+        onCommentPosted={handleCommentPosted}
       />
     </View>
   );

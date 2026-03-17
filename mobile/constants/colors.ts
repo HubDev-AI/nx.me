@@ -90,6 +90,12 @@ export const CREDIT_BADGE_BG = "rgba(245,158,11,0.15)";
 export const CREDIT_BADGE_TEXT = "#FCD34D";
 export const CREDIT_BADGE_ICON = "#F59E0B";
 
+/** Advisor — Ada bubble styling */
+export const ADA_BUBBLE_BG = COLORS.neutral.dark[150];
+export const ADA_BUBBLE_BORDER = COLORS.after[500];
+export const USER_BUBBLE_BG = "rgba(244,63,94,0.08)";
+export const NUDGE_UNREAD_DOT = COLORS.after[500];
+
 /** Feedback */
 export const ERROR_DARK = "#F87171";
 export const ERROR_LIGHT = "#DC2626";

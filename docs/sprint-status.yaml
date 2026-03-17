@@ -171,7 +171,7 @@ epics:
         slug: mobile-comments-ui
         title: Mobile Comments UI
         size: S
-        status: backlog
+        status: done
         wave: 11
         dependencies: ["5-4", "5-3"]
 
@@ -203,7 +203,7 @@ epics:
         slug: mobile-advisor-ui
         title: Mobile Advisor UI — Chat Screen & Nudge Feed
         size: M
-        status: backlog
+        status: done
         wave: 11
         dependencies: ["7-2", "6-5"]
 
@@ -235,7 +235,7 @@ epics:
         slug: mobile-profile-ui
         title: Mobile Profile UI
         size: M
-        status: backlog
+        status: done
         wave: 11
         dependencies: ["6-3", "5-4"]
       - id: "6-5"
