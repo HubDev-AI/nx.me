@@ -130,8 +130,6 @@ _CREDIT_PACKS: dict[str, int] = {
 
 class CreditPurchaseRequest(BaseModel):
     credit_pack_id: str
-    success_url: str = "nxme://payment/success"
-    cancel_url: str = "nxme://payment/cancel"
 
 
 class CheckoutResponse(BaseModel):
@@ -170,8 +168,8 @@ async def purchase_credits(
         user_id=user_id,
         price_id=price_id,
         mode="payment",
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
+        success_url=settings.STRIPE_SUCCESS_URL,
+        cancel_url=settings.STRIPE_CANCEL_URL,
         metadata={
             "type": "credit_purchase",
             "credits": str(credit_count),
@@ -189,8 +187,7 @@ async def purchase_credits(
 
 
 class SubscriptionRequest(BaseModel):
-    success_url: str = "nxme://payment/success"
-    cancel_url: str = "nxme://payment/cancel"
+    pass
 
 
 class SubscriptionResponse(BaseModel):
@@ -229,8 +226,8 @@ async def create_subscription(
         user_id=user_id,
         price_id=price_id,
         mode="subscription",
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
+        success_url=settings.STRIPE_SUCCESS_URL,
+        cancel_url=settings.STRIPE_CANCEL_URL,
         metadata={"type": "subscription"},
     )
 

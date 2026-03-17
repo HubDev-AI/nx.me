@@ -90,10 +90,10 @@ async def register(
           (trial credited only after email verification via TrialGrantor.grant)
     """
     # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
-    client_ip = (
-        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (request.client.host if request.client else "")
-    )
+    # Use request.client.host — the actual TCP peer address.
+    # X-Forwarded-For is attacker-controlled; only trust it if a verified
+    # proxy middleware (e.g., uvicorn --proxy-headers behind ALB) normalizes it.
+    client_ip = request.client.host if request.client else ""
     if not client_ip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -375,10 +375,10 @@ async def social_login(
     CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
     # Per-IP rate limit (CS-1 T-3)
-    client_ip = (
-        request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        or (request.client.host if request.client else "")
-    )
+    # Use request.client.host — the actual TCP peer address.
+    # X-Forwarded-For is attacker-controlled; only trust it if a verified
+    # proxy middleware (e.g., uvicorn --proxy-headers behind ALB) normalizes it.
+    client_ip = request.client.host if request.client else ""
     if not client_ip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -519,7 +519,10 @@ def logout(
         logger.info("Session invalidated for user %s", user_id)
     except Exception as exc:
         logger.error("sign_out failed for user %s: %s", user_id, exc)
-        # Do not surface the error — the client should treat 204 as success.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": {"code": "REVOCATION_FAILED", "message": "Session revocation failed. Clear local tokens and retry."}},
+        ) from exc
         # The token will expire naturally even if server revocation failed.
 
 

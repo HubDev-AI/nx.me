@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     # Transformation modules — pluggable feature flags
     ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"
 
+    # Stripe checkout return URLs (server-controlled — never user-supplied)
+    STRIPE_SUCCESS_URL: str = "nxme://payment/success"
+    STRIPE_CANCEL_URL: str = "nxme://payment/cancel"
+
     # Stripe credit pack price IDs (Story 4-4 — set per-environment)
     STRIPE_PRICE_CREDITS_10: str = ""
     STRIPE_PRICE_CREDITS_25: str = ""

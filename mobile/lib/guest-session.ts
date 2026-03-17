@@ -5,7 +5,7 @@ import { SECURE_STORE_KEYS } from "../constants/config";
 
 /**
  * Retrieve existing guest token from SecureStore, or create and persist a new one.
- * The token is a SHA-256 hex digest of timestamp + random data.
+ * Uses cryptographically secure random bytes (32 bytes = 256 bits).
  */
 export async function getOrCreateGuestToken(): Promise<string> {
   const existing = await SecureStore.getItemAsync(
@@ -15,11 +15,11 @@ export async function getOrCreateGuestToken(): Promise<string> {
     return existing;
   }
 
-  const raw = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const token = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    raw,
-  );
+  // Generate 32 cryptographically secure random bytes
+  const randomBytes = await Crypto.getRandomBytesAsync(32);
+  const token = Array.from(randomBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
   await SecureStore.setItemAsync(SECURE_STORE_KEYS.GUEST_TOKEN, token);
   return token;

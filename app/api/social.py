@@ -337,6 +337,13 @@ async def react_to_post(
         claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
         user_id = claims["sub"]
     elif x_guest_token:
+        # Validate format: must be 64-char hex (32 bytes CSPRNG)
+        import re
+        if not re.fullmatch(r"[0-9a-f]{64}", x_guest_token):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid guest token format",
+            )
         guest_token = x_guest_token
     else:
         raise HTTPException(
