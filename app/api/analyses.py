@@ -13,12 +13,13 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import get_current_user, get_supabase
 from app.api.middleware.auth import UserClaims
+from app.config import settings
 from app.face_analysis.service import FaceAnalysisService
 from app.image_pipeline.pipeline import ImagePipeline
 
@@ -57,6 +58,7 @@ class AnalysisDetailResponse(AnalysisResponse):
 
 @router.post("/analyses", response_model=AnalysisResponse, status_code=status.HTTP_201_CREATED)
 async def create_analysis(
+    request: Request,
     file: UploadFile,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
@@ -116,6 +118,21 @@ async def create_analysis(
         ) from exc
 
     logger.info("Analysis %s created for user %s (shape=%s)", analysis_id, user_id, result.face_shape)
+
+    # Post-analysis nudge hook (spec Section 16: one integration point, guarded by ADVISOR_ENABLED)
+    if settings.ADVISOR_ENABLED:
+        try:
+            arq_pool = getattr(request.app.state, "arq_pool", None)
+            if arq_pool is not None:
+                await arq_pool.enqueue_job(
+                    "schedule_post_analysis_nudge",
+                    user_id,
+                    _queue_name="default",
+                )
+                logger.debug("Enqueued post-analysis nudge for user %s", user_id)
+        except Exception as _exc:
+            # Non-critical — never let nudge scheduling block the response
+            logger.warning("Post-analysis nudge hook failed for user %s: %s", user_id, _exc)
 
     return AnalysisResponse(
         analysis_id=str(analysis_id),

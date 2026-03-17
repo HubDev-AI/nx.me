@@ -196,7 +196,7 @@ epics:
         slug: advisor-nudge-scheduler
         title: Advisor Nudge Scheduler — ARQ Job & Trigger Conditions
         size: S
-        status: backlog
+        status: done
         wave: 9
         dependencies: ["7-2"]
       - id: "7-4"
@@ -221,7 +221,7 @@ epics:
         slug: shareable-card-web-app
         title: Next.js Shareable Card Web App
         size: M
-        status: backlog
+        status: done
         wave: 9
         dependencies: ["6-1"]
       - id: "6-3"
@@ -242,6 +242,6 @@ epics:
         slug: deep-links-navigation-shell
         title: Deep Links, Navigation Shell & App Initialization
         size: M
-        status: backlog
+        status: done
         wave: 9
         dependencies: ["2-1"]

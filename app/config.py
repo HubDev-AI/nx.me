@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     ADVISOR_CHAT_RATE_LIMIT: int = 30             # Max messages per hour per user
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30   # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7   # Days before auto-new conversation
+    ADVISOR_MILESTONE_DEDUP_HOURS: int = 48       # Hours before a duplicate milestone nudge is allowed
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
