@@ -52,13 +52,21 @@ class Settings(BaseSettings):
     SIGNED_URL_EXPIRY_SECONDS: int = 3600
 
     # Generation / cost
-    IMAGE_GEN_COST_CEILING_USD: float = 0.06  # 24h rolling avg ceiling (PuLID ~$0.035, retry ~$0.07)
+    IMAGE_GEN_COST_CEILING_USD: float = 0.06
     GENERATION_TIMEOUT_SECONDS: int = 60
     CREDIT_COST_ALERT_USD: float = 0.05
     GENERATION_OUTPUT_RESOLUTION: int = 1024
     IDENTITY_MAX_RETRIES: int = 1
     MAX_PROMPT_KEYWORDS: int = 6
-    FACE_CROP_THRESHOLD: float = 0.25  # Crop to head+shoulders if face < 25% of image area
+    FACE_CROP_THRESHOLD: float = 0.25
+    GENERATION_EMERGENCY_STOP: bool = False
+    MAX_GENERATIONS_PER_USER_PER_DAY: int = 50
+    MAX_QUEUE_DEPTH: int = 15000
+
+    # Generation models (from generation-spec.md)
+    FAL_MODEL_PRIMARY: str = "fal-ai/flux-pulid"
+    FAL_MODEL_FALLBACK_1: str = "fal-ai/flux-general/image-to-image"
+    FAL_MODEL_FALLBACK_2: str = "fal-ai/instantid"
 
     # Transformation modules — pluggable feature flags
     ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"

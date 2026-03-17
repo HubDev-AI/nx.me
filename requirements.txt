@@ -34,5 +34,15 @@ boto3==1.42.68
 # Disposable email detection
 disposable-email-domains==0.0.128
 
+# ARQ (async job queue)
+arq==0.27.0
+
+# fal.ai client (AI generation)
+fal-client==0.13.1
+
+# ArcFace identity preservation (insightface)
+insightface==0.7.3
+onnxruntime==1.24.3
+
 # DB driver
 psycopg2-binary==2.9.10
