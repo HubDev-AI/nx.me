@@ -109,7 +109,7 @@ def create_post(
             detail={"error": {"code": "NO_GENERATED_IMAGE", "message": "Job has no generated image."}},
         )
 
-    # Get image storage keys
+    # Get image storage keys from private buckets
     before_img = (
         supabase.table("images").select("storage_key, bucket")
         .eq("id", job.data["original_image_id"]).single().execute()
@@ -119,25 +119,31 @@ def create_post(
         .eq("id", job.data["generated_image_id"]).single().execute()
     )
 
-    # Copy before image from private (raw-selfies) to public (post-images) bucket
-    before_public_key = f"posts/{user_id}/{before_img.data['storage_key'].split('/')[-1]}"
-    try:
-        raw_bytes = supabase.storage.from_(before_img.data.get("bucket", "raw-selfies")).download(
-            before_img.data["storage_key"]
-        )
-        supabase.storage.from_("post-images").upload(
-            path=before_public_key,
-            file=raw_bytes,
-            file_options={"content-type": "image/jpeg", "upsert": "true"},
-        )
-    except Exception as exc:
-        logger.warning("Failed to copy before image to public bucket: %s", exc)
-        before_public_key = before_img.data["storage_key"]
+    # Copy BOTH images from private buckets to the public post-images bucket.
+    # Images stay private until the user explicitly creates a post.
+    from app.services.public_url import PUBLIC_BUCKET, get_public_url
 
-    # Build stable public CDN URLs (no expiry)
-    from app.services.public_url import get_post_before_url, get_post_after_url
-    before_url = get_post_before_url(before_public_key)
-    after_url = get_post_after_url(after_img.data["storage_key"])
+    before_public_key = f"before/{user_id}/{before_img.data['storage_key'].split('/')[-1]}"
+    after_public_key = f"after/{user_id}/{after_img.data['storage_key'].split('/')[-1]}"
+
+    for src_img, public_key in [
+        (before_img.data, before_public_key),
+        (after_img.data, after_public_key),
+    ]:
+        try:
+            raw_bytes = supabase.storage.from_(src_img.get("bucket", "raw-selfies")).download(
+                src_img["storage_key"]
+            )
+            supabase.storage.from_(PUBLIC_BUCKET).upload(
+                path=public_key,
+                file=raw_bytes,
+                file_options={"content-type": "image/jpeg", "upsert": "true"},
+            )
+        except Exception as exc:
+            logger.warning("Failed to copy %s to public bucket: %s", public_key, exc)
+
+    before_url = get_public_url(before_public_key)
+    after_url = get_public_url(after_public_key)
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
