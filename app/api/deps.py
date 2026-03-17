@@ -70,6 +70,13 @@ def get_user_repo(request: Request) -> "UserRepository":
     return UserRepository(request.app.state.supabase)
 
 
+def get_post_repo(request: Request) -> "PostRepository":
+    """Return a PostRepository wired to the app's Supabase client."""
+    from app.repositories.post_repo import PostRepository
+
+    return PostRepository(request.app.state.supabase)
+
+
 def get_tier_repo(request: Request) -> "TierRepository":
     """Return a TierRepository wired to the app's Supabase + Redis clients."""
     from app.entitlement.tier_repo import TierRepository

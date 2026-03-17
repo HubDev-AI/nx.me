@@ -1,0 +1,126 @@
+"""Post repository — all posts/comments/reports supabase queries in one place.
+
+Follows the same pattern as UserRepository: constructor takes a Client,
+methods are synchronous (callers use run_sync for async handlers).
+"""
+from __future__ import annotations
+
+import logging
+
+from supabase import Client
+
+logger = logging.getLogger(__name__)
+
+
+class PostRepository:
+    """Encapsulates all DB calls related to posts, comments, and reports tables."""
+
+    def __init__(self, supabase: Client) -> None:
+        self._sb = supabase
+
+    # ------------------------------------------------------------------
+    # posts table — reads
+    # ------------------------------------------------------------------
+
+    def get_post_with_ownership(self, post_id: str) -> dict | None:
+        """Fetch post id, user_id, is_deleted fields for ownership checks."""
+        result = (
+            self._sb.table("posts")
+            .select("id, user_id, is_deleted")
+            .eq("id", post_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
+    def get_active_post(self, post_id: str) -> dict | None:
+        """Fetch post id only, filtering out deleted posts."""
+        result = (
+            self._sb.table("posts")
+            .select("id")
+            .eq("id", post_id)
+            .eq("is_deleted", False)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
+    # ------------------------------------------------------------------
+    # posts table — writes
+    # ------------------------------------------------------------------
+
+    def insert_post(self, post_row: dict) -> dict:
+        """Insert a new post row and return the created row."""
+        result = self._sb.table("posts").insert(post_row).execute()
+        return result.data[0]
+
+    def soft_delete_post(self, post_id: str, now_utc: str) -> None:
+        """Soft-delete a post by setting is_deleted=True."""
+        self._sb.table("posts").update({
+            "is_deleted": True,
+            "updated_at": now_utc,
+        }).eq("id", post_id).execute()
+
+    # ------------------------------------------------------------------
+    # comments table
+    # ------------------------------------------------------------------
+
+    def get_comments_page(
+        self,
+        post_id: str,
+        fetch_limit: int,
+        cursor: str | None = None,
+    ) -> list[dict]:
+        """Fetch a page of non-deleted comments with joined user profile."""
+        query = (
+            self._sb.table("comments")
+            .select("id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)")
+            .eq("post_id", post_id)
+            .eq("is_deleted", False)
+            .order("created_at", desc=False)
+            .limit(fetch_limit)
+        )
+        if cursor:
+            query = query.gt("created_at", cursor)
+        result = query.execute()
+        return result.data or []
+
+    def insert_comment_atomic(self, p_post_id: str, p_user_id: str, p_content: str) -> dict:
+        """Atomically insert a comment and increment the post comment count.
+
+        Calls the insert_comment_atomic RPC and returns the created comment row.
+        """
+        result = self._sb.rpc("insert_comment_atomic", {
+            "p_post_id": p_post_id,
+            "p_user_id": p_user_id,
+            "p_content": p_content,
+        }).execute()
+        return result.data[0]
+
+    # ------------------------------------------------------------------
+    # reports table
+    # ------------------------------------------------------------------
+
+    def insert_report(self, post_id: str, reporter_user_id: str, reason: str | None) -> dict:
+        """Insert a report row and return the created row."""
+        result = self._sb.table("reports").insert({
+            "post_id": post_id,
+            "reporter_user_id": reporter_user_id,
+            "reason": reason,
+        }).execute()
+        return result.data[0]
+
+    # ------------------------------------------------------------------
+    # users table — comment author profile (used in posts context)
+    # ------------------------------------------------------------------
+
+    def get_commenter_profile(self, user_id: str) -> dict | None:
+        """Fetch display_name and avatar_storage_key for a comment author."""
+        result = (
+            self._sb.table("users")
+            .select("display_name, avatar_storage_key")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None

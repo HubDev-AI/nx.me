@@ -17,8 +17,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
-from app.api.deps import get_current_user, get_supabase
+from app.api.deps import get_current_user, get_post_repo, get_supabase
 from app.api.middleware.auth import UserClaims
+from app.repositories.post_repo import PostRepository
 from app.services.public_url import build_avatar_url, publish_post_images
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ def create_post(
     body: CreatePostRequest,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> PostResponse:
     """Create a post from a completed glow-up job.
 
@@ -144,7 +146,7 @@ def create_post(
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-    result = supabase.table("posts").insert({
+    post = post_repo.insert_post({
         "user_id": user_id,
         "glow_up_job_id": body.glow_up_job_id,
         "caption": body.caption,
@@ -154,9 +156,9 @@ def create_post(
         "after_image_url": after_url,
         "created_at": now_utc,
         "updated_at": now_utc,
-    }).execute()
+    })
 
-    post_id = result.data[0]["id"]
+    post_id = post["id"]
 
     logger.info("Post %s created by user %s from job %s", post_id, user_id, body.glow_up_job_id)
 
@@ -178,30 +180,21 @@ def create_post(
 def delete_post(
     post_id: UUID,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> dict:
     """Soft-delete own post. AC-FR5: is_deleted = TRUE, removed from feed."""
     user_id = claims["sub"]
 
-    post = (
-        supabase.table("posts")
-        .select("id, user_id, is_deleted")
-        .eq("id", str(post_id))
-        .maybe_single()
-        .execute()
-    )
-    if not post.data:
+    post = post_repo.get_post_with_ownership(str(post_id))
+    if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    if post.data["user_id"] != user_id:
+    if post["user_id"] != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
-    if post.data["is_deleted"]:
+    if post["is_deleted"]:
         return {"status": "already_deleted"}
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
-    supabase.table("posts").update({
-        "is_deleted": True,
-        "updated_at": now_utc,
-    }).eq("id", str(post_id)).execute()
+    post_repo.soft_delete_post(str(post_id), now_utc)
 
     logger.info("Post %s deleted by user %s", post_id, user_id)
     return {"status": "deleted"}
@@ -222,46 +215,32 @@ def create_comment(
     body: CreateCommentRequest,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> CommentResponse:
     """Add a comment to a post. Auth required (AC-U6)."""
     user_id = claims["sub"]
 
     # Verify post exists and is not deleted
-    post = (
-        supabase.table("posts")
-        .select("id")
-        .eq("id", str(post_id))
-        .eq("is_deleted", False)
-        .maybe_single()
-        .execute()
-    )
-    if not post.data:
+    post = post_repo.get_active_post(str(post_id))
+    if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
     # Atomic: insert comment + increment count in single transaction
-    result = supabase.rpc("insert_comment_atomic", {
-        "p_post_id": str(post_id),
-        "p_user_id": user_id,
-        "p_content": body.content,
-    }).execute()
-
-    comment = result.data[0]
+    comment = post_repo.insert_comment_atomic(
+        p_post_id=str(post_id),
+        p_user_id=user_id,
+        p_content=body.content,
+    )
 
     logger.info("Comment %s on post %s by user %s", comment["id"], post_id, user_id)
 
     # Fetch author profile for display name and avatar
-    author = (
-        supabase.table("users")
-        .select("display_name, avatar_storage_key")
-        .eq("id", user_id)
-        .maybe_single()
-        .execute()
-    )
+    author = post_repo.get_commenter_profile(user_id)
     display_name: str | None = None
     avatar_url: str | None = None
-    if author.data:
-        display_name = author.data.get("display_name")
-        avatar_url = build_avatar_url(supabase, author.data.get("avatar_storage_key"))
+    if author:
+        display_name = author.get("display_name")
+        avatar_url = build_avatar_url(supabase, author.get("avatar_storage_key"))
 
     return CommentResponse(
         comment_id=comment["id"],
@@ -286,24 +265,16 @@ def get_comments(
     cursor: str | None = Query(None, description="Cursor (created_at ISO timestamp)"),
     limit: int = Query(20, ge=1, le=100),
     supabase: Client = Depends(get_supabase),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> CommentsListResponse:
     """List comments on a post. Public read — no auth required (FR-22)."""
     fetch_limit = limit + 1
 
-    query = (
-        supabase.table("comments")
-        .select("id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)")
-        .eq("post_id", str(post_id))
-        .eq("is_deleted", False)
-        .order("created_at", desc=False)
-        .limit(fetch_limit)
+    comments = post_repo.get_comments_page(
+        post_id=str(post_id),
+        fetch_limit=fetch_limit,
+        cursor=cursor,
     )
-
-    if cursor:
-        query = query.gt("created_at", cursor)
-
-    result = query.execute()
-    comments = result.data or []
 
     has_more = len(comments) > limit
     if has_more:
@@ -348,30 +319,21 @@ def report_post(
     post_id: UUID,
     body: ReportRequest,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> ReportResponse:
     """Report a post for review. Auth required."""
     user_id = claims["sub"]
 
     # Verify post exists
-    post = (
-        supabase.table("posts")
-        .select("id")
-        .eq("id", str(post_id))
-        .eq("is_deleted", False)
-        .maybe_single()
-        .execute()
-    )
-    if not post.data:
+    post = post_repo.get_active_post(str(post_id))
+    if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
-    result = supabase.table("reports").insert({
-        "post_id": str(post_id),
-        "reporter_user_id": user_id,
-        "reason": body.reason,
-    }).execute()
-
-    report = result.data[0]
+    report = post_repo.insert_report(
+        post_id=str(post_id),
+        reporter_user_id=user_id,
+        reason=body.reason,
+    )
     logger.info("Report %s on post %s by user %s", report["id"], post_id, user_id)
 
     return ReportResponse(
