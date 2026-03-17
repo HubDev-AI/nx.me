@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import (
+    get_credit_ledger,
     get_current_user,
     get_entitlement_service,
     get_image_repo,
@@ -119,6 +120,7 @@ async def create_generation(
     redis_client: aioredis.Redis = Depends(get_redis),
     ent_svc: EntitlementService = Depends(get_entitlement_service),
     job_repo: JobRepository = Depends(get_job_repo),
+    ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> GenerateResponse:
     """Trigger a glow-up generation job.
 
@@ -263,7 +265,6 @@ async def create_generation(
     estimated_wait = queue_position * _AVG_SECONDS_PER_JOB
 
     # --- Credit reserve (for credit-based tiers) ---
-    ledger = CreditLedger(supabase)
     reservation_id: UUID | None = None
 
     if tier.credits_based:
@@ -461,6 +462,7 @@ async def cancel_job(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     job_repo: JobRepository = Depends(get_job_repo),
+    ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> CancelResponse:
     """Cancel an in-flight generation job.
 
@@ -504,7 +506,6 @@ async def cancel_job(
     # --- Release credit if reserved ---
     credit_refunded = False
     if job.get("credit_reservation_id"):
-        ledger = CreditLedger(supabase)
         try:
             ledger.release(UUID(job["credit_reservation_id"]))
             credit_refunded = True

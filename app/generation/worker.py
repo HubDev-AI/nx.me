@@ -61,6 +61,8 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     generator = _get_generator()
     job_repo = JobRepository(supabase)
     image_repo = ImageRepository(supabase)
+    from app.entitlement.ledger import CreditLedger
+    ledger = CreditLedger(supabase)
     user_id_for_concurrent: str | None = None
 
     # Fetch job data FIRST — needed for credit release in all failure paths (P2-6)
@@ -283,8 +285,6 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
 
         # Commit credit
         if job_data.get("credit_reservation_id"):
-            from app.entitlement.ledger import CreditLedger
-            ledger = CreditLedger(supabase)
             ledger.commit(UUID(job_data["credit_reservation_id"]))
 
         # Update job → completed
@@ -328,8 +328,8 @@ async def _fail_job(
     if job_data.get("credit_reservation_id") and supabase is not None:
         try:
             from app.entitlement.ledger import CreditLedger
-            ledger = CreditLedger(supabase)
-            ledger.release(UUID(job_data["credit_reservation_id"]))
+            _ledger = CreditLedger(supabase)
+            _ledger.release(UUID(job_data["credit_reservation_id"]))
         except Exception as exc:
             logger.error("Failed to release credit for job %s: %s", job_id, exc)
 

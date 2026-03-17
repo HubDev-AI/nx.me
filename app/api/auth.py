@@ -22,7 +22,8 @@ from supabase import Client
 
 import redis.asyncio as aioredis
 
-from app.api.deps import get_current_user, get_redis, get_supabase, get_tier_repo, get_user_repo
+from app.api.deps import get_credit_ledger, get_current_user, get_redis, get_supabase, get_tier_repo, get_user_repo
+from app.entitlement.ledger import CreditLedger
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
@@ -518,6 +519,7 @@ def logout(
 def delete_account(
     claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
+    ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> None:
     """Permanently delete the authenticated user's account (AC-3).
 
@@ -538,12 +540,8 @@ def delete_account(
     try:
         active_reservations = user_repo.get_active_reservations(user_id)
         if active_reservations:
-            from app.entitlement.ledger import CreditLedger
             from uuid import UUID as _UUID
-            from app.api.deps import get_supabase as _get_supabase
 
-            # We need supabase for CreditLedger — fetch it from the repository's client
-            ledger = CreditLedger(user_repo._sb)
             for res in active_reservations:
                 try:
                     ledger.release(_UUID(res["id"]))

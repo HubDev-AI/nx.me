@@ -112,6 +112,13 @@ def get_subscription_repo(request: Request) -> "SubscriptionRepository":
     return SubscriptionRepository(request.app.state.supabase)
 
 
+def get_credit_ledger(request: Request) -> "CreditLedger":
+    """Return a CreditLedger wired to the app's Supabase client."""
+    from app.entitlement.ledger import CreditLedger
+
+    return CreditLedger(request.app.state.supabase)
+
+
 def get_advisor_repo(request: Request) -> "AdvisorRepository":
     """Return an AdvisorRepository wired to the app's Supabase client."""
     from app.repositories.advisor_repo import AdvisorRepository
