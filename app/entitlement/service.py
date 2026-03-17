@@ -280,6 +280,10 @@ class EntitlementService:
         tier = await self._get_tier(user_id)
         return getattr(tier, f"feature_{feature}", False)
 
+    async def get_tier(self, user_id: UUID) -> TierRecord:
+        """Public accessor for the user's tier record."""
+        return await self._get_tier(user_id)
+
     async def max_concurrent(self, user_id: UUID) -> int:
         """Get max concurrent generations for user's tier."""
         return (await self._get_tier(user_id)).max_concurrent_generations

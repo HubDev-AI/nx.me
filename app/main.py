@@ -10,9 +10,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import redis.asyncio as aioredis
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 
-from app.api import analyses, auth, entitlement, health
+from app.api import analyses, auth, entitlement, generation, health
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -54,11 +56,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.ADAPTER__FACE_ANALYSIS_ADAPTER,
         )
 
-    logger.info("Supabase and Redis clients initialised")
+    # ARQ pool for enqueuing generation jobs
+    app.state.arq_pool = await create_pool(
+        RedisSettings.from_dsn(settings.REDIS_URL)
+    )
+
+    logger.info("Supabase, Redis, and ARQ pool initialised")
 
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
+    await app.state.arq_pool.aclose()
     await app.state.redis.aclose()
     logger.info("NXME API shutdown complete")
 
@@ -85,6 +93,7 @@ def create_app() -> FastAPI:
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
     v1.include_router(analyses.router)
+    v1.include_router(generation.router)
     app.include_router(v1)
 
     return app
