@@ -16,11 +16,10 @@ from uuid import UUID
 
 from app.advisor.llm_port import LLMPort
 
-from supabase import Client
-
 from app.advisor.models import MemoryType
 from app.advisor.nudge_policy import MODEL_HAIKU
 from app.config import settings
+from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +106,8 @@ def summarize_memory_content(content: dict[str, Any]) -> str:
 class MemoryManager:
     """Manages user memories with pgvector storage and hybrid retrieval."""
 
-    def __init__(self, supabase: Client, llm_adapter: LLMPort) -> None:
-        self._supabase = supabase
+    def __init__(self, advisor_repo: AdvisorRepository, llm_adapter: LLMPort) -> None:
+        self._repo = advisor_repo
         self._llm_adapter = llm_adapter
 
     # -----------------------------------------------------------------------
@@ -132,8 +131,7 @@ class MemoryManager:
             "embedding": embedding,
         }
 
-        result = self._supabase.table("user_memories").insert(row).execute()
-        created = (result.data or [{}])[0]
+        created = self._repo.insert_memory(row)
         logger.info("Memory written: user=%s type=%s", user_id, memory_type)
         return created
 
@@ -157,17 +155,10 @@ class MemoryManager:
 
         embedding = await self._llm_adapter.compute_embedding(query)
 
-        candidates_result = self._supabase.rpc(
-            "match_user_memories",
-            {
-                "p_user_id": str(user_id),
-                "p_embedding": embedding,
-                "p_limit": _CANDIDATE_LIMIT,
-            },
-        ).execute()
+        candidates = self._repo.match_memories(str(user_id), embedding, _CANDIDATE_LIMIT)
 
         scored: list[tuple[float, dict[str, Any]]] = []
-        for row in candidates_result.data or []:
+        for row in candidates:
             similarity = float(row.get("similarity", 0.0))
             if similarity < _MIN_SIMILARITY:
                 continue
@@ -198,25 +189,12 @@ class MemoryManager:
 
     def list_memories(self, user_id: UUID) -> list[dict[str, Any]]:
         """List all memories for a user (unfiltered, for the /memories endpoint)."""
-        result = (
-            self._supabase.table("user_memories")
-            .select("id, type, content, created_at")
-            .eq("user_id", str(user_id))
-            .order("created_at", desc=True)
-            .execute()
-        )
-        return result.data or []
+        return self._repo.get_memories(str(user_id))
 
     def delete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
         """Delete a memory owned by user_id. Returns True if deleted, False if not found."""
-        result = (
-            self._supabase.table("user_memories")
-            .delete()
-            .eq("id", str(memory_id))
-            .eq("user_id", str(user_id))
-            .execute()
-        )
-        deleted = len(result.data or []) > 0
+        deleted_rows = self._repo.delete_memory(str(memory_id), str(user_id))
+        deleted = len(deleted_rows) > 0
         if deleted:
             logger.info("Memory deleted: user=%s memory=%s", user_id, memory_id)
         return deleted
@@ -258,15 +236,9 @@ class MemoryManager:
             return
 
         # Fetch recent same-type memories for dedup check (last 7 days)
-        recent_result = (
-            self._supabase.table("user_memories")
-            .select("type, content")
-            .eq("user_id", str(user_id))
-            .gte("created_at", _seven_days_ago_iso())
-            .execute()
-        )
+        recent_rows = self._repo.get_recent_memories(str(user_id), _seven_days_ago_iso())
         recent_by_type: dict[str, list[str]] = {}
-        for row in recent_result.data or []:
+        for row in recent_rows:
             t = row["type"]
             text = summarize_memory_content(row.get("content", {}))
             recent_by_type.setdefault(t, []).append(text)

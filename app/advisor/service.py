@@ -21,7 +21,6 @@ from uuid import UUID
 from app.advisor.llm_port import LLMPort
 
 import redis.asyncio as aioredis
-from supabase import Client
 
 from app.advisor import content_filter
 from app.advisor.context_builder import (
@@ -32,6 +31,7 @@ from app.advisor.context_builder import (
 from app.advisor.memory_manager import MemoryManager
 from app.advisor.models import LLMResponse, MemoryType
 from app.config import settings
+from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +53,14 @@ class AdvisorService:
 
     def __init__(
         self,
-        supabase: Client,
+        advisor_repo: AdvisorRepository,
         redis_client: aioredis.Redis,
         llm_adapter: LLMPort,
     ) -> None:
-        self._supabase = supabase
+        self._repo = advisor_repo
         self._redis = redis_client
         self._llm = llm_adapter
-        self._memory_manager = MemoryManager(supabase=supabase, llm_adapter=llm_adapter)
+        self._memory_manager = MemoryManager(advisor_repo=advisor_repo, llm_adapter=llm_adapter)
 
     # -----------------------------------------------------------------------
     # Chat
@@ -130,9 +130,7 @@ class AdvisorService:
         advisor_msg_row = self._save_message(conversation_id, "advisor", advisor_response)
 
         # Update conversation updated_at
-        self._supabase.table("advisor_conversations").update(
-            {"updated_at": datetime.now(tz=timezone.utc).isoformat()}
-        ).eq("id", conversation_id).execute()
+        self._repo.update_conversation_timestamp(conversation_id)
 
         # Step 10: Async memory extraction (fire and forget)
         task = asyncio.create_task(
@@ -225,37 +223,19 @@ class AdvisorService:
 
     def get_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
         """Return the nudge feed for a user (newest first)."""
-        result = (
-            self._supabase.table("advisor_nudges")
-            .select("id, trigger, content, read_at, created_at")
-            .eq("user_id", str(user_id))
-            .order("created_at", desc=True)
-            .execute()
-        )
-        return result.data or []
+        return self._repo.get_nudges(str(user_id))
 
     def mark_nudge_read(self, user_id: UUID, nudge_id: UUID) -> bool:
         """Mark a nudge as read. Returns True if found and updated."""
-        # Verify ownership first
-        existing = (
-            self._supabase.table("advisor_nudges")
-            .select("id, read_at")
-            .eq("id", str(nudge_id))
-            .eq("user_id", str(user_id))
-            .maybe_single()
-            .execute()
-        )
-        if not existing.data:
+        existing = self._repo.get_nudge_by_id(str(nudge_id), str(user_id))
+        if not existing:
             return False
 
-        if existing.data.get("read_at"):
+        if existing.get("read_at"):
             # Already read — idempotent success
             return True
 
-        self._supabase.table("advisor_nudges").update(
-            {"read_at": datetime.now(tz=timezone.utc).isoformat()}
-        ).eq("id", str(nudge_id)).execute()
-
+        self._repo.mark_nudge_read(str(nudge_id))
         logger.info("Nudge %s marked read for user %s", nudge_id, user_id)
         return True
 
@@ -291,15 +271,7 @@ class AdvisorService:
         - One active conversation per user
         - Auto-new after ADVISOR_CONVERSATION_INACTIVE_DAYS days inactive
         """
-        result = (
-            self._supabase.table("advisor_conversations")
-            .select("id, updated_at, created_at")
-            .eq("user_id", str(user_id))
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        existing = (result.data or [None])[0]
+        existing = self._repo.get_latest_conversation(str(user_id))
 
         if existing:
             # Check if inactive
@@ -318,25 +290,13 @@ class AdvisorService:
                 return existing
 
         # Create new conversation
-        new_conv = (
-            self._supabase.table("advisor_conversations")
-            .insert({"user_id": str(user_id)})
-            .execute()
-        )
-        created = (new_conv.data or [{}])[0]
+        created = self._repo.create_conversation(str(user_id))
         logger.info("New conversation created: user=%s id=%s", user_id, created.get("id"))
         return created
 
     def _load_conversation_history(self, conversation_id: str) -> list[dict[str, Any]]:
         """Load messages for a conversation (oldest first)."""
-        result = (
-            self._supabase.table("advisor_messages")
-            .select("id, role, content, created_at")
-            .eq("conversation_id", conversation_id)
-            .order("created_at", asc=True)
-            .execute()
-        )
-        return result.data or []
+        return self._repo.get_messages(conversation_id)
 
     def _save_message(
         self,
@@ -345,45 +305,18 @@ class AdvisorService:
         content: str,
     ) -> dict[str, Any]:
         """Insert a message row and return it."""
-        result = (
-            self._supabase.table("advisor_messages")
-            .insert({
-                "conversation_id": conversation_id,
-                "role": role,
-                "content": content,
-            })
-            .execute()
-        )
-        return (result.data or [{}])[0]
+        return self._repo.insert_message(conversation_id, role, content)
 
     def _build_user_data(self, user_id: UUID) -> str:
         """Build user data block from latest analysis insight."""
-        result = (
-            self._supabase.table("user_memories")
-            .select("content, created_at")
-            .eq("user_id", str(user_id))
-            .eq("type", MemoryType.ANALYSIS_INSIGHT)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        if not rows:
+        latest = self._repo.get_latest_analysis_insight(str(user_id))
+        if not latest:
             return ""
 
-        content = rows[0].get("content", {})
+        content = latest.get("content", {})
         face_shape = content.get("face_shape")
         symmetry_score = content.get("symmetry_score")
-
-        # Count total analyses
-        count_result = (
-            self._supabase.table("user_memories")
-            .select("id", count="exact")
-            .eq("user_id", str(user_id))
-            .eq("type", MemoryType.ANALYSIS_INSIGHT)
-            .execute()
-        )
-        analysis_count = count_result.count or 0
+        analysis_count = self._repo.count_analysis_insights(str(user_id))
 
         return build_user_data_block(
             face_shape=face_shape,
@@ -397,25 +330,16 @@ class AdvisorService:
         Returns Anthropic vision content blocks, or None if no images.
         """
         try:
-            result = (
-                self._supabase.table("images")
-                .select("id, storage_path")
-                .eq("user_id", str(user_id))
-                .eq("status", "cleared")
-                .order("created_at", desc=True)
-                .limit(2)
-                .execute()
-            )
-            rows = result.data or []
+            rows = self._repo.get_cleared_images(str(user_id), limit=2)
             if not rows:
                 return None
 
             blocks: list[dict[str, Any]] = []
             for row in rows:
                 try:
-                    signed = self._supabase.storage.from_("images").create_signed_url(
-                        path=row["storage_path"],
-                        expires_in=settings.SIGNED_URL_EXPIRY_SECONDS,
+                    signed = self._repo.create_signed_url(
+                        row["storage_path"],
+                        settings.SIGNED_URL_EXPIRY_SECONDS,
                     )
                     url = signed.get("signedURL") or signed.get("signedUrl", "")
                     if url:
@@ -457,16 +381,10 @@ class AdvisorService:
             return
 
         # Store summary and truncate messages
-        self._supabase.table("advisor_conversations").update({
-            "summary": summary,
-            "summarised_at": datetime.now(tz=timezone.utc).isoformat(),
-            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-        }).eq("id", conversation_id).execute()
+        self._repo.update_conversation_summary(conversation_id, summary)
 
         # Delete all messages (fresh start after summary)
-        self._supabase.table("advisor_messages").delete().eq(
-            "conversation_id", conversation_id
-        ).execute()
+        self._repo.delete_messages(conversation_id)
 
         logger.info("Conversation %s summarized and truncated", conversation_id)
 

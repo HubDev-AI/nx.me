@@ -36,6 +36,7 @@ from app.advisor.models import (
 from app.advisor.service import AdvisorService
 from app.api.deps import get_current_user, get_redis, get_supabase, require_feature
 from app.api.middleware.auth import UserClaims
+from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def get_advisor_service(
 
     llm_adapter = get_llm_adapter()
     return AdvisorService(
-        supabase=supabase,
+        advisor_repo=AdvisorRepository(supabase),
         redis_client=redis_client,
         llm_adapter=llm_adapter,
     )

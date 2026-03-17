@@ -25,6 +25,7 @@ from app.advisor.nudge_eligibility import (
     find_re_engagement_eligible,
     find_weekly_checkin_eligible,
 )
+from app.repositories.advisor_repo import AdvisorRepository
 from app.advisor.nudge_policy import (
     MAX_TOKENS_NUDGE,
     MODEL_HAIKU,
@@ -63,6 +64,7 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
     supabase: Client = ctx["supabase"]
     redis: aioredis.Redis = ctx["redis"]
     uid = UUID(user_id)
+    advisor_repo = AdvisorRepository(supabase)
 
     # Entitlement check (spec Section 7.3, A-5)
     from app.entitlement.service import EntitlementService
@@ -108,11 +110,11 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
 
     # Persist to advisor_nudges
     try:
-        supabase.table("advisor_nudges").insert({
+        advisor_repo.insert_nudge({
             "user_id": user_id,
             "trigger": trigger,
             "content": nudge_content,
-        }).execute()
+        })
     except Exception as exc:
         logger.error("Failed to save nudge for user %s: %s", user_id, exc)
         return
@@ -193,12 +195,13 @@ async def check_nudge_eligibility(ctx: dict) -> None:
 
     supabase: Client = ctx["supabase"]
     arq_pool: ArqRedis | None = ctx.get("arq_pool")
+    advisor_repo = AdvisorRepository(supabase)
 
     enqueued = 0
 
     # 1. Weekly check-in
     try:
-        weekly_users = await find_weekly_checkin_eligible(supabase)
+        weekly_users = await find_weekly_checkin_eligible(advisor_repo)
         for uid_str in weekly_users:
             await _dispatch(ctx, arq_pool, uid_str, TRIGGER_WEEKLY_CHECKIN)
             enqueued += 1
@@ -207,7 +210,7 @@ async def check_nudge_eligibility(ctx: dict) -> None:
 
     # 2. Milestone
     try:
-        milestone_users = await find_milestone_eligible(supabase)
+        milestone_users = await find_milestone_eligible(advisor_repo)
         for uid_str in milestone_users:
             await _dispatch(ctx, arq_pool, uid_str, TRIGGER_MILESTONE)
             enqueued += 1
@@ -216,7 +219,7 @@ async def check_nudge_eligibility(ctx: dict) -> None:
 
     # 3. Re-engagement
     try:
-        re_engagement_users = await find_re_engagement_eligible(supabase)
+        re_engagement_users = await find_re_engagement_eligible(advisor_repo)
         for uid_str in re_engagement_users:
             await _dispatch(ctx, arq_pool, uid_str, TRIGGER_RE_ENGAGEMENT)
             enqueued += 1

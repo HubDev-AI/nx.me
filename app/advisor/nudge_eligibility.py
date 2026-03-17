@@ -7,8 +7,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from supabase import Client
-
 from app.advisor.nudge_policy import (
     MILESTONE_COUNTS,
     RE_ENGAGEMENT_DAYS,
@@ -17,11 +15,12 @@ from app.advisor.nudge_policy import (
     WEEKLY_CHECKIN_DAYS,
 )
 from app.config import settings
+from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
 
-async def find_weekly_checkin_eligible(supabase: Client) -> list[str]:
+async def find_weekly_checkin_eligible(advisor_repo: AdvisorRepository) -> list[str]:
     """Users with goals whose last nudge was more than WEEKLY_CHECKIN_DAYS ago.
 
     Returns:
@@ -30,40 +29,21 @@ async def find_weekly_checkin_eligible(supabase: Client) -> list[str]:
     now_utc = datetime.now(tz=timezone.utc)
     weekly_cutoff = (now_utc - timedelta(days=WEEKLY_CHECKIN_DAYS)).isoformat()
 
-    # Fetch users who have at least one 'goal' memory
-    goal_users_result = (
-        supabase.table("user_memories")
-        .select("user_id")
-        .eq("type", "goal")
-        .execute()
-    )
-    user_ids_with_goals = {
-        row["user_id"] for row in (goal_users_result.data or [])
-    }
+    user_ids_with_goals = advisor_repo.get_all_goal_user_ids()
 
     eligible: list[str] = []
     for uid_str in user_ids_with_goals:
-        # Find most recent nudge for this user
-        last_nudge_result = (
-            supabase.table("advisor_nudges")
-            .select("created_at")
-            .eq("user_id", uid_str)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        last_nudge_rows = last_nudge_result.data or []
-
-        if not last_nudge_rows:
+        last_nudge = advisor_repo.get_latest_nudge_for_user(uid_str)
+        if not last_nudge:
             # Never had a nudge — eligible
             eligible.append(uid_str)
-        elif last_nudge_rows[0]["created_at"] < weekly_cutoff:
+        elif last_nudge["created_at"] < weekly_cutoff:
             eligible.append(uid_str)
 
     return eligible
 
 
-async def find_milestone_eligible(supabase: Client) -> list[str]:
+async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
     """Users whose analysis insight count exactly matches a milestone count.
 
     Deduplicates against recent milestone nudges (within
@@ -80,13 +60,7 @@ async def find_milestone_eligible(supabase: Client) -> list[str]:
     eligible: list[str] = []
 
     for milestone_count in MILESTONE_COUNTS:
-        all_insights_result = (
-            supabase.table("user_memories")
-            .select("user_id")
-            .eq("type", "analysis_insight")
-            .execute()
-        )
-        insight_rows = all_insights_result.data or []
+        insight_rows = advisor_repo.get_all_insights_with_timestamps()
 
         # Count per user
         count_per_user: dict[str, int] = {}
@@ -102,22 +76,16 @@ async def find_milestone_eligible(supabase: Client) -> list[str]:
 
         for uid_str in milestone_users:
             # Avoid duplicate milestone nudges within dedup window
-            existing = (
-                supabase.table("advisor_nudges")
-                .select("id")
-                .eq("user_id", uid_str)
-                .eq("trigger", TRIGGER_MILESTONE)
-                .gt("created_at", recent_milestone_cutoff)
-                .limit(1)
-                .execute()
+            recent = advisor_repo.find_recent_nudges(
+                uid_str, TRIGGER_MILESTONE, recent_milestone_cutoff
             )
-            if not existing.data:
+            if not recent:
                 eligible.append(uid_str)
 
     return eligible
 
 
-async def find_re_engagement_eligible(supabase: Client) -> list[str]:
+async def find_re_engagement_eligible(advisor_repo: AdvisorRepository) -> list[str]:
     """Users whose last activity was more than RE_ENGAGEMENT_DAYS ago.
 
     Deduplicates against recent re-engagement nudges to prevent spam.
@@ -134,13 +102,7 @@ async def find_re_engagement_eligible(supabase: Client) -> list[str]:
     ).isoformat()
 
     # "Last activity" = most recent analysis insight
-    all_insight_dates_result = (
-        supabase.table("user_memories")
-        .select("user_id, created_at")
-        .eq("type", "analysis_insight")
-        .execute()
-    )
-    insight_date_rows = all_insight_dates_result.data or []
+    insight_date_rows = advisor_repo.get_all_insights_with_timestamps()
 
     # Latest insight per user
     latest_activity: dict[str, str] = {}
@@ -159,16 +121,10 @@ async def find_re_engagement_eligible(supabase: Client) -> list[str]:
     eligible: list[str] = []
     for uid_str in inactive_users:
         # Avoid spamming: skip if a re-engagement nudge was sent recently
-        existing = (
-            supabase.table("advisor_nudges")
-            .select("id")
-            .eq("user_id", uid_str)
-            .eq("trigger", TRIGGER_RE_ENGAGEMENT)
-            .gt("created_at", last_re_engagement_nudge_cutoff)
-            .limit(1)
-            .execute()
+        recent = advisor_repo.find_recent_nudges(
+            uid_str, TRIGGER_RE_ENGAGEMENT, last_re_engagement_nudge_cutoff
         )
-        if not existing.data:
+        if not recent:
             eligible.append(uid_str)
 
     return eligible

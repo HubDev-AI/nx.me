@@ -112,6 +112,13 @@ def get_subscription_repo(request: Request) -> "SubscriptionRepository":
     return SubscriptionRepository(request.app.state.supabase)
 
 
+def get_advisor_repo(request: Request) -> "AdvisorRepository":
+    """Return an AdvisorRepository wired to the app's Supabase client."""
+    from app.repositories.advisor_repo import AdvisorRepository
+
+    return AdvisorRepository(request.app.state.supabase)
+
+
 def get_tier_repo(request: Request) -> "TierRepository":
     """Return a TierRepository wired to the app's Supabase + Redis clients."""
     from app.entitlement.tier_repo import TierRepository
