@@ -284,6 +284,17 @@ class EntitlementService:
         """Public accessor for the user's tier record."""
         return await self._get_tier(user_id)
 
+    def get_tier_stripe_price_id(self, slug: str) -> str | None:
+        """Get stripe_price_id for a tier by slug."""
+        result = (
+            self._sb.table("tiers")
+            .select("stripe_price_id")
+            .eq("slug", slug)
+            .single()
+            .execute()
+        )
+        return result.data.get("stripe_price_id") if result.data else None
+
     async def max_concurrent(self, user_id: UUID) -> int:
         """Get max concurrent generations for user's tier."""
         return (await self._get_tier(user_id)).max_concurrent_generations

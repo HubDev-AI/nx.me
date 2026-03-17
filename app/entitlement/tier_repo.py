@@ -38,6 +38,7 @@ def _row_to_tier(row: dict) -> TierRecord:
         identity_similarity_threshold=float(row["identity_similarity_threshold"]),
         feature_advisor_chat=row["feature_advisor_chat"],
         feature_visual_comparison=row["feature_visual_comparison"],
+        stripe_price_id=row.get("stripe_price_id"),
         credits_based=row["credits_based"],
     )
 
@@ -60,6 +61,7 @@ def _tier_to_cache(tier: TierRecord) -> str:
         "identity_similarity_threshold": tier.identity_similarity_threshold,
         "feature_advisor_chat": tier.feature_advisor_chat,
         "feature_visual_comparison": tier.feature_visual_comparison,
+        "stripe_price_id": tier.stripe_price_id,
         "credits_based": tier.credits_based,
     })
 

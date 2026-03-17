@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     # Transformation modules — pluggable feature flags
     ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"
 
+    # Stripe credit pack price IDs (Story 4-4 — set per-environment)
+    STRIPE_PRICE_CREDITS_10: str = ""
+    STRIPE_PRICE_CREDITS_25: str = ""
+    STRIPE_PRICE_CREDITS_50: str = ""
+
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3       # max attempts per device fingerprint
     REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours

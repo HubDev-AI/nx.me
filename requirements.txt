@@ -44,5 +44,8 @@ fal-client==0.13.1
 insightface==0.7.3
 onnxruntime==1.24.3
 
+# Stripe payments
+stripe==14.4.1
+
 # DB driver
 psycopg2-binary==2.9.10

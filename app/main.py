@@ -14,7 +14,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
 
-from app.api import analyses, auth, entitlement, generation, health
+from app.api import analyses, auth, entitlement, generation, health, webhooks
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -86,6 +86,9 @@ def create_app() -> FastAPI:
     # ── Routers ──────────────────────────────────────────────────────────────
     # Health check is unversioned (load balancer probes hit / directly)
     app.include_router(health.router)
+
+    # Webhooks are unversioned (external providers call fixed URLs)
+    app.include_router(webhooks.router)
 
     # All API routes under /v1 prefix — single place to manage API version
     from fastapi import APIRouter

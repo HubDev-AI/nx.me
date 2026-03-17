@@ -104,21 +104,21 @@ epics:
         slug: generation-queue-arq-worker
         title: Generation Queue & ARQ Worker
         size: L
-        status: backlog
+        status: done
         wave: 5
         dependencies: ["4-1", "CS-1"]
       - id: "4-3"
         slug: generation-api
         title: Generation API — POST /generate, Job Polling & Cancel
         size: M
-        status: backlog
+        status: done
         wave: 6
         dependencies: ["4-2", "3-3"]
       - id: "4-4"
         slug: stripe-adapter
         title: Stripe Adapter — Credit Purchase, Subscription & Webhook Idempotency
         size: M
-        status: backlog
+        status: in-progress
         wave: 6
         dependencies: ["4-1"]
       - id: "4-5"

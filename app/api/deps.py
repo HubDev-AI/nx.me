@@ -86,6 +86,17 @@ _ERROR_MESSAGES: dict[str, str] = {
 }
 
 
+def get_payment_adapter() -> "PaymentPort":
+    """Return the configured payment adapter (Stripe or mock)."""
+    from app.config import settings
+
+    if settings.ADAPTER__PAYMENT_ADAPTER == "stripe":
+        from app.payment.adapters.stripe_adapter import StripePaymentAdapter
+        return StripePaymentAdapter()
+    from app.payment.adapters.mock import MockPaymentAdapter
+    return MockPaymentAdapter()
+
+
 def require_entitlement(action: str):
     """FastAPI dependency: check entitlement before route execution (A-5).
 
