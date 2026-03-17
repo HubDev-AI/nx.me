@@ -33,11 +33,47 @@ _SLUG_TO_TIER_NAME: dict[str, str] = {
 }
 
 
+class CreditPackOption(BaseModel):
+    pack_id: str
+    credits: int
+    price_id: str
+
+
+class PremiumOption(BaseModel):
+    price_id: str
+    name: str
+
+
+class PurchaseOptions(BaseModel):
+    credit_packs: list[CreditPackOption]
+    premium: PremiumOption | None
+
+
 class EntitlementResponse(BaseModel):
     tier: str
     trial_analyses_remaining: int
     credit_balance: int
     can_generate: bool
+    subscription_status: str | None = None
+    billing_period_end: str | None = None
+    purchase_options: PurchaseOptions | None = None
+
+
+def _build_purchase_options(svc: EntitlementService) -> PurchaseOptions | None:
+    """Build purchase options for paywall display (AC-FR2)."""
+    packs: list[CreditPackOption] = []
+    for pack_id, credit_count in _CREDIT_PACKS.items():
+        price_id = getattr(settings, f"STRIPE_PRICE_CREDITS_{credit_count}", "")
+        if price_id:
+            packs.append(CreditPackOption(pack_id=pack_id, credits=credit_count, price_id=price_id))
+
+    premium_price_id = svc.get_tier_stripe_price_id("premium")
+    premium = PremiumOption(price_id=premium_price_id, name="Premium") if premium_price_id else None
+
+    if not packs and not premium:
+        return None
+
+    return PurchaseOptions(credit_packs=packs, premium=premium)
 
 
 @router.get("/entitlement", response_model=EntitlementResponse)
@@ -45,19 +81,37 @@ async def get_entitlement(
     claims: UserClaims = Depends(get_current_user),
     svc: EntitlementService = Depends(get_entitlement_service),
 ) -> EntitlementResponse:
-    """Return the authenticated user's current entitlement snapshot."""
-    from uuid import UUID
+    """Return the authenticated user's current entitlement snapshot.
 
+    Story 4-5: includes subscription_status, billing_period_end, and
+    purchase_options for paywall display.
+    """
     user_id = UUID(claims["sub"])
     state = await svc.get_entitlement(user_id)
 
     tier_name = _SLUG_TO_TIER_NAME.get(state.tier.slug, state.tier.slug.upper())
+
+    # Subscription status
+    sub_status: str | None = None
+    billing_end: str | None = None
+    if state.has_active_subscription:
+        sub_status = "active"
+        if state.subscription_billing_period_end:
+            billing_end = state.subscription_billing_period_end.isoformat()
+
+    # Include purchase options when user can't generate (paywall trigger)
+    purchase_options: PurchaseOptions | None = None
+    if not state.can_generate:
+        purchase_options = _build_purchase_options(svc)
 
     return EntitlementResponse(
         tier=tier_name,
         trial_analyses_remaining=state.trial_analyses_remaining,
         credit_balance=state.credit_balance,
         can_generate=state.can_generate,
+        subscription_status=sub_status,
+        billing_period_end=billing_end,
+        purchase_options=purchase_options,
     )
 
 

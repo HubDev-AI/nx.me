@@ -118,14 +118,14 @@ epics:
         slug: stripe-adapter
         title: Stripe Adapter — Credit Purchase, Subscription & Webhook Idempotency
         size: M
-        status: in-progress
+        status: done
         wave: 6
         dependencies: ["4-1"]
       - id: "4-5"
         slug: monetization-api
         title: Monetization API — Subscription CRUD & Credits Entitlement Endpoint
         size: S
-        status: backlog
+        status: in-progress
         wave: 7
         dependencies: ["4-4"]
       - id: "4-6"
