@@ -14,9 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_current_user, get_supabase, get_user_repo
+from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_supabase, get_user_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository
 from app.repositories.user_repo import UserRepository
 from app.services.public_url import build_avatar_url
 
@@ -95,6 +97,7 @@ def get_user_profile(
     username: str,
     supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
 ) -> ProfileResponse:
     """Return public profile stats for the given username.
 
@@ -111,7 +114,12 @@ def get_user_profile(
     post_count = stats.get("post_count", 0)
     total_reactions = stats.get("total_reactions", 0)
 
-    avatar_url = build_avatar_url(supabase, user.get("avatar_storage_key"))
+    avatar_storage_key = user.get("avatar_storage_key")
+    avatar_url = (
+        image_repo.build_avatar_signed_url(avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+        if avatar_storage_key
+        else None
+    )
 
     logger.debug("Profile viewed for user %s", user_id)
 
@@ -143,6 +151,8 @@ def get_user_history(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
 ) -> HistoryResponse:
     """Return the authenticated user's analysis history in reverse chronological order.
 
@@ -190,13 +200,7 @@ def get_user_history(
     ]
     before_images_by_id: dict[str, dict] = {}
     if original_image_ids:
-        before_img_result = (
-            supabase.table("images")
-            .select("id, storage_key, bucket")
-            .in_("id", original_image_ids)
-            .execute()
-        )
-        for img in before_img_result.data or []:
+        for img in image_repo.get_by_ids(original_image_ids):
             if img.get("storage_key"):
                 before_images_by_id[img["id"]] = img
 
@@ -205,15 +209,7 @@ def get_user_history(
     #    for these analyses and pick the latest per analysis_id in Python.
     jobs_by_analysis: dict[str, str] = {}  # analysis_id -> generated_image_id
     if analysis_ids:
-        jobs_result = (
-            supabase.table("glow_up_jobs")
-            .select("analysis_id, generated_image_id, created_at")
-            .in_("analysis_id", analysis_ids)
-            .eq("status", "completed")
-            .order("created_at", desc=True)
-            .execute()
-        )
-        for job in jobs_result.data or []:
+        for job in job_repo.get_completed_jobs_for_analyses(analysis_ids):
             aid = job["analysis_id"]
             # First seen per analysis_id is the latest (ordered desc)
             if aid not in jobs_by_analysis and job.get("generated_image_id"):
@@ -223,22 +219,14 @@ def get_user_history(
     generated_image_ids = list(jobs_by_analysis.values())
     after_images_by_id: dict[str, dict] = {}
     if generated_image_ids:
-        after_img_result = (
-            supabase.table("images")
-            .select("id, storage_key, bucket")
-            .in_("id", generated_image_ids)
-            .execute()
-        )
-        for img in after_img_result.data or []:
+        for img in image_repo.get_by_ids(generated_image_ids):
             if img.get("storage_key"):
                 after_images_by_id[img["id"]] = img
 
     # 4. Batch-sign all URLs, grouped by bucket to minimise overhead
     def _sign_url(bucket: str, storage_key: str) -> str | None:
         try:
-            return supabase.storage.from_(bucket).create_signed_url(
-                storage_key, settings.SIGNED_URL_EXPIRY_SECONDS
-            )["signedURL"]
+            return image_repo.create_signed_url(bucket, storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
         except Exception:
             logger.warning("Failed to sign URL: bucket=%s key=%s", bucket, storage_key, exc_info=True)
             return None
@@ -302,6 +290,7 @@ def update_user_profile(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
 ) -> UpdateProfileResponse:
     """Update the authenticated user's display_name and/or avatar.
 
@@ -336,7 +325,12 @@ def update_user_profile(
 
     # Re-fetch to return the current state
     refreshed = _lookup_user(user_repo, username)
-    avatar_url = build_avatar_url(supabase, refreshed.get("avatar_storage_key"))
+    refreshed_avatar_key = refreshed.get("avatar_storage_key")
+    avatar_url = (
+        image_repo.build_avatar_signed_url(refreshed_avatar_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+        if refreshed_avatar_key
+        else None
+    )
 
     return UpdateProfileResponse(
         username=refreshed["username"],

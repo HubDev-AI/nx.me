@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from supabase import Client
 
 from app.config import settings
+from app.repositories.image_repo import ImageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,8 @@ def publish_post_images(
 
     Raises ``RuntimeError`` if any copy operation fails.
     """
+    image_repo = ImageRepository(supabase)
+
     before_public_key = f"before/{user_id}/{before_image['storage_key'].split('/')[-1]}"
     after_public_key = f"after/{user_id}/{after_image['storage_key'].split('/')[-1]}"
 
@@ -56,13 +59,13 @@ def publish_post_images(
         (before_image, before_public_key),
         (after_image, after_public_key),
     ]:
-        raw_bytes = supabase.storage.from_(src_img.get("bucket", "raw-selfies")).download(
-            src_img["storage_key"]
-        )
-        supabase.storage.from_(PUBLIC_BUCKET).upload(
-            path=public_key,
-            file=raw_bytes,
-            file_options={"content-type": "image/jpeg", "upsert": "true"},
+        raw_bytes = image_repo.download(src_img.get("bucket", "raw-selfies"), src_img["storage_key"])
+        image_repo.upload_public(
+            PUBLIC_BUCKET,
+            public_key,
+            raw_bytes,
+            "image/jpeg",
+            upsert=True,
         )
 
     return PublishedImageURLs(
@@ -86,10 +89,5 @@ def build_avatar_url(supabase: Client, avatar_storage_key: str | None) -> str | 
     """
     if not avatar_storage_key:
         return None
-    try:
-        return supabase.storage.from_(AVATAR_BUCKET).create_signed_url(
-            avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS
-        )["signedURL"]
-    except Exception:
-        logger.warning("Failed to generate signed URL for avatar key: %s", avatar_storage_key)
-        return None
+    image_repo = ImageRepository(supabase)
+    return image_repo.build_avatar_signed_url(avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)

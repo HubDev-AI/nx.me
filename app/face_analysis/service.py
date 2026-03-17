@@ -30,6 +30,7 @@ from fastapi import HTTPException, status
 from app.face_analysis.models import AnalysisResult
 from app.face_analysis.recommendation import RecommendationEngine
 from app.face_analysis.symmetry_scorer import SymmetryScorer
+from app.repositories.image_repo import ImageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +91,7 @@ class FaceAnalysisService:
     """
 
     def __init__(self, supabase: Client) -> None:
-        self._supabase = supabase
+        self._image_repo = ImageRepository(supabase)
         self._adapter = _get_face_analysis_adapter()
 
     async def analyze(self, image_storage_key: str) -> AnalysisResult:
@@ -107,9 +108,7 @@ class FaceAnalysisService:
         """
         # Fetch image bytes from Supabase Storage
         try:
-            image_bytes = self._supabase.storage.from_("raw-selfies").download(
-                image_storage_key
-            )
+            image_bytes = self._image_repo.download("raw-selfies", image_storage_key)
         except Exception as exc:
             logger.error("Failed to download image %s: %s", image_storage_key, exc)
             raise HTTPException(

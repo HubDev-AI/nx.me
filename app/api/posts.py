@@ -17,8 +17,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
-from app.api.deps import get_current_user, get_post_repo, get_supabase
+from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_post_repo, get_supabase
 from app.api.middleware.auth import UserClaims
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository
 from app.repositories.post_repo import PostRepository
 from app.services.public_url import build_avatar_url, publish_post_images
 
@@ -86,6 +88,8 @@ def create_post(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
 ) -> PostResponse:
     """Create a post from a completed glow-up job.
 
@@ -94,45 +98,33 @@ def create_post(
     user_id = claims["sub"]
 
     # Verify glow-up job exists, is owned, and is completed
-    job = (
-        supabase.table("glow_up_jobs")
-        .select("id, user_id, status, original_image_id, generated_image_id")
-        .eq("id", body.glow_up_job_id)
-        .maybe_single()
-        .execute()
-    )
-    if not job.data:
+    job_data = job_repo.get_jobs_for_post(body.glow_up_job_id)
+    if not job_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if job.data["user_id"] != user_id:
+    if job_data["user_id"] != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if job.data["status"] != "completed":
+    if job_data["status"] != "completed":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error": {"code": "JOB_NOT_COMPLETED", "message": "Job must be completed to create a post."}},
         )
-    if not job.data.get("generated_image_id"):
+    if not job_data.get("generated_image_id"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error": {"code": "NO_GENERATED_IMAGE", "message": "Job has no generated image."}},
         )
 
     # Get image storage keys from private buckets
-    before_img = (
-        supabase.table("images").select("storage_key, bucket")
-        .eq("id", job.data["original_image_id"]).single().execute()
-    )
-    after_img = (
-        supabase.table("images").select("storage_key, bucket")
-        .eq("id", job.data["generated_image_id"]).single().execute()
-    )
+    before_img_data = image_repo.get_by_id_with_fields(job_data["original_image_id"], "storage_key, bucket")
+    after_img_data = image_repo.get_by_id_with_fields(job_data["generated_image_id"], "storage_key, bucket")
 
     # Copy images from private buckets to public bucket and get CDN URLs
     try:
         published = publish_post_images(
             supabase,
             user_id=user_id,
-            before_image=before_img.data,
-            after_image=after_img.data,
+            before_image=before_img_data,
+            after_image=after_img_data,
         )
     except Exception as exc:
         logger.error("Failed to publish post images: %s", exc)
@@ -150,8 +142,8 @@ def create_post(
         "user_id": user_id,
         "glow_up_job_id": body.glow_up_job_id,
         "caption": body.caption,
-        "before_image_id": job.data["original_image_id"],
-        "after_image_id": job.data["generated_image_id"],
+        "before_image_id": job_data["original_image_id"],
+        "after_image_id": job_data["generated_image_id"],
         "before_image_url": before_url,
         "after_image_url": after_url,
         "created_at": now_utc,

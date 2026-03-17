@@ -26,6 +26,7 @@ from app.image_pipeline.models import IMAGE_QUARANTINED, ProcessedImage
 from app.image_pipeline.nsfw_screener import NSFWScreenerPort
 from app.image_pipeline.storage import StoragePort
 from app.image_pipeline.validators import DimensionValidator, MagicBytesValidator
+from app.repositories.image_repo import ImageRepository
 
 from fastapi import HTTPException, status
 
@@ -65,6 +66,7 @@ class ImagePipeline:
 
     def __init__(self, supabase: Client) -> None:
         self._supabase = supabase
+        self._image_repo = ImageRepository(supabase)
         self._magic_validator = MagicBytesValidator()
         self._dimension_validator = DimensionValidator()
         self._nsfw_screener = _get_nsfw_screener()
@@ -105,7 +107,7 @@ class ImagePipeline:
         if nsfw_result.is_explicit:
             # Write quarantined images row — no file written to storage
             try:
-                self._supabase.table("images").insert({
+                self._image_repo.create({
                     "id": str(image_id),
                     "user_id": user_id,
                     "storage_key": None,
@@ -113,7 +115,7 @@ class ImagePipeline:
                     "image_type": "selfie",
                     "status": "quarantined",
                     "screened_at": now_utc,
-                }).execute()
+                })
             except Exception as exc:
                 # DB failure must not mask the quarantine decision
                 logger.error("Failed to insert quarantined images row for user %s: %s", user_id, exc)
@@ -152,7 +154,7 @@ class ImagePipeline:
 
         # Step 6: Write images row — delete uploaded file on DB failure
         try:
-            self._supabase.table("images").insert({
+            self._image_repo.create({
                 "id": str(image_id),
                 "user_id": user_id,
                 "storage_key": storage_key,
@@ -160,11 +162,11 @@ class ImagePipeline:
                 "image_type": "selfie",
                 "status": "cleared",
                 "screened_at": now_utc,
-            }).execute()
+            })
         except Exception as exc:
             logger.error("images INSERT failed for %s — deleting orphaned file %s: %s", user_id, storage_key, exc)
             try:
-                self._supabase.storage.from_(self.BUCKET).remove([storage_key])
+                self._image_repo.remove(self.BUCKET, [storage_key])
             except Exception:  # noqa: BLE001
                 logger.exception("Failed to delete orphaned file %s/%s", self.BUCKET, storage_key)
             raise HTTPException(

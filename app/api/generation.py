@@ -19,12 +19,15 @@ from supabase import Client
 from app.api.deps import (
     get_current_user,
     get_entitlement_service,
+    get_image_repo,
+    get_job_repo,
     get_redis,
     get_supabase,
 )
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.constants.tiers import CREDIT_HOLDER, PREMIUM, SLUG_TO_TIER_NAME, TRIAL
+from app.db.async_helpers import run_sync
 from app.entitlement.ledger import CreditLedger
 from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, PAYMENT_REQUIRED_CODES, TIER_CONCURRENT_LIMIT
 from app.entitlement.service import EntitlementService
@@ -37,6 +40,8 @@ from app.generation.models import (
     LANE_PREMIUM,
     LANE_TRIAL,
 )
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +118,7 @@ async def create_generation(
     supabase: Client = Depends(get_supabase),
     redis_client: aioredis.Redis = Depends(get_redis),
     ent_svc: EntitlementService = Depends(get_entitlement_service),
+    job_repo: JobRepository = Depends(get_job_repo),
 ) -> GenerateResponse:
     """Trigger a glow-up generation job.
 
@@ -239,18 +245,11 @@ async def create_generation(
         )
 
     # --- Idempotency check ---
-    existing = (
-        supabase.table("glow_up_jobs")
-        .select("id, status")
-        .eq("idempotency_key", body.idempotency_key)
-        .eq("user_id", user_id_str)
-        .maybe_single()
-        .execute()
-    )
-    if existing.data:
+    existing = await run_sync(job_repo.get_by_idempotency_key, body.idempotency_key, user_id_str)
+    if existing:
         return GenerateResponse(
-            job_id=existing.data["id"],
-            status=existing.data["status"],
+            job_id=existing["id"],
+            status=existing["status"],
             estimated_wait_seconds=0,
             queue_position=0,
         )
@@ -277,7 +276,7 @@ async def create_generation(
 
     try:
         # Insert glow_up_jobs first (primary record)
-        supabase.table("glow_up_jobs").insert({
+        await run_sync(job_repo.create, {
             "id": str(job_id),
             "user_id": user_id_str,
             "analysis_id": str(analysis_id),
@@ -289,15 +288,15 @@ async def create_generation(
             "idempotency_key": body.idempotency_key,
             "created_at": now_utc,
             "updated_at": now_utc,
-        }).execute()
+        })
 
         # Insert usage_events (tracking record)
-        supabase.table("usage_events").insert({
+        await run_sync(job_repo.insert_usage_event, {
             "user_id": user_id_str,
             "action": "generation",
             "status": usage_status,
             "job_id": str(job_id),
-        }).execute()
+        })
 
         # Enqueue ARQ job
         arq_pool = request.app.state.arq_pool
@@ -335,20 +334,14 @@ async def create_generation(
 # GET /jobs/{job_id}
 # ---------------------------------------------------------------------------
 
-# Columns needed for job status response
-_JOB_SELECT = (
-    "id, user_id, status, queue_lane, updated_at, "
-    "original_image_id, generated_image_id, failure_reason, "
-    "identity_preserved, credit_reservation_id"
-)
-
 
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job(
     job_id: UUID,
     claims: UserClaims = Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
     redis_client: aioredis.Redis = Depends(get_redis),
+    job_repo: JobRepository = Depends(get_job_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
 ) -> JobStatusResponse:
     """Poll job status with estimated wait time.
 
@@ -356,25 +349,18 @@ async def get_job(
     """
     user_id_str: str = claims["sub"]
 
-    row = (
-        supabase.table("glow_up_jobs")
-        .select(_JOB_SELECT)
-        .eq("id", str(job_id))
-        .maybe_single()
-        .execute()
-    )
-    if not row.data:
+    job = await run_sync(job_repo.get_for_status_poll, str(job_id))
+    if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found",
         )
-    if row.data["user_id"] != user_id_str:
+    if job["user_id"] != user_id_str:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found",
         )
 
-    job = row.data
     job_status = job["status"]
 
     # --- Queued / Processing: compute estimated wait ---
@@ -401,33 +387,33 @@ async def get_job(
         identity_preserved = job.get("identity_preserved")
 
         # Get original image storage key
-        original_img = (
-            supabase.table("images")
-            .select("storage_key")
-            .eq("id", job["original_image_id"])
-            .maybe_single()
-            .execute()
+        original_img = await run_sync(
+            image_repo.get_by_id_with_fields,
+            job["original_image_id"],
+            "storage_key",
         )
-        if original_img.data:
-            before_url = supabase.storage.from_("raw-selfies").create_signed_url(
-                original_img.data["storage_key"],
+        if original_img and original_img.get("storage_key"):
+            before_url = await run_sync(
+                image_repo.create_signed_url,
+                "raw-selfies",
+                original_img["storage_key"],
                 settings.SIGNED_URL_EXPIRY_SECONDS,
-            )["signedURL"]
+            )
 
         # Get generated image storage key
         if job.get("generated_image_id"):
-            gen_img = (
-                supabase.table("images")
-                .select("storage_key")
-                .eq("id", job["generated_image_id"])
-                .maybe_single()
-                .execute()
+            gen_img = await run_sync(
+                image_repo.get_by_id_with_fields,
+                job["generated_image_id"],
+                "storage_key",
             )
-            if gen_img.data:
-                after_url = supabase.storage.from_("generated-images").create_signed_url(
-                    gen_img.data["storage_key"],
+            if gen_img and gen_img.get("storage_key"):
+                after_url = await run_sync(
+                    image_repo.create_signed_url,
+                    "generated-images",
+                    gen_img["storage_key"],
                     settings.SIGNED_URL_EXPIRY_SECONDS,
-                )["signedURL"]
+                )
 
     # --- Failed: include refund and retry info ---
     credit_refunded: bool | None = None
@@ -474,6 +460,7 @@ async def cancel_job(
     job_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
+    job_repo: JobRepository = Depends(get_job_repo),
 ) -> CancelResponse:
     """Cancel an in-flight generation job.
 
@@ -481,25 +468,18 @@ async def cancel_job(
     """
     user_id_str: str = claims["sub"]
 
-    row = (
-        supabase.table("glow_up_jobs")
-        .select("id, user_id, status, credit_reservation_id")
-        .eq("id", str(job_id))
-        .maybe_single()
-        .execute()
-    )
-    if not row.data:
+    job = await run_sync(job_repo.get_for_cancel, str(job_id))
+    if not job:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found",
         )
-    if row.data["user_id"] != user_id_str:
+    if job["user_id"] != user_id_str:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Job not found",
         )
 
-    job = row.data
     terminal_statuses = {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
 
     if job["status"] in terminal_statuses:
@@ -515,11 +495,11 @@ async def cancel_job(
 
     # --- Update job to cancelled ---
     now_utc = datetime.now(tz=timezone.utc).isoformat()
-    supabase.table("glow_up_jobs").update({
+    await run_sync(job_repo.update, str(job_id), {
         "status": JobStatus.CANCELLED,
         "failure_reason": FAILURE_CANCELLED,
         "updated_at": now_utc,
-    }).eq("id", str(job_id)).execute()
+    })
 
     # --- Release credit if reserved ---
     credit_refunded = False
@@ -535,9 +515,7 @@ async def cancel_job(
             )
 
     # --- Update usage_events ---
-    supabase.table("usage_events").update({
-        "status": "released",
-    }).eq("job_id", str(job_id)).execute()
+    await run_sync(job_repo.update_usage_event, str(job_id), {"status": "released"})
 
     logger.info("Job %s cancelled by user %s", job_id, user_id_str)
 

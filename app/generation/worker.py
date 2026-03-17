@@ -28,6 +28,8 @@ from app.generation.models import (
 )
 from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository
 
 logger = logging.getLogger(__name__)
 
@@ -57,14 +59,15 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     redis = ctx["redis"]
     cost_tracker = CostTracker(redis)
     generator = _get_generator()
+    job_repo = JobRepository(supabase)
+    image_repo = ImageRepository(supabase)
     user_id_for_concurrent: str | None = None
 
     # Fetch job data FIRST — needed for credit release in all failure paths (P2-6)
-    job = supabase.table("glow_up_jobs").select("*").eq("id", job_id).single().execute()
-    if not job.data:
+    job_data = job_repo.get_by_id_single(job_id)
+    if not job_data:
         logger.error("Job %s not found", job_id)
         return
-    job_data = job.data
 
     # Check if already cancelled/terminal before processing (P1-3)
     if job_data["status"] in (JobStatus.CANCELLED, JobStatus.COMPLETED, JobStatus.FAILED):
@@ -74,22 +77,18 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     # Pre-flight checks — now using _fail_job which releases credits (P2-6)
     if await cost_tracker.is_emergency_stopped():
         logger.warning("Emergency stop active — failing job %s", job_id)
-        await _fail_job(supabase, job_id, job_data, "PROVIDER_ERROR")
+        await _fail_job(job_repo, job_id, job_data, "PROVIDER_ERROR", supabase=supabase)
         return
 
     if await cost_tracker.is_circuit_open():
         logger.warning("Circuit breaker open — failing job %s", job_id)
-        await _fail_job(supabase, job_id, job_data, FAILURE_PROVIDER)
+        await _fail_job(job_repo, job_id, job_data, FAILURE_PROVIDER, supabase=supabase)
         return
 
     # Claim job with conditional update — only if still queued (P1-3)
-    now_utc = datetime.now(tz=timezone.utc).isoformat()
-    claim_result = supabase.table("glow_up_jobs").update({
-        "status": JobStatus.PROCESSING,
-        "updated_at": now_utc,
-    }).eq("id", job_id).eq("status", JobStatus.QUEUED).execute()
+    claim_result = job_repo.claim(job_id)
 
-    if not claim_result.data:
+    if not claim_result:
         logger.info("Job %s not in queued state — aborting", job_id)
         return
 
@@ -138,16 +137,8 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             adaptive_params = {"id_weight": 0.85, "guidance_scale": 4.0, "num_inference_steps": 30}
 
         # Get source image signed URL
-        source_img = (
-            supabase.table("images")
-            .select("storage_key, bucket")
-            .eq("id", job_data["original_image_id"])
-            .single()
-            .execute()
-        )
-        source_url = supabase.storage.from_(source_img.data["bucket"]).create_signed_url(
-            source_img.data["storage_key"], 300
-        )["signedURL"]
+        source_img = image_repo.get_by_id_single(job_data["original_image_id"])
+        source_url = image_repo.create_signed_url(source_img["bucket"], source_img["storage_key"], 300)
 
         # Build generation options
         options = GenerationOptions(
@@ -181,11 +172,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         # URL for downstream processing).  The file is overwritten later
         # after color normalization.
         storage_key = f"{user_id}/{job_id}.jpg"
-        supabase.storage.from_("generated-images").upload(
-            path=storage_key,
-            file=gen_image_bytes,
-            file_options={"content-type": "image/jpeg"},
-        )
+        image_repo.upload("generated-images", storage_key, gen_image_bytes, "image/jpeg")
 
         # NSFW screen output — uses in-memory bytes (from NXME storage write)
         if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
@@ -196,10 +183,10 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             if nsfw_result.is_explicit:
                 # Clean up the already-uploaded image before failing
                 try:
-                    supabase.storage.from_("generated-images").remove([storage_key])
+                    image_repo.remove("generated-images", [storage_key])
                 except Exception:
                     logger.warning("Failed to remove NSFW image %s from storage", storage_key)
-                await _fail_job(supabase, job_id, job_data, FAILURE_NSFW)
+                await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
                 return
 
         # Download source for identity check
@@ -244,11 +231,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
                 resp.raise_for_status()
                 retry_image_bytes = resp.content
 
-            supabase.storage.from_("generated-images").update(
-                path=storage_key,
-                file=retry_image_bytes,
-                file_options={"content-type": "image/jpeg"},
-            )
+            image_repo.update_file("generated-images", storage_key, retry_image_bytes, "image/jpeg")
 
             retry_identity = await loop.run_in_executor(
                 None,
@@ -265,11 +248,12 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             else:
                 # Clean up stored image on identity failure
                 try:
-                    supabase.storage.from_("generated-images").remove([storage_key])
+                    image_repo.remove("generated-images", [storage_key])
                 except Exception:
                     logger.warning("Failed to remove image %s after identity failure", storage_key)
-                await _fail_job(supabase, job_id, job_data, FAILURE_IDENTITY,
-                                identity_score=retry_identity.similarity_score)
+                await _fail_job(job_repo, job_id, job_data, FAILURE_IDENTITY,
+                                identity_score=retry_identity.similarity_score,
+                                supabase=supabase)
                 return
 
         # Color normalization and final storage overwrite
@@ -284,22 +268,18 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         output_bytes = output_buffer.getvalue()
 
         # Overwrite with color-normalized version
-        supabase.storage.from_("generated-images").update(
-            path=storage_key,
-            file=output_bytes,
-            file_options={"content-type": "image/jpeg"},
-        )
+        image_repo.update_file("generated-images", storage_key, output_bytes, "image/jpeg")
 
         # Create images row for generated image
-        gen_image_row = supabase.table("images").insert({
+        gen_image_row = image_repo.create({
             "user_id": user_id,
             "storage_key": storage_key,
             "bucket": "generated-images",
             "image_type": "generated_after",
             "status": "cleared",
-        }).execute()
+        })
 
-        gen_image_id = gen_image_row.data[0]["id"] if gen_image_row.data else None
+        gen_image_id = gen_image_row.get("id") if gen_image_row else None
 
         # Commit credit
         if job_data.get("credit_reservation_id"):
@@ -308,7 +288,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             ledger.commit(UUID(job_data["credit_reservation_id"]))
 
         # Update job → completed
-        supabase.table("glow_up_jobs").update({
+        job_repo.update(job_id, {
             "status": JobStatus.COMPLETED,
             "generated_image_id": gen_image_id,
             "identity_similarity_score": identity_result.similarity_score,
@@ -316,7 +296,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             "estimated_cost_usd": gen_result.estimated_cost_usd,
             "model_used": options.model,
             "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-        }).eq("id", job_id).execute()
+        })
 
         # Record success for circuit breaker
         await cost_tracker.record_success()
@@ -328,7 +308,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     except Exception as exc:
         logger.exception("Job %s failed: %s", job_id, exc)
         await cost_tracker.record_failure()
-        await _fail_job(supabase, job_id, job_data if 'job_data' in locals() else {}, FAILURE_PROVIDER)
+        await _fail_job(job_repo, job_id, job_data if 'job_data' in locals() else {}, FAILURE_PROVIDER, supabase=supabase)
     finally:
         # Always DECR concurrent counter
         if user_id_for_concurrent:
@@ -336,15 +316,16 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
 
 
 async def _fail_job(
-    supabase: Client,
+    job_repo: JobRepository,
     job_id: str,
     job_data: dict,
     failure_reason: str,
     identity_score: float | None = None,
+    supabase: Client | None = None,
 ) -> None:
     """Fail a job: release credit, update status."""
     # Release credit reservation
-    if job_data.get("credit_reservation_id"):
+    if job_data.get("credit_reservation_id") and supabase is not None:
         try:
             from app.entitlement.ledger import CreditLedger
             ledger = CreditLedger(supabase)
@@ -361,7 +342,7 @@ async def _fail_job(
         update["identity_similarity_score"] = identity_score
         update["identity_preserved"] = False
 
-    supabase.table("glow_up_jobs").update(update).eq("id", job_id).execute()
+    job_repo.update(job_id, update)
     logger.info("Job %s failed: %s", job_id, failure_reason)
 
 
@@ -373,18 +354,13 @@ async def _fail_job(
 async def watchdog_stuck_jobs(ctx: dict) -> None:
     """Cron: recover jobs stuck in 'processing' beyond timeout."""
     supabase: Client = ctx["supabase"]
+    job_repo = JobRepository(supabase)
     threshold = datetime.now(tz=timezone.utc) - timedelta(
         seconds=settings.GENERATION_TIMEOUT_SECONDS + 30
     )
 
-    stuck = (
-        supabase.table("glow_up_jobs")
-        .select("id, credit_reservation_id")
-        .eq("status", JobStatus.PROCESSING)
-        .lt("updated_at", threshold.isoformat())
-        .execute()
-    )
+    stuck_jobs = job_repo.get_stuck_jobs(threshold.isoformat())
 
-    for job in stuck.data or []:
+    for job in stuck_jobs:
         logger.warning("Recovering stuck job %s", job["id"])
-        await _fail_job(supabase, job["id"], job, FAILURE_TIMEOUT)
+        await _fail_job(job_repo, job["id"], job, FAILURE_TIMEOUT, supabase=supabase)

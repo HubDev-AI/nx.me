@@ -70,6 +70,20 @@ def get_user_repo(request: Request) -> "UserRepository":
     return UserRepository(request.app.state.supabase)
 
 
+def get_job_repo(request: Request) -> "JobRepository":
+    """Return a JobRepository wired to the app's Supabase client."""
+    from app.repositories.job_repo import JobRepository
+
+    return JobRepository(request.app.state.supabase)
+
+
+def get_image_repo(request: Request) -> "ImageRepository":
+    """Return an ImageRepository wired to the app's Supabase client."""
+    from app.repositories.image_repo import ImageRepository
+
+    return ImageRepository(request.app.state.supabase)
+
+
 def get_post_repo(request: Request) -> "PostRepository":
     """Return a PostRepository wired to the app's Supabase client."""
     from app.repositories.post_repo import PostRepository
