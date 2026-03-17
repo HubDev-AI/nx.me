@@ -61,7 +61,7 @@ class WorkerSettings:
 
     # Cron jobs
     cron_jobs = [
-        cron(watchdog_stuck_jobs, minute={0, 1}, second=0),  # Every minute
+        cron(watchdog_stuck_jobs, second=0),  # Every minute
     ]
 
     # Connection

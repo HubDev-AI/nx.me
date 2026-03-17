@@ -4,10 +4,11 @@
 CREATE TABLE glow_up_jobs (
     id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                   UUID NOT NULL REFERENCES users(id),
-    analysis_id               UUID REFERENCES analyses(id),
+    analysis_id               UUID NOT NULL REFERENCES analyses(id),
     original_image_id         UUID NOT NULL REFERENCES images(id),
     generated_image_id        UUID REFERENCES images(id),
     credit_reservation_id     UUID REFERENCES credit_reservations(id),
+    user_tier_at_enqueue      TEXT NOT NULL,
     status                    TEXT NOT NULL DEFAULT 'pending'
                               CHECK (status IN ('pending', 'queued', 'processing', 'completed', 'failed', 'cancelled')),
     queue_lane                TEXT NOT NULL
@@ -22,8 +23,13 @@ CREATE TABLE glow_up_jobs (
     wow_score                 FLOAT,
     candidate_count           INT DEFAULT 1,
     estimated_cost_usd        DECIMAL(6,4),
-    failure_reason            TEXT,
-    idempotency_key           TEXT UNIQUE,
+    failure_reason            TEXT
+                              CHECK (failure_reason IS NULL OR failure_reason IN (
+                                'IDENTITY_PRESERVATION_FAILED', 'NSFW_CONTENT_DETECTED',
+                                'GENERATION_TIMEOUT', 'PROVIDER_ERROR', 'CANCELLED', 'QUEUE_FULL'
+                              )),
+    idempotency_key           TEXT UNIQUE NOT NULL,
+    completed_at              TIMESTAMPTZ,
     created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

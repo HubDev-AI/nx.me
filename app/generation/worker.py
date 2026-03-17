@@ -16,6 +16,7 @@ from supabase import Client
 from app.config import settings
 from app.generation.color_normalizer import normalize_output
 from app.generation.cost_tracker import CostTracker
+from app.generation.face_cropper import compute_crop, composite_glowup, get_face_ratio
 from app.generation.identity_checker import check_identity
 from app.generation.models import (
     FAILURE_IDENTITY,
@@ -25,12 +26,13 @@ from app.generation.models import (
     GenerationOptions,
     JobStatus,
 )
+from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
 
 logger = logging.getLogger(__name__)
 
 
-def _get_generator():
+def _get_generator() -> GlowUpGeneratorPort:
     """Resolve generator adapter from config (lazy import)."""
     if settings.ADAPTER__IMAGE_GENERATION_ADAPTER == "falai":
         from app.generation.adapters.falai import FalAiAdapter
@@ -55,6 +57,26 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     redis = ctx["redis"]
     cost_tracker = CostTracker(redis)
     generator = _get_generator()
+    user_id_for_concurrent: str | None = None
+
+    # Pre-flight checks
+    if await cost_tracker.is_emergency_stopped():
+        logger.warning("Emergency stop active — skipping job %s", job_id)
+        supabase.table("glow_up_jobs").update({
+            "status": JobStatus.FAILED,
+            "failure_reason": "PROVIDER_ERROR",
+            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }).eq("id", job_id).execute()
+        return
+
+    if await cost_tracker.is_circuit_open():
+        logger.warning("Circuit breaker open — skipping job %s", job_id)
+        supabase.table("glow_up_jobs").update({
+            "status": JobStatus.FAILED,
+            "failure_reason": FAILURE_PROVIDER,
+            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }).eq("id", job_id).execute()
+        return
 
     # Update job → processing
     now_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -72,6 +94,12 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
 
         job_data = job.data
         user_id = job_data["user_id"]
+        user_id_for_concurrent = user_id
+
+        # Concurrent guard — INCR at job start, DECR in all exit paths
+        concurrent_key = f"concurrent:{user_id}"
+        await redis.incr(concurrent_key)
+        await redis.expire(concurrent_key, settings.GENERATION_TIMEOUT_SECONDS + 60)
 
         # Fetch analysis for prompt building
         analysis = None
@@ -266,13 +294,21 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             "updated_at": datetime.now(tz=timezone.utc).isoformat(),
         }).eq("id", job_id).execute()
 
+        # Record success for circuit breaker
+        await cost_tracker.record_success()
+
         logger.info("Job %s completed: identity=%.3f, cost=$%.4f",
                       job_id, identity_result.similarity_score,
                       gen_result.estimated_cost_usd or 0)
 
     except Exception as exc:
         logger.exception("Job %s failed: %s", job_id, exc)
+        await cost_tracker.record_failure()
         await _fail_job(supabase, job_id, job_data if 'job_data' in locals() else {}, FAILURE_PROVIDER)
+    finally:
+        # Always DECR concurrent counter
+        if user_id_for_concurrent:
+            await redis.decr(f"concurrent:{user_id_for_concurrent}")
 
 
 async def _fail_job(

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import logging
+import threading
 
 import numpy as np
 import PIL.Image
@@ -20,6 +21,7 @@ from app.generation.models import IdentityCheckResult
 logger = logging.getLogger(__name__)
 
 _arcface_app = None
+_arcface_lock = threading.Lock()  # insightface is not thread-safe
 
 
 def preload_arcface() -> None:
@@ -61,8 +63,9 @@ def check_identity(
     source_img = np.array(PIL.Image.open(io.BytesIO(source_image_bytes)).convert("RGB"))
     gen_img = np.array(PIL.Image.open(io.BytesIO(generated_image_bytes)).convert("RGB"))
 
-    # Detect faces and extract embeddings
-    source_faces = _arcface_app.get(source_img)
+    # Detect faces and extract embeddings (lock for thread safety)
+    with _arcface_lock:
+        source_faces = _arcface_app.get(source_img)
     if not source_faces:
         logger.warning("No face detected in source image")
         return IdentityCheckResult(
@@ -71,7 +74,8 @@ def check_identity(
             face_detected_in_output=True,  # Source issue, not output
         )
 
-    gen_faces = _arcface_app.get(gen_img)
+    with _arcface_lock:
+        gen_faces = _arcface_app.get(gen_img)
     if not gen_faces:
         logger.warning("No face detected in generated image")
         return IdentityCheckResult(

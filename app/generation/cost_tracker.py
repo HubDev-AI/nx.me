@@ -6,7 +6,7 @@ emergency stop flag, fal.ai health probe.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as aioredis
 
@@ -52,10 +52,8 @@ class CostTracker:
         bucket_count = 0
 
         for i in range(24):
-            hour = now.hour - i
-            if hour < 0:
-                hour += 24
-            bucket = now.replace(hour=hour % 24).strftime("%Y%m%d%H")
+            bucket_time = now - timedelta(hours=i)
+            bucket = bucket_time.strftime("%Y%m%d%H")
             key = f"{_COST_BUCKET_PREFIX}{bucket}"
             val = await self._redis.get(key)
             if val:
@@ -65,7 +63,6 @@ class CostTracker:
         if bucket_count == 0:
             return 0.0
 
-        # Rough estimate: assume ~10 generations per bucket hour
         return total_cost / max(bucket_count * 10, 1)
 
     # ------------------------------------------------------------------
@@ -125,3 +122,36 @@ class CostTracker:
         pipe.incr(key)
         pipe.expire(key, 86400)
         await pipe.execute()
+
+    # ------------------------------------------------------------------
+    # Circuit breaker (fal.ai failures)
+    # ------------------------------------------------------------------
+
+    async def record_failure(self) -> None:
+        """Record a fal.ai failure for circuit breaker tracking."""
+        key = "gen:circuit:failures"
+        pipe = self._redis.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, 60)  # 60s window
+        await pipe.execute()
+
+    async def record_success(self) -> None:
+        """Reset failure counter on success."""
+        await self._redis.delete("gen:circuit:failures")
+        await self._redis.delete("gen:circuit:open")
+
+    async def is_circuit_open(self) -> bool:
+        """Check if circuit breaker is open (fal.ai down)."""
+        # Check cooldown
+        if await self._redis.get("gen:circuit:open"):
+            return True
+
+        # Check failure count
+        failures = int(await self._redis.get("gen:circuit:failures") or 0)
+        if failures >= 5:
+            # Open circuit for 120s
+            await self._redis.set("gen:circuit:open", "1", ex=120)
+            logger.critical("Circuit breaker OPEN: %d consecutive fal.ai failures", failures)
+            return True
+
+        return False
