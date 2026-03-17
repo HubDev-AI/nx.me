@@ -35,6 +35,7 @@ class TierRecord:
     identity_similarity_threshold: float
     feature_advisor_chat: bool
     feature_visual_comparison: bool
+    stripe_price_id: str | None
     credits_based: bool
 
 

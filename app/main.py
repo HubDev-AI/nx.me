@@ -10,9 +10,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 import redis.asyncio as aioredis
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import FastAPI
 
-from app.api import analyses, auth, entitlement, health
+from app.api import analyses, auth, entitlement, generation, health, posts, public, social, users, webhooks
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -54,11 +56,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             settings.ADAPTER__FACE_ANALYSIS_ADAPTER,
         )
 
-    logger.info("Supabase and Redis clients initialised")
+    # ARQ pool for enqueuing generation jobs
+    app.state.arq_pool = await create_pool(
+        RedisSettings.from_dsn(settings.REDIS_URL)
+    )
+
+    logger.info("Supabase, Redis, and ARQ pool initialised")
 
     yield
 
     # ── Shutdown ─────────────────────────────────────────────────────────────
+    await app.state.arq_pool.aclose()
     await app.state.redis.aclose()
     logger.info("NXME API shutdown complete")
 
@@ -79,12 +87,30 @@ def create_app() -> FastAPI:
     # Health check is unversioned (load balancer probes hit / directly)
     app.include_router(health.router)
 
+    # Webhooks are unversioned (external providers call fixed URLs)
+    app.include_router(webhooks.router)
+
+    # Public endpoints — no auth, no versioning, under /api prefix
+    app.include_router(public.router, prefix="/api")
+
     # All API routes under /v1 prefix — single place to manage API version
     from fastapi import APIRouter
     v1 = APIRouter(prefix="/v1")
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
     v1.include_router(analyses.router)
+    v1.include_router(generation.router)
+    v1.include_router(social.router)
+    v1.include_router(posts.router)
+    v1.include_router(users.router)
+
+    if settings.ADVISOR_ENABLED:
+        from app.api import advisor
+        v1.include_router(advisor.router)
+        logger.info("Advisor module enabled — routes registered")
+    else:
+        logger.info("Advisor module disabled (ADVISOR_ENABLED=False)")
+
     app.include_router(v1)
 
     return app

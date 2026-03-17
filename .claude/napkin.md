@@ -4,6 +4,7 @@
 | Date | Source | What Went Wrong | What To Do Instead |
 |------|--------|----------------|-------------------|
 | 2026-03-13 | self | Assumed the repo napkin existed; `.claude/napkin.md` was missing | Create the napkin immediately at session start when it does not exist |
+| 2026-03-17 | user | Trusted story-creator agent's stripe version (14.4.0) without verifying via Context7/PyPI — actual latest was 14.4.1 | ALWAYS verify package versions yourself via Context7 + PyPI. Never trust subagent version claims. |
 
 ## User Preferences
 - Follow repo `AGENTS.md` skill instructions before doing substantive work.
