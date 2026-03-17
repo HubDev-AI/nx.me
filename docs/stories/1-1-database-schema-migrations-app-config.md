@@ -170,8 +170,8 @@ CREATE TABLE glow_up_jobs (
                                     'FACE_VALIDATION_FAILED','GENERATION_TIMEOUT','NSFW_QUARANTINE',
                                     'IDENTITY_PRESERVATION_FAILED','PROVIDER_ERROR','UNKNOWN'
                                 ) OR failure_reason IS NULL),
-    before_image_id             UUID REFERENCES images(id),
-    after_image_id              UUID REFERENCES images(id),
+    original_image_id           UUID REFERENCES images(id),
+    generated_image_id          UUID REFERENCES images(id),
     identity_similarity_score   FLOAT,
     identity_preserved          BOOLEAN,
     credit_reservation_id       UUID REFERENCES credit_reservations(id),

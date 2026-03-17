@@ -77,9 +77,7 @@ CREATE TABLE IF NOT EXISTS prompt_experiments (
 CREATE INDEX IF NOT EXISTS idx_prompt_exp_mode
     ON prompt_experiments (prompt_mode, created_at DESC);
 
--- ============================================================
--- DOWN
--- ============================================================
+-- DOWN:
 
 -- To roll back this migration:
 --

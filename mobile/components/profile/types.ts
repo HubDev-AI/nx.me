@@ -1,51 +1,49 @@
 /**
  * Profile data types — aligned with backend user profile and history endpoints.
+ *
+ * Source of truth: app/api/users.py
+ *   ProfileResponse      -> UserProfile
+ *   HistoryEntry         -> GlowUpItem
+ *   HistoryResponse      -> GlowUpHistoryResponse
+ *   UpdateProfileRequest -> UpdateProfilePayload
  */
 
+/** Matches ProfileResponse in app/api/users.py */
 export interface UserProfile {
-  user_id: string;
   username: string;
-  display_name: string | null;
+  display_name: string;
   avatar_url: string | null;
   post_count: number;
-  reaction_count: number;
-  streak_days: number;
-  created_at: string;
+  total_reactions: number;
+  member_since: string;
 }
 
+/** Matches HistoryEntry in app/api/users.py */
 export interface GlowUpItem {
-  post_id: string;
-  before_image_url: string;
-  after_image_url: string;
-  reaction_count: number;
+  analysis_id: string;
+  face_shape: string | null;
+  symmetry_score: number | null;
+  recommendations: Record<string, unknown>[];
+  before_image_url: string | null;
+  after_image_url: string | null;
   created_at: string;
 }
 
+/** Matches HistoryResponse in app/api/users.py */
 export interface GlowUpHistoryResponse {
-  items: GlowUpItem[];
+  entries: GlowUpItem[];
   next_cursor: string | null;
   has_more: boolean;
 }
 
-export interface ReactedPost {
-  post_id: string;
-  user_id: string;
-  username: string;
-  before_image_url: string;
-  after_image_url: string;
-  reaction_count: number;
-  created_at: string;
-}
-
-export interface ReactedPostsResponse {
-  items: ReactedPost[];
-  next_cursor: string | null;
-  has_more: boolean;
-}
-
+/** Matches UpdateProfileRequest in app/api/users.py — only display_name is accepted */
 export interface UpdateProfilePayload {
   display_name?: string;
-  avatar_url?: string;
 }
 
-export type ProfileTab = "glowups" | "reactions";
+/** Matches UpdateProfileResponse in app/api/users.py */
+export interface UpdateProfileResponse {
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+}

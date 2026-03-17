@@ -12,7 +12,7 @@ As a registered user, I want to log in with social providers, manage my session,
 
 ## Acceptance Criteria
 
-- AC-1: Given `POST /login` with a social OAuth PKCE authorization code, When validated, Then a JWT is issued; implicit-flow tokens are rejected with HTTP 401; custom URI scheme redirects are rejected; `id_token` claims (`iss`, `aud`, `exp`, `nonce`) are validated (AC-A9).
+- AC-1: Given `POST /login` with a native provider `id_token` (obtained via platform SDK — Google Sign-In / Apple Sign-In), When validated via Supabase `sign_in_with_id_token`, Then a JWT is issued; implicit-flow tokens are rejected with HTTP 401; custom URI scheme redirects are rejected; `id_token` claims (`iss`, `aud`, `exp`, `nonce`) are validated (AC-A9).
 - AC-2: Given `POST /logout`, When the request is processed, Then the session is invalidated server-side within ≤1s; subsequent API requests with the invalidated token return HTTP 401; the client navigates to unauthenticated state (AC-FR9).
 - AC-3: Given `DELETE /account`, When the request is processed, Then primary storage deletion completes within 72h; the shareable card URL returns HTTP 410; the username is reserved (not reassignable) for 180 days (AC-FR5).
 - AC-4: Given a rate-limited IP sending ≥4 account creation attempts per hour, When registration is attempted, Then HTTP 429 is returned (AC-A8 per-IP limit).

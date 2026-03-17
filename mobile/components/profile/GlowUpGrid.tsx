@@ -20,8 +20,6 @@ import {
 import { PROFILE_CONFIG } from "../../constants/config";
 import type { GlowUpItem } from "./types";
 
-const BADGE_SIZE = 20;
-
 interface GlowUpGridProps {
   items: GlowUpItem[];
   isLoadingMore: boolean;
@@ -67,7 +65,7 @@ export function GlowUpGrid({
   );
 
   const keyExtractor = useCallback(
-    (item: GlowUpItem) => item.post_id,
+    (item: GlowUpItem) => item.analysis_id,
     [],
   );
 
@@ -138,47 +136,30 @@ function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
         { width: size, height: size },
         pressed && styles.cellPressed,
       ]}
-      accessibilityLabel={`Glow-up with ${item.reaction_count} reactions`}
+      accessibilityLabel="Glow-up transformation"
       accessibilityRole="image"
     >
       {/* Show after image as thumbnail */}
-      <Image
-        source={{ uri: item.after_image_url }}
-        style={styles.thumbnail}
-        resizeMode="cover"
-      />
-
-      {/* Before image overlay (small, bottom-left) */}
-      <View style={styles.beforeOverlay}>
+      {item.after_image_url ? (
         <Image
-          source={{ uri: item.before_image_url }}
-          style={styles.beforeThumbnail}
+          source={{ uri: item.after_image_url }}
+          style={styles.thumbnail}
           resizeMode="cover"
         />
-      </View>
+      ) : null}
 
-      {/* Reaction count badge */}
-      {item.reaction_count > 0 ? (
-        <View style={styles.badge}>
-          <Ionicons name="heart" size={10} color="#FFFFFF" />
-          <Text style={styles.badgeText}>
-            {formatBadgeCount(item.reaction_count)}
-          </Text>
+      {/* Before image overlay (small, bottom-left) */}
+      {item.before_image_url ? (
+        <View style={styles.beforeOverlay}>
+          <Image
+            source={{ uri: item.before_image_url }}
+            style={styles.beforeThumbnail}
+            resizeMode="cover"
+          />
         </View>
       ) : null}
     </Pressable>
   );
-}
-
-/** Format count for badge: 1200 -> 1.2k */
-function formatBadgeCount(count: number): string {
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}m`;
-  }
-  if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}k`;
-  }
-  return String(count);
 }
 
 const styles = StyleSheet.create({
@@ -216,24 +197,6 @@ const styles = StyleSheet.create({
   beforeThumbnail: {
     width: "100%",
     height: "100%",
-  },
-  badge: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: BADGE_SIZE / 2,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    minHeight: BADGE_SIZE,
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#FFFFFF",
   },
   footer: {
     paddingVertical: 16,

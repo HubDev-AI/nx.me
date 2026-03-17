@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,6 @@ import {
   TextInput,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import { useAuthRequest, makeRedirectUri } from "expo-auth-session";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -22,31 +20,21 @@ import {
   CTA_PRIMARY,
   BORDER_DEFAULT,
 } from "../../constants/colors";
-import {
-  AUTH_ENDPOINTS,
-  AUTH_VALIDATION,
-  GOOGLE_CLIENT_ID,
-  APPLE_CLIENT_ID,
-} from "../../constants/config";
+import { AUTH_ENDPOINTS, AUTH_VALIDATION } from "../../constants/config";
 import { apiFetch, ApiError } from "../../lib/api";
 import { storeJwt } from "../../lib/auth";
 import { AuthInput } from "../../components/auth/AuthInput";
 import { AuthButton } from "../../components/auth/AuthButton";
-
-WebBrowser.maybeCompleteAuthSession();
-
-const GOOGLE_DISCOVERY = {
-  authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-  tokenEndpoint: "https://oauth2.googleapis.com/token",
-};
-
-const APPLE_DISCOVERY = {
-  authorizationEndpoint: "https://appleid.apple.com/auth/authorize",
-  tokenEndpoint: "https://appleid.apple.com/auth/token",
-};
+import {
+  signInWithGoogle,
+  signInWithApple,
+} from "../../lib/social-auth";
 
 interface LoginResponse {
   access_token: string;
+  refresh_token: string;
+  user_id: string;
+  expires_at: number;
 }
 
 interface FieldErrors {
@@ -67,32 +55,6 @@ export default function LoginScreen() {
 
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
-
-  // Social auth setup
-  const redirectUri = makeRedirectUri({
-    scheme: "https",
-    path: "auth/callback",
-  });
-
-  const [googleRequest, googleResponse, googlePromptAsync] = useAuthRequest(
-    {
-      clientId: GOOGLE_CLIENT_ID,
-      scopes: ["openid", "email", "profile"],
-      redirectUri,
-      usePKCE: true,
-    },
-    GOOGLE_DISCOVERY,
-  );
-
-  const [appleRequest, appleResponse, applePromptAsync] = useAuthRequest(
-    {
-      clientId: APPLE_CLIENT_ID,
-      scopes: ["openid", "email", "name"],
-      redirectUri,
-      usePKCE: true,
-    },
-    APPLE_DISCOVERY,
-  );
 
   const validate = useCallback((): boolean => {
     const fieldErrors: FieldErrors = {};
@@ -152,17 +114,22 @@ export default function LoginScreen() {
     }
   }, [email, password, validate, router]);
 
-  const handleSocialAuth = useCallback(
-    async (provider: "google" | "apple", code: string) => {
+  const handleSocialLogin = useCallback(
+    async (provider: "google" | "apple", idToken: string, nonce?: string) => {
       setIsSocialLoading(true);
       setErrors({});
 
       try {
+        const body: Record<string, string> = { provider, id_token: idToken };
+        if (nonce) {
+          body.nonce = nonce;
+        }
+
         const response = await apiFetch<LoginResponse>(
           AUTH_ENDPOINTS.SOCIAL_LOGIN,
           {
             method: "POST",
-            body: JSON.stringify({ provider, code, redirect_uri: redirectUri }),
+            body: JSON.stringify(body),
           },
         );
 
@@ -182,21 +149,30 @@ export default function LoginScreen() {
         setIsSocialLoading(false);
       }
     },
-    [redirectUri, router],
+    [router],
   );
 
-  // Handle social auth responses
-  useEffect(() => {
-    if (googleResponse?.type === "success" && googleResponse.params.code) {
-      handleSocialAuth("google", googleResponse.params.code);
+  const handleGoogleLogin = useCallback(async () => {
+    try {
+      const result = await signInWithGoogle();
+      if (result) {
+        await handleSocialLogin("google", result.idToken);
+      }
+    } catch {
+      setErrors({ general: "Google sign-in failed. Please try again." });
     }
-  }, [googleResponse, handleSocialAuth]);
+  }, [handleSocialLogin]);
 
-  useEffect(() => {
-    if (appleResponse?.type === "success" && appleResponse.params.code) {
-      handleSocialAuth("apple", appleResponse.params.code);
+  const handleAppleLogin = useCallback(async () => {
+    try {
+      const result = await signInWithApple();
+      if (result) {
+        await handleSocialLogin("apple", result.idToken, result.nonce);
+      }
+    } catch {
+      setErrors({ general: "Apple sign-in failed. Please try again." });
     }
-  }, [appleResponse, handleSocialAuth]);
+  }, [handleSocialLogin]);
 
   const isAnyLoading = isLoading || isSocialLoading;
 
@@ -284,13 +260,13 @@ export default function LoginScreen() {
           </View>
 
           <Pressable
-            onPress={() => googlePromptAsync()}
-            disabled={isAnyLoading || !googleRequest}
+            onPress={handleGoogleLogin}
+            disabled={isAnyLoading}
             style={({ pressed }) => [
               styles.socialButton,
               styles.googleButton,
               pressed && styles.socialButtonPressed,
-              (isAnyLoading || !googleRequest) && styles.socialButtonDisabled,
+              isAnyLoading && styles.socialButtonDisabled,
             ]}
             accessibilityLabel="Continue with Google"
             accessibilityRole="button"
@@ -301,13 +277,13 @@ export default function LoginScreen() {
 
           {Platform.OS === "ios" ? (
             <Pressable
-              onPress={() => applePromptAsync()}
-              disabled={isAnyLoading || !appleRequest}
+              onPress={handleAppleLogin}
+              disabled={isAnyLoading}
               style={({ pressed }) => [
                 styles.socialButton,
                 styles.appleButton,
                 pressed && styles.socialButtonPressed,
-                (isAnyLoading || !appleRequest) && styles.socialButtonDisabled,
+                isAnyLoading && styles.socialButtonDisabled,
               ]}
               accessibilityLabel="Continue with Apple"
               accessibilityRole="button"
