@@ -17,6 +17,7 @@ from typing import Annotated, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
+from slugify import slugify
 from supabase import Client
 
 import redis.asyncio as aioredis
@@ -26,7 +27,6 @@ from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.entitlement.trial_grantor import TrialGrantor
 from app.services.disposable_email import is_disposable_email
-from slugify import slugify
 from app.services.rate_limiter import (
     check_ip_registration_rate_limit,
     check_login_rate_limit,
@@ -244,7 +244,7 @@ class VerifyEmailResponse(BaseModel):
 
 @router.post("/verify-email", response_model=VerifyEmailResponse)
 def verify_email(
-    claims: dict = Depends(get_current_user),
+    claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ) -> VerifyEmailResponse:
     """Trigger trial grant after email verification.
@@ -522,8 +522,8 @@ def logout(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={"error": {"code": "REVOCATION_FAILED", "message": "Session revocation failed. Clear local tokens and retry."}},
-        ) from exc
         # The token will expire naturally even if server revocation failed.
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -569,7 +569,7 @@ def delete_account(
                 try:
                     ledger.release(_UUID(res["id"]))
                     logger.info("Released reservation %s for deleting user %s", res["id"], user_id)
-                except (ValueError, Exception) as release_exc:  # noqa: BLE001
+                except Exception as release_exc:  # noqa: BLE001 — best-effort release during account deletion
                     logger.warning("Failed to release reservation %s: %s", res["id"], release_exc)
     except Exception as exc:
         logger.error("Failed to release reservations for %s: %s", user_id, exc)

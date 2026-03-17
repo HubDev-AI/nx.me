@@ -292,7 +292,7 @@ export function CommentsSheet({
 
           {/* Post error toast */}
           {postError ? (
-            <View style={styles.errorBanner}>
+            <View style={styles.errorBanner} accessibilityRole="alert">
               <Ionicons name="alert-circle" size={16} color={ERROR_DARK} />
               <Text style={styles.errorBannerText}>{postError}</Text>
             </View>

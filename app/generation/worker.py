@@ -173,6 +173,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         import httpx
         async with httpx.AsyncClient() as client:
             resp = await client.get(gen_result.image_url)
+            resp.raise_for_status()
             gen_image_bytes = resp.content
 
         # Write raw generated image to NXME storage before any checks
@@ -204,6 +205,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         # Download source for identity check
         async with httpx.AsyncClient() as client:
             resp = await client.get(source_url)
+            resp.raise_for_status()
             source_image_bytes = resp.content
 
         # Identity check — uses in-memory bytes, not provider URLs
@@ -239,6 +241,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             # Download retry image from provider and overwrite storage
             async with httpx.AsyncClient() as client:
                 resp = await client.get(retry_result.image_url)
+                resp.raise_for_status()
                 retry_image_bytes = resp.content
 
             supabase.storage.from_("generated-images").update(

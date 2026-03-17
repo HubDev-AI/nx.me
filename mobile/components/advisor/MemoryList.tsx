@@ -353,7 +353,7 @@ const formStyles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     backgroundColor: BG_ELEVATED,
-    minHeight: 32,
+    minHeight: 44,
     justifyContent: "center",
   },
   typeChipActive: {
@@ -450,6 +450,8 @@ const memSkeletonStyles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.05)",
   },
 });
+
+const MemorySeparator = () => <View style={styles.separator} />;
 
 export function MemoryList() {
   const [memories, setMemories] = useState<UserMemory[]>([]);
@@ -590,7 +592,7 @@ export function MemoryList() {
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={MemorySeparator}
       />
     </View>
   );

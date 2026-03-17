@@ -11,6 +11,7 @@ Story 5-2:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Annotated
@@ -27,6 +28,8 @@ from app.api.middleware.auth import UserClaims
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["social"])
+
+_GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
 _DEFAULT_PAGE_SIZE = 10
 _MAX_PAGE_SIZE = 50
@@ -238,8 +241,7 @@ async def react_to_post(
         user_id = claims["sub"]
     elif x_guest_token:
         # Validate format: must be 64-char hex (32 bytes CSPRNG)
-        import re
-        if not re.fullmatch(r"[0-9a-f]{64}", x_guest_token):
+        if not _GUEST_TOKEN_RE.fullmatch(x_guest_token):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid guest token format",
@@ -251,12 +253,20 @@ async def react_to_post(
             detail="Provide Authorization header or X-Guest-Token",
         )
 
-    # --- Rate limit by IP ---
-    client_ip = request.client.host if request.client else "unknown"
+    # --- Rate limit by IP (atomic INCR-first to avoid TOCTOU) ---
+    if not request.client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address",
+        )
+    client_ip = request.client.host
     rate_key = f"reaction_rate:{client_ip}"
-    current_rate = int(await redis_client.get(rate_key) or 0)
+    new_count = await redis_client.incr(rate_key)
+    if new_count == 1:
+        await redis_client.expire(rate_key, _REACTION_RATE_WINDOW_SECONDS)
 
-    if current_rate >= _REACTION_RATE_LIMIT:
+    if new_count > _REACTION_RATE_LIMIT:
+        await redis_client.decr(rate_key)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many reactions. Please slow down."}},
@@ -286,12 +296,6 @@ async def react_to_post(
         await redis_client.set(redis_counter_key, post.data["reaction_count"], ex=60)
 
     new_count = await redis_client.incr(redis_counter_key)
-
-    # --- Increment rate limiter ---
-    pipe = redis_client.pipeline()
-    pipe.incr(rate_key)
-    pipe.expire(rate_key, _REACTION_RATE_WINDOW_SECONDS)
-    await pipe.execute()
 
     # --- Background DB write via ARQ ---
     reaction_data = {

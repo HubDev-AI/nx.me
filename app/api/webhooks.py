@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 from supabase import Client
 
@@ -44,7 +45,7 @@ async def stripe_webhook(request: Request) -> dict:
     except ValueError:
         logger.warning("Invalid Stripe webhook signature")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": {"code": "INVALID_WEBHOOK_SIGNATURE", "message": "Invalid webhook signature"}},
         )
 
@@ -85,10 +86,10 @@ async def stripe_webhook(request: Request) -> dict:
         else:
             logger.info("Unhandled webhook event type: %s", event_type)
 
-    except Exception:
-        logger.exception("Error processing webhook event %s (type=%s)", event_id, event_type)
+    except (httpx.HTTPError, ConnectionError, TimeoutError, OSError) as exc:
+        logger.warning("Transient error processing webhook event %s (type=%s): %s", event_id, event_type, exc)
+        # Transient network error — return 200 to prevent Stripe retries.
         # Event is already recorded in processed_webhook_events.
-        # Return 200 to prevent Stripe retries — manual recovery needed.
         return {"status": "processing_error"}
 
     return {"status": "processed"}
@@ -107,6 +108,11 @@ async def _handle_checkout_completed(supabase: Client, session: dict, event_id: 
 
     if not user_id:
         logger.warning("checkout.session.completed missing user_id in metadata")
+        return
+    try:
+        UUID(user_id)
+    except ValueError:
+        logger.error("Invalid user_id UUID in webhook checkout: %s", user_id)
         return
 
     if mode == "payment":
@@ -153,6 +159,11 @@ def _handle_subscription_created(supabase: Client, subscription: dict) -> None:
 
     if not user_id:
         logger.warning("subscription.created missing user_id in metadata (sub=%s)", sub_id)
+        return
+    try:
+        UUID(user_id)
+    except ValueError:
+        logger.error("Invalid user_id UUID in subscription.created: %s", user_id)
         return
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()

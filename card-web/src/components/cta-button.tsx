@@ -8,10 +8,8 @@ import {
   PLAY_STORE_URL,
   APP_BASE_URL,
   APP_DEEP_LINK_PATH,
+  APP_OPEN_TIMEOUT_MS,
 } from '@/config/constants';
-
-/** ms to wait for the app to open before redirecting to the store */
-const APP_OPEN_TIMEOUT_MS = 1500;
 
 interface CtaButtonProps {
   /** Username — used to build the deep-link with card context */
@@ -91,8 +89,8 @@ export function CtaButton({ username }: CtaButtonProps) {
         'bg-after-500 hover:bg-after-600 active:bg-after-700',
         'transition-colors duration-150',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-after-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
-        // Prevent layout shift while JS hydrates
-        !mounted ? 'opacity-0 pointer-events-none' : 'opacity-100',
+        // Visible from the start with default href; JS swaps click handler on mount
+        'opacity-100',
       ].join(' ')}
     >
       Get Your Free Glow-Up &rarr;

@@ -14,6 +14,11 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Named constants for magic numbers
+_COST_BUCKET_TTL_SECONDS = 90_000  # 25 hours (24h + 1h buffer)
+_CIRCUIT_BREAKER_THRESHOLD = 5
+_CIRCUIT_BREAKER_COOLDOWN_SECONDS = 120
+
 # Redis key patterns
 _COST_BUCKET_PREFIX = "gen:cost:24h:"
 _EMERGENCY_STOP_KEY = "gen:emergency_stop"
@@ -38,7 +43,7 @@ class CostTracker:
 
         pipe = self._redis.pipeline()
         pipe.incrbyfloat(key, cost_usd)
-        pipe.expire(key, 90000)  # 25 hours TTL (24h + 1h buffer)
+        pipe.expire(key, _COST_BUCKET_TTL_SECONDS)
         await pipe.execute()
 
     # ------------------------------------------------------------------
@@ -88,7 +93,7 @@ class CostTracker:
         val = await self._redis.get(_EMERGENCY_STOP_KEY)
         return val == "1"
 
-    async def check_queue_depth(self, max_depth: int = 15000) -> bool:
+    async def check_queue_depth(self, max_depth: int) -> bool:
         """Return True if queue is within acceptable depth."""
         # Check all three lanes
         total = 0
@@ -148,9 +153,9 @@ class CostTracker:
 
         # Check failure count
         failures = int(await self._redis.get("gen:circuit:failures") or 0)
-        if failures >= 5:
-            # Open circuit for 120s
-            await self._redis.set("gen:circuit:open", "1", ex=120)
+        if failures >= _CIRCUIT_BREAKER_THRESHOLD:
+            # Open circuit for cooldown period
+            await self._redis.set("gen:circuit:open", "1", ex=_CIRCUIT_BREAKER_COOLDOWN_SECONDS)
             logger.critical("Circuit breaker OPEN: %d consecutive fal.ai failures", failures)
             return True
 

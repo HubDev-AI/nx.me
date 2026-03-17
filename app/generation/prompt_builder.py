@@ -5,13 +5,11 @@ style theme injection, adaptive parameter computation.
 """
 from __future__ import annotations
 
-import hashlib
 import random
-from datetime import timedelta
 from pathlib import Path
 
 from app.config import settings
-from app.generation.models import GenerationOptions
+from app.face_analysis.models import AnalysisResult
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
@@ -73,7 +71,7 @@ def compute_adaptive_params(
     if keyword_count >= 5:
         id_weight = 0.82
         guidance = 4.5
-    elif keyword_count == 3 or keyword_count == 4:
+    elif keyword_count in (3, 4):
         id_weight = 0.85
         guidance = 4.0
     elif keyword_count <= 2:
@@ -114,13 +112,13 @@ def prepare_keywords(keywords: list[str]) -> list[str]:
     rest = [k for k in keywords if k not in HAIR_KEYWORDS]
     ordered = hair_first + rest
 
-    # Cap at MAX_PROMPT_KEYWORDS
-    if len(ordered) > settings.MAX_PROMPT_KEYWORDS:
-        ordered = ordered[:settings.MAX_PROMPT_KEYWORDS]
-
-    # Inject style theme when sparse
+    # Inject style theme when sparse (before cap to ensure it counts)
     if len(ordered) <= 4:
         ordered.append(random.choice(_STYLE_THEMES))
+
+    # Cap at MAX_PROMPT_KEYWORDS (after theme injection)
+    if len(ordered) > settings.MAX_PROMPT_KEYWORDS:
+        ordered = ordered[:settings.MAX_PROMPT_KEYWORDS]
 
     return ordered
 
@@ -143,7 +141,7 @@ def select_lighting_keyword(symmetry_score: float) -> str:
 
 
 def build_prompt(
-    analysis_result,
+    analysis_result: AnalysisResult,
     face_ratio: float = 0.30,
 ) -> tuple[str, str, dict]:
     """Build generation prompt from face analysis.

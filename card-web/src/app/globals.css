@@ -29,8 +29,3 @@ body {
     scroll-behavior: smooth;
   }
 }
-
-/* Focus ring reset — handled per-component with Tailwind focus-visible */
-*:focus {
-  outline: none;
-}

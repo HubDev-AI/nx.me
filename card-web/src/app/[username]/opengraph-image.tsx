@@ -5,6 +5,7 @@ import {
   OG_IMAGE_WIDTH,
   OG_IMAGE_HEIGHT,
   SITE_NAME,
+  CARD_REVALIDATE_SECONDS,
 } from '@/config/constants';
 
 export const runtime = 'edge';
@@ -12,9 +13,10 @@ export const runtime = 'edge';
 export const alt = 'NXME Glow-Up Card';
 export const size = { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT };
 export const contentType = 'image/png';
+export const revalidate = CARD_REVALIDATE_SECONDS;
 
 interface Props {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }
 
 /**
@@ -26,7 +28,8 @@ interface Props {
  * NOTE: Uses Edge runtime — keep imports minimal and avoid Node-only APIs.
  */
 export default async function OgImage({ params }: Props) {
-  const card = await getCardData(params.username);
+  const { username } = await params;
+  const card = await getCardData(username);
 
   // Fallback OG image when card not found
   if (!card) {
@@ -96,7 +99,7 @@ export default async function OgImage({ params }: Props) {
             {SITE_NAME}
           </div>
           <div style={{ fontSize: 18, color: '#A0A0A0' }}>
-            @{card.username}&apos;s Glow-Up
+            @{card.username}'s Glow-Up
           </div>
         </div>
 
@@ -192,7 +195,7 @@ export default async function OgImage({ params }: Props) {
           }}
         >
           <div style={{ fontSize: 16, color: '#F8F8F8', fontWeight: 600 }}>
-            {card.display_name}&apos;s transformation
+            {card.display_name}'s transformation
           </div>
           <div
             style={{

@@ -27,7 +27,6 @@ _FORBIDDEN_OUTPUT_TERMS: frozenset[str] = frozenset([
     "beautiful",
     "gorgeous",
     "hideous",
-    "ranking",
     "out of ten",
     "/10",
 ])
@@ -72,20 +71,18 @@ def sanitize_input(text: str) -> str:
 
 
 async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
-    """Enforce per-user hourly chat rate limit.
+    """Enforce per-user hourly chat rate limit (atomic INCR-first).
 
     Raises ValueError with RATE_LIMIT_EXCEEDED if the limit is reached.
     """
     key = _RATE_KEY_TEMPLATE.format(user_id=user_id)
-    count = int(await redis_client.get(key) or 0)
+    new_count = await redis_client.incr(key)
+    if new_count == 1:
+        await redis_client.expire(key, 3600)  # 1-hour window
 
-    if count >= settings.ADVISOR_CHAT_RATE_LIMIT:
+    if new_count > settings.ADVISOR_CHAT_RATE_LIMIT:
+        await redis_client.decr(key)
         raise ValueError("RATE_LIMIT_EXCEEDED")
-
-    pipe = redis_client.pipeline()
-    pipe.incr(key)
-    pipe.expire(key, 3600)  # 1-hour window
-    await pipe.execute()
 
 
 def scan_output(text: str) -> bool:

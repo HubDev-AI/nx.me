@@ -77,6 +77,8 @@ const skeletonStyles = StyleSheet.create({
   },
 });
 
+const Separator = () => <View style={styles.separator} />;
+
 export function NudgeFeed() {
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -240,7 +242,7 @@ export function NudgeFeed() {
         updateCellsBatchingPeriod={ADVISOR_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
         windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ItemSeparatorComponent={Separator}
       />
     </View>
   );

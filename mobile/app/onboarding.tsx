@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -187,14 +187,14 @@ export default function OnboardingScreen() {
               onPress={handleEnablePush}
               isLoading={isRequestingPush}
             />
-            <Text
-              style={styles.skipText}
+            <Pressable
               onPress={() => setPushCompleted(true)}
               accessibilityLabel="Skip push notifications"
               accessibilityRole="button"
+              style={styles.skipButton}
             >
-              Not now
-            </Text>
+              <Text style={styles.skipText}>Not now</Text>
+            </Pressable>
           </View>
         )}
 
@@ -321,14 +321,17 @@ const styles = StyleSheet.create({
     marginBottom: SPACING * 2,
     lineHeight: 20,
   },
+  skipButton: {
+    marginTop: SPACING * 1.5,
+    paddingVertical: SPACING,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   skipText: {
     fontSize: 14,
     color: TEXT_SECONDARY,
     textAlign: "center",
-    marginTop: SPACING * 1.5,
-    paddingVertical: SPACING,
-    minHeight: 44,
-    textAlignVertical: "center",
   },
   ctaContainer: {
     marginBottom: SPACING * 2,
