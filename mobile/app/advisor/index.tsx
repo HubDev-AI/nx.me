@@ -74,7 +74,7 @@ export default function AdvisorScreen() {
       </View>
 
       {/* Tab bar */}
-      <View style={styles.tabBar}>
+      <View style={styles.tabBar} accessibilityRole="tablist">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
           return (

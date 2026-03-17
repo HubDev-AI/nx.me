@@ -9,7 +9,6 @@ import io
 
 import numpy as np
 import PIL.Image
-from PIL import ImageFilter
 
 
 def compute_crop(

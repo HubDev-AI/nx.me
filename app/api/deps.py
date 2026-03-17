@@ -13,7 +13,7 @@ from supabase import Client
 import redis.asyncio as aioredis
 
 from app.api.middleware.auth import UserClaims, validate_jwt
-from app.entitlement.models import EntitlementResult, PAYMENT_REQUIRED_CODES
+from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, EntitlementResult, PAYMENT_REQUIRED_CODES
 
 logger = logging.getLogger(__name__)
 
@@ -75,15 +75,7 @@ def get_entitlement_service(
     )
 
 
-_ERROR_MESSAGES: dict[str, str] = {
-    "TIER_LIMIT_DAILY": "Daily generation limit reached",
-    "TIER_LIMIT_WEEKLY": "Weekly generation limit reached",
-    "TIER_LIMIT_MONTHLY": "Monthly generation limit reached",
-    "TIER_LIMIT_TOTAL": "Lifetime generation limit reached",
-    "TIER_LIMIT_CREDITS": "No credits remaining",
-    "TIER_FEATURE_LOCKED": "Feature not available on your current plan",
-    "TIER_CONCURRENT_LIMIT": "A generation is already in progress",
-}
+_ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
 
 
 def get_payment_adapter() -> "PaymentPort":

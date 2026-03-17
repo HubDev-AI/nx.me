@@ -21,10 +21,18 @@ export const RECOMMENDATIONS_DISPLAY_COUNT = 5;
 export const APP_DEEP_LINK_PATH = '/signup';
 
 /**
- * Backend API base URL.
- * Falls back to localhost for local development.
+ * Backend API base URL (server-only).
+ * Used by server-side data fetching (e.g. getCardData).
+ * Falls back to NEXT_PUBLIC_API_URL, then localhost for local development.
  */
 export const API_BASE_URL =
+  process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+/**
+ * Backend API base URL (client-safe).
+ * Only use this in client components where the URL must be exposed to the browser.
+ */
+export const PUBLIC_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 /** App Store URL for iOS */
@@ -40,6 +48,9 @@ export const PLAY_STORE_URL =
 /** Universal link / web base URL (used for app deep-links) */
 export const APP_BASE_URL =
   process.env.NEXT_PUBLIC_APP_BASE_URL ?? 'https://nxme.ai';
+
+/** ms to wait for the native app to open before redirecting to the store */
+export const APP_OPEN_TIMEOUT_MS = 1500;
 
 /** Site name used in metadata */
 export const SITE_NAME = 'NXME';

@@ -5,6 +5,7 @@
 export interface FeedPost {
   post_id: string;
   user_id: string;
+  display_name: string | null;
   caption: string | null;
   before_image_url: string;
   after_image_url: string;

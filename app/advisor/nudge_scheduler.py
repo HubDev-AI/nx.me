@@ -34,23 +34,10 @@ from app.advisor.nudge_policy import (
     TRIGGER_WEEKLY_CHECKIN,
 )
 from app.advisor.nudge_templates import get_prompt
+from app.api.deps import get_llm_adapter as _get_llm_adapter
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# LLM adapter factory (mirrors generation worker pattern)
-# ---------------------------------------------------------------------------
-
-
-def _get_llm_adapter():
-    """Resolve LLM adapter from config (lazy import)."""
-    if settings.ADAPTER__LLM_ADAPTER == "anthropic":
-        from app.advisor.adapters.anthropic_adapter import AnthropicAdapter
-        return AnthropicAdapter()
-    from app.advisor.adapters.mock import MockLLMAdapter
-    return MockLLMAdapter()
 
 
 # ---------------------------------------------------------------------------

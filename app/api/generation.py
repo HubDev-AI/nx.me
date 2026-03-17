@@ -24,9 +24,9 @@ from app.api.deps import (
 )
 from app.api.middleware.auth import UserClaims
 from app.config import settings
-from app.constants.tiers import CREDIT_HOLDER, PREMIUM, TRIAL
+from app.constants.tiers import CREDIT_HOLDER, PREMIUM, SLUG_TO_TIER_NAME, TRIAL
 from app.entitlement.ledger import CreditLedger
-from app.entitlement.models import PAYMENT_REQUIRED_CODES, TIER_CONCURRENT_LIMIT
+from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, PAYMENT_REQUIRED_CODES, TIER_CONCURRENT_LIMIT
 from app.entitlement.service import EntitlementService
 from app.generation.cost_tracker import CostTracker
 from app.generation.models import (
@@ -50,23 +50,13 @@ _SLUG_TO_LANE: dict[str, str] = {
 }
 
 # Maps tier slug → public tier name (for user_tier_at_enqueue column)
-_SLUG_TO_TIER_NAME: dict[str, str] = {
-    "free": TRIAL,
-    "credits": CREDIT_HOLDER,
-    "premium": PREMIUM,
-}
+_SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
 
 # Average seconds per generation job (for wait estimation)
 _AVG_SECONDS_PER_JOB = 15
 
 # Error messages for entitlement failures
-_ERROR_MESSAGES: dict[str, str] = {
-    "TIER_LIMIT_DAILY": "Daily generation limit reached",
-    "TIER_LIMIT_WEEKLY": "Weekly generation limit reached",
-    "TIER_LIMIT_MONTHLY": "Monthly generation limit reached",
-    "TIER_LIMIT_TOTAL": "Lifetime generation limit reached",
-    "TIER_LIMIT_CREDITS": "No credits remaining",
-}
+_ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from supabase import Client
 from app.api.deps import get_current_user, get_entitlement_service, get_payment_adapter, get_supabase
 from app.api.middleware.auth import UserClaims
 from app.config import settings
-from app.constants.tiers import CREDIT_HOLDER, PREMIUM, TRIAL
+from app.constants.tiers import SLUG_TO_TIER_NAME
 from app.entitlement.service import EntitlementService
 from app.payment.ports import PaymentPort
 
@@ -26,11 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["entitlement"])
 
 # Maps DB tier slug → public API tier identifier (AC-5: named constants only)
-_SLUG_TO_TIER_NAME: dict[str, str] = {
-    "free": TRIAL,
-    "credits": CREDIT_HOLDER,
-    "premium": PREMIUM,
-}
+_SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
 
 
 class CreditPackOption(BaseModel):

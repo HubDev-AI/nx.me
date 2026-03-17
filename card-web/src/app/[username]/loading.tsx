@@ -1,3 +1,5 @@
+import { RECOMMENDATIONS_DISPLAY_COUNT } from '@/config/constants';
+
 /**
  * Streaming loading skeleton for the card page.
  * Shown by Next.js while the async Server Component resolves.
@@ -27,7 +29,7 @@ export default function CardLoading() {
         {/* Recommendations skeleton */}
         <div className="space-y-3">
           <div className="h-4 w-32 bg-surface-elevated rounded mb-4" />
-          {Array.from({ length: 5 }).map((_, i) => (
+          {Array.from({ length: RECOMMENDATIONS_DISPLAY_COUNT }).map((_, i) => (
             <div
               key={i}
               className="h-16 rounded-xl bg-surface-card border border-border-default"

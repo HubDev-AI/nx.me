@@ -5,6 +5,7 @@ import {
   Image,
   Pressable,
   Animated,
+  AccessibilityInfo,
   ActionSheetIOS,
   Platform,
   Alert,
@@ -23,6 +24,7 @@ import {
   CTA_PRIMARY,
 } from "../../constants/colors";
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
+import { formatTimeAgo } from "../../lib/format";
 import { ReactionButton } from "./ReactionButton";
 import type { FeedPost } from "./types";
 
@@ -57,25 +59,34 @@ export function FeedCard({
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateAnim = useRef(new Animated.Value(20)).current;
 
-  // Stagger entrance animation
+  // Stagger entrance animation (respects reduced motion)
   useEffect(() => {
-    const delay = Math.min(index, FEED_CONFIG.MAX_STAGGER_ITEMS) * FEED_CONFIG.STAGGER_DELAY_MS;
-    const animation = Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateAnim, {
-        toValue: 0,
-        duration: 300,
-        delay,
-        useNativeDriver: true,
-      }),
-    ]);
-    animation.start();
-    return () => animation.stop();
+    let cancelled = false;
+    AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (cancelled) return;
+      if (reduceMotion) {
+        fadeAnim.setValue(1);
+        translateAnim.setValue(0);
+        return;
+      }
+      const delay = Math.min(index, FEED_CONFIG.MAX_STAGGER_ITEMS) * FEED_CONFIG.STAGGER_DELAY_MS;
+      const animation = Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          delay,
+          useNativeDriver: true,
+        }),
+        Animated.timing(translateAnim, {
+          toValue: 0,
+          duration: 300,
+          delay,
+          useNativeDriver: true,
+        }),
+      ]);
+      animation.start();
+    });
+    return () => { cancelled = true; };
   }, [fadeAnim, translateAnim, index]);
 
   const handleReact = useCallback(() => {
@@ -147,7 +158,7 @@ export function FeedCard({
               source={{ uri: post.before_image_url }}
               style={styles.image}
               resizeMode="cover"
-              accessibilityLabel="Before photo"
+              accessibilityLabel={`Before photo by ${post.display_name ?? "user"}`}
             />
             <View style={styles.imageLabel}>
               <Text style={styles.imageLabelText}>Before</Text>
@@ -159,7 +170,7 @@ export function FeedCard({
               source={{ uri: post.after_image_url }}
               style={styles.image}
               resizeMode="cover"
-              accessibilityLabel="After photo"
+              accessibilityLabel={`After photo by ${post.display_name ?? "user"}`}
             />
             <View style={[styles.imageLabel, styles.afterLabel]}>
               <Text style={[styles.imageLabelText, styles.afterLabelText]}>
@@ -203,25 +214,6 @@ export function FeedCard({
       </Pressable>
     </Animated.View>
   );
-}
-
-/** Format ISO date to relative time string */
-function formatTimeAgo(isoDate: string): string {
-  const now = Date.now();
-  const then = new Date(isoDate).getTime();
-  const diffSeconds = Math.floor((now - then) / 1000);
-
-  if (diffSeconds < 60) return "just now";
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `${diffHours}h`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d`;
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks < 4) return `${diffWeeks}w`;
-  const diffMonths = Math.floor(diffDays / 30);
-  return `${diffMonths}mo`;
 }
 
 const styles = StyleSheet.create({

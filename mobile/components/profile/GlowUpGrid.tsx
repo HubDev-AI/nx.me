@@ -136,7 +136,7 @@ function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
         { width: size, height: size },
         pressed && styles.cellPressed,
       ]}
-      accessibilityLabel="Glow-up transformation"
+      accessibilityLabel={`Glow-up transformation from ${new Date(item.created_at).toLocaleDateString()}`}
       accessibilityRole="image"
     >
       {/* Show after image as thumbnail */}

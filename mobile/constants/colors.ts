@@ -100,3 +100,21 @@ export const NUDGE_UNREAD_DOT = COLORS.after[500];
 export const ERROR_DARK = "#F87171";
 export const ERROR_LIGHT = "#DC2626";
 export const SUCCESS_DARK = "#4ADE80";
+
+/** Inverse / Scrim */
+export const TEXT_INVERSE = "#FFFFFF";
+export const SCRIM_BG = "#000000";
+
+/** Social login brand colors */
+export const SOCIAL_GOOGLE_BLUE = "#4285F4";
+export const SOCIAL_GOOGLE_BORDER = "#DADCE0";
+export const SOCIAL_GOOGLE_TEXT = "#1F1F1F";
+
+/** Common rgba tokens */
+export const ERROR_BG = "rgba(248,113,113,0.1)";
+export const CORAL_TINT = "rgba(244,63,94,0.08)";
+export const CORAL_TINT_STRONG = "rgba(244,63,94,0.12)";
+export const SKELETON_SHIMMER = "rgba(255,255,255,0.05)";
+export const SUCCESS_BG = "rgba(74,222,128,0.1)";
+export const OVERLAY_MEDIUM = "rgba(0,0,0,0.6)";
+export const OVERLAY_HEAVY = "rgba(0,0,0,0.95)";

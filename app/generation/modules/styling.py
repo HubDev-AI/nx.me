@@ -5,7 +5,6 @@ Preserves: face, bone structure, skin (freckles, moles, texture).
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from app.generation.modules.base import TransformationModule, TransformationOutput

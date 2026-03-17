@@ -8,21 +8,20 @@ import {
   CARD_REVALIDATE_SECONDS,
   SITE_NAME,
   SITE_URL,
-  OG_IMAGE_WIDTH,
-  OG_IMAGE_HEIGHT,
 } from '@/config/constants';
 
 /** ISR: revalidate the page at most every 60 seconds */
 export const revalidate = CARD_REVALIDATE_SECONDS;
 
 interface PageProps {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }
 
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const card = await getCardData(params.username);
+  const { username } = await params;
+  const card = await getCardData(username);
 
   if (!card) {
     return {
@@ -45,17 +44,7 @@ export async function generateMetadata({
       description,
       url: cardUrl,
       type: 'website',
-      images: [
-        {
-          // Use the after image as the primary OG image.
-          // A composite (before+after at 1200x630) would require an Edge
-          // function with canvas/Satori — deferred to a follow-up story.
-          url: card.after_image_url,
-          width: OG_IMAGE_WIDTH,
-          height: OG_IMAGE_HEIGHT,
-          alt: `${card.display_name}'s glow-up after photo`,
-        },
-      ],
+      // images intentionally omitted — Next.js auto-wires opengraph-image.tsx
     },
     twitter: {
       card: 'summary_large_image',
@@ -75,7 +64,8 @@ export async function generateMetadata({
  * - App download CTA (platform-aware, resolved client-side)
  */
 export default async function CardPage({ params }: PageProps) {
-  const card = await getCardData(params.username);
+  const { username } = await params;
+  const card = await getCardData(username);
 
   if (!card) {
     notFound();

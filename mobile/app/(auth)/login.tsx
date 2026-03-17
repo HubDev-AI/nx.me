@@ -19,6 +19,8 @@ import {
   TEXT_SECONDARY,
   CTA_PRIMARY,
   BORDER_DEFAULT,
+  ERROR_DARK,
+  ERROR_BG,
 } from "../../constants/colors";
 import { AUTH_ENDPOINTS, AUTH_VALIDATION } from "../../constants/config";
 import { apiFetch, ApiError } from "../../lib/api";
@@ -207,7 +209,7 @@ export default function LoginScreen() {
           {/* General error */}
           {errors.general ? (
             <View style={styles.generalError} accessibilityRole="alert">
-              <Ionicons name="alert-circle" size={18} color="#F87171" />
+              <Ionicons name="alert-circle" size={18} color={ERROR_DARK} />
               <Text style={styles.generalErrorText}>{errors.general}</Text>
             </View>
           ) : null}
@@ -343,14 +345,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(248, 113, 113, 0.1)",
+    backgroundColor: ERROR_BG,
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
   },
   generalErrorText: {
     fontSize: 14,
-    color: "#F87171",
+    color: ERROR_DARK,
     flex: 1,
   },
   form: {

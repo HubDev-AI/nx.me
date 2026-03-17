@@ -44,6 +44,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Validate username format: alphanumeric + underscores, max 64 chars
+  const USERNAME_PATTERN = /^[a-zA-Z0-9_]{1,64}$/;
+  if (!USERNAME_PATTERN.test(username)) {
+    return NextResponse.json(
+      { error: 'Invalid username format' },
+      { status: 400 },
+    );
+  }
+
   revalidatePath(`/${username}`);
 
   return NextResponse.json({ revalidated: true, username });

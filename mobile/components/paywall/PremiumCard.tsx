@@ -20,16 +20,16 @@ import {
   BORDER_DEFAULT,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
-  CTA_PRESSED,
+  COLORS,
 } from "../../constants/colors";
 import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
 
-/** WCAG AA compliant CTA color: #E11D48 on white text = 4.70:1 contrast ratio */
-const CTA_SUBSCRIBE = "#E11D48";
-const CTA_SUBSCRIBE_PRESSED = "#BE123C";
+/** WCAG AA compliant CTA color: after[600] on white text = 4.70:1 contrast ratio */
+const CTA_SUBSCRIBE = COLORS.after[600];
+const CTA_SUBSCRIBE_PRESSED = COLORS.after[700];
 
 const PREMIUM_BENEFITS = [
   "Unlimited generations",

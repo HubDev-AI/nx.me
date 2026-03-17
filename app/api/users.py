@@ -8,7 +8,7 @@ Story 6-3:
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -35,7 +35,7 @@ _MAX_HISTORY_PAGE_SIZE = 100
 class ProfileResponse(BaseModel):
     username: str
     display_name: str
-    avatar_url: Optional[str]
+    avatar_url: str | None
     post_count: int
     total_reactions: int
     member_since: str
@@ -43,29 +43,29 @@ class ProfileResponse(BaseModel):
 
 class HistoryEntry(BaseModel):
     analysis_id: str
-    face_shape: Optional[str]
-    symmetry_score: Optional[float]
+    face_shape: str | None
+    symmetry_score: float | None
     recommendations: list[dict]
-    before_image_url: Optional[str]
-    after_image_url: Optional[str]
+    before_image_url: str | None
+    after_image_url: str | None
     created_at: str
 
 
 class HistoryResponse(BaseModel):
     entries: list[HistoryEntry]
-    next_cursor: Optional[str]
+    next_cursor: str | None
     has_more: bool
 
 
 class UpdateProfileRequest(BaseModel):
-    display_name: Optional[str] = None
-    avatar_storage_key: Optional[str] = None
+    display_name: str | None = None
+    avatar_storage_key: str | None = None
 
 
 class UpdateProfileResponse(BaseModel):
     username: str
     display_name: str
-    avatar_url: Optional[str]
+    avatar_url: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +119,7 @@ def get_user_profile(
 
     avatar_url = build_avatar_url(supabase, user.get("avatar_storage_key"))
 
-    logger.info("Profile viewed for user %s", user_id)
+    logger.debug("Profile viewed for user %s", user_id)
 
     return ProfileResponse(
         username=user["username"],
@@ -245,7 +245,7 @@ def get_user_history(
                 storage_key, settings.SIGNED_URL_EXPIRY_SECONDS
             )["signedURL"]
         except Exception:
-            logger.warning("Failed to sign URL: bucket=%s key=%s", bucket, storage_key)
+            logger.warning("Failed to sign URL: bucket=%s key=%s", bucket, storage_key, exc_info=True)
             return None
 
     signed_before: dict[str, str | None] = {}
@@ -326,11 +326,14 @@ def update_user_profile(
     if body.display_name is not None:
         updates["display_name"] = body.display_name
     if body.avatar_storage_key is not None:
+        if not body.avatar_storage_key.startswith(f"avatars/{user_id}/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid avatar storage key",
+            )
         updates["avatar_storage_key"] = body.avatar_storage_key
 
     if updates:
-        from datetime import datetime, timezone
-
         updates["updated_at"] = datetime.now(tz=timezone.utc).isoformat()
         supabase.table("users").update(updates).eq("id", user_id).execute()
         logger.info("Profile updated for user %s: fields=%s", user_id, list(updates.keys()))

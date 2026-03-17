@@ -102,3 +102,14 @@ TIER_CONCURRENT_LIMIT = "TIER_CONCURRENT_LIMIT"
 
 # HTTP status mapping: 429 = "try later", 402 = "pay to unlock"
 PAYMENT_REQUIRED_CODES = frozenset({TIER_LIMIT_TOTAL, TIER_LIMIT_CREDITS, TIER_FEATURE_LOCKED})
+
+# User-facing error messages for entitlement failures
+ENTITLEMENT_ERROR_MESSAGES: dict[str, str] = {
+    TIER_LIMIT_DAILY: "Daily generation limit reached",
+    TIER_LIMIT_WEEKLY: "Weekly generation limit reached",
+    TIER_LIMIT_MONTHLY: "Monthly generation limit reached",
+    TIER_LIMIT_TOTAL: "Lifetime generation limit reached",
+    TIER_LIMIT_CREDITS: "No credits remaining",
+    TIER_FEATURE_LOCKED: "Feature not available on your current plan",
+    TIER_CONCURRENT_LIMIT: "A generation is already in progress",
+}

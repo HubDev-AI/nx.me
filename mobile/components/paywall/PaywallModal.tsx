@@ -438,7 +438,7 @@ export function PaywallModal({
 
           {/* Purchase error banner */}
           {purchaseError && (
-            <View style={styles.errorBanner}>
+            <View style={styles.errorBanner} accessibilityRole="alert">
               <Ionicons name="alert-circle" size={18} color={ERROR_DARK} />
               <Text style={styles.errorBannerText}>{purchaseError}</Text>
             </View>

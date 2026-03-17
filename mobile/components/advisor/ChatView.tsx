@@ -16,6 +16,7 @@ import {
   Platform,
   ActivityIndicator,
   StyleSheet,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -42,17 +43,19 @@ import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { PaywallModal } from "../paywall/PaywallModal";
 
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
 /** Skeleton placeholder for loading messages */
 function ChatSkeleton() {
   return (
     <View style={skeletonStyles.container}>
-      {[0.6, 0.4, 0.8, 0.5].map((width, i) => (
+      {[0.6, 0.4, 0.8, 0.5].map((widthFraction, i) => (
         <View
           key={i}
           style={[
             skeletonStyles.bubble,
             i % 2 === 0 ? skeletonStyles.left : skeletonStyles.right,
-            { width: `${width * 80}%` as unknown as number },
+            { width: Math.round((SCREEN_WIDTH - 32) * widthFraction * 0.8) },
           ]}
         />
       ))}
@@ -289,7 +292,7 @@ export function ChatView() {
 
       {/* Send error banner */}
       {error && messages.length > 0 && (
-        <View style={styles.errorBanner}>
+        <View style={styles.errorBanner} accessibilityRole="alert">
           <Ionicons name="alert-circle" size={16} color={ERROR_DARK} />
           <Text style={styles.errorBannerText}>{error}</Text>
           <Pressable

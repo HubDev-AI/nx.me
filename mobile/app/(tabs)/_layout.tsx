@@ -20,7 +20,7 @@ interface TabIconProps {
 /** Tab icon with 2px coral top strip when active */
 function TabIcon({ name, color, focused }: TabIconProps) {
   return (
-    <View style={styles.iconContainer}>
+    <View style={styles.iconContainer} accessible={false}>
       <View
         style={[
           styles.activeStrip,

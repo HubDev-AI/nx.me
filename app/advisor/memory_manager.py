@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
+
+from app.advisor.llm_port import LLMPort
 
 from supabase import Client
 
 from app.advisor.models import MemoryType
+from app.advisor.nudge_policy import MODEL_HAIKU
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -104,7 +107,7 @@ def summarize_memory_content(content: dict[str, Any]) -> str:
 class MemoryManager:
     """Manages user memories with pgvector storage and hybrid retrieval."""
 
-    def __init__(self, supabase: Client, llm_adapter: Any) -> None:
+    def __init__(self, supabase: Client, llm_adapter: LLMPort) -> None:
         self._supabase = supabase
         self._llm_adapter = llm_adapter
 
@@ -244,13 +247,13 @@ class MemoryManager:
 
         try:
             response = await self._llm_adapter.create_message(
-                model="claude-3-haiku-20240307",
+                model=MODEL_HAIKU,
                 system="Extract memory signals from the conversation. Return only valid JSON.",
                 messages=[{"role": "user", "content": extraction_prompt}],
                 max_tokens=300,
             )
             extracted = json.loads(response.content)
-        except (json.JSONDecodeError, Exception) as exc:
+        except Exception as exc:  # includes json.JSONDecodeError and LLM errors
             logger.warning("Memory extraction failed: %s", exc)
             return
 
@@ -328,5 +331,4 @@ def _is_duplicate(text: str, recent_texts: list[str]) -> bool:
 
 def _seven_days_ago_iso() -> str:
     """Return ISO timestamp for 7 days ago."""
-    from datetime import timedelta
     return (datetime.now(tz=timezone.utc) - timedelta(days=7)).isoformat()

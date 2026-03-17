@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { APP_STORE_URL } from '@/config/constants';
+import { APP_BASE_URL } from '@/config/constants';
 
 /**
  * Rendered when a card has been deleted (HTTP 410) or simply never existed.
@@ -18,7 +18,7 @@ export function CardNotFound() {
         This glow-up card may have been removed or the link might be incorrect.
       </p>
       <Link
-        href={APP_STORE_URL}
+        href={APP_BASE_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="mt-4 inline-block px-6 py-3 rounded-xl bg-after-500 hover:bg-after-600 text-white text-sm font-semibold transition-colors"

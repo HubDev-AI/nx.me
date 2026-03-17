@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from app.advisor.llm_port import LLMPort
+
 import redis.asyncio as aioredis
 from supabase import Client
 
@@ -53,7 +55,7 @@ class AdvisorService:
         self,
         supabase: Client,
         redis_client: aioredis.Redis,
-        llm_adapter: Any,
+        llm_adapter: LLMPort,
     ) -> None:
         self._supabase = supabase
         self._redis = redis_client
@@ -133,11 +135,16 @@ class AdvisorService:
         ).eq("id", conversation_id).execute()
 
         # Step 10: Async memory extraction (fire and forget)
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._memory_manager.extract_memories_from_turn(
                 user_id=user_id,
                 user_message=message,
                 advisor_response=advisor_response,
+            )
+        )
+        task.add_done_callback(
+            lambda t: t.exception() and logger.warning(
+                "Memory extraction failed", exc_info=t.exception()
             )
         )
 
@@ -378,7 +385,6 @@ class AdvisorService:
         )
         analysis_count = count_result.count or 0
 
-        from app.advisor.context_builder import build_user_data_block
         return build_user_data_block(
             face_shape=face_shape,
             symmetry_score=symmetry_score,
