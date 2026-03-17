@@ -4,12 +4,14 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
 import { View } from "react-native";
+import { StripeProvider } from "@stripe/stripe-react-native";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { BG_PAGE } from "../constants/colors";
+import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID } from "../constants/config";
 
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
@@ -71,9 +73,15 @@ export default function RootLayout() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
-      <StatusBar style="light" />
-      <Slot />
-    </View>
+    <StripeProvider
+      publishableKey={STRIPE_PUBLISHABLE_KEY}
+      urlScheme="nxme"
+      merchantIdentifier={APPLE_MERCHANT_ID}
+    >
+      <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
+        <StatusBar style="light" />
+        <Slot />
+      </View>
+    </StripeProvider>
   );
 }

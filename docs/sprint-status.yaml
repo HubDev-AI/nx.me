@@ -47,7 +47,7 @@ epics:
         slug: contextual-onboarding
         title: Contextual Onboarding & Push Notification Registration
         size: S
-        status: backlog
+        status: done
         wave: 10
         dependencies: ["2-3", "6-2"]
 
@@ -79,7 +79,7 @@ epics:
         slug: mobile-upload-result-ui
         title: Mobile Upload & Result UI
         size: M
-        status: backlog
+        status: done
         wave: 10
         dependencies: ["3-3", "4-3", "2-3"]
 
@@ -132,7 +132,7 @@ epics:
         slug: mobile-paywall-ui
         title: Mobile Paywall UI — Credits Screen & Stripe Payment Sheet
         size: M
-        status: backlog
+        status: done
         wave: 10
         dependencies: ["4-5", "2-3"]
 
@@ -164,7 +164,7 @@ epics:
         slug: mobile-social-feed-ui
         title: Mobile Social Feed UI
         size: M
-        status: backlog
+        status: done
         wave: 10
         dependencies: ["5-2", "5-3", "6-5"]
       - id: "5-5"

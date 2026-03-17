@@ -15,7 +15,9 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "ai.nxme.app",
-      "associatedDomains": ["applinks:nxme.ai"]
+      "associatedDomains": [
+        "applinks:nxme.ai"
+      ]
     },
     "android": {
       "package": "ai.nxme.app",
@@ -36,7 +38,10 @@
               "pathPrefix": "/"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -54,7 +59,22 @@
           "origin": "https://nxme.ai"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NXME needs access to your photo library to select a photo for your glow-up.",
+          "cameraPermission": "NXME needs access to your camera to take a photo for your glow-up."
+        }
+      ],
+      "expo-web-browser",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.ai.nxme.app",
+          "enableGooglePay": true
+        }
+      ]
     ]
   }
 }

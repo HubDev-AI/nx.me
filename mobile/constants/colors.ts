@@ -77,6 +77,19 @@ export const CTA_PRIMARY = COLORS.after[500];
 export const CTA_PRESSED = COLORS.after[600];
 export const CTA_ACTIVE = COLORS.after[700];
 
+/** Feed-specific tokens */
+export const FEED_DIVIDER = "rgba(255,255,255,0.05)";
+export const BEFORE_OVERLAY = "rgba(15,23,42,0.72)";
+
+/** Reveal / Glow-up */
+export const GLOW_AMBER = "#FF8C42";
+export const AFTER_OVERLAY = "rgba(244, 63, 94, 0.08)";
+
+/** Credit Badge — amber-gold accent */
+export const CREDIT_BADGE_BG = "rgba(245,158,11,0.15)";
+export const CREDIT_BADGE_TEXT = "#FCD34D";
+export const CREDIT_BADGE_ICON = "#F59E0B";
+
 /** Feedback */
 export const ERROR_DARK = "#F87171";
 export const ERROR_LIGHT = "#DC2626";
