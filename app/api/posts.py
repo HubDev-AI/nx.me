@@ -109,23 +109,35 @@ def create_post(
             detail={"error": {"code": "NO_GENERATED_IMAGE", "message": "Job has no generated image."}},
         )
 
-    # Get image URLs
+    # Get image storage keys
     before_img = (
-        supabase.table("images").select("storage_key")
+        supabase.table("images").select("storage_key, bucket")
         .eq("id", job.data["original_image_id"]).single().execute()
     )
     after_img = (
-        supabase.table("images").select("storage_key")
+        supabase.table("images").select("storage_key, bucket")
         .eq("id", job.data["generated_image_id"]).single().execute()
     )
 
-    from app.config import settings
-    before_url = supabase.storage.from_("raw-selfies").create_signed_url(
-        before_img.data["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
-    )["signedURL"]
-    after_url = supabase.storage.from_("generated-images").create_signed_url(
-        after_img.data["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
-    )["signedURL"]
+    # Copy before image from private (raw-selfies) to public (post-images) bucket
+    before_public_key = f"posts/{user_id}/{before_img.data['storage_key'].split('/')[-1]}"
+    try:
+        raw_bytes = supabase.storage.from_(before_img.data.get("bucket", "raw-selfies")).download(
+            before_img.data["storage_key"]
+        )
+        supabase.storage.from_("post-images").upload(
+            path=before_public_key,
+            file=raw_bytes,
+            file_options={"content-type": "image/jpeg", "upsert": "true"},
+        )
+    except Exception as exc:
+        logger.warning("Failed to copy before image to public bucket: %s", exc)
+        before_public_key = before_img.data["storage_key"]
+
+    # Build stable public CDN URLs (no expiry)
+    from app.services.public_url import get_post_before_url, get_post_after_url
+    before_url = get_post_before_url(before_public_key)
+    after_url = get_post_after_url(after_img.data["storage_key"])
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 

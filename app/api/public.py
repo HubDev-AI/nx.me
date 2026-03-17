@@ -140,29 +140,12 @@ def get_shareable_card(
         len(recommendations),
     )
 
-    # Generate fresh signed URLs at read time (P2-4: stored URLs expire)
-    from app.config import settings
-    before_url = post["before_image_url"]
-    after_url = post["after_image_url"]
-    try:
-        before_img = supabase.table("images").select("storage_key, bucket").eq("id", post["before_image_id"]).maybe_single().execute()
-        if before_img.data:
-            before_url = supabase.storage.from_(before_img.data.get("bucket", "raw-selfies")).create_signed_url(
-                before_img.data["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
-            )["signedURL"]
-        after_img = supabase.table("images").select("storage_key, bucket").eq("id", post["after_image_id"]).maybe_single().execute()
-        if after_img.data:
-            after_url = supabase.storage.from_(after_img.data.get("bucket", "generated-images")).create_signed_url(
-                after_img.data["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
-            )["signedURL"]
-    except Exception:
-        logger.warning("Failed to generate fresh signed URLs for card %s — using stored URLs", username)
-
+    # URLs are stable public CDN paths (no signing needed)
     return CardResponse(
         username=user["username"],
         display_name=user.get("display_name") or user["username"],
-        before_image_url=before_url,
-        after_image_url=after_url,
+        before_image_url=post["before_image_url"],
+        after_image_url=post["after_image_url"],
         recommendations=recommendations,
         reaction_count=post["reaction_count"],
         comment_count=post["comment_count"],
