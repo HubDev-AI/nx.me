@@ -56,6 +56,8 @@ def validate_jwt(token: str) -> UserClaims:
             settings.SUPABASE_JWT_SECRET,
             algorithms=["HS256"],
             options={"require": ["sub", "exp"]},
+            audience="authenticated",
+            issuer=f"{settings.SUPABASE_URL}/auth/v1",
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
