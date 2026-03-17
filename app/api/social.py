@@ -94,7 +94,7 @@ def get_feed(
     if has_more:
         posts = posts[:limit]
 
-    # Build response
+    # URLs are now stable public CDN paths (no signing needed)
     feed_posts = [
         FeedPostResponse(
             post_id=p["id"],

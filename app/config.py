@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     IDENTITY_SIMILARITY_THRESHOLD: float = 0.80
     MAX_CONCURRENT_GENERATIONS_PER_USER: int = 3
 
+    # Public storage — stable CDN URLs for post images (no signing)
+    # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}
+    # Production: override with CloudFront distribution URL
+    PUBLIC_STORAGE_BASE_URL: str = ""
+
     # Upload limits
     MAX_UPLOAD_SIZE_MB: int = 20
     MAX_IMAGE_DIMENSION_PX: int = 8192

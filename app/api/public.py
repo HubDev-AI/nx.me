@@ -140,6 +140,7 @@ def get_shareable_card(
         len(recommendations),
     )
 
+    # URLs are stable public CDN paths (no signing needed)
     return CardResponse(
         username=user["username"],
         display_name=user.get("display_name") or user["username"],

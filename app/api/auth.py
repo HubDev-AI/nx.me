@@ -450,6 +450,12 @@ async def social_login(
     raw_username = user.email.split("@")[0] if user.email else user_id[:20]
     auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
 
+    # P2-5: Guarantee unique username — check if taken, append random suffix if so
+    existing = supabase.table("users").select("id").eq("username", auto_username).maybe_single().execute()
+    if existing.data and existing.data["id"] != user_id:
+        from uuid import uuid4
+        auto_username = f"{auto_username}_{uuid4().hex[:6]}"
+
     # Upsert public.users row — new social users won't have a row yet.
     # On conflict (existing account) do nothing to preserve existing data.
     try:
@@ -467,8 +473,11 @@ async def social_login(
             ignore_duplicates=True,
         ).execute()
     except Exception as exc:
-        # Non-fatal: session was created, profile upsert is best-effort.
         logger.error("users upsert failed for social user %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create user profile. Please try again.",
+        ) from exc
 
     logger.info("Social login successful for user %s (provider=%s)", user_id, body.provider)
     return LoginResponse(
