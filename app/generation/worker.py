@@ -59,40 +59,41 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     generator = _get_generator()
     user_id_for_concurrent: str | None = None
 
-    # Pre-flight checks
+    # Fetch job data FIRST — needed for credit release in all failure paths (P2-6)
+    job = supabase.table("glow_up_jobs").select("*").eq("id", job_id).single().execute()
+    if not job.data:
+        logger.error("Job %s not found", job_id)
+        return
+    job_data = job.data
+
+    # Check if already cancelled/terminal before processing (P1-3)
+    if job_data["status"] in (JobStatus.CANCELLED, JobStatus.COMPLETED, JobStatus.FAILED):
+        logger.info("Job %s already in terminal state '%s' — skipping", job_id, job_data["status"])
+        return
+
+    # Pre-flight checks — now using _fail_job which releases credits (P2-6)
     if await cost_tracker.is_emergency_stopped():
-        logger.warning("Emergency stop active — skipping job %s", job_id)
-        supabase.table("glow_up_jobs").update({
-            "status": JobStatus.FAILED,
-            "failure_reason": "PROVIDER_ERROR",
-            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-        }).eq("id", job_id).execute()
+        logger.warning("Emergency stop active — failing job %s", job_id)
+        await _fail_job(supabase, job_id, job_data, "PROVIDER_ERROR")
         return
 
     if await cost_tracker.is_circuit_open():
-        logger.warning("Circuit breaker open — skipping job %s", job_id)
-        supabase.table("glow_up_jobs").update({
-            "status": JobStatus.FAILED,
-            "failure_reason": FAILURE_PROVIDER,
-            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-        }).eq("id", job_id).execute()
+        logger.warning("Circuit breaker open — failing job %s", job_id)
+        await _fail_job(supabase, job_id, job_data, FAILURE_PROVIDER)
         return
 
-    # Update job → processing
+    # Claim job with conditional update — only if still queued (P1-3)
     now_utc = datetime.now(tz=timezone.utc).isoformat()
-    supabase.table("glow_up_jobs").update({
+    claim_result = supabase.table("glow_up_jobs").update({
         "status": JobStatus.PROCESSING,
         "updated_at": now_utc,
-    }).eq("id", job_id).execute()
+    }).eq("id", job_id).eq("status", JobStatus.QUEUED).execute()
+
+    if not claim_result.data:
+        logger.info("Job %s not in queued state — aborting", job_id)
+        return
 
     try:
-        # Fetch job data
-        job = supabase.table("glow_up_jobs").select("*").eq("id", job_id).single().execute()
-        if not job.data:
-            logger.error("Job %s not found", job_id)
-            return
-
-        job_data = job.data
         user_id = job_data["user_id"]
         user_id_for_concurrent = user_id
 

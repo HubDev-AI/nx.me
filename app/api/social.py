@@ -23,6 +23,7 @@ from supabase import Client
 
 from app.api.deps import get_current_user, get_redis, get_supabase
 from app.api.middleware.auth import UserClaims
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +95,17 @@ def get_feed(
     if has_more:
         posts = posts[:limit]
 
+    # Generate fresh signed URLs at read time (P2-4: stored URLs expire)
+    posts = _refresh_image_urls(supabase, posts)
+
     # Build response
     feed_posts = [
         FeedPostResponse(
             post_id=p["id"],
             user_id=p["user_id"],
             caption=p.get("caption"),
-            before_image_url=p["before_image_url"],
-            after_image_url=p["after_image_url"],
+            before_image_url=p["_before_url"],
+            after_image_url=p["_after_url"],
             reaction_count=p["reaction_count"],
             comment_count=p["comment_count"],
             created_at=p["created_at"],
@@ -265,6 +269,41 @@ def _compute_trending_score(post: dict, now: datetime | None = None) -> float:
     hours = max(0, (now - created).total_seconds() / 3600)
     reactions = post.get("reaction_count", 0)
     return reactions / pow(hours + 2, 1.5)
+
+
+def _refresh_image_urls(supabase: Client, posts: list[dict]) -> list[dict]:
+    """Generate fresh signed URLs for post images (P2-4: stored URLs expire)."""
+    if not posts:
+        return posts
+
+    image_ids: set[str] = set()
+    for p in posts:
+        image_ids.add(p["before_image_id"])
+        image_ids.add(p["after_image_id"])
+
+    result = (
+        supabase.table("images")
+        .select("id, storage_key, bucket")
+        .in_("id", list(image_ids))
+        .execute()
+    )
+
+    url_map: dict[str, str] = {}
+    for img in (result.data or []):
+        bucket = img.get("bucket", "raw-selfies")
+        try:
+            signed = supabase.storage.from_(bucket).create_signed_url(
+                img["storage_key"], settings.SIGNED_URL_EXPIRY_SECONDS
+            )["signedURL"]
+            url_map[img["id"]] = signed
+        except Exception:
+            url_map[img["id"]] = ""
+
+    for p in posts:
+        p["_before_url"] = url_map.get(p["before_image_id"], p.get("before_image_url", ""))
+        p["_after_url"] = url_map.get(p["after_image_id"], p.get("after_image_url", ""))
+
+    return posts
 
 
 def _filter_cleared_images(supabase: Client, posts: list[dict]) -> list[dict]:
