@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
@@ -168,12 +168,12 @@ def create_post(
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/posts/{post_id}", status_code=status.HTTP_200_OK)
+@router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_post(
     post_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     post_repo: PostRepository = Depends(get_post_repo),
-) -> dict:
+) -> Response:
     """Soft-delete own post. AC-FR5: is_deleted = TRUE, removed from feed."""
     user_id = claims["sub"]
 
@@ -183,13 +183,16 @@ def delete_post(
     if post["user_id"] != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
     if post["is_deleted"]:
-        return {"status": "already_deleted"}
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": {"code": "ALREADY_DELETED", "message": "Post is already deleted"}},
+        )
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
     post_repo.soft_delete_post(str(post_id), now_utc)
 
     logger.info("Post %s deleted by user %s", post_id, user_id)
-    return {"status": "deleted"}
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

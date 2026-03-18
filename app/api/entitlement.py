@@ -132,7 +132,7 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
-@router.post("/credits/purchase", response_model=CheckoutResponse)
+@router.post("/credits/purchase", response_model=CheckoutResponse, status_code=status.HTTP_201_CREATED)
 async def purchase_credits(
     body: CreditPurchaseRequest,
     claims: UserClaims = Depends(get_current_user),
@@ -182,19 +182,14 @@ async def purchase_credits(
 # ---------------------------------------------------------------------------
 
 
-class SubscriptionRequest(BaseModel):
-    pass
-
-
 class SubscriptionResponse(BaseModel):
     checkout_url: str | None = None
     status: str | None = None
     message: str | None = None
 
 
-@router.post("/subscriptions", response_model=SubscriptionResponse)
+@router.post("/subscriptions", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_subscription(
-    body: SubscriptionRequest,
     claims: UserClaims = Depends(get_current_user),
     payment: PaymentPort = Depends(get_payment_adapter),
     svc: EntitlementService = Depends(get_entitlement_service),
