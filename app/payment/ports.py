@@ -5,7 +5,17 @@ Concrete implementations: StripePaymentAdapter, MockPaymentAdapter.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
+
+
+@dataclass(frozen=True)
+class WebhookEvent:
+    """Typed webhook event returned by construct_webhook_event."""
+
+    event_type: str  # e.g. "checkout.session.completed"
+    event_id: str    # provider event ID for idempotency
+    data: dict       # the full event payload (provider-specific)
 
 
 class PaymentPort(Protocol):
@@ -27,7 +37,7 @@ class PaymentPort(Protocol):
         """Cancel subscription at period end."""
         ...
 
-    def construct_webhook_event(self, payload: bytes, sig_header: str) -> dict:
+    def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Verify webhook signature and construct event object.
 
         Raises ValueError on invalid signature.

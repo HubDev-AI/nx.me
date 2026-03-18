@@ -47,8 +47,8 @@ async def stripe_webhook(request: Request) -> dict:
             detail={"error": {"code": "INVALID_WEBHOOK_SIGNATURE", "message": "Invalid webhook signature"}},
         )
 
-    event_id = event.get("id", "")
-    event_type = event.get("type", "")
+    event_id = event.event_id
+    event_type = event.event_type
 
     logger.info("Stripe webhook received: type=%s, id=%s", event_type, event_id)
 
@@ -66,7 +66,7 @@ async def stripe_webhook(request: Request) -> dict:
 
     # --- Route to handler ---
     try:
-        data = event.get("data", {}).get("object", {})
+        data = event.data.get("data", {}).get("object", {})
 
         if event_type == "checkout.session.completed":
             await _handle_checkout_completed(sub_repo, data, event_id)

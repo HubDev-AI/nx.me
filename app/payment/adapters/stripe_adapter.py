@@ -10,6 +10,7 @@ import asyncio
 import logging
 
 from app.config import settings
+from app.payment.ports import WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,8 @@ class StripePaymentAdapter:
 
         logger.info("Stripe subscription %s set to cancel at period end", subscription_id)
 
-    def construct_webhook_event(self, payload: bytes, sig_header: str) -> dict:
-        """Verify Stripe webhook signature and return event dict.
+    def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
+        """Verify Stripe webhook signature and return a typed WebhookEvent.
 
         Raises ValueError if signature is invalid.
         """
@@ -82,6 +83,10 @@ class StripePaymentAdapter:
                 sig_header=sig_header,
                 secret=settings.STRIPE_WEBHOOK_SECRET,
             )
-            return dict(event)
+            return WebhookEvent(
+                event_type=event["type"],
+                event_id=event["id"],
+                data=dict(event),
+            )
         except self._stripe.SignatureVerificationError as exc:
             raise ValueError(f"Invalid Stripe webhook signature: {exc}") from exc

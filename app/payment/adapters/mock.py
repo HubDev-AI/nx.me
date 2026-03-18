@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
+from app.payment.ports import WebhookEvent
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,8 +33,13 @@ class MockPaymentAdapter:
         """No-op for mock."""
         logger.info("Mock cancel subscription: %s", subscription_id)
 
-    def construct_webhook_event(self, payload: bytes, sig_header: str) -> dict:
+    def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Accept any signature in mock mode. Parse payload as JSON."""
         import json
 
-        return json.loads(payload)
+        data: dict = json.loads(payload)
+        return WebhookEvent(
+            event_type=data.get("type", ""),
+            event_id=data.get("id", ""),
+            data=data,
+        )
