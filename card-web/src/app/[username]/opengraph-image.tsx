@@ -99,7 +99,7 @@ export default async function OgImage({ params }: Props) {
             {SITE_NAME}
           </div>
           <div style={{ fontSize: 18, color: '#A0A0A0' }}>
-            @{card.username}'s Glow-Up
+            @{card.username}&apos;s Glow-Up
           </div>
         </div>
 
@@ -195,7 +195,7 @@ export default async function OgImage({ params }: Props) {
           }}
         >
           <div style={{ fontSize: 16, color: '#F8F8F8', fontWeight: 600 }}>
-            {card.display_name}'s transformation
+            {card.display_name}&apos;s transformation
           </div>
           <div
             style={{

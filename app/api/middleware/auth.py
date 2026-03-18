@@ -9,7 +9,13 @@ UserClaims is a TypedDict representing the decoded Supabase JWT payload.
 from __future__ import annotations
 
 import logging
-from typing import Required, TypedDict
+import sys
+
+if sys.version_info >= (3, 11):
+    from typing import Required, TypedDict
+else:
+    from typing import TypedDict
+    from typing_extensions import Required
 
 import jwt
 from fastapi import HTTPException, status
