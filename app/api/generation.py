@@ -106,6 +106,217 @@ class CancelResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+async def _check_entitlement(
+    ent_svc: EntitlementService,
+    user_id: UUID,
+) -> None:
+    """Verify the user is allowed to generate.
+
+    Raises HTTPException with 409 for concurrent limit (AC-2), 402 for payment
+    required, or 429 for other rate limits.
+    """
+    ent_result = await ent_svc.check(user_id, "generation")
+    if ent_result.allowed:
+        return
+
+    if ent_result.error_code == TIER_CONCURRENT_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "CONCURRENT_LIMIT",
+                    "message": "You already have a generation in progress.",
+                }
+            },
+        )
+
+    http_status = 402 if ent_result.error_code in PAYMENT_REQUIRED_CODES else 429
+    raise HTTPException(
+        status_code=http_status,
+        detail={
+            "error": {
+                "code": ent_result.error_code,
+                "message": _ERROR_MESSAGES.get(
+                    ent_result.error_code or "", "Entitlement check failed"
+                ),
+                "detail": {
+                    "limit": ent_result.limit,
+                    "used": ent_result.used,
+                    "retry_after": ent_result.retry_after.isoformat() if ent_result.retry_after else None,
+                    "reset_in_seconds": ent_result.reset_in_seconds,
+                    "upgrade_available": ent_result.upgrade_available,
+                },
+            }
+        },
+    )
+
+
+async def _validate_analysis(
+    analysis_repo: AnalysisRepository,
+    analysis_id: UUID,
+    user_id_str: str,
+) -> dict:
+    """Fetch the analysis and verify ownership and completion status.
+
+    Returns the analysis row dict.
+    Raises HTTPException 404 if not found or not owned, 422 if not completed.
+    """
+    analysis_data = await run_sync(analysis_repo.get_for_generation, str(analysis_id))
+    if not analysis_data or analysis_data["user_id"] != user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Analysis not found",
+        )
+    if analysis_data["status"] != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "ANALYSIS_NOT_COMPLETED",
+                    "message": "Analysis must be completed before generating.",
+                }
+            },
+        )
+    return analysis_data
+
+
+async def _preflight_checks(
+    cost_tracker: CostTracker,
+    ent_svc: EntitlementService,
+    user_id: UUID,
+    user_id_str: str,
+):
+    """Run cost-tracker pre-flight gates and return the user's tier.
+
+    Checks: emergency stop, queue depth, daily cap, trial throttle.
+    Raises HTTPException 503 or 429 on failure.
+    Returns the tier object from EntitlementService.
+    """
+    _service_unavailable = {
+        "error": {
+            "code": "SERVICE_UNAVAILABLE",
+            "message": "Generation service temporarily unavailable. Please try again.",
+        }
+    }
+
+    if await cost_tracker.is_emergency_stopped():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_service_unavailable)
+
+    if not await cost_tracker.check_queue_depth(settings.MAX_QUEUE_DEPTH):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_service_unavailable)
+
+    if not await cost_tracker.check_user_daily_cap(user_id_str, settings.MAX_GENERATIONS_PER_USER_PER_DAY):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": {
+                    "code": "TIER_LIMIT_DAILY",
+                    "message": "Daily generation limit reached",
+                }
+            },
+        )
+
+    tier = await ent_svc.get_tier(user_id)
+
+    if tier.slug == "free" and await cost_tracker.should_throttle_trial():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_service_unavailable)
+
+    return tier
+
+
+async def _check_idempotency(
+    job_repo: JobRepository,
+    idempotency_key: str,
+    user_id_str: str,
+) -> GenerateResponse | None:
+    """Return an existing GenerateResponse if this key was already processed, else None."""
+    existing = await run_sync(job_repo.get_by_idempotency_key, idempotency_key, user_id_str)
+    if existing:
+        return GenerateResponse(
+            job_id=existing["id"],
+            status=existing["status"],
+            estimated_wait_seconds=0,
+            queue_position=0,
+        )
+    return None
+
+
+async def _enqueue_job(
+    job_repo: JobRepository,
+    arq_pool,
+    ledger: CreditLedger,
+    user_id: UUID,
+    user_id_str: str,
+    analysis_id: UUID,
+    analysis_data: dict,
+    tier,
+    queue_lane: str,
+    tier_name: str,
+    idempotency_key: str,
+    queue_position: int,
+) -> GenerateResponse:
+    """Reserve credit (if applicable), create the job row, log usage, and enqueue to ARQ.
+
+    Releases the credit reservation if any subsequent step fails.
+    Returns the GenerateResponse for the newly created job.
+    """
+    reservation_id: UUID | None = None
+    if tier.credits_based:
+        reservation_id = ledger.reserve(user_id)
+
+    job_id = uuid4()
+    now_utc = datetime.now(tz=timezone.utc).isoformat()
+    usage_status = "reserved" if tier.credits_based else "committed"
+
+    try:
+        await run_sync(job_repo.create, {
+            "id": str(job_id),
+            "user_id": user_id_str,
+            "analysis_id": str(analysis_id),
+            "original_image_id": analysis_data["original_image_id"],
+            "credit_reservation_id": str(reservation_id) if reservation_id else None,
+            "user_tier_at_enqueue": tier_name,
+            "status": JobStatus.QUEUED,
+            "queue_lane": queue_lane,
+            "idempotency_key": idempotency_key,
+            "created_at": now_utc,
+            "updated_at": now_utc,
+        })
+
+        await run_sync(job_repo.insert_usage_event, {
+            "user_id": user_id_str,
+            "action": "generation",
+            "status": usage_status,
+            "job_id": str(job_id),
+        })
+
+        await arq_pool.enqueue_job(
+            "process_generation_job",
+            str(job_id),
+            _queue_name=queue_lane,
+        )
+    except Exception:
+        if reservation_id:
+            try:
+                ledger.release(reservation_id)
+            except Exception:
+                logger.error(
+                    "Failed to release credit reservation %s after enqueue failure",
+                    reservation_id,
+                )
+        raise
+
+    logger.info("Generation job %s enqueued for user %s on lane %s", job_id, user_id_str, queue_lane)
+
+    estimated_wait = queue_position * _AVG_SECONDS_PER_JOB
+    return GenerateResponse(
+        job_id=str(job_id),
+        status=JobStatus.QUEUED,
+        estimated_wait_seconds=estimated_wait,
+        queue_position=queue_position,
+    )
+
+
 @router.post(
     "/analyses/{analysis_id}/generate",
     response_model=GenerateResponse,
@@ -132,7 +343,6 @@ async def create_generation(
     user_id_str: str = claims["sub"]
     user_id = UUID(user_id_str)
 
-    # --- Idempotency key resolution: header takes precedence over body ---
     idempotency_key = idempotency_key_header or body.idempotency_key
     if not idempotency_key:
         raise HTTPException(
@@ -145,196 +355,32 @@ async def create_generation(
             },
         )
 
-    # --- Entitlement check (inline, not dependency — AC-2 needs 409 for concurrent) ---
-    ent_result = await ent_svc.check(user_id, "generation")
-    if not ent_result.allowed:
-        if ent_result.error_code == TIER_CONCURRENT_LIMIT:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "error": {
-                        "code": "CONCURRENT_LIMIT",
-                        "message": "You already have a generation in progress.",
-                    }
-                },
-            )
-        status_code = 402 if ent_result.error_code in PAYMENT_REQUIRED_CODES else 429
-        raise HTTPException(
-            status_code=status_code,
-            detail={
-                "error": {
-                    "code": ent_result.error_code,
-                    "message": _ERROR_MESSAGES.get(
-                        ent_result.error_code or "", "Entitlement check failed"
-                    ),
-                    "detail": {
-                        "limit": ent_result.limit,
-                        "used": ent_result.used,
-                        "retry_after": ent_result.retry_after.isoformat() if ent_result.retry_after else None,
-                        "reset_in_seconds": ent_result.reset_in_seconds,
-                        "upgrade_available": ent_result.upgrade_available,
-                    },
-                }
-            },
-        )
+    await _check_entitlement(ent_svc, user_id)
+    analysis_data = await _validate_analysis(analysis_repo, analysis_id, user_id_str)
 
-    # --- Validate analysis exists, is owned, and is completed ---
-    analysis_data = await run_sync(analysis_repo.get_for_generation, str(analysis_id))
-    if not analysis_data:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Analysis not found",
-        )
-    if analysis_data["user_id"] != user_id_str:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Analysis not found",
-        )
-    if analysis_data["status"] != "completed":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "error": {
-                    "code": "ANALYSIS_NOT_COMPLETED",
-                    "message": "Analysis must be completed before generating.",
-                }
-            },
-        )
-
-    # --- Cost tracker pre-flight checks ---
     cost_tracker = CostTracker(redis_client)
+    tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
 
-    if await cost_tracker.is_emergency_stopped():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "error": {
-                    "code": "SERVICE_UNAVAILABLE",
-                    "message": "Generation service temporarily unavailable. Please try again.",
-                }
-            },
-        )
+    idempotency_response = await _check_idempotency(job_repo, idempotency_key, user_id_str)
+    if idempotency_response:
+        return idempotency_response
 
-    if not await cost_tracker.check_queue_depth(settings.MAX_QUEUE_DEPTH):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "error": {
-                    "code": "SERVICE_UNAVAILABLE",
-                    "message": "Generation service temporarily unavailable. Please try again.",
-                }
-            },
-        )
-
-    if not await cost_tracker.check_user_daily_cap(
-        user_id_str, settings.MAX_GENERATIONS_PER_USER_PER_DAY
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "error": {
-                    "code": "TIER_LIMIT_DAILY",
-                    "message": "Daily generation limit reached",
-                }
-            },
-        )
-
-    # --- Get tier for queue lane and trial throttle ---
-    tier = await ent_svc.get_tier(user_id)
-
-    # Trial throttle
-    if tier.slug == "free" and await cost_tracker.should_throttle_trial():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "error": {
-                    "code": "SERVICE_UNAVAILABLE",
-                    "message": "Generation service temporarily unavailable. Please try again.",
-                }
-            },
-        )
-
-    # --- Idempotency check ---
-    existing = await run_sync(job_repo.get_by_idempotency_key, idempotency_key, user_id_str)
-    if existing:
-        return GenerateResponse(
-            job_id=existing["id"],
-            status=existing["status"],
-            estimated_wait_seconds=0,
-            queue_position=0,
-        )
-
-    # --- Determine queue lane ---
     queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
     tier_name = _SLUG_TO_TIER_NAME.get(tier.slug, tier.slug.upper())
-
-    # --- Read queue position before enqueue ---
     queue_position = await redis_client.llen(f"arq:queue:{queue_lane}")
-    estimated_wait = queue_position * _AVG_SECONDS_PER_JOB
 
-    # --- Credit reserve (for credit-based tiers) ---
-    reservation_id: UUID | None = None
-
-    if tier.credits_based:
-        reservation_id = ledger.reserve(user_id)
-
-    # --- Insert job + usage event + enqueue (with credit release on failure) ---
-    job_id = uuid4()
-    now_utc = datetime.now(tz=timezone.utc).isoformat()
-    usage_status = "reserved" if tier.credits_based else "committed"
-
-    try:
-        # Insert glow_up_jobs first (primary record)
-        await run_sync(job_repo.create, {
-            "id": str(job_id),
-            "user_id": user_id_str,
-            "analysis_id": str(analysis_id),
-            "original_image_id": analysis_data["original_image_id"],
-            "credit_reservation_id": str(reservation_id) if reservation_id else None,
-            "user_tier_at_enqueue": tier_name,
-            "status": JobStatus.QUEUED,
-            "queue_lane": queue_lane,
-            "idempotency_key": idempotency_key,
-            "created_at": now_utc,
-            "updated_at": now_utc,
-        })
-
-        # Insert usage_events (tracking record)
-        await run_sync(job_repo.insert_usage_event, {
-            "user_id": user_id_str,
-            "action": "generation",
-            "status": usage_status,
-            "job_id": str(job_id),
-        })
-
-        # Enqueue ARQ job
-        arq_pool = request.app.state.arq_pool
-        await arq_pool.enqueue_job(
-            "process_generation_job",
-            str(job_id),
-            _queue_name=queue_lane,
-        )
-    except Exception:
-        # Release credit reservation if any step after reserve failed
-        if reservation_id:
-            try:
-                ledger.release(reservation_id)
-            except Exception:
-                logger.error(
-                    "Failed to release credit reservation %s after enqueue failure",
-                    reservation_id,
-                )
-        raise
-
-    logger.info(
-        "Generation job %s enqueued for user %s on lane %s",
-        job_id, user_id_str, queue_lane,
-    )
-
-    return GenerateResponse(
-        job_id=str(job_id),
-        status=JobStatus.QUEUED,
-        estimated_wait_seconds=estimated_wait,
+    return await _enqueue_job(
+        job_repo=job_repo,
+        arq_pool=request.app.state.arq_pool,
+        ledger=ledger,
+        user_id=user_id,
+        user_id_str=user_id_str,
+        analysis_id=analysis_id,
+        analysis_data=analysis_data,
+        tier=tier,
+        queue_lane=queue_lane,
+        tier_name=tier_name,
+        idempotency_key=idempotency_key,
         queue_position=queue_position,
     )
 
