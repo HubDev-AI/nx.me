@@ -178,8 +178,33 @@ def get_nudges(
 
 
 # ---------------------------------------------------------------------------
-# POST /v1/advisor/nudges/{id}/read — mark nudge as read
+# PATCH /v1/advisor/nudges/{id} — update nudge (canonical noun-based route)
+# POST /v1/advisor/nudges/{id}/read — deprecated alias (backward compat)
 # ---------------------------------------------------------------------------
+
+
+class NudgeUpdateRequest(BaseModel):
+    read: bool = Field(..., description="Set to true to mark the nudge as read")
+
+
+@router.patch(
+    "/advisor/nudges/{nudge_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def update_nudge(
+    nudge_id: UUID,
+    body: NudgeUpdateRequest,
+    claims: UserClaims = Depends(get_current_user),
+    svc: AdvisorService = Depends(get_advisor_service),
+) -> None:
+    """Update a nudge. Currently supports marking as read (idempotent)."""
+    user_id = UUID(claims["sub"])
+    found = svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Nudge not found",
+        )
 
 
 @router.post(
@@ -192,7 +217,7 @@ def mark_nudge_read(
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> None:
-    """Mark a nudge as read. Idempotent — safe to call multiple times."""
+    """Deprecated alias — use PATCH /advisor/nudges/{nudge_id} instead."""
     user_id = UUID(claims["sub"])
     found = svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
     if not found:

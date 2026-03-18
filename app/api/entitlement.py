@@ -132,8 +132,8 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
-@router.post("/credits/purchase", response_model=CheckoutResponse, status_code=status.HTTP_201_CREATED)
-async def purchase_credits(
+@router.post("/credit-purchases", response_model=CheckoutResponse, status_code=status.HTTP_201_CREATED)
+async def create_credit_purchase(
     body: CreditPurchaseRequest,
     claims: UserClaims = Depends(get_current_user),
     payment: PaymentPort = Depends(get_payment_adapter),
@@ -175,6 +175,21 @@ async def purchase_credits(
     logger.info("Credit purchase checkout created: user=%s, pack=%s", user_id, body.credit_pack_id)
 
     return CheckoutResponse(checkout_url=checkout_url)
+
+
+@router.post(
+    "/credits/purchase",
+    response_model=CheckoutResponse,
+    status_code=status.HTTP_201_CREATED,
+    deprecated=True,
+)
+async def purchase_credits(
+    body: CreditPurchaseRequest,
+    claims: UserClaims = Depends(get_current_user),
+    payment: PaymentPort = Depends(get_payment_adapter),
+) -> CheckoutResponse:
+    """Deprecated alias — use POST /credit-purchases instead."""
+    return await create_credit_purchase(body=body, claims=claims, payment=payment)
 
 
 # ---------------------------------------------------------------------------

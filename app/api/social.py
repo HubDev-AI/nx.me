@@ -138,7 +138,8 @@ def get_feed(
 
 
 # ---------------------------------------------------------------------------
-# POST /posts/{post_id}/react (Story 5-2)
+# POST /posts/{post_id}/reactions (Story 5-2) — canonical noun-based route
+# POST /posts/{post_id}/react — deprecated alias (backward compat)
 # ---------------------------------------------------------------------------
 
 # Rate limit: 10 reactions per IP per 5 minutes
@@ -175,7 +176,7 @@ class ReactionResponse(BaseModel):
     reaction_count: int
 
 
-@router.post("/posts/{post_id}/react", response_model=ReactionResponse)
+@router.post("/posts/{post_id}/reactions", response_model=ReactionResponse)
 async def react_to_post(
     post_id: UUID,
     request: Request,
@@ -275,6 +276,31 @@ async def react_to_post(
     )
 
     return ReactionResponse(reaction_count=new_count)
+
+
+@router.post(
+    "/posts/{post_id}/react",
+    response_model=ReactionResponse,
+    deprecated=True,
+    include_in_schema=True,
+)
+async def react_to_post_deprecated(
+    post_id: UUID,
+    request: Request,
+    x_guest_token: Annotated[str | None, Header()] = None,
+    authorization: Annotated[str | None, Header()] = None,
+    feed_repo: FeedRepository = Depends(get_feed_repo),
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> ReactionResponse:
+    """Deprecated alias — use POST /posts/{post_id}/reactions instead."""
+    return await react_to_post(
+        post_id=post_id,
+        request=request,
+        x_guest_token=x_guest_token,
+        authorization=authorization,
+        feed_repo=feed_repo,
+        redis_client=redis_client,
+    )
 
 
 # ---------------------------------------------------------------------------
