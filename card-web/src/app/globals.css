@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -----------------------------------------------------------------------
+   NXME Card Web — Global styles
+   Dark-first design matching the NXME design system tokens.
+----------------------------------------------------------------------- */
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #080808;
+  color: #F8F8F8;
+  font-family: var(--font-inter);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Smooth scrolling */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

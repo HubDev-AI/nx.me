@@ -26,13 +26,21 @@ MIGRATIONS_DIR = Path(__file__).parent
 DOWN_MARKER = "-- DOWN:"
 
 
-def _parse_supabase_dsn() -> str:
-    """Build a psycopg2 DSN from SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."""
+def _get_dsn() -> str:
+    """Return a psycopg2 DSN for the database.
+
+    Checks DATABASE_URL first (preferred for local Supabase CLI),
+    then falls back to parsing SUPABASE_URL for hosted Supabase.
+    """
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        return database_url
+
     supabase_url = os.environ.get("SUPABASE_URL")
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     if not supabase_url or not service_key:
         print(
-            "Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set",
+            "Error: DATABASE_URL or SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY must be set",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -206,7 +214,7 @@ def main() -> None:
         print("Error: --down requires --target", file=sys.stderr)
         sys.exit(1)
 
-    dsn = _parse_supabase_dsn()
+    dsn = _get_dsn()
     conn = psycopg2.connect(dsn)
 
     try:

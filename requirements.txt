@@ -1,0 +1,51 @@
+# Web framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+
+# Config
+pydantic-settings==2.9.1
+
+# Supabase
+supabase==2.15.1
+
+# Redis
+redis==5.2.1
+
+# JWT validation
+PyJWT==2.10.1
+
+# HTTP client (used by supabase)
+httpx==0.28.1
+
+# Username slugification
+python-slugify==8.0.4
+
+# Image processing
+Pillow==12.1.1
+pillow-heif==0.21.0
+
+# Face analysis (MediaPipe FaceMesh)
+mediapipe==0.10.32
+numpy==2.4.3
+
+# AWS SDK (Rekognition NSFW screening)
+boto3==1.42.68
+
+# Disposable email detection
+disposable-email-domains==0.0.128
+
+# ARQ (async job queue)
+arq==0.27.0
+
+# fal.ai client (AI generation)
+fal-client==0.13.1
+
+# ArcFace identity preservation (insightface)
+insightface==0.7.3
+onnxruntime==1.24.3
+
+# Stripe payments
+stripe==14.4.1
+
+# DB driver
+psycopg2-binary==2.9.10

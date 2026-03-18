@@ -1,0 +1,80 @@
+{
+  "expo": {
+    "name": "NXME",
+    "slug": "nxme",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "nxme",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#080808"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ai.nxme.app",
+      "associatedDomains": [
+        "applinks:nxme.ai"
+      ]
+    },
+    "android": {
+      "package": "ai.nxme.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#080808",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "nxme.ai",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://nxme.ai"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "NXME needs access to your photo library to select a photo for your glow-up.",
+          "cameraPermission": "NXME needs access to your camera to take a photo for your glow-up."
+        }
+      ],
+      "expo-web-browser",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.ai.nxme.app",
+          "enableGooglePay": true
+        }
+      ]
+    ]
+  }
+}

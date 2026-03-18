@@ -4,6 +4,7 @@
 | Date | Source | What Went Wrong | What To Do Instead |
 |------|--------|----------------|-------------------|
 | 2026-03-13 | self | Assumed the repo napkin existed; `.claude/napkin.md` was missing | Create the napkin immediately at session start when it does not exist |
+| 2026-03-17 | user | Trusted story-creator agent's stripe version (14.4.0) without verifying via Context7/PyPI — actual latest was 14.4.1 | ALWAYS verify package versions yourself via Context7 + PyPI. Never trust subagent version claims. |
 
 ## User Preferences
 - Follow repo `AGENTS.md` skill instructions before doing substantive work.
@@ -29,6 +30,17 @@
 
 ## Domain Notes
 - This repo defines skills in `AGENTS.md`; `napkin` is mandatory every session.
+- **CRITICAL: Feature specs are PRIMARY source for implementation:**
+  - `docs/generation-spec.md` — for ANY story touching generation (4-2, 4-3, etc.). Contains model selection, parameters, prompts, scoring, retry, cost, module architecture. 17 sections. READ THIS FIRST for generation stories.
+  - `docs/advisor-spec.md` — for ANY story touching advisor (7-1, 7-2, 7-3, 7-4). Contains SOUL.md integration, memory system, context assembly, nudges, cost, pluggable design. 17 sections. READ THIS FIRST for advisor stories.
+  - These specs override architecture.md for implementation details. Architecture.md is the system overview; these specs are the engineering blueprints.
+- **Advisor persona**: Ada (she/her) — personal style and self-improvement advisor
+- **Generation spec**: `docs/generation-spec.md` — single source of truth for all AI generation behavior
+- **Primary model**: Flux PuLID `fal-ai/flux-pulid` (id_weight=0.85). NO post-processing. ~$0.035/image.
+- **Fallbacks**: Flux Dev img2img + IP-Adapter → InstantID (SDXL). Only on model failure.
+- **NXME is NOT a beauty filter**: Never smooth skin, remove freckles, or retouch. Styling only.
+- **Identity**: 3 layers — model conditioning (id_weight) → ArcFace post-check → prompt guidance
+- **Keyword allowlist blocks skin terms**: "clear skin", "reduced blemishes" etc NOT in allowlist
 - **High modularity required** — adapters for all external services (Rekognition, MediaPipe, fal.ai, Anthropic, Stripe, Supabase Storage), pipeline steps composable in `config/pipelines.py`, all LLM prompts in `prompts/*.txt` files loaded at runtime. Never inline prompts or call providers directly from services.
 - Amendment A-3 defines the full adapter pattern — read `docs/amendments.md#a-3` before implementing any service story.
 - Amendment A-4 defines the DB-driven tier system — no tier names in code, `user.tier_id: UUID` only, tiers seeded via migration, admin CRUD API at `/admin/tiers`.

@@ -4,6 +4,49 @@ Amendments capture deviations from `docs/architecture.md` discovered during impl
 
 ---
 
+## A-9: Trending Feed — HN-Style Time-Decay Formula (Pre-Story 5-1)
+
+- **Date**: 2026-03-16
+- **Trigger**: Architecture specified `trending` sort as "reaction_count DESC + time factor" without defining the exact formula. Needed a concrete, proven ranking algorithm before Story 5-1 implementation.
+- **Decision**: Adopted Hacker News-style time-decay ranking:
+  ```
+  score = reaction_count / (hours_since_post + 2) ^ 1.5
+  ```
+- **Gravity exponent**: `1.5` (lower than HN's `1.8`) — NXME has lower post volume than HN, so posts need to stay relevant longer.
+- **Offset**: `+ 2` prevents division-by-zero and gives fresh posts a small initial boost.
+- **Computation**: Calculated at query time in SQL. No background job needed at <100K posts. At scale, add a materialized `trending_score` column updated by a periodic ARQ job (every 5-10 min).
+- **No package dependency**: Pure SQL expression — no external ranking library needed.
+- **Affected stories**: 5-1 (Social Feed API)
+- **Architecture.md updated**: Section 2.8 (Social Service) and Section 8 (Social Feed API contract)
+
+---
+
+## A-8: UserClaims Required Fields (Story 2-2)
+
+- **Date**: 2026-03-16
+- **Trigger**: Code review F4 — `UserClaims(TypedDict, total=False)` made `sub` and `exp` optional at the type level, but PyJWT's `options={"require": ["sub", "exp"]}` guarantees they are always present. Callers access `claims["sub"]` without guards.
+- **Applies to**: `app/api/middleware/auth.py`
+
+### Change
+
+`sub` and `exp` are now typed as `Required[str]` and `Required[int]` respectively, while remaining fields stay optional (`total=False`):
+
+```python
+from typing import Required, TypedDict
+
+class UserClaims(TypedDict, total=False):
+    sub: Required[str]   # always present
+    exp: Required[int]   # always present
+    email: str
+    iat: int
+    role: str
+    aud: str
+```
+
+This aligns the static type with the runtime guarantee and removes the need for callers to guard against `KeyError` on `sub`/`exp`.
+
+---
+
 ## A-6: DB Transaction Convention (Cross-Cutting)
 
 - **Date**: 2026-03-16
@@ -1256,7 +1299,7 @@ Snapshot schema (stored in `user_memories.content` JSONB):
 - Nudge generation: `claude-haiku-4-5-20251001` (lower cost for scheduled messages)
 - Context injection: system prompt includes user analysis history + top-K memories + advisor persona definition
 
-**Advisor persona name:** TBD — to be defined before Story 7-2 implementation.
+**Advisor persona:** Ada (she/her) — defined in `app/advisor/SOUL.md` following the OpenClaw/SoulSpec pattern. The SOUL.md file is the single source of truth for Ada's identity, voice, values, boundaries, and example interactions. It is loaded as the system prompt foundation for all advisor LLM calls (chat + nudges). The AdvisorService reads this file at startup and injects it as the first system message in every conversation context.
 
 ### New Database Tables
 

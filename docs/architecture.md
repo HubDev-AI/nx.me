@@ -157,12 +157,13 @@ preserve skin tone, soft natural lighting"
 ```
 Where `improvement_keywords` is derived from `Recommendation` objects (e.g., `"refined eyebrow arch, shorter sides haircut"`).
 
-**Identity preservation check (TOCTOU-safe):**
+**Identity preservation check (storage-first, in-memory):**
 1. fal.ai delivers the generated image URL.
-2. The generation service **writes the generated image to NXME Supabase Storage first** (MetadataStripper → write to `generated-images` bucket). The fal.ai URL is never used directly for downstream processing.
-3. ArcFace embedding is computed by fetching both the **source image** (from `raw-selfies` bucket, Supabase Storage key) and the **generated image** (from `generated-images` bucket, just written). Both fetches are from NXME-controlled storage — never from fal.ai's CDN URL.
-4. `identity_similarity_score` (float 0–1) is computed. If score < `IDENTITY_SIMILARITY_THRESHOLD` (config-backed), the result is blocked, the credit is released, and `failure_reason = 'IDENTITY_PRESERVATION_FAILED'`.
-5. If either storage fetch fails during identity check, `failure_reason = 'PROVIDER_ERROR'` is set and the credit is released. ArcFace embedding is **never stored** (ADR-1).
+2. The worker **downloads the generated image from the provider into memory** immediately -- the provider URL is never used again after this point.
+3. The in-memory bytes are **uploaded to NXME Supabase Storage** (`generated-images` bucket) before any checks run.
+4. NSFW screening and ArcFace identity check both operate on **in-memory bytes** (source + generated), not by re-fetching from storage. This avoids an extra round-trip while still ensuring the image is persisted in NXME-controlled storage before any downstream use.
+5. `identity_similarity_score` (float 0-1) is computed. If score < `IDENTITY_SIMILARITY_THRESHOLD` (config-backed), the stored image is deleted, the credit is released, and `failure_reason = 'IDENTITY_PRESERVATION_FAILED'`.
+6. On identity pass, color normalization runs on the in-memory image and the result **overwrites** the stored file. ArcFace embedding is **never stored** (ADR-1).
 
 **Key classes:**
 
@@ -320,10 +321,20 @@ PREMIUM (active subscription)
 
 | Class | Responsibility |
 |-------|---------------|
-| `FeedService` | Cursor-based pagination; sort strategies: `newest` (created_at DESC) / `trending` (reaction_count DESC + time factor) / `biggest_improvements` (reaction_count DESC — no AI score input per AC-U10) |
+| `FeedService` | Cursor-based pagination; sort strategies: `newest` (created_at DESC) / `trending` (HN-style time-decay ranking) / `biggest_improvements` (reaction_count DESC — no AI score input per AC-U10) |
 | `ReactionService` | Deduplication via UNIQUE constraints; Redis counter with retry-queue writes; reconciliation job |
 | `CommentService` | Authenticated create/delete; public read |
 | `ReportService` | Post reports queued for human review |
+
+**`trending` sort — HN-style time-decay ranking:**
+```sql
+score = reaction_count / POWER(hours_since_post + 2, 1.5)
+```
+- `hours_since_post = EXTRACT(EPOCH FROM NOW() - created_at) / 3600`
+- Gravity exponent `1.5` — lower than HN's `1.8` to keep posts relevant longer (lower volume feed)
+- `+ 2` offset prevents division by zero and gives fresh posts a small initial boost
+- A 100-reaction post at 1h scores 19.2; at 24h scores 0.75 — natural decay without cliff
+- Computed at query time (no background job) — PostgreSQL handles this efficiently with the existing `idx_posts_feed_trending` index as a fallback; for exact score ordering, a sequential scan on the filtered set is acceptable at <100K posts. At scale, add a materialized `trending_score` column updated by a periodic ARQ job.
 
 **`biggest_improvements` sort:** Ordered by `reaction_count DESC`. No AI-computed appearance score, symmetry delta, or any model output is used as an ordering input (AC-U10). Differs from `trending` only in the absence of the time-decay factor — `biggest_improvements` surfaces all-time high-reaction posts while `trending` weights recent engagement.
 
@@ -376,6 +387,8 @@ PREMIUM (active subscription)
 ---
 
 ## 3. Data Models
+
+> **Schema source of truth:** The SQL in this section is a conceptual reference model. For exact column names, constraints, and indexes, always refer to the migration files in `app/migrations/`. Migrations may add, rename, or restructure columns beyond what is shown here.
 
 ### 3.1 `users`
 
@@ -437,8 +450,8 @@ CREATE TABLE glow_up_jobs (
                                     'FACE_VALIDATION_FAILED','GENERATION_TIMEOUT','NSFW_QUARANTINE',
                                     'IDENTITY_PRESERVATION_FAILED','PROVIDER_ERROR','UNKNOWN'
                                 ) OR failure_reason IS NULL),
-    before_image_id             UUID REFERENCES images(id),   -- FK to images table
-    after_image_id              UUID REFERENCES images(id),   -- FK to images table
+    original_image_id           UUID REFERENCES images(id),   -- FK to images table (the selfie)
+    generated_image_id          UUID REFERENCES images(id),   -- FK to images table (the glow-up result)
     identity_similarity_score   FLOAT,
     identity_preserved          BOOLEAN,
     credit_reservation_id       UUID REFERENCES credit_reservations(id),
@@ -1114,7 +1127,12 @@ def test_reserve_commit_nets_minus_one(db):
 
 ### Social Feed
 
-**GET /feed?sort=newest&cursor={cursor}&limit=20**
+**GET /feed?sort={newest|trending|biggest_improvements}&cursor={cursor}&limit=20**
+
+Sort strategies:
+- `newest` — `ORDER BY created_at DESC`
+- `trending` — `ORDER BY (reaction_count / POWER(hours_since + 2, 1.5)) DESC`
+- `biggest_improvements` — `ORDER BY reaction_count DESC`
 ```json
 {
   "posts": [
@@ -1422,7 +1440,7 @@ ARQ Worker (nxme-worker ECS task, queues=['generation:premium','generation:credi
         │       ├─ ArcFace similarity ≥ IDENTITY_SIMILARITY_THRESHOLD? → proceed
         │       └─ Below threshold → raise IdentityPreservationError → credit released
         ├─ CreditReservationCoordinator.commit(reservation_id)
-        ├─ glow_up_jobs.update({status: 'completed', before_image_id, after_image_id,
+        ├─ glow_up_jobs.update({status: 'completed', original_image_id, generated_image_id,
         │                        identity_similarity_score, identity_preserved,
         │                        completed_at: now()})
         └─ Emit structured log: {job_id, user_id, tier, duration_ms,
