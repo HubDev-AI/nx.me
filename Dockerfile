@@ -38,5 +38,7 @@ COPY --chown=appuser:appuser . .
 USER appuser
 
 EXPOSE 8000
+# IMPORTANT: --proxy-headers trusts X-Forwarded-For. Must run behind a reverse proxy
+# (ALB/nginx) that strips/normalizes forwarded headers. Do NOT expose directly.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--workers", "4", "--proxy-headers"]

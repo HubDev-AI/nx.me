@@ -19,6 +19,9 @@ class StripePaymentAdapter:
     """Real Stripe payment adapter."""
 
     def __init__(self) -> None:
+        if not settings.STRIPE_WEBHOOK_SECRET:
+            raise RuntimeError("STRIPE_WEBHOOK_SECRET must be set for Stripe adapter")
+
         import stripe
 
         stripe.api_key = settings.STRIPE_API_KEY
@@ -40,16 +43,20 @@ class StripePaymentAdapter:
         if metadata:
             session_metadata.update(metadata)
 
-        session = await loop.run_in_executor(
-            None,
-            lambda: self._stripe.checkout.Session.create(
-                line_items=[{"price": price_id, "quantity": 1}],
-                mode=mode,
-                success_url=success_url,
-                cancel_url=cancel_url,
-                metadata=session_metadata,
-            ),
-        )
+        try:
+            session = await loop.run_in_executor(
+                None,
+                lambda: self._stripe.checkout.Session.create(
+                    line_items=[{"price": price_id, "quantity": 1}],
+                    mode=mode,
+                    success_url=success_url,
+                    cancel_url=cancel_url,
+                    metadata=session_metadata,
+                ),
+            )
+        except self._stripe.StripeError as exc:
+            logger.exception("Stripe API error during checkout session creation: %s", exc)
+            raise
 
         logger.info(
             "Stripe checkout session created: mode=%s, user=%s",
@@ -62,13 +69,17 @@ class StripePaymentAdapter:
         """Cancel subscription at period end via Stripe API."""
         loop = asyncio.get_running_loop()
 
-        await loop.run_in_executor(
-            None,
-            lambda: self._stripe.Subscription.modify(
-                subscription_id,
-                cancel_at_period_end=True,
-            ),
-        )
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: self._stripe.Subscription.modify(
+                    subscription_id,
+                    cancel_at_period_end=True,
+                ),
+            )
+        except self._stripe.StripeError as exc:
+            logger.exception("Stripe API error during subscription cancel: %s", exc)
+            raise
 
         logger.info("Stripe subscription %s set to cancel at period end", subscription_id)
 

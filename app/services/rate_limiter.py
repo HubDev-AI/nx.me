@@ -15,9 +15,13 @@ Return values (LE-1):
   include a ``Retry-After`` header in the 429 response.
   When allowed is True, ttl is 0.
 """
+import logging
+
 import redis.asyncio as aioredis
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def check_registration_rate_limit(
@@ -40,6 +44,9 @@ async def check_registration_rate_limit(
     pipe.incr(key)
     pipe.expire(key, settings.REGISTRATION_FINGERPRINT_WINDOW_SECONDS, nx=True)
     results = await pipe.execute()
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error("Redis pipeline command %d failed in check_registration_rate_limit: %s", i, result)
     count: int = results[0]
     if count <= settings.REGISTRATION_FINGERPRINT_LIMIT:
         return True, 0
@@ -64,6 +71,9 @@ async def check_ip_registration_rate_limit(
     pipe.incr(key)
     pipe.expire(key, settings.REGISTRATION_IP_WINDOW_SECONDS, nx=True)
     results = await pipe.execute()
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error("Redis pipeline command %d failed in check_ip_registration_rate_limit: %s", i, result)
     count: int = results[0]
     if count <= settings.REGISTRATION_IP_LIMIT:
         return True, 0
@@ -86,6 +96,9 @@ async def check_login_rate_limit(
     pipe.incr(key)
     pipe.expire(key, settings.LOGIN_IP_WINDOW_SECONDS, nx=True)
     results = await pipe.execute()
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error("Redis pipeline command %d failed in check_login_rate_limit: %s", i, result)
     count: int = results[0]
     if count <= settings.LOGIN_IP_LIMIT:
         return True, 0

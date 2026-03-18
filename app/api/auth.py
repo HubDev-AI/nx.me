@@ -40,6 +40,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
 
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP, preferring X-Forwarded-For when behind trusted proxy.
+
+    NOTE: In production, this assumes deployment behind ALB/nginx that sets
+    X-Forwarded-For. The first IP in the chain is used (set by the outermost proxy).
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded and settings.TRUST_PROXY_HEADERS:
+        # Use the first (client) IP from the chain
+        # In production, ALB/nginx should strip spoofed headers
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
 # Minimum age for account creation (AC-U7)
 _MIN_AGE_YEARS = 13
 
@@ -102,10 +117,7 @@ async def register(
           (trial credited only after email verification via TrialGrantor.grant)
     """
     # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
-    # Use request.client.host — the actual TCP peer address.
-    # X-Forwarded-For is attacker-controlled; only trust it if a verified
-    # proxy middleware (e.g., uvicorn --proxy-headers behind ALB) normalizes it.
-    client_ip = request.client.host if request.client else ""
+    client_ip = _get_client_ip(request)
     if not client_ip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -295,6 +307,16 @@ def verify_email(
 # ---------------------------------------------------------------------------
 
 
+def _is_invalid_token_error(exc: Exception) -> bool:
+    """Check if Supabase error indicates invalid/expired token.
+
+    NOTE: String matching is fragile across Supabase versions.
+    Update patterns if Supabase client error format changes.
+    """
+    msg = str(exc).lower()
+    return any(keyword in msg for keyword in ("invalid", "expired", "nonce", "claim"))
+
+
 def _handle_supabase_auth_error(exc: Exception) -> NoReturn:
     """Map Supabase auth errors to appropriate HTTP responses."""
     msg = str(exc).lower()
@@ -365,10 +387,7 @@ async def social_login(
     CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
     # Per-IP rate limit (CS-1 T-3)
-    # Use request.client.host — the actual TCP peer address.
-    # X-Forwarded-For is attacker-controlled; only trust it if a verified
-    # proxy middleware (e.g., uvicorn --proxy-headers behind ALB) normalizes it.
-    client_ip = request.client.host if request.client else ""
+    client_ip = _get_client_ip(request)
     if not client_ip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -397,9 +416,8 @@ async def social_login(
     try:
         auth_response = supabase.auth.sign_in_with_id_token(credentials)
     except Exception as exc:
-        msg = str(exc).lower()
         logger.warning("sign_in_with_id_token failed for provider %s: %s", body.provider, exc)
-        if "invalid" in msg or "expired" in msg or "nonce" in msg or "claim" in msg:
+        if _is_invalid_token_error(exc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Social login token is invalid or expired.",
@@ -437,35 +455,52 @@ async def social_login(
     raw_username = user.email.split("@")[0] if user.email else user_id[:20]
     auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
 
-    # P2-5: Guarantee unique username — check if taken, append random suffix if so
-    existing = await run_sync(user_repo.check_username_taken, auto_username, user_id)
-    if existing:
-        from uuid import uuid4
-        auto_username = f"{auto_username}_{uuid4().hex[:6]}"
+    # P2-5: Guarantee unique username — retry with random suffix on collision (M-2/M-3)
+    from uuid import uuid4
 
-    # Upsert public.users row — new social users won't have a row yet.
-    # On conflict (existing account) do nothing to preserve existing data.
-    try:
-        await run_sync(
-            user_repo.upsert,
-            {
-                "id": user_id,
-                "email": user.email or "",
-                "username": auto_username,
-                "display_name": (user.user_metadata or {}).get("full_name", "") or (user.email or user_id),
-                "email_verified": True,
-                "trial_analyses_remaining": 0,
-                "tier_id": default_tier_id,
-            },
-            "id",
-            True,
-        )
-    except Exception as exc:
-        logger.error("users upsert failed for social user %s: %s", user_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create user profile. Please try again.",
-        ) from exc
+    base_username = auto_username
+    max_retries = 3
+    for attempt in range(max_retries):
+        # Check if username is taken by another user
+        existing = await run_sync(user_repo.check_username_taken, auto_username, user_id)
+        if existing:
+            suffix = f"_{uuid4().hex[:6]}"
+            # Truncate base to stay within 30-char limit (M-3)
+            if len(base_username) + len(suffix) > 30:
+                base_username = base_username[:30 - len(suffix)]
+            auto_username = f"{base_username}{suffix}"
+
+        # Upsert public.users row — new social users won't have a row yet.
+        # On conflict (existing account) do nothing to preserve existing data.
+        try:
+            await run_sync(
+                user_repo.upsert,
+                {
+                    "id": user_id,
+                    "email": user.email or "",
+                    "username": auto_username,
+                    "display_name": (user.user_metadata or {}).get("full_name", "") or (user.email or user_id),
+                    "email_verified": True,
+                    "trial_analyses_remaining": 0,
+                    "tier_id": default_tier_id,
+                },
+                "id",
+                True,
+            )
+            break
+        except Exception as exc:
+            if "unique" in str(exc).lower() and attempt < max_retries - 1:
+                # Username collision on insert, retry with new suffix
+                suffix = f"_{uuid4().hex[:6]}"
+                if len(base_username) + len(suffix) > 30:
+                    base_username = base_username[:30 - len(suffix)]
+                auto_username = f"{base_username}{suffix}"
+                continue
+            logger.error("users upsert failed for social user %s: %s", user_id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create user profile. Please try again.",
+            ) from exc
 
     logger.info("Social login successful for user %s (provider=%s)", user_id, body.provider)
     return LoginResponse(

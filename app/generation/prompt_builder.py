@@ -26,6 +26,26 @@ HAIR_KEYWORDS: frozenset[str] = _allowlist_module.HAIR_KEYWORDS
 ALLOWED_KEYWORDS: frozenset[str] = _allowlist_module.ALLOWED_KEYWORDS
 
 # ---------------------------------------------------------------------------
+# Template validation — fail fast at import time if templates are missing
+# ---------------------------------------------------------------------------
+
+_REQUIRED_TEMPLATES = {
+    "glowup_everyday": _PROMPTS_DIR / "glowup_everyday.txt",
+    "glowup_polished": _PROMPTS_DIR / "glowup_polished.txt",
+    "glowup_editorial": _PROMPTS_DIR / "glowup_editorial.txt",
+    "glowup_negative": _PROMPTS_DIR / "glowup_negative.txt",
+}
+
+
+def _validate_templates() -> None:
+    for name, path in _REQUIRED_TEMPLATES.items():
+        if not path.exists():
+            raise RuntimeError(f"Required prompt template missing: {path}")
+
+
+_validate_templates()  # Fail fast at import time
+
+# ---------------------------------------------------------------------------
 # Identity phrase rotation
 # ---------------------------------------------------------------------------
 

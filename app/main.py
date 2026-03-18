@@ -48,6 +48,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.critical(msg)
             raise SystemExit(msg)
 
+    # Validate required API keys for configured (non-mock) adapters
+    adapter_key_map: dict[str, tuple[str, ...]] = {
+        "falai": ("FAL_API_KEY",),
+        "stripe": ("STRIPE_API_KEY", "STRIPE_WEBHOOK_SECRET"),
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "rekognition": ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"),
+    }
+    for adapter_name, required_keys in adapter_key_map.items():
+        # Check if any ADAPTER__* setting is configured to use this adapter
+        active = any(
+            getattr(settings, attr) == adapter_name
+            for attr in dir(settings)
+            if attr.startswith("ADAPTER__")
+        )
+        if active:
+            missing = [k for k in required_keys if not getattr(settings, k, "")]
+            if missing:
+                msg = (
+                    f"Adapter '{adapter_name}' is active but required keys are empty: "
+                    f"{', '.join(missing)}"
+                )
+                logger.critical(msg)
+                raise SystemExit(msg)
+    logger.info("Adapter API key validation passed")
+
     app.state.supabase = get_supabase_service()
     app.state.redis = aioredis.from_url(
         settings.REDIS_URL,
@@ -61,10 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         preload_model()
         logger.info("MediaPipe FaceMesh model pre-loaded")
     else:
-        logger.info(
-            "Face analysis adapter is '%s' — skipping MediaPipe model load",
-            settings.ADAPTER__FACE_ANALYSIS_ADAPTER,
-        )
+        logger.info("Face analysis adapter is not mediapipe — skipping MediaPipe model load")
 
     # ARQ pool for enqueuing generation jobs
     app.state.arq_pool = await create_pool(

@@ -80,30 +80,30 @@ CREATE INDEX IF NOT EXISTS idx_prompt_exp_mode
 -- DOWN:
 
 -- To roll back this migration:
---
--- DROP INDEX IF EXISTS idx_prompt_exp_mode;
--- DROP TABLE IF EXISTS prompt_experiments;
--- DROP INDEX IF EXISTS idx_glow_up_jobs_queue_lane;
---
--- -- Restore the original failure_reason constraint from 0001.
--- ALTER TABLE glow_up_jobs
---     DROP CONSTRAINT IF EXISTS glow_up_jobs_failure_reason_check;
--- ALTER TABLE glow_up_jobs
---     ADD CONSTRAINT glow_up_jobs_failure_reason_check
---     CHECK (failure_reason IN (
---         'FACE_VALIDATION_FAILED','GENERATION_TIMEOUT','NSFW_QUARANTINE',
---         'IDENTITY_PRESERVATION_FAILED','PROVIDER_ERROR','UNKNOWN'
---     ) OR failure_reason IS NULL);
---
--- ALTER TABLE glow_up_jobs
---     DROP COLUMN IF EXISTS estimated_cost_usd,
---     DROP COLUMN IF EXISTS candidate_count,
---     DROP COLUMN IF EXISTS wow_score,
---     DROP COLUMN IF EXISTS generation_params,
---     DROP COLUMN IF EXISTS model_used,
---     DROP COLUMN IF EXISTS negative_prompt_text,
---     DROP COLUMN IF EXISTS prompt_text,
---     DROP COLUMN IF EXISTS prompt_mode,
---     DROP COLUMN IF EXISTS queue_lane,
---     DROP COLUMN IF EXISTS generated_image_id,
---     DROP COLUMN IF EXISTS original_image_id;
+
+DROP INDEX IF EXISTS idx_prompt_exp_mode;
+DROP TABLE IF EXISTS prompt_experiments;
+DROP INDEX IF EXISTS idx_glow_up_jobs_queue_lane;
+
+-- Restore the original failure_reason constraint from 0001.
+ALTER TABLE glow_up_jobs
+    DROP CONSTRAINT IF EXISTS glow_up_jobs_failure_reason_check;
+ALTER TABLE glow_up_jobs
+    ADD CONSTRAINT glow_up_jobs_failure_reason_check
+    CHECK (failure_reason IN (
+        'FACE_VALIDATION_FAILED','GENERATION_TIMEOUT','NSFW_QUARANTINE',
+        'IDENTITY_PRESERVATION_FAILED','PROVIDER_ERROR','UNKNOWN'
+    ) OR failure_reason IS NULL);
+
+ALTER TABLE glow_up_jobs
+    DROP COLUMN IF EXISTS estimated_cost_usd,
+    DROP COLUMN IF EXISTS candidate_count,
+    DROP COLUMN IF EXISTS wow_score,
+    DROP COLUMN IF EXISTS generation_params,
+    DROP COLUMN IF EXISTS model_used,
+    DROP COLUMN IF EXISTS negative_prompt_text,
+    DROP COLUMN IF EXISTS prompt_text,
+    DROP COLUMN IF EXISTS prompt_mode,
+    DROP COLUMN IF EXISTS queue_lane,
+    DROP COLUMN IF EXISTS generated_image_id,
+    DROP COLUMN IF EXISTS original_image_id;

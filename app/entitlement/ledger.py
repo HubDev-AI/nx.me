@@ -31,22 +31,28 @@ class CreditLedger:
         self._sb = supabase
 
     def balance(self, user_id: UUID) -> int:
-        """Compute current credit balance from ledger SUM(delta).
+        """Return committed credit balance for user.
 
         This is the authoritative balance — never read from a cached column.
         Uses the sum_credit_balance RPC for a DB-side atomic SUM.
+
+        NOTE: This reflects committed transactions only. In-flight reserves
+        (not yet committed or released) are already deducted from the ledger
+        as negative deltas. The balance is thus the "worst case" available amount.
 
         Returns 0 for users with no ledger entries (RPC returns NULL → 0).
         Raises on RPC failure (no fallback — CS-1 AC-1).
         """
         user_id_str = str(user_id)
 
-        result = self._sb.rpc(
-            "sum_credit_balance", {"p_user_id": user_id_str}
-        ).execute()
+        try:
+            result = self._sb.rpc(
+                "sum_credit_balance", {"p_user_id": user_id_str}
+            ).execute()
+        except Exception as exc:
+            raise RuntimeError(f"Credit balance RPC failed for user {user_id}") from exc
 
         # RPC returns NULL (None) for users with no ledger entries → 0 is correct.
-        # RPC errors propagate as exceptions (no fallback path).
         return int(result.data) if result.data is not None else 0
 
     def reserve(self, user_id: UUID) -> UUID:

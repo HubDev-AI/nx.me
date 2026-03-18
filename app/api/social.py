@@ -34,6 +34,20 @@ router = APIRouter(tags=["social"])
 
 _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# Lua script: atomic INCR + conditional EXPIRE + limit check (L-2).
+# Returns the new count if within limit, or 0 if the limit is exceeded.
+_RATE_LIMIT_SCRIPT = """
+local current = redis.call('INCR', KEYS[1])
+if current == 1 then
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+if current > tonumber(ARGV[2]) then
+    redis.call('DECR', KEYS[1])
+    return 0
+end
+return 1
+"""
+
 _DEFAULT_PAGE_SIZE = 10
 _MAX_PAGE_SIZE = 50
 
@@ -224,7 +238,7 @@ async def react_to_post(
             detail="Provide Authorization header or X-Guest-Token",
         )
 
-    # --- Rate limit by IP (atomic INCR-first to avoid TOCTOU) ---
+    # --- Rate limit by IP (atomic Lua script to avoid TOCTOU — L-2) ---
     if not request.client:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -232,12 +246,14 @@ async def react_to_post(
         )
     client_ip = request.client.host
     rate_key = f"reaction_rate:{client_ip}"
-    new_count = await redis_client.incr(rate_key)
-    if new_count == 1:
-        await redis_client.expire(rate_key, _REACTION_RATE_WINDOW_SECONDS)
-
-    if new_count > _REACTION_RATE_LIMIT:
-        await redis_client.decr(rate_key)
+    allowed = await redis_client.eval(
+        _RATE_LIMIT_SCRIPT,
+        1,
+        rate_key,
+        str(_REACTION_RATE_WINDOW_SECONDS),
+        str(_REACTION_RATE_LIMIT),
+    )
+    if not allowed:
         ttl: int = await redis_client.ttl(rate_key)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
