@@ -16,7 +16,6 @@ import {
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   CTA_PRIMARY,
-  CTA_PRESSED,
   COLORS,
 } from "../../constants/colors";
 import {

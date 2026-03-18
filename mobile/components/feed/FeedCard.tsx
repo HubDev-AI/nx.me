@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -21,7 +21,6 @@ import {
   TEXT_SECONDARY,
   FEED_DIVIDER,
   BEFORE_OVERLAY,
-  CTA_PRIMARY,
 } from "../../constants/colors";
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
@@ -31,7 +30,6 @@ import type { FeedPost } from "./types";
 const CARD_BORDER_RADIUS = 12;
 const IMAGE_HEIGHT = 200;
 const BEFORE_LABEL_HEIGHT = 22;
-const AFTER_LABEL_HEIGHT = 22;
 const LONG_PRESS_DELAY_MS = 500;
 
 interface FeedCardProps {

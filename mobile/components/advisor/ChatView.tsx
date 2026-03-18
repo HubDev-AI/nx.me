@@ -131,7 +131,7 @@ export function ChatView() {
     setIsLoadingMore(true);
     try {
       // The oldest message in our list is the cursor for older pages
-      const oldestMessage = messages[0];
+      const oldestMessage = messages[0]!;
       const response = await fetchMessages(oldestMessage.id);
       const older = response.messages.slice().reverse();
       setMessages((prev) => [...older, ...prev]);

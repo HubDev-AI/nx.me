@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { detectPlatform } from '@/lib/user-agent';
 import {
   APP_STORE_URL,
   PLAY_STORE_URL,
@@ -10,6 +9,7 @@ import {
   APP_DEEP_LINK_PATH,
   APP_OPEN_TIMEOUT_MS,
 } from '@/config/constants';
+import { detectPlatform } from '@/lib/user-agent';
 
 interface CtaButtonProps {
   /** Username — used to build the deep-link with card context */

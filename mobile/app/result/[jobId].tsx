@@ -34,7 +34,6 @@ import {
 } from "../../lib/analysis";
 import {
   BG_PAGE,
-  BG_CARD,
   BG_ELEVATED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
@@ -70,7 +69,7 @@ export default function ResultScreen() {
         setResult(data);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch(() => {
         setError("Failed to load results. Please try again.");
         setLoading(false);
       });

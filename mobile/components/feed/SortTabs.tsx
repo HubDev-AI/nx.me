@@ -4,7 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 
 import {
   CTA_PRIMARY,
-  TEXT_PRIMARY,
   TEXT_SECONDARY,
   BG_ELEVATED,
   BG_PAGE,

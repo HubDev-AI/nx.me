@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useState } from "react";
 import {
   View,
   FlatList,
@@ -33,7 +33,7 @@ export default function HomeScreen() {
     isLoading,
     isRefreshing,
     isLoadingMore,
-    hasMore,
+    hasMore: _hasMore,
     error,
     activeSort,
     reactedPostIds,
@@ -61,14 +61,14 @@ export default function HomeScreen() {
     setCommentsPostId(null);
   }, []);
 
-  const handleCommentPosted = useCallback((postId: string) => {
+  const handleCommentPosted = useCallback((_postId: string) => {
     // Optimistically increment comment_count on the feed card
     // The useFeed hook doesn't expose a setter, so we rely on the
     // feed data being refreshed eventually. For now, this is a no-op
     // placeholder that the parent can use for future enhancements.
   }, []);
 
-  const handleReport = useCallback((postId: string) => {
+  const handleReport = useCallback((_postId: string) => {
     Alert.alert(
       "Report Post",
       "Are you sure you want to report this post?",

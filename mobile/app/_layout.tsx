@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Slot, useRouter, useNavigationContainerRef } from "expo-router";
+import { Slot } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
@@ -18,8 +18,6 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
-  const router = useRouter();
-  const navigationRef = useNavigationContainerRef();
 
   // Cold start initialization
   useEffect(() => {

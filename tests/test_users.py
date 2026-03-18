@@ -17,6 +17,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.deps import get_current_user
+from app.repositories.user_repo import UserRepository
 from tests.conftest import MockSupabase, make_jwt, requires_routers
 
 
@@ -40,23 +41,26 @@ class TestLookupUser:
             "created_at": "2026-01-01T00:00:00+00:00",
         }
         sb.set_table_data("users", [user_data])
-        result = _lookup_user(sb, "alice")
+        user_repo = UserRepository(sb)
+        result = _lookup_user(user_repo, "alice")
         assert result["username"] == "alice"
 
     def test_raises_404_when_not_found(self):
         from app.api.users import _lookup_user
         sb = MockSupabase()
         sb.set_table_data("users", [])
+        user_repo = UserRepository(sb)
         with pytest.raises(HTTPException) as exc_info:
-            _lookup_user(sb, "nonexistent")
+            _lookup_user(user_repo, "nonexistent")
         assert exc_info.value.status_code == 404
 
     def test_raises_404_when_table_returns_none(self):
         from app.api.users import _lookup_user
         sb = MockSupabase()
         sb.set_table_data("users", None)
+        user_repo = UserRepository(sb)
         with pytest.raises(HTTPException) as exc_info:
-            _lookup_user(sb, "ghost")
+            _lookup_user(user_repo, "ghost")
         assert exc_info.value.status_code == 404
 
 
@@ -100,7 +104,7 @@ class TestUserModels:
             analysis_id="a-1",
             face_shape="oval",
             symmetry_score=0.87,
-            recommendations=[{"type": "hairstyle", "text": "Try bangs"}],
+            recommendations=[{"rank": 1, "category": "hairstyle", "suggestion_text": "Try bangs"}],
             before_image_url="https://example.com/before.jpg",
             after_image_url="https://example.com/after.jpg",
             created_at="2026-03-17T00:00:00+00:00",

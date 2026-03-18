@@ -17,14 +17,12 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 
 import {
-  BG_CARD,
   BG_ELEVATED,
   BG_PAGE,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   TEXT_DISABLED,
   CTA_PRIMARY,
-  CTA_PRESSED,
   INPUT_FILL,
   BORDER_DEFAULT,
   COLORS,
