@@ -257,7 +257,7 @@ def create_comment(
 @router.get("/posts/{post_id}/comments", response_model=CommentsListResponse)
 def get_comments(
     post_id: UUID,
-    cursor: str | None = Query(None, description="Cursor (created_at ISO timestamp)"),
+    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(20, ge=1, le=100),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
@@ -275,7 +275,11 @@ def get_comments(
     if has_more:
         comments = comments[:limit]
 
-    next_cursor = comments[-1]["created_at"] if has_more and comments else None
+    next_cursor = (
+        f"{comments[-1]['created_at']}|{comments[-1]['id']}"
+        if has_more and comments
+        else None
+    )
 
     # Build signed avatar URLs — batch unique storage keys to minimise signed URL calls
     unique_keys: dict[str, str | None] = {}

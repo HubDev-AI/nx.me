@@ -138,7 +138,7 @@ def get_user_profile(
 @router.get("/users/{username}/history", response_model=HistoryResponse)
 def get_user_history(
     username: str,
-    cursor: str | None = Query(None, description="Cursor (created_at ISO timestamp)"),
+    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(
         _DEFAULT_HISTORY_PAGE_SIZE,
         ge=1,
@@ -173,7 +173,11 @@ def get_user_history(
     if has_more:
         analyses = analyses[:limit]
 
-    next_cursor: str | None = analyses[-1]["created_at"] if has_more and analyses else None
+    next_cursor: str | None = (
+        f"{analyses[-1]['created_at']}|{analyses[-1]['id']}"
+        if has_more and analyses
+        else None
+    )
 
     # -- Batch-fetch related data instead of N+1 per-analysis queries ----------
 

@@ -21,6 +21,7 @@ _CIRCUIT_BREAKER_COOLDOWN_SECONDS = 120
 
 # Redis key patterns
 _COST_BUCKET_PREFIX = "gen:cost:24h:"
+_COUNT_BUCKET_PREFIX = "gen:count:24h:"
 _EMERGENCY_STOP_KEY = "gen:emergency_stop"
 _USER_DAILY_KEY = "gen:user_daily:{user_id}:{date}"
 _QUEUE_DEPTH_KEY = "gen:queue_depth"
@@ -37,13 +38,16 @@ class CostTracker:
     # ------------------------------------------------------------------
 
     async def record_cost(self, cost_usd: float) -> None:
-        """Record a generation cost in the rolling 24h window."""
+        """Record a generation cost and generation count in the rolling 24h window."""
         hour_bucket = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H")
-        key = f"{_COST_BUCKET_PREFIX}{hour_bucket}"
+        cost_key = f"{_COST_BUCKET_PREFIX}{hour_bucket}"
+        count_key = f"{_COUNT_BUCKET_PREFIX}{hour_bucket}"
 
         pipe = self._redis.pipeline()
-        pipe.incrbyfloat(key, cost_usd)
-        pipe.expire(key, _COST_BUCKET_TTL_SECONDS)
+        pipe.incrbyfloat(cost_key, cost_usd)
+        pipe.expire(cost_key, _COST_BUCKET_TTL_SECONDS)
+        pipe.incr(count_key)
+        pipe.expire(count_key, _COST_BUCKET_TTL_SECONDS)
         await pipe.execute()
 
     # ------------------------------------------------------------------
@@ -54,21 +58,22 @@ class CostTracker:
         """Compute rolling 24h average cost per generation."""
         now = datetime.now(tz=timezone.utc)
         total_cost = 0.0
-        bucket_count = 0
+        total_count = 0
 
         for i in range(24):
             bucket_time = now - timedelta(hours=i)
             bucket = bucket_time.strftime("%Y%m%d%H")
-            key = f"{_COST_BUCKET_PREFIX}{bucket}"
-            val = await self._redis.get(key)
-            if val:
-                total_cost += float(val)
-                bucket_count += 1
+            cost_val = await self._redis.get(f"{_COST_BUCKET_PREFIX}{bucket}")
+            count_val = await self._redis.get(f"{_COUNT_BUCKET_PREFIX}{bucket}")
+            if cost_val:
+                total_cost += float(cost_val)
+            if count_val:
+                total_count += int(count_val)
 
-        if bucket_count == 0:
+        if total_count == 0:
             return 0.0
 
-        return total_cost / max(bucket_count * 10, 1)
+        return total_cost / total_count
 
     # ------------------------------------------------------------------
     # Circuit breaker checks

@@ -215,11 +215,9 @@ async def react_to_post(
     # --- Optimistic Redis INCR ---
     redis_counter_key = f"posts:{post_id}:reactions"
 
-    # Load from DB on cache miss
-    cached = await redis_client.get(redis_counter_key)
-    if cached is None:
-        await redis_client.set(redis_counter_key, post["reaction_count"], ex=60)
-
+    # Seed from DB on cache miss using SETNX to avoid overwriting a concurrent write,
+    # then always INCR — eliminates the race between SET and INCR.
+    await redis_client.setnx(redis_counter_key, post["reaction_count"])
     new_count = await redis_client.incr(redis_counter_key)
 
     # --- Background DB write via ARQ ---

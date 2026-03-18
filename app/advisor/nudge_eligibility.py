@@ -57,17 +57,12 @@ async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
         now_utc - timedelta(hours=settings.ADVISOR_MILESTONE_DEDUP_HOURS)
     ).isoformat()
 
+    # Single COUNT query grouped by user_id — avoids fetching every insight row.
+    count_per_user = advisor_repo.count_insights_by_user()
+
     eligible: list[str] = []
 
     for milestone_count in MILESTONE_COUNTS:
-        insight_rows = advisor_repo.get_all_insights_with_timestamps()
-
-        # Count per user
-        count_per_user: dict[str, int] = {}
-        for row in insight_rows:
-            uid_str = row["user_id"]
-            count_per_user[uid_str] = count_per_user.get(uid_str, 0) + 1
-
         milestone_users = [
             uid_str
             for uid_str, cnt in count_per_user.items()

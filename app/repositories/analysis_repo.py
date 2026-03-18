@@ -74,18 +74,29 @@ class AnalysisRepository:
         Args:
             user_id: Owner's user ID.
             limit: Maximum number of rows to fetch.
-            cursor: Optional created_at ISO timestamp; only rows older than
-                this value are returned (exclusive, for cursor pagination).
+            cursor: Optional composite cursor ``{created_at}|{id}``; only rows
+                before the cursor position are returned (exclusive).  Plain
+                ``created_at`` strings are still accepted for back-compat.
         """
         query = (
             self._sb.table("analyses")
             .select("id, original_image_id, face_shape, symmetry_score, recommendations, status, created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
+            .order("id", desc=True)
             .limit(limit)
         )
         if cursor:
-            query = query.lt("created_at", cursor)
+            if "|" in cursor:
+                cursor_created_at, cursor_id = cursor.split("|", 1)
+                # Rows before cursor (DESC): same created_at and id < cursor_id, OR created_at < cursor_created_at
+                query = query.or_(
+                    f"created_at.lt.{cursor_created_at},"
+                    f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"
+                )
+            else:
+                # Legacy plain timestamp cursor
+                query = query.lt("created_at", cursor)
         result = query.execute()
         return result.data or []
 

@@ -45,7 +45,10 @@ _MAX_TOKENS_SUMMARY = 512
 
 # SOUL.md loaded once at import time
 _SOUL_MD_PATH = Path(__file__).parent / "SOUL.md"
-_SOUL_MD: str = _SOUL_MD_PATH.read_text(encoding="utf-8")
+try:
+    _SOUL_MD: str = _SOUL_MD_PATH.read_text(encoding="utf-8")
+except FileNotFoundError:
+    raise RuntimeError(f"SOUL.md not found at {_SOUL_MD_PATH}. Advisor service cannot start.")
 
 
 class AdvisorService:
@@ -394,12 +397,20 @@ class AdvisorService:
 # ---------------------------------------------------------------------------
 
 
+def _first_sentence(text: str) -> str:
+    """Return the first sentence of text (split on .!?) lowercased and stripped."""
+    import re
+    parts = re.split(r"[.!?]", text.strip())
+    first = parts[0].strip().lower() if parts else ""
+    return first
+
+
 def _post_check(response: str, recent_messages: list[str]) -> str | None:
     """Check response quality. Returns a regeneration hint, or None if OK."""
     if recent_messages:
-        last_words = " ".join(recent_messages[-1].split()[:3]).lower()
-        this_words = " ".join(response.split()[:3]).lower()
-        if last_words and last_words == this_words:
+        last_sentence = _first_sentence(recent_messages[-1])
+        this_sentence = _first_sentence(response)
+        if last_sentence and last_sentence == this_sentence:
             return "Start differently."
 
     sentence_count = (

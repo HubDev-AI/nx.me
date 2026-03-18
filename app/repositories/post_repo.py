@@ -92,17 +92,27 @@ class PostRepository:
         fetch_limit: int,
         cursor: str | None = None,
     ) -> list[dict]:
-        """Fetch a page of non-deleted comments with joined user profile."""
+        """Fetch a page of non-deleted comments with joined user profile.
+
+        Cursor format: ``{created_at}|{id}`` (composite) to avoid skipping records
+        that share the same timestamp.
+        """
         query = (
             self._sb.table("comments")
             .select("id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)")
             .eq("post_id", post_id)
             .eq("is_deleted", False)
             .order("created_at", desc=False)
+            .order("id", desc=False)
             .limit(fetch_limit)
         )
         if cursor:
-            query = query.gt("created_at", cursor)
+            cursor_created_at, cursor_id = cursor.split("|", 1)
+            # Rows after the cursor: same created_at and id > cursor_id, OR created_at > cursor_created_at
+            query = query.or_(
+                f"created_at.gt.{cursor_created_at},"
+                f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
+            )
         result = query.execute()
         return result.data or []
 

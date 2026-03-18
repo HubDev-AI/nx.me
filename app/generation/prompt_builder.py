@@ -5,13 +5,25 @@ style theme injection, adaptive parameter computation.
 """
 from __future__ import annotations
 
+import importlib.util
 import random
+import sys
 from pathlib import Path
 
 from app.config import settings
 from app.face_analysis.models import AnalysisResult
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
+
+# Load keyword_allowlist from absolute path so the import is independent of cwd.
+_allowlist_path = _PROMPTS_DIR / "keyword_allowlist.py"
+_allowlist_spec = importlib.util.spec_from_file_location("prompts.keyword_allowlist", _allowlist_path)
+_allowlist_module = importlib.util.module_from_spec(_allowlist_spec)  # type: ignore[arg-type]
+_allowlist_spec.loader.exec_module(_allowlist_module)  # type: ignore[union-attr]
+sys.modules.setdefault("prompts.keyword_allowlist", _allowlist_module)
+
+HAIR_KEYWORDS: frozenset[str] = _allowlist_module.HAIR_KEYWORDS
+ALLOWED_KEYWORDS: frozenset[str] = _allowlist_module.ALLOWED_KEYWORDS
 
 # ---------------------------------------------------------------------------
 # Identity phrase rotation
@@ -105,8 +117,6 @@ def compute_adaptive_params(
 
 def prepare_keywords(keywords: list[str]) -> list[str]:
     """Optimize keyword list: hair first, cap at 5, add style theme if sparse."""
-    from prompts.keyword_allowlist import HAIR_KEYWORDS
-
     # Hair keywords first (most visible change)
     hair_first = [k for k in keywords if k in HAIR_KEYWORDS]
     rest = [k for k in keywords if k not in HAIR_KEYWORDS]
@@ -154,7 +164,6 @@ def build_prompt(
     module = StylingModule()
 
     # Extract and prepare keywords
-    from prompts.keyword_allowlist import ALLOWED_KEYWORDS
     keywords = []
     for rec in analysis_result.recommendations:
         text = rec.suggestion_text.lower()

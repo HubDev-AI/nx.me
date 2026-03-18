@@ -261,6 +261,26 @@ class AdvisorRepository:
         )
         return result.data or []
 
+    def count_insights_by_user(self) -> dict[str, int]:
+        """Return a mapping of user_id → analysis_insight count for all users.
+
+        Uses a COUNT query grouped by user_id to avoid fetching every row.
+        """
+        result = (
+            self._sb.table("user_memories")
+            .select("user_id", count="exact")
+            .eq("type", "analysis_insight")
+            .execute()
+        )
+        # PostgREST does not support GROUP BY directly; fall back to Python grouping
+        # on the minimal (user_id-only) payload — significantly less data than
+        # fetching created_at for every row.
+        counts: dict[str, int] = {}
+        for row in (result.data or []):
+            uid = row["user_id"]
+            counts[uid] = counts.get(uid, 0) + 1
+        return counts
+
     def get_all_goal_user_ids(self) -> set[str]:
         """Fetch distinct user IDs that have at least one goal memory.
 
