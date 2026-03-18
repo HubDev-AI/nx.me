@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
 from app.api.deps import (
@@ -71,7 +71,7 @@ _ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
 
 
 class GenerateRequest(BaseModel):
-    idempotency_key: str
+    idempotency_key: str | None = None
 
 
 class GenerateResponse(BaseModel):
@@ -115,6 +115,7 @@ async def create_generation(
     analysis_id: UUID,
     body: GenerateRequest,
     request: Request,
+    idempotency_key_header: str | None = Header(None, alias="idempotency-key"),
     claims: UserClaims = Depends(get_current_user),
     redis_client: aioredis.Redis = Depends(get_redis),
     ent_svc: EntitlementService = Depends(get_entitlement_service),
@@ -130,6 +131,19 @@ async def create_generation(
     """
     user_id_str: str = claims["sub"]
     user_id = UUID(user_id_str)
+
+    # --- Idempotency key resolution: header takes precedence over body ---
+    idempotency_key = idempotency_key_header or body.idempotency_key
+    if not idempotency_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "MISSING_IDEMPOTENCY_KEY",
+                    "message": "Idempotency-Key header or body.idempotency_key is required",
+                }
+            },
+        )
 
     # --- Entitlement check (inline, not dependency — AC-2 needs 409 for concurrent) ---
     ent_result = await ent_svc.check(user_id, "generation")
@@ -241,7 +255,7 @@ async def create_generation(
         )
 
     # --- Idempotency check ---
-    existing = await run_sync(job_repo.get_by_idempotency_key, body.idempotency_key, user_id_str)
+    existing = await run_sync(job_repo.get_by_idempotency_key, idempotency_key, user_id_str)
     if existing:
         return GenerateResponse(
             job_id=existing["id"],
@@ -280,7 +294,7 @@ async def create_generation(
             "user_tier_at_enqueue": tier_name,
             "status": JobStatus.QUEUED,
             "queue_lane": queue_lane,
-            "idempotency_key": body.idempotency_key,
+            "idempotency_key": idempotency_key,
             "created_at": now_utc,
             "updated_at": now_utc,
         })
