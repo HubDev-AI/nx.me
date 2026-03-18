@@ -17,11 +17,14 @@ from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
+import hashlib
+
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
 from app.api.deps import get_feed_repo, get_redis
+from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.feed_repo import FeedRepository
 
@@ -143,6 +146,31 @@ _REACTION_RATE_LIMIT = 10
 _REACTION_RATE_WINDOW_SECONDS = 300
 
 
+async def validate_guest_token(redis_client: aioredis.Redis, token: str) -> bool:
+    """Register a guest session token on first use and enforce per-token rate limit.
+
+    Tokens are stored as SHA-256 hashes (first 32 hex chars) so raw tokens are
+    never persisted in Redis.
+
+    Returns True if the token is valid and within the per-token reaction limit.
+    Returns False if the token has exceeded GUEST_REACTION_LIMIT reactions within
+    GUEST_TOKEN_TTL_SECONDS.
+    """
+    token_hash = hashlib.sha256(token.encode()).hexdigest()[:32]
+
+    # Register token idempotently — NX means "only set if not exists"
+    registration_key = f"guest_token:{token_hash}"
+    await redis_client.set(registration_key, "1", ex=settings.GUEST_TOKEN_TTL_SECONDS, nx=True)
+
+    # Rate limit counter — expire on first write to align with registration window
+    count_key = f"guest_reactions:{token_hash}"
+    count = await redis_client.incr(count_key)
+    if count == 1:
+        await redis_client.expire(count_key, settings.GUEST_TOKEN_TTL_SECONDS)
+
+    return count <= settings.GUEST_REACTION_LIMIT
+
+
 class ReactionResponse(BaseModel):
     reaction_count: int
 
@@ -177,6 +205,18 @@ async def react_to_post(
                 detail="Invalid guest token format",
             )
         guest_token = x_guest_token
+        # Server-side token registry + per-token rate limit (LR-8)
+        token_allowed = await validate_guest_token(redis_client, guest_token)
+        if not token_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": {
+                        "code": "GUEST_RATE_LIMIT_EXCEEDED",
+                        "message": "Guest reaction limit reached. Try again later.",
+                    }
+                },
+            )
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

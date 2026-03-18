@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     LOGIN_IP_LIMIT: int = 10                      # max login attempts per IP address
     LOGIN_IP_WINDOW_SECONDS: int = 900            # 15 minutes
 
+    # Guest reaction token registry (LR-8)
+    GUEST_TOKEN_TTL_SECONDS: int = 86_400         # 24 hours — registration window per token
+    GUEST_REACTION_LIMIT: int = 50                # max reactions per guest token per 24h
+
     # Account deletion (Story 2-2 AC-FR5)
     USERNAME_RESERVATION_DAYS: int = 180          # days username is reserved post-deletion
 
