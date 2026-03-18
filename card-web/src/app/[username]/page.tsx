@@ -71,8 +71,23 @@ export default async function CardPage({ params }: PageProps) {
     notFound();
   }
 
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: card.display_name,
+    image: {
+      '@type': 'ImageObject',
+      url: card.after_image_url,
+    },
+    url: `${SITE_URL}/${card.username}`,
+  };
+
   return (
     <main className="min-h-screen bg-surface-page py-10 px-4">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="max-w-2xl mx-auto space-y-8">
         <CardView card={card} />
 

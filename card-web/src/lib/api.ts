@@ -63,7 +63,7 @@ function assertField(
   }
 }
 
-function parseCardData(raw: unknown): CardData {
+export function parseCardData(raw: unknown): CardData {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('CardData contract violation: response is not an object');
   }
