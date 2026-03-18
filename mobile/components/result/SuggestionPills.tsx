@@ -12,12 +12,9 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 
 import {
-  BG_CARD,
   BG_ELEVATED,
   TEXT_PRIMARY,
-  TEXT_SECONDARY,
   CTA_PRIMARY,
-  COLORS,
 } from "../../constants/colors";
 
 // ---------------------------------------------------------------------------

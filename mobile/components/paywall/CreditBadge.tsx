@@ -6,7 +6,7 @@
  * with a scale bounce to draw attention.
  */
 import { useRef, useEffect } from "react";
-import { View, Text, Animated, StyleSheet } from "react-native";
+import { Text, Animated, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import {

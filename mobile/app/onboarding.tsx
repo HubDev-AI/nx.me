@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -46,8 +46,6 @@ const FEATURES = [
     description: "We style, never alter who you are",
   },
 ] as const;
-
-type FeatureIconName = (typeof FEATURES)[number]["icon"];
 
 export default function OnboardingScreen() {
   const router = useRouter();

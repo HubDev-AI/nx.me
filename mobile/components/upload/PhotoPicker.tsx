@@ -10,8 +10,6 @@ import {
   Image,
   Alert,
   StyleSheet,
-  Platform,
-  AccessibilityInfo,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,12 +18,9 @@ import {
   BG_CARD,
   BG_ELEVATED,
   TEXT_PRIMARY,
-  TEXT_SECONDARY,
   TEXT_DISABLED,
   CTA_PRIMARY,
-  CTA_PRESSED,
   BORDER_DEFAULT,
-  COLORS,
 } from "../../constants/colors";
 import { IMAGE_PICKER } from "../../constants/config";
 
@@ -85,6 +80,7 @@ export default function PhotoPicker({
     (result: ImagePicker.ImagePickerResult) => {
       if (result.canceled || result.assets.length === 0) return;
       const asset = result.assets[0];
+      if (!asset) return;
       onPhotoSelected({
         uri: asset.uri,
         fileName: extractFileName(asset),

@@ -1,12 +1,12 @@
 import { ImageResponse } from 'next/og';
 
-import { getCardData } from '@/lib/api';
 import {
   OG_IMAGE_WIDTH,
   OG_IMAGE_HEIGHT,
   SITE_NAME,
   CARD_REVALIDATE_SECONDS,
 } from '@/config/constants';
+import { getCardData } from '@/lib/api';
 
 export const runtime = 'edge';
 

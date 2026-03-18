@@ -18,8 +18,6 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  AccessibilityInfo,
-  Platform,
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,7 +35,6 @@ import {
   getEntitlement,
   getFaceErrorGuidance,
   type FaceErrorCode,
-  type JobResult,
   type EntitlementInfo,
 } from "../lib/analysis";
 import { ApiError } from "../lib/api";

@@ -23,7 +23,6 @@ import {
   CTA_PRIMARY,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
-  ERROR_DARK,
 } from "../../constants/colors";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchNudges, markNudgeRead } from "../../lib/advisor";
@@ -133,7 +132,7 @@ export function NudgeFeed() {
     if (!hasMore || isLoadingMore || nudges.length === 0) return;
     setIsLoadingMore(true);
     try {
-      const lastNudge = nudges[nudges.length - 1];
+      const lastNudge = nudges[nudges.length - 1]!;
       const response = await fetchNudges(lastNudge.id);
       setNudges((prev) => [...prev, ...response.nudges]);
       setHasMore(response.has_more);

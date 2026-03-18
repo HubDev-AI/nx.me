@@ -1,7 +1,7 @@
 import Image from 'next/image';
 
-import { type CardData } from '@/lib/api';
 import { RECOMMENDATIONS_DISPLAY_COUNT } from '@/config/constants';
+import { type CardData } from '@/lib/api';
 
 interface CardViewProps {
   card: CardData;

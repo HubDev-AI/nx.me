@@ -22,7 +22,6 @@ import {
 } from "react-native";
 import Animated, {
   FadeIn,
-  FadeOut,
   SlideInLeft,
   SlideInRight,
   useSharedValue,
@@ -30,19 +29,16 @@ import Animated, {
   withTiming,
   withSpring,
   withDelay,
-  Easing,
   runOnJS,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
-  BG_PAGE,
   BG_CARD,
   TEXT_PRIMARY,
   GLOW_AMBER,
   BEFORE_OVERLAY,
   AFTER_OVERLAY,
-  COLORS,
 } from "../../constants/colors";
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,6 @@
-import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
-import { getCardData } from '@/lib/api';
 import { CardView } from '@/components/card-view';
 import { CtaButton } from '@/components/cta-button';
 import {
@@ -9,6 +8,7 @@ import {
   SITE_NAME,
   SITE_URL,
 } from '@/config/constants';
+import { getCardData } from '@/lib/api';
 
 /** ISR: revalidate the page at most every 60 seconds */
 export const revalidate = CARD_REVALIDATE_SECONDS;

@@ -1,7 +1,7 @@
 /**
  * Analysis API client — handles upload, generation, job polling, and cancellation.
  */
-import { apiFetch, ApiError } from "./api";
+import { apiFetch } from "./api";
 import { ANALYSIS_ENDPOINTS, ANALYSIS_POLLING } from "../constants/config";
 
 // ---------------------------------------------------------------------------

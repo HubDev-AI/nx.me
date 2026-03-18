@@ -3,7 +3,6 @@ import { Pressable, Text, Animated, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
-  COLORS,
   CTA_PRIMARY,
   TEXT_SECONDARY,
   BG_ELEVATED,
