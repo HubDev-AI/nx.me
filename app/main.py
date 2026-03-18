@@ -12,9 +12,18 @@ from typing import AsyncIterator
 import redis.asyncio as aioredis
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 
 from app.api import analyses, auth, entitlement, generation, health, posts, public, social, users, webhooks
+from app.api.errors import (
+    ApiError,
+    RateLimitExceeded,
+    api_error_handler,
+    http_exception_handler,
+    rate_limit_handler,
+    validation_error_handler,
+)
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -82,6 +91,12 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.APP_ENV != "production" else None,
         redoc_url="/redoc" if settings.APP_ENV != "production" else None,
     )
+
+    # ── Exception handlers ───────────────────────────────────────────────────
+    app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
     # ── Routers ──────────────────────────────────────────────────────────────
     # Health check is unversioned (load balancer probes hit / directly)

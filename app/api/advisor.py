@@ -90,20 +90,9 @@ async def send_advisor_message(
     try:
         row = await svc.send_message(user_id=user_id, raw_message=body.message)
     except ValueError as exc:
-        msg = str(exc)
-        if "RATE_LIMIT_EXCEEDED" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": {
-                        "code": "RATE_LIMIT_EXCEEDED",
-                        "message": "Too many messages. Try again in an hour.",
-                    }
-                },
-            ) from exc
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": {"code": "INVALID_MESSAGE", "message": msg}},
+            detail={"error": {"code": "INVALID_MESSAGE", "message": str(exc)}},
         ) from exc
 
     return MessageResponse(

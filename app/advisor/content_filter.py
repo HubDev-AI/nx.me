@@ -10,6 +10,7 @@ import re
 
 import redis.asyncio as aioredis
 
+from app.api.errors import RateLimitExceeded
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,7 @@ def sanitize_input(text: str) -> str:
 async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
     """Enforce per-user hourly chat rate limit (atomic INCR-first).
 
-    Raises ValueError with RATE_LIMIT_EXCEEDED if the limit is reached.
+    Raises RateLimitExceeded if the limit is reached.
     """
     key = _RATE_KEY_TEMPLATE.format(user_id=user_id)
     new_count = await redis_client.incr(key)
@@ -82,7 +83,7 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
 
     if new_count > settings.ADVISOR_CHAT_RATE_LIMIT:
         await redis_client.decr(key)
-        raise ValueError("RATE_LIMIT_EXCEEDED")
+        raise RateLimitExceeded()
 
 
 def scan_output(text: str) -> bool:
