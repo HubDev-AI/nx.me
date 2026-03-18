@@ -20,7 +20,6 @@ import {
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   CTA_PRIMARY,
-  BORDER_DEFAULT,
   ERROR_DARK,
   ERROR_BG,
 } from "../../constants/colors";
@@ -29,6 +28,7 @@ import { apiFetch, ApiError } from "../../lib/api";
 import { storeJwt } from "../../lib/auth";
 import { AuthInput } from "../../components/auth/AuthInput";
 import { AuthButton } from "../../components/auth/AuthButton";
+import { SocialLoginButtons } from "../../components/auth/SocialLoginButtons";
 import {
   signInWithGoogle,
   signInWithApple,
@@ -461,45 +461,11 @@ export default function SignupScreen() {
           />
 
           {/* Social login divider + buttons */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <Pressable
-            onPress={handleGoogleSignup}
+          <SocialLoginButtons
+            onGooglePress={handleGoogleSignup}
+            onApplePress={handleAppleSignup}
             disabled={isAnyLoading}
-            style={({ pressed }) => [
-              styles.socialButton,
-              styles.googleButton,
-              pressed && styles.socialButtonPressed,
-              isAnyLoading && styles.socialButtonDisabled,
-            ]}
-            accessibilityLabel="Continue with Google"
-            accessibilityRole="button"
-          >
-            <Ionicons name="logo-google" size={20} color="#4285F4" />
-            <Text style={styles.googleText}>Continue with Google</Text>
-          </Pressable>
-
-          {Platform.OS === "ios" ? (
-            <Pressable
-              onPress={handleAppleSignup}
-              disabled={isAnyLoading}
-              style={({ pressed }) => [
-                styles.socialButton,
-                styles.appleButton,
-                pressed && styles.socialButtonPressed,
-                isAnyLoading && styles.socialButtonDisabled,
-              ]}
-              accessibilityLabel="Continue with Apple"
-              accessibilityRole="button"
-            >
-              <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
-              <Text style={styles.appleText}>Continue with Apple</Text>
-            </Pressable>
-          ) : null}
+          />
 
           {/* Login link */}
           <View style={styles.switchRow}>
@@ -563,56 +529,6 @@ const styles = StyleSheet.create({
   },
   form: {
     marginBottom: 8,
-  },
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: BORDER_DEFAULT,
-  },
-  dividerText: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginHorizontal: 16,
-  },
-  socialButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 12,
-  },
-  socialButtonPressed: {
-    opacity: 0.8,
-  },
-  socialButtonDisabled: {
-    opacity: 0.5,
-  },
-  googleButton: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DADCE0",
-  },
-  googleText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1F1F1F",
-  },
-  appleButton: {
-    backgroundColor: "#000000",
-    borderColor: "#000000",
-  },
-  appleText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
   },
   switchRow: {
     flexDirection: "row",

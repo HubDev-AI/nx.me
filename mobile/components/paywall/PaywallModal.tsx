@@ -27,6 +27,7 @@ import {
   StyleSheet,
   Dimensions,
   PanResponder,
+  AccessibilityInfo,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useStripe } from "@stripe/stripe-react-native";
@@ -83,6 +84,11 @@ export function PaywallModal({
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   /** Track which pack is being purchased (null = subscription in progress) */
   const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Focus management refs
+  // ---------------------------------------------------------------------------
+  const closeButtonRef = useRef<React.ElementRef<typeof Pressable>>(null);
 
   // ---------------------------------------------------------------------------
   // Animation refs
@@ -172,12 +178,15 @@ export function PaywallModal({
   );
 
   // ---------------------------------------------------------------------------
-  // Fetch entitlement on open
+  // Fetch entitlement on open + accessibility announcement
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (visible) {
       animateIn();
       loadEntitlement();
+      AccessibilityInfo.announceForAccessibility("Dialog opened");
+      // Move focus to close button so screen readers enter the modal
+      closeButtonRef.current?.focus();
     }
   }, [visible, animateIn]);
 
@@ -383,6 +392,7 @@ export function PaywallModal({
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Get More Generations</Text>
           <Pressable
+            ref={closeButtonRef}
             onPress={handleClose}
             hitSlop={12}
             accessibilityLabel="Close"

@@ -5,6 +5,7 @@ import {
   Text,
   FlatList,
   Pressable,
+  RefreshControl,
   useWindowDimensions,
   StyleSheet,
   ActivityIndicator,
@@ -26,6 +27,9 @@ interface GlowUpGridProps {
   hasMore: boolean;
   onLoadMore: () => void;
   onItemPress?: (item: GlowUpItem) => void;
+  ListHeaderComponent?: React.ComponentType | React.ReactElement | null;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }
 
 /**
@@ -39,6 +43,9 @@ export function GlowUpGrid({
   hasMore,
   onLoadMore,
   onItemPress,
+  ListHeaderComponent,
+  refreshing = false,
+  onRefresh,
 }: GlowUpGridProps) {
   const { width: screenWidth } = useWindowDimensions();
 
@@ -84,7 +91,8 @@ export function GlowUpGrid({
     );
   }, [isLoadingMore]);
 
-  if (items.length === 0) {
+  const renderEmpty = useCallback(() => {
+    if (items.length > 0) return null;
     return (
       <View style={styles.emptyContainer}>
         <Ionicons
@@ -98,7 +106,7 @@ export function GlowUpGrid({
         </Text>
       </View>
     );
-  }
+  }, [items.length]);
 
   return (
     <FlatList
@@ -113,10 +121,21 @@ export function GlowUpGrid({
       contentContainerStyle={styles.gridContent}
       onEndReached={handleEndReached}
       onEndReachedThreshold={0.5}
+      ListHeaderComponent={ListHeaderComponent}
       ListFooterComponent={renderFooter}
+      ListEmptyComponent={renderEmpty}
       showsVerticalScrollIndicator={false}
-      scrollEnabled={false}
-      nestedScrollEnabled={false}
+      scrollEnabled={true}
+      refreshControl={
+        onRefresh !== undefined ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={CTA_PRIMARY}
+            colors={[CTA_PRIMARY]}
+          />
+        ) : undefined
+      }
     />
   );
 }

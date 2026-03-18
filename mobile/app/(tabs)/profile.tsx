@@ -2,8 +2,6 @@ import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
-  ScrollView,
-  RefreshControl,
   Pressable,
   ActivityIndicator,
   StyleSheet,
@@ -156,35 +154,25 @@ export default function ProfileScreen() {
 
   if (!profile) return null;
 
+  const profileHeader = (
+    <ProfileHeader
+      profile={profile}
+      onEditProfile={handleEditProfile}
+    />
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            tintColor={CTA_PRIMARY}
-            colors={[CTA_PRIMARY]}
-          />
-        }
-      >
-        {/* Profile header */}
-        <ProfileHeader
-          profile={profile}
-          onEditProfile={handleEditProfile}
-        />
-
-        {/* Glow-up history grid */}
-        <GlowUpGrid
-          items={glowUps}
-          isLoadingMore={isLoadingMore}
-          hasMore={hasMoreGlowUps}
-          onLoadMore={handleLoadMoreGlowUps}
-        />
-      </ScrollView>
+      {/* Single FlatList: profile header + glow-up grid — no nested ScrollView */}
+      <GlowUpGrid
+        items={glowUps}
+        isLoadingMore={isLoadingMore}
+        hasMore={hasMoreGlowUps}
+        onLoadMore={handleLoadMoreGlowUps}
+        ListHeaderComponent={profileHeader}
+        refreshing={isRefreshing}
+        onRefresh={handleRefresh}
+      />
 
       {/* Edit Profile sheet */}
       <EditProfileSheet
@@ -203,12 +191,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG_PAGE,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 24,
   },
   centered: {
     flex: 1,

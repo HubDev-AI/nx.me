@@ -18,6 +18,7 @@ import {
   PanResponder,
   Dimensions,
   StyleSheet,
+  AccessibilityInfo,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -68,6 +69,11 @@ export function CommentsSheet({
     postComment,
     reset,
   } = useComments();
+
+  // ---------------------------------------------------------------------------
+  // Focus management refs
+  // ---------------------------------------------------------------------------
+  const closeButtonRef = useRef<React.ElementRef<typeof Pressable>>(null);
 
   // ---------------------------------------------------------------------------
   // Animation refs
@@ -145,12 +151,14 @@ export function CommentsSheet({
   );
 
   // ---------------------------------------------------------------------------
-  // Open: animate in + fetch comments
+  // Open: animate in + fetch comments + accessibility announcement
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (visible && postId) {
       animateIn();
       loadComments(postId);
+      AccessibilityInfo.announceForAccessibility("Dialog opened");
+      closeButtonRef.current?.focus();
     }
   }, [visible, postId, animateIn, loadComments]);
 
@@ -280,6 +288,7 @@ export function CommentsSheet({
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Comments</Text>
             <Pressable
+              ref={closeButtonRef}
               onPress={handleClose}
               hitSlop={12}
               accessibilityLabel="Close comments"

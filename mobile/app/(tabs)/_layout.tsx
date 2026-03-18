@@ -116,6 +116,20 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="advisor"
+        options={{
+          title: "Advisor",
+          href: "/advisor",
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon
+              name={focused ? "sparkles" : "sparkles-outline"}
+              color={color}
+              focused={focused}
+            />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

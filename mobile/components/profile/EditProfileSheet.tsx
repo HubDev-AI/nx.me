@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
+  AccessibilityInfo,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -69,6 +70,7 @@ export function EditProfileSheet({
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scrimAnim = useRef(new Animated.Value(0)).current;
+  const cancelButtonRef = useRef<React.ElementRef<typeof Pressable>>(null);
 
   // Reset form when profile changes or sheet opens
   useEffect(() => {
@@ -89,6 +91,9 @@ export function EditProfileSheet({
           useNativeDriver: true,
         }),
       ]).start();
+
+      AccessibilityInfo.announceForAccessibility("Dialog opened");
+      cancelButtonRef.current?.focus();
     }
   }, [visible, profile, slideAnim, scrimAnim]);
 
@@ -222,6 +227,7 @@ export function EditProfileSheet({
           {/* Header */}
           <View style={styles.header}>
             <Pressable
+              ref={cancelButtonRef}
               onPress={handleClose}
               style={styles.headerButton}
               accessibilityLabel="Cancel"
