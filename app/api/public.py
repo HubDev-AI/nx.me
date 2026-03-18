@@ -31,12 +31,19 @@ router = APIRouter(tags=["public"])
 # ---------------------------------------------------------------------------
 
 
+class RecommendationItem(BaseModel):
+    rank: int
+    category: str
+    suggestion_text: str
+    rationale: str | None = None
+
+
 class CardResponse(BaseModel):
     username: str
     display_name: str
     before_image_url: str
     after_image_url: str
-    recommendations: list[dict]
+    recommendations: list[RecommendationItem]
     reaction_count: int
     comment_count: int
 

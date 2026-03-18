@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.api.deps import get_analysis_repo, get_current_user, get_image_repo, get_job_repo, get_user_repo
+from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.repositories.analysis_repo import AnalysisRepository
@@ -48,7 +49,7 @@ class HistoryEntry(BaseModel):
     analysis_id: str
     face_shape: str | None
     symmetry_score: float | None
-    recommendations: list[dict]
+    recommendations: list[RecommendationItem]
     before_image_url: str | None
     after_image_url: str | None
     created_at: str

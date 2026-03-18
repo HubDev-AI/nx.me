@@ -182,27 +182,30 @@ async def purchase_credits(
 # ---------------------------------------------------------------------------
 
 
-class SubscriptionResponse(BaseModel):
-    checkout_url: str | None = None
-    status: str | None = None
-    message: str | None = None
+class CreateSubscriptionResponse(BaseModel):
+    checkout_url: str
 
 
-@router.post("/subscriptions", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED)
+class CancelSubscriptionResponse(BaseModel):
+    status: str
+    message: str
+
+
+@router.post("/subscriptions", response_model=CreateSubscriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_subscription(
     claims: UserClaims = Depends(get_current_user),
     payment: PaymentPort = Depends(get_payment_adapter),
     svc: EntitlementService = Depends(get_entitlement_service),
-) -> SubscriptionResponse:
+) -> CreateSubscriptionResponse:
     """Create a Stripe checkout session for Premium subscription."""
     user_id = claims["sub"]
 
     # Check if already subscribed
     entitlement_state = await svc.get_entitlement(UUID(user_id))
     if entitlement_state.has_active_subscription:
-        return SubscriptionResponse(
-            status="already_subscribed",
-            message="You already have an active subscription.",
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": {"code": "ALREADY_SUBSCRIBED", "message": "You already have an active subscription."}},
         )
 
     # Look up the premium tier's stripe_price_id
@@ -224,15 +227,15 @@ async def create_subscription(
 
     logger.info("Subscription checkout created: user=%s", user_id)
 
-    return SubscriptionResponse(checkout_url=checkout_url)
+    return CreateSubscriptionResponse(checkout_url=checkout_url)
 
 
-@router.delete("/subscriptions", response_model=SubscriptionResponse)
+@router.delete("/subscriptions", response_model=CancelSubscriptionResponse)
 async def cancel_subscription(
     claims: UserClaims = Depends(get_current_user),
     sub_repo: SubscriptionRepository = Depends(get_subscription_repo),
     payment: PaymentPort = Depends(get_payment_adapter),
-) -> SubscriptionResponse:
+) -> CancelSubscriptionResponse:
     """Cancel active subscription at period end.
 
     AC-5: Premium access continues until billing_period_end.
@@ -255,7 +258,7 @@ async def cancel_subscription(
 
     logger.info("Subscription cancellation requested: user=%s, sub=%s", user_id, provider_sub_id)
 
-    return SubscriptionResponse(
+    return CancelSubscriptionResponse(
         status="cancelling",
         message="Subscription will be cancelled at the end of the billing period.",
     )
