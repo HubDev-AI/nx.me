@@ -70,11 +70,12 @@ class AdvisorRepository:
     # ------------------------------------------------------------------
 
     def get_messages(self, conversation_id: str) -> list[dict[str, Any]]:
-        """Fetch all messages for a conversation, oldest first."""
+        """Fetch all non-summarized messages for a conversation, oldest first."""
         result = (
             self._sb.table("advisor_messages")
             .select("id, role, content, created_at")
             .eq("conversation_id", conversation_id)
+            .is_("summarized_at", "null")
             .order("created_at", asc=True)
             .execute()
         )
@@ -95,10 +96,17 @@ class AdvisorRepository:
         )
         return (result.data or [{}])[0]
 
-    def delete_messages(self, conversation_id: str) -> None:
-        """Delete all messages for a conversation (used after summarization)."""
-        self._sb.table("advisor_messages").delete().eq(
-            "conversation_id", conversation_id
+    def soft_delete_messages(self, conversation_id: str) -> None:
+        """Mark all unsummarized messages as summarized (soft-delete after summarization).
+
+        Sets summarized_at to now() on every message that has not already been
+        summarized, preserving the rows for auditing and recovery.
+        """
+        now = datetime.now(tz=timezone.utc).isoformat()
+        self._sb.table("advisor_messages").update({
+            "summarized_at": now,
+        }).eq("conversation_id", conversation_id).is_(
+            "summarized_at", "null"
         ).execute()
 
     # ------------------------------------------------------------------

@@ -386,8 +386,8 @@ class AdvisorService:
         # Store summary and truncate messages
         self._repo.update_conversation_summary(conversation_id, summary)
 
-        # Delete all messages (fresh start after summary)
-        self._repo.delete_messages(conversation_id)
+        # Soft-delete messages (mark summarized_at instead of hard-delete)
+        self._repo.soft_delete_messages(conversation_id)
 
         logger.info("Conversation %s summarized and truncated", conversation_id)
 
