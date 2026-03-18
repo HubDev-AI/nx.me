@@ -74,7 +74,8 @@ def sanitize_input(text: str) -> str:
 async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
     """Enforce per-user hourly chat rate limit (atomic INCR-first).
 
-    Raises RateLimitExceeded if the limit is reached.
+    Raises RateLimitExceeded with the remaining TTL so the caller can include
+    a ``Retry-After`` header in the 429 response (LE-1).
     """
     key = _RATE_KEY_TEMPLATE.format(user_id=user_id)
     new_count = await redis_client.incr(key)
@@ -83,7 +84,8 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
 
     if new_count > settings.ADVISOR_CHAT_RATE_LIMIT:
         await redis_client.decr(key)
-        raise RateLimitExceeded()
+        ttl: int = await redis_client.ttl(key)
+        raise RateLimitExceeded(retry_after=max(ttl, 0))
 
 
 def scan_output(text: str) -> bool:

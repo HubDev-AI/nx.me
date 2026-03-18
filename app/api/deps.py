@@ -193,6 +193,9 @@ def require_entitlement(action: str):
         result: EntitlementResult = await svc.check(user_id, action)
         if not result.allowed:
             status_code = 402 if result.error_code in PAYMENT_REQUIRED_CODES else 429
+            headers: dict[str, str] | None = None
+            if status_code == 429 and result.reset_in_seconds is not None:
+                headers = {"Retry-After": str(result.reset_in_seconds)}
             raise HTTPException(
                 status_code=status_code,
                 detail={
@@ -208,6 +211,7 @@ def require_entitlement(action: str):
                         },
                     }
                 },
+                headers=headers,
             )
 
     return _check

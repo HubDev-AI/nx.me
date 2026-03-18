@@ -216,6 +216,10 @@ class MockRedis:
     async def expire(self, key: str, seconds: int, nx: bool = False) -> None:
         pass
 
+    async def ttl(self, key: str) -> int:
+        """Return a fixed TTL for test purposes — keys always have 900s remaining."""
+        return 900 if key in self._store else -2
+
     def pipeline(self) -> "MockPipeline":
         return MockPipeline(self)
 

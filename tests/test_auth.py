@@ -224,8 +224,9 @@ class TestRateLimiter:
 
         redis = MockRedis()
         for _ in range(settings.REGISTRATION_FINGERPRINT_LIMIT):
-            result = await check_registration_rate_limit("device-123", redis)
-            assert result is True
+            allowed, ttl = await check_registration_rate_limit("device-123", redis)
+            assert allowed is True
+            assert ttl == 0
 
     @pytest.mark.asyncio
     async def test_fingerprint_rate_limit_blocks_over_limit(self):
@@ -234,8 +235,9 @@ class TestRateLimiter:
         redis = MockRedis()
         for _ in range(settings.REGISTRATION_FINGERPRINT_LIMIT):
             await check_registration_rate_limit("device-456", redis)
-        result = await check_registration_rate_limit("device-456", redis)
-        assert result is False
+        allowed, ttl = await check_registration_rate_limit("device-456", redis)
+        assert allowed is False
+        assert ttl > 0
 
     @pytest.mark.asyncio
     async def test_ip_rate_limit_allows_within_limit(self):
@@ -243,8 +245,9 @@ class TestRateLimiter:
 
         redis = MockRedis()
         for _ in range(settings.REGISTRATION_IP_LIMIT):
-            result = await check_ip_registration_rate_limit("192.168.1.1", redis)
-            assert result is True
+            allowed, ttl = await check_ip_registration_rate_limit("192.168.1.1", redis)
+            assert allowed is True
+            assert ttl == 0
 
     @pytest.mark.asyncio
     async def test_ip_rate_limit_blocks_over_limit(self):
@@ -253,27 +256,30 @@ class TestRateLimiter:
         redis = MockRedis()
         for _ in range(settings.REGISTRATION_IP_LIMIT):
             await check_ip_registration_rate_limit("10.0.0.1", redis)
-        result = await check_ip_registration_rate_limit("10.0.0.1", redis)
-        assert result is False
+        allowed, ttl = await check_ip_registration_rate_limit("10.0.0.1", redis)
+        assert allowed is False
+        assert ttl > 0
 
     @pytest.mark.asyncio
     async def test_login_rate_limit_allows_within_limit(self):
         from app.services.rate_limiter import check_login_rate_limit
 
         redis = MockRedis()
-        for _ in range(settings.REGISTRATION_IP_LIMIT):
-            result = await check_login_rate_limit("10.0.0.2", redis)
-            assert result is True
+        for _ in range(settings.LOGIN_IP_LIMIT):
+            allowed, ttl = await check_login_rate_limit("10.0.0.2", redis)
+            assert allowed is True
+            assert ttl == 0
 
     @pytest.mark.asyncio
     async def test_login_rate_limit_blocks_over_limit(self):
         from app.services.rate_limiter import check_login_rate_limit
 
         redis = MockRedis()
-        for _ in range(settings.REGISTRATION_IP_LIMIT):
+        for _ in range(settings.LOGIN_IP_LIMIT):
             await check_login_rate_limit("10.0.0.3", redis)
-        result = await check_login_rate_limit("10.0.0.3", redis)
-        assert result is False
+        allowed, ttl = await check_login_rate_limit("10.0.0.3", redis)
+        assert allowed is False
+        assert ttl > 0
 
     @pytest.mark.asyncio
     async def test_different_ips_have_independent_limits(self):
@@ -282,5 +288,6 @@ class TestRateLimiter:
         redis = MockRedis()
         for _ in range(settings.REGISTRATION_IP_LIMIT + 1):
             await check_ip_registration_rate_limit("1.1.1.1", redis)
-        result = await check_ip_registration_rate_limit("2.2.2.2", redis)
-        assert result is True
+        allowed, ttl = await check_ip_registration_rate_limit("2.2.2.2", redis)
+        assert allowed is True
+        assert ttl == 0

@@ -111,22 +111,24 @@ async def register(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot determine client IP address.",
         )
-    ip_allowed = await check_ip_registration_rate_limit(client_ip, r)
+    ip_allowed, ip_ttl = await check_ip_registration_rate_limit(client_ip, r)
     if not ip_allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many registration attempts from this IP. Try again in 1 hour.",
+            headers={"Retry-After": str(ip_ttl)},
         )
 
     # --- Rate limiting (AC-3): per-device fingerprint ≥3/24h → 429 ------
     # Prefer explicit fingerprint header; fall back to client IP to prevent
     # a single shared "unknown" bucket locking out all fingerprint-less clients.
     fingerprint = x_device_fingerprint or client_ip
-    allowed = await check_registration_rate_limit(fingerprint, r)
+    allowed, fp_ttl = await check_registration_rate_limit(fingerprint, r)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many registration attempts from this device. Try again in 24 hours.",
+            headers={"Retry-After": str(fp_ttl)},
         )
 
     # --- Disposable email check (AC-4) ------------------------------------
@@ -372,10 +374,12 @@ async def social_login(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot determine client IP address.",
         )
-    if not await check_login_rate_limit(client_ip, r):
+    login_allowed, login_ttl = await check_login_rate_limit(client_ip, r)
+    if not login_allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts from this IP. Try again later.",
+            headers={"Retry-After": str(login_ttl)},
         )
 
     if body.provider not in _ACCEPTED_PROVIDERS:

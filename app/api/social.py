@@ -197,9 +197,11 @@ async def react_to_post(
 
     if new_count > _REACTION_RATE_LIMIT:
         await redis_client.decr(rate_key)
+        ttl: int = await redis_client.ttl(rate_key)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many reactions. Please slow down."}},
+            headers={"Retry-After": str(max(ttl, 0))},
         )
 
     # --- Verify post exists ---
