@@ -18,14 +18,14 @@ from typing import Any
 from uuid import UUID
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
 from app.advisor.models import (
-    ConversationHistoryResponse,
+    ConversationHistoryPageResponse,
     MemoryCreateRequest,
-    MemoryListResponse,
+    MemoryListPageResponse,
     MemoryResponse,
     MemoryType,
     MessageRequest,
@@ -79,12 +79,15 @@ async def send_advisor_message(
     _: None = Depends(require_feature("advisor_chat")),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> MessageResponse:
+) -> Response:
     """Send a message to Ada (premium tier only).
 
     Requires: require_feature("advisor_chat") — 402 if not on premium.
     Rate-limited to ADVISOR_CHAT_RATE_LIMIT messages/hour.
+    Returns 201 with Location header pointing to the conversation history.
     """
+    from fastapi.responses import JSONResponse
+
     user_id = UUID(claims["sub"])
 
     try:
@@ -95,11 +98,17 @@ async def send_advisor_message(
             detail={"error": {"code": "INVALID_MESSAGE", "message": str(exc)}},
         ) from exc
 
-    return MessageResponse(
-        id=row.get("id", ""),
+    message_id = row.get("id", "")
+    payload = MessageResponse(
+        id=message_id,
         role=row.get("role", "advisor"),
         content=row.get("content", ""),
         created_at=row.get("created_at", ""),
+    )
+    return JSONResponse(
+        content=payload.model_dump(),
+        status_code=status.HTTP_201_CREATED,
+        headers={"Location": f"/v1/advisor/messages"},
     )
 
 
@@ -108,16 +117,18 @@ async def send_advisor_message(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/advisor/messages", response_model=ConversationHistoryResponse)
+@router.get("/advisor/messages", response_model=ConversationHistoryPageResponse)
 def get_advisor_messages(
+    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    limit: int = Query(50, ge=1, le=100),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> ConversationHistoryResponse:
-    """Return the active conversation history for the current user."""
+) -> ConversationHistoryPageResponse:
+    """Return the active conversation history for the current user (paginated)."""
     user_id = UUID(claims["sub"])
-    result = svc.get_conversation_history(user_id)
+    result = svc.get_conversation_history_page(user_id, limit=limit, cursor=cursor)
 
-    return ConversationHistoryResponse(
+    return ConversationHistoryPageResponse(
         conversation_id=result["conversation_id"],
         messages=[
             MessageResponse(
@@ -128,6 +139,8 @@ def get_advisor_messages(
             )
             for m in result["messages"]
         ],
+        next_cursor=result.get("next_cursor"),
+        has_more=result.get("has_more", False),
     )
 
 
@@ -138,12 +151,15 @@ def get_advisor_messages(
 
 @router.get("/advisor/nudges", response_model=NudgeFeedResponse)
 def get_nudges(
+    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    limit: int = Query(50, ge=1, le=100),
+    unread: bool = Query(False, description="When true, return only unread nudges (read_at IS NULL)"),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> NudgeFeedResponse:
-    """Return the nudge feed for the current user (all tiers)."""
+    """Return the nudge feed for the current user (all tiers, paginated)."""
     user_id = UUID(claims["sub"])
-    nudges = svc.get_nudges(user_id)
+    result = svc.get_nudges_page(user_id, limit=limit, cursor=cursor, unread_only=unread)
 
     return NudgeFeedResponse(
         nudges=[
@@ -154,8 +170,10 @@ def get_nudges(
                 read_at=n.get("read_at"),
                 created_at=n["created_at"],
             )
-            for n in nudges
-        ]
+            for n in result["nudges"]
+        ],
+        next_cursor=result.get("next_cursor"),
+        has_more=result.get("has_more", False),
     )
 
 
@@ -164,7 +182,11 @@ def get_nudges(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/advisor/nudges/{nudge_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/advisor/nudges/{nudge_id}/read",
+    status_code=status.HTTP_204_NO_CONTENT,
+    deprecated=True,
+)
 def mark_nudge_read(
     nudge_id: UUID,
     claims: UserClaims = Depends(get_current_user),
@@ -190,8 +212,13 @@ async def add_memory(
     body: MemoryCreateRequest,
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> MemoryResponse:
-    """Add a user-authored memory (goal or note). All tiers."""
+) -> Response:
+    """Add a user-authored memory (goal or note). All tiers.
+
+    Returns 201 with Location header pointing to the memory list.
+    """
+    from fastapi.responses import JSONResponse
+
     # Users may only create goal or user_note types
     if body.type not in (MemoryType.GOAL, MemoryType.USER_NOTE):
         raise HTTPException(
@@ -207,11 +234,17 @@ async def add_memory(
     user_id = UUID(claims["sub"])
     row = await svc.add_memory(user_id=user_id, memory_type=body.type, content=body.content)
 
-    return MemoryResponse(
-        id=row.get("id", ""),
+    memory_id = row.get("id", "")
+    payload = MemoryResponse(
+        id=memory_id,
         type=row.get("type", ""),
         content=row.get("content", {}),
         created_at=row.get("created_at", ""),
+    )
+    return JSONResponse(
+        content=payload.model_dump(),
+        status_code=status.HTTP_201_CREATED,
+        headers={"Location": f"/v1/memories/{memory_id}"},
     )
 
 
@@ -220,16 +253,18 @@ async def add_memory(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/memories", response_model=MemoryListResponse)
+@router.get("/memories", response_model=MemoryListPageResponse)
 def list_memories(
+    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    limit: int = Query(50, ge=1, le=100),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> MemoryListResponse:
-    """List all memories for the current user. All tiers."""
+) -> MemoryListPageResponse:
+    """List memories for the current user (paginated). All tiers."""
     user_id = UUID(claims["sub"])
-    rows = svc.list_memories(user_id)
+    result = svc.list_memories_page(user_id, limit=limit, cursor=cursor)
 
-    return MemoryListResponse(
+    return MemoryListPageResponse(
         memories=[
             MemoryResponse(
                 id=r["id"],
@@ -237,8 +272,10 @@ def list_memories(
                 content=r.get("content", {}),
                 created_at=r["created_at"],
             )
-            for r in rows
-        ]
+            for r in result["memories"]
+        ],
+        next_cursor=result.get("next_cursor"),
+        has_more=result.get("has_more", False),
     )
 
 

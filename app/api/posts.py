@@ -90,7 +90,7 @@ def create_post(
     post_repo: PostRepository = Depends(get_post_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
-) -> PostResponse:
+) -> Response:
     """Create a post from a completed glow-up job.
 
     AC: Post row created; shareable card updated.
@@ -154,12 +154,19 @@ def create_post(
 
     logger.info("Post %s created by user %s from job %s", post_id, user_id, body.glow_up_job_id)
 
-    return PostResponse(
+    from fastapi.responses import JSONResponse
+
+    payload = PostResponse(
         post_id=post_id,
         before_image_url=before_url,
         after_image_url=after_url,
         caption=body.caption,
         created_at=now_utc,
+    )
+    return JSONResponse(
+        content=payload.model_dump(),
+        status_code=status.HTTP_201_CREATED,
+        headers={"Location": f"/v1/posts/{post_id}"},
     )
 
 
@@ -211,7 +218,7 @@ def create_comment(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
-) -> CommentResponse:
+) -> Response:
     """Add a comment to a post. Auth required (AC-U6)."""
     user_id = claims["sub"]
 
@@ -227,7 +234,9 @@ def create_comment(
         p_content=body.content,
     )
 
-    logger.info("Comment %s on post %s by user %s", comment["id"], post_id, user_id)
+    comment_id = comment["id"]
+    comment_created_at = comment.get("created_at", "")
+    logger.info("Comment %s on post %s by user %s", comment_id, post_id, user_id)
 
     # Fetch author profile for display name and avatar
     author = post_repo.get_commenter_profile(user_id)
@@ -237,15 +246,22 @@ def create_comment(
         display_name = author.get("display_name")
         avatar_url = build_avatar_url(supabase, author.get("avatar_storage_key"))
 
-    return CommentResponse(
-        comment_id=comment["id"],
+    from fastapi.responses import JSONResponse
+
+    payload = CommentResponse(
+        comment_id=comment_id,
         post_id=str(post_id),
         user_id=user_id,
         content=body.content,
         is_deleted=False,
-        created_at=now_utc,
+        created_at=comment_created_at,
         display_name=display_name,
         avatar_url=avatar_url,
+    )
+    return JSONResponse(
+        content=payload.model_dump(),
+        status_code=status.HTTP_201_CREATED,
+        headers={"Location": f"/v1/posts/{post_id}/comments/{comment_id}"},
     )
 
 
@@ -259,6 +275,7 @@ def get_comments(
     post_id: UUID,
     cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(20, ge=1, le=100),
+    sort: str = Query("oldest", pattern="^(newest|oldest)$", description="Sort order: oldest or newest"),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
 ) -> CommentsListResponse:
@@ -269,6 +286,7 @@ def get_comments(
         post_id=str(post_id),
         fetch_limit=fetch_limit,
         cursor=cursor,
+        sort=sort,
     )
 
     has_more = len(comments) > limit
@@ -313,7 +331,12 @@ def get_comments(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/posts/{post_id}/report", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/posts/{post_id}/report",
+    response_model=ReportResponse,
+    status_code=status.HTTP_201_CREATED,
+    deprecated=True,
+)
 def report_post(
     post_id: UUID,
     body: ReportRequest,

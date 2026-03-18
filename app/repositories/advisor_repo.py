@@ -81,6 +81,34 @@ class AdvisorRepository:
         )
         return result.data or []
 
+    def get_messages_page(
+        self,
+        conversation_id: str,
+        fetch_limit: int,
+        cursor: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch a page of non-summarized messages (oldest first).
+
+        Cursor format: ``{created_at}|{id}`` composite to avoid skipping
+        records that share the same timestamp.
+        """
+        query = (
+            self._sb.table("advisor_messages")
+            .select("id, role, content, created_at")
+            .eq("conversation_id", conversation_id)
+            .is_("summarized_at", "null")
+            .order("created_at", asc=True)
+            .order("id", asc=True)
+            .limit(fetch_limit)
+        )
+        if cursor:
+            cursor_created_at, cursor_id = cursor.split("|", 1)
+            query = query.or_(
+                f"created_at.gt.{cursor_created_at},"
+                f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
+            )
+        return query.execute().data or []
+
     def insert_message(
         self, conversation_id: str, role: str, content: str
     ) -> dict[str, Any]:
@@ -123,6 +151,38 @@ class AdvisorRepository:
             .execute()
         )
         return result.data or []
+
+    def get_nudges_page(
+        self,
+        user_id: str,
+        fetch_limit: int,
+        cursor: str | None = None,
+        unread_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Fetch a page of nudges (newest first).
+
+        Cursor format: ``{created_at}|{id}`` composite.
+        When ``unread_only`` is True, restricts to rows where read_at IS NULL.
+        """
+        query = (
+            self._sb.table("advisor_nudges")
+            .select("id, trigger, content, read_at, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .order("id", desc=True)
+            .limit(fetch_limit)
+        )
+        if unread_only:
+            query = query.is_("read_at", "null")
+        if cursor:
+            cursor_created_at, cursor_id = cursor.split("|", 1)
+            # Rows before the cursor (newest-first): same created_at and id < cursor_id,
+            # OR created_at < cursor_created_at
+            query = query.or_(
+                f"created_at.lt.{cursor_created_at},"
+                f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"
+            )
+        return query.execute().data or []
 
     def get_nudge_by_id(
         self, nudge_id: str, user_id: str
@@ -200,6 +260,35 @@ class AdvisorRepository:
         )
         if type_filter is not None:
             query = query.eq("type", type_filter)
+        return query.execute().data or []
+
+    def get_memories_page(
+        self,
+        user_id: str,
+        fetch_limit: int,
+        cursor: str | None = None,
+        type_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch a page of memories (newest first).
+
+        Cursor format: ``{created_at}|{id}`` composite.
+        """
+        query = (
+            self._sb.table("user_memories")
+            .select("id, type, content, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .order("id", desc=True)
+            .limit(fetch_limit)
+        )
+        if type_filter is not None:
+            query = query.eq("type", type_filter)
+        if cursor:
+            cursor_created_at, cursor_id = cursor.split("|", 1)
+            query = query.or_(
+                f"created_at.lt.{cursor_created_at},"
+                f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"
+            )
         return query.execute().data or []
 
     def insert_memory(self, memory_data: dict[str, Any]) -> dict[str, Any]:

@@ -91,28 +91,39 @@ class PostRepository:
         post_id: str,
         fetch_limit: int,
         cursor: str | None = None,
+        sort: str = "oldest",
     ) -> list[dict]:
         """Fetch a page of non-deleted comments with joined user profile.
 
         Cursor format: ``{created_at}|{id}`` (composite) to avoid skipping records
         that share the same timestamp.
+
+        ``sort`` must be ``"oldest"`` (ascending, default) or ``"newest"`` (descending).
         """
+        desc = sort == "newest"
         query = (
             self._sb.table("comments")
             .select("id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)")
             .eq("post_id", post_id)
             .eq("is_deleted", False)
-            .order("created_at", desc=False)
-            .order("id", desc=False)
+            .order("created_at", desc=desc)
+            .order("id", desc=desc)
             .limit(fetch_limit)
         )
         if cursor:
             cursor_created_at, cursor_id = cursor.split("|", 1)
-            # Rows after the cursor: same created_at and id > cursor_id, OR created_at > cursor_created_at
-            query = query.or_(
-                f"created_at.gt.{cursor_created_at},"
-                f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
-            )
+            if desc:
+                # Newest-first: rows before the cursor
+                query = query.or_(
+                    f"created_at.lt.{cursor_created_at},"
+                    f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"
+                )
+            else:
+                # Oldest-first: rows after the cursor
+                query = query.or_(
+                    f"created_at.gt.{cursor_created_at},"
+                    f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
+                )
         result = query.execute()
         return result.data or []
 

@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.deps import get_analysis_repo, get_current_user
@@ -63,7 +63,7 @@ async def create_analysis(
     file: UploadFile,
     claims: UserClaims = Depends(get_current_user),
     analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
-) -> AnalysisResponse:
+) -> Response:
     """Upload a selfie for face analysis.
 
     AC-1: Pipeline runs ImagePipeline.process() (NSFW gate) then
@@ -139,7 +139,9 @@ async def create_analysis(
             # Non-critical — never let nudge scheduling block the response
             logger.warning("Post-analysis nudge hook failed for user %s: %s", user_id, _exc)
 
-    return AnalysisResponse(
+    from fastapi.responses import JSONResponse
+
+    payload = AnalysisResponse(
         analysis_id=str(analysis_id),
         face_shape=result.face_shape.value,
         symmetry_score=result.symmetry_score,
@@ -152,6 +154,11 @@ async def create_analysis(
             for s in result.recommendations
         ],
         status="completed",
+    )
+    return JSONResponse(
+        content=payload.model_dump(),
+        status_code=status.HTTP_201_CREATED,
+        headers={"Location": f"/v1/analyses/{analysis_id}"},
     )
 
 

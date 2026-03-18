@@ -220,6 +220,43 @@ class AdvisorService:
             ],
         }
 
+    def get_conversation_history_page(
+        self,
+        user_id: UUID,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a paginated page of conversation messages."""
+        conversation = self._get_or_create_conversation(user_id)
+        fetch_limit = limit + 1
+        rows = self._repo.get_messages_page(
+            conversation_id=conversation["id"],
+            fetch_limit=fetch_limit,
+            cursor=cursor,
+        )
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+        next_cursor = (
+            f"{rows[-1]['created_at']}|{rows[-1]['id']}"
+            if has_more and rows
+            else None
+        )
+        return {
+            "conversation_id": conversation["id"],
+            "messages": [
+                {
+                    "id": m.get("id", ""),
+                    "role": m.get("role", ""),
+                    "content": m.get("content", ""),
+                    "created_at": m.get("created_at", ""),
+                }
+                for m in rows
+            ],
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        }
+
     # -----------------------------------------------------------------------
     # Nudges
     # -----------------------------------------------------------------------
@@ -227,6 +264,35 @@ class AdvisorService:
     def get_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
         """Return the nudge feed for a user (newest first)."""
         return self._repo.get_nudges(str(user_id))
+
+    def get_nudges_page(
+        self,
+        user_id: UUID,
+        limit: int = 50,
+        cursor: str | None = None,
+        unread_only: bool = False,
+    ) -> dict[str, Any]:
+        """Return a paginated page of nudges."""
+        fetch_limit = limit + 1
+        rows = self._repo.get_nudges_page(
+            user_id=str(user_id),
+            fetch_limit=fetch_limit,
+            cursor=cursor,
+            unread_only=unread_only,
+        )
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+        next_cursor = (
+            f"{rows[-1]['created_at']}|{rows[-1]['id']}"
+            if has_more and rows
+            else None
+        )
+        return {
+            "nudges": rows,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        }
 
     def mark_nudge_read(self, user_id: UUID, nudge_id: UUID) -> bool:
         """Mark a nudge as read. Returns True if found and updated."""
@@ -258,6 +324,33 @@ class AdvisorService:
     def list_memories(self, user_id: UUID) -> list[dict[str, Any]]:
         """List all memories for a user."""
         return self._memory_manager.list_memories(user_id)
+
+    def list_memories_page(
+        self,
+        user_id: UUID,
+        limit: int = 50,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a paginated page of memories."""
+        fetch_limit = limit + 1
+        rows = self._repo.get_memories_page(
+            user_id=str(user_id),
+            fetch_limit=fetch_limit,
+            cursor=cursor,
+        )
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+        next_cursor = (
+            f"{rows[-1]['created_at']}|{rows[-1]['id']}"
+            if has_more and rows
+            else None
+        )
+        return {
+            "memories": rows,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        }
 
     def delete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
         """Delete a user-owned memory."""

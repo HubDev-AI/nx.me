@@ -510,7 +510,12 @@ async def get_job(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/jobs/{job_id}/cancel", response_model=CancelResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/jobs/{job_id}/cancel",
+    response_model=CancelResponse,
+    status_code=status.HTTP_200_OK,
+    deprecated=True,
+)
 async def cancel_job(
     job_id: UUID,
     claims: UserClaims = Depends(get_current_user),

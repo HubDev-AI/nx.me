@@ -89,3 +89,18 @@ class NudgeResponse(BaseModel):
 
 class NudgeFeedResponse(BaseModel):
     nudges: list[NudgeResponse]
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
+class ConversationHistoryPageResponse(BaseModel):
+    conversation_id: str
+    messages: list[MessageResponse]
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
+class MemoryListPageResponse(BaseModel):
+    memories: list[MemoryResponse]
+    next_cursor: str | None = None
+    has_more: bool = False
