@@ -6,6 +6,7 @@ emergency stop flag, fal.ai health probe.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as aioredis
@@ -16,8 +17,11 @@ logger = logging.getLogger(__name__)
 
 # Named constants for magic numbers
 _COST_BUCKET_TTL_SECONDS = 90_000  # 25 hours (24h + 1h buffer)
-_CIRCUIT_BREAKER_THRESHOLD = 5
-_CIRCUIT_BREAKER_COOLDOWN_SECONDS = 120
+
+# Circuit breaker: sliding window failure tracking
+_CB_FAILURE_THRESHOLD = 5           # failures within window to open circuit
+_CB_FAILURE_WINDOW_SECONDS = 300    # 5-minute sliding window
+_CB_COOLDOWN_SECONDS = 30           # time in OPEN before attempting HALF_OPEN
 
 # Redis key patterns
 _COST_BUCKET_PREFIX = "gen:cost:24h:"
@@ -25,6 +29,11 @@ _COUNT_BUCKET_PREFIX = "gen:count:24h:"
 _EMERGENCY_STOP_KEY = "gen:emergency_stop"
 _USER_DAILY_KEY = "gen:user_daily:{user_id}:{date}"
 _QUEUE_DEPTH_KEY = "gen:queue_depth"
+
+# Circuit breaker state keys
+_CB_STATE_KEY = "gen:cb:state"      # "closed" | "open" | "half_open"
+_CB_FAILURES_KEY = "gen:cb:failures"  # sorted set of failure timestamps
+_CB_OPEN_AT_KEY = "gen:cb:open_at"  # float timestamp when circuit was opened
 
 
 class CostTracker:
@@ -134,34 +143,97 @@ class CostTracker:
         await pipe.execute()
 
     # ------------------------------------------------------------------
-    # Circuit breaker (fal.ai failures)
+    # Circuit breaker (fal.ai failures) — sliding window + half-open state
+    #
+    # State machine:
+    #   CLOSED    — normal operation; failures tracked in sliding window.
+    #               Transitions to OPEN when failure count >= threshold.
+    #   OPEN      — all requests rejected.
+    #               Transitions to HALF_OPEN after cooldown period elapses.
+    #   HALF_OPEN — one probe request allowed through.
+    #               Success → CLOSED; Failure → OPEN.
     # ------------------------------------------------------------------
 
     async def record_failure(self) -> None:
-        """Record a fal.ai failure for circuit breaker tracking."""
-        key = "gen:circuit:failures"
+        """Record a fal.ai failure and open the circuit if threshold is reached."""
+        now = time.time()
+        window_start = now - _CB_FAILURE_WINDOW_SECONDS
+
         pipe = self._redis.pipeline()
-        pipe.incr(key)
-        pipe.expire(key, 60)  # 60s window
+        # Add this failure timestamp to the sorted set (score = member = timestamp)
+        pipe.zadd(_CB_FAILURES_KEY, {str(now): now})
+        # Trim entries outside the sliding window
+        pipe.zremrangebyscore(_CB_FAILURES_KEY, 0, window_start)
         await pipe.execute()
 
+        failure_count = await self._redis.zcard(_CB_FAILURES_KEY)
+
+        current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
+        if isinstance(current_state, bytes):
+            current_state = current_state.decode()
+
+        if failure_count >= _CB_FAILURE_THRESHOLD and current_state != "open":
+            await self._redis.set(_CB_STATE_KEY, "open")
+            await self._redis.set(_CB_OPEN_AT_KEY, str(now))
+            logger.critical(
+                "Circuit breaker OPEN: %d fal.ai failures in last %ds",
+                failure_count,
+                _CB_FAILURE_WINDOW_SECONDS,
+            )
+        elif current_state == "half_open":
+            # Probe failed — return to OPEN
+            await self._redis.set(_CB_STATE_KEY, "open")
+            await self._redis.set(_CB_OPEN_AT_KEY, str(now))
+            logger.warning("Circuit breaker probe FAILED — returning to OPEN")
+
     async def record_success(self) -> None:
-        """Reset failure counter on success."""
-        await self._redis.delete("gen:circuit:failures")
-        await self._redis.delete("gen:circuit:open")
+        """Record a fal.ai success.
+
+        In HALF_OPEN: single success closes the circuit and clears failure history.
+        In CLOSED: do not wipe failure history (prevents flap on a single success).
+        """
+        current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
+        if isinstance(current_state, bytes):
+            current_state = current_state.decode()
+
+        if current_state == "half_open":
+            # Probe succeeded — close the circuit and clear failure history
+            pipe = self._redis.pipeline()
+            pipe.set(_CB_STATE_KEY, "closed")
+            pipe.delete(_CB_FAILURES_KEY)
+            pipe.delete(_CB_OPEN_AT_KEY)
+            await pipe.execute()
+            logger.info("Circuit breaker CLOSED: probe succeeded")
+        # In CLOSED state intentionally do nothing — failure history is preserved
+        # so a single success cannot mask a genuinely flapping provider.
 
     async def is_circuit_open(self) -> bool:
-        """Check if circuit breaker is open (fal.ai down)."""
-        # Check cooldown
-        if await self._redis.get("gen:circuit:open"):
-            return True
+        """Check if the circuit breaker is blocking requests.
 
-        # Check failure count
-        failures = int(await self._redis.get("gen:circuit:failures") or 0)
-        if failures >= _CIRCUIT_BREAKER_THRESHOLD:
-            # Open circuit for cooldown period
-            await self._redis.set("gen:circuit:open", "1", ex=_CIRCUIT_BREAKER_COOLDOWN_SECONDS)
-            logger.critical("Circuit breaker OPEN: %d consecutive fal.ai failures", failures)
-            return True
+        Returns True  → reject the request (circuit OPEN and still cooling down).
+        Returns False → allow the request (CLOSED or HALF_OPEN probe slot).
 
+        Side effect: transitions OPEN → HALF_OPEN when cooldown has elapsed.
+        """
+        current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
+        if isinstance(current_state, bytes):
+            current_state = current_state.decode()
+
+        if current_state == "closed":
+            return False
+
+        if current_state == "open":
+            raw_open_at = await self._redis.get(_CB_OPEN_AT_KEY)
+            open_at = float(raw_open_at) if raw_open_at else 0.0
+            if time.time() - open_at >= _CB_COOLDOWN_SECONDS:
+                # Cooldown elapsed — allow one probe request through
+                await self._redis.set(_CB_STATE_KEY, "half_open")
+                logger.info(
+                    "Circuit breaker → HALF_OPEN: allowing probe after %ds cooldown",
+                    _CB_COOLDOWN_SECONDS,
+                )
+                return False  # Let this request through as the probe
+            return True  # Still cooling down
+
+        # half_open — probe slot is open
         return False
