@@ -24,6 +24,7 @@ from app.api.errors import (
     rate_limit_handler,
     validation_error_handler,
 )
+from app.api.middleware.security_headers import SecurityHeadersMiddleware
 from app.config import settings
 from app.db.client import get_supabase_service
 
@@ -91,6 +92,9 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.APP_ENV != "production" else None,
         redoc_url="/redoc" if settings.APP_ENV != "production" else None,
     )
+
+    # ── Security headers ─────────────────────────────────────────────────────
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # ── Exception handlers ───────────────────────────────────────────────────
     app.add_exception_handler(ApiError, api_error_handler)
