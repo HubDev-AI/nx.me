@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from supabase import Client
 
 from app.config import settings
@@ -157,6 +158,8 @@ async def _generate_and_validate(
     storage_key: str,
     user_id: str,
     supabase: Client,
+    redis_client: aioredis.Redis | None = None,
+    concurrent_key: str | None = None,
 ) -> tuple[object, bytes, bytes, object] | None:
     """Generate image, screen for NSFW, check identity, retry if needed.
 
@@ -164,6 +167,13 @@ async def _generate_and_validate(
     or None if the job was failed (NSFW or identity).
     """
     import httpx
+
+    _concurrent_ttl = settings.GENERATION_TIMEOUT_SECONDS + 60
+
+    async def _refresh_concurrent_ttl() -> None:
+        """Extend TTL on the concurrent counter to prevent expiry mid-job (M-8)."""
+        if redis_client and concurrent_key:
+            await redis_client.expire(concurrent_key, _concurrent_ttl)
 
     # Generate
     gen_result = await generator.generate(source_url, prompt, options)
@@ -185,6 +195,9 @@ async def _generate_and_validate(
     # URL for downstream processing).  The file is overwritten later
     # after color normalization.
     image_repo.upload("generated-images", storage_key, gen_image_bytes, "image/jpeg")
+
+    # Extend concurrent counter TTL after image generation (M-8)
+    await _refresh_concurrent_ttl()
 
     # NSFW screen output — uses in-memory bytes (from NXME storage write)
     if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
@@ -216,6 +229,9 @@ async def _generate_and_validate(
         gen_image_bytes,
         settings.IDENTITY_SIMILARITY_THRESHOLD,
     )
+
+    # Extend concurrent counter TTL after identity check (M-8)
+    await _refresh_concurrent_ttl()
 
     # Identity failed → retry once
     if not identity_result.identity_preserved:
@@ -285,7 +301,15 @@ async def _finalize_job(
     identity_result: object,
     options: GenerationOptions,
 ) -> None:
-    """Color-normalize output, persist image row, commit credit, mark job completed."""
+    """Color-normalize output, persist image row, commit credit, mark job completed.
+
+    Ordering is deliberate for atomicity (H-2):
+    1. Mark job "finalizing" (idempotent marker — safe to retry from here)
+    2. Create image row
+    3. Commit credit (last, because it's the money operation)
+    4. Mark job "completed"
+    If step 3 fails, the job stays in "finalizing" and the stuck-job watchdog can retry.
+    """
     import PIL.Image
 
     gen_img = PIL.Image.open(io.BytesIO(gen_image_bytes))
@@ -300,31 +324,45 @@ async def _finalize_job(
     # Overwrite with color-normalized version
     image_repo.update_file("generated-images", storage_key, output_bytes, "image/jpeg")
 
-    # Create images row for generated image
-    gen_image_row = image_repo.create({
-        "user_id": user_id,
-        "storage_key": storage_key,
-        "bucket": "generated-images",
-        "image_type": "generated_after",
-        "status": "cleared",
-    })
-
-    gen_image_id = gen_image_row.get("id") if gen_image_row else None
-
-    # Commit credit
-    if job_data.get("credit_reservation_id"):
-        ledger.commit(UUID(job_data["credit_reservation_id"]))
-
-    # Update job → completed
+    # Step 1: Mark job as "finalizing" — idempotent marker so watchdog can detect
+    # incomplete finalization and retry (H-2)
     job_repo.update(job_id, {
-        "status": JobStatus.COMPLETED,
-        "generated_image_id": gen_image_id,
-        "identity_similarity_score": identity_result.similarity_score,
-        "identity_preserved": True,
-        "estimated_cost_usd": gen_result.estimated_cost_usd,
-        "model_used": options.model,
+        "status": JobStatus.FINALIZING,
         "updated_at": datetime.now(tz=timezone.utc).isoformat(),
     })
+
+    try:
+        # Step 2: Create images row for generated image
+        gen_image_row = image_repo.create({
+            "user_id": user_id,
+            "storage_key": storage_key,
+            "bucket": "generated-images",
+            "image_type": "generated_after",
+            "status": "cleared",
+        })
+
+        gen_image_id = gen_image_row.get("id") if gen_image_row else None
+
+        # Step 3: Commit credit (money operation — last before final status)
+        if job_data.get("credit_reservation_id"):
+            ledger.commit(UUID(job_data["credit_reservation_id"]))
+
+        # Step 4: Update job → completed
+        job_repo.update(job_id, {
+            "status": JobStatus.COMPLETED,
+            "generated_image_id": gen_image_id,
+            "identity_similarity_score": identity_result.similarity_score,
+            "identity_preserved": True,
+            "estimated_cost_usd": gen_result.estimated_cost_usd,
+            "model_used": options.model,
+            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+        })
+    except Exception:
+        logger.exception(
+            "Finalization failed for job %s — job remains in 'finalizing' for watchdog retry",
+            job_id,
+        )
+        raise
 
 
 async def process_generation_job(ctx: dict, job_id: str) -> None:
@@ -359,10 +397,9 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         user_id = job_data["user_id"]
         user_id_for_concurrent = user_id
 
-        # Concurrent guard — INCR at job start, DECR in all exit paths
+        # Concurrent counter was already INCRed atomically by the entitlement
+        # service's Lua script (H-4 fix).  We only DECR in the finally block.
         concurrent_key = f"concurrent:{user_id}"
-        await redis.incr(concurrent_key)
-        await redis.expire(concurrent_key, settings.GENERATION_TIMEOUT_SECONDS + 60)
 
         options, source_url, adaptive_params, prompt = await _build_generation_context(
             job_repo, image_repo, analysis_repo, job_data
@@ -374,6 +411,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             job_repo, image_repo, cost_tracker, generator,
             job_id, job_data, options, source_url, adaptive_params,
             prompt, options.negative_prompt, storage_key, user_id, supabase,
+            redis_client=redis, concurrent_key=concurrent_key,
         )
         if validate_result is None:
             return
@@ -413,8 +451,15 @@ async def _fail_job(
     supabase: Client | None = None,
 ) -> None:
     """Fail a job: release credit, update status."""
-    # Release credit reservation
-    if job_data.get("credit_reservation_id") and supabase is not None:
+    # Release credit reservation — but only if credit hasn't already been
+    # committed (M-4: double-release guard).  Jobs in "completed" or
+    # "finalizing" have already had their credit committed (or are mid-commit).
+    current_status = job_data.get("status")
+    if (
+        job_data.get("credit_reservation_id")
+        and supabase is not None
+        and current_status not in (JobStatus.COMPLETED, JobStatus.FINALIZING)
+    ):
         try:
             from app.entitlement.ledger import CreditLedger
             _ledger = CreditLedger(supabase)
@@ -441,7 +486,7 @@ async def _fail_job(
 
 
 async def watchdog_stuck_jobs(ctx: dict) -> None:
-    """Cron: recover jobs stuck in 'processing' beyond timeout."""
+    """Cron: recover jobs stuck in 'processing' or 'finalizing' beyond timeout."""
     supabase: Client = ctx["supabase"]
     job_repo = JobRepository(supabase)
     threshold = datetime.now(tz=timezone.utc) - timedelta(

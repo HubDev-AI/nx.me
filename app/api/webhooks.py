@@ -55,14 +55,10 @@ async def stripe_webhook(request: Request) -> dict:
     # --- Idempotency check ---
     sub_repo = SubscriptionRepository(request.app.state.supabase)
 
-    try:
-        sub_repo.record_webhook_event(provider="stripe", event_id=event_id)
-    except Exception as exc:
-        # UNIQUE constraint violation = duplicate event
-        if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
-            logger.info("Duplicate webhook event %s — skipping", event_id)
-            return {"status": "already_processed"}
-        raise
+    is_new = sub_repo.record_webhook_event(provider="stripe", event_id=event_id)
+    if not is_new:
+        logger.info("Duplicate webhook event %s — skipping", event_id)
+        return {"status": "already_processed"}
 
     # --- Route to handler ---
     try:

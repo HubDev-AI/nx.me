@@ -25,16 +25,24 @@ _arcface_lock = threading.Lock()  # insightface is not thread-safe
 
 
 def preload_arcface() -> None:
-    """Pre-load ArcFace model at worker startup. Blocks until ready."""
-    global _arcface_app
-    from insightface.app import FaceAnalysis
+    """Pre-load ArcFace model at worker startup. Blocks until ready.
 
-    _arcface_app = FaceAnalysis(
-        name="buffalo_l",
-        providers=["CPUExecutionProvider"],
-    )
-    _arcface_app.prepare(ctx_id=0, det_size=(640, 640))
-    logger.info("ArcFace buffalo_l model pre-loaded")
+    Raises:
+        RuntimeError: If the model fails to load.
+    """
+    global _arcface_app
+    try:
+        from insightface.app import FaceAnalysis
+
+        _arcface_app = FaceAnalysis(
+            name="buffalo_l",
+            providers=["CPUExecutionProvider"],
+        )
+        _arcface_app.prepare(ctx_id=0, det_size=(640, 640))
+        logger.info("ArcFace buffalo_l model pre-loaded")
+    except Exception as exc:
+        _arcface_app = None
+        raise RuntimeError(f"Failed to preload ArcFace model: {exc}") from exc
 
 
 def check_identity(

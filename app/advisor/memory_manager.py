@@ -279,6 +279,22 @@ class MemoryManager:
         image_id: str,
     ) -> None:
         """Write an analysis_insight memory after a face analysis completes."""
+        # L-6: Verify image belongs to user before storing insight
+        try:
+            image_data = (
+                self._repo._sb.table("images")
+                .select("user_id")
+                .eq("id", image_id)
+                .maybe_single()
+                .execute()
+            )
+            if image_data.data and image_data.data.get("user_id") != str(user_id):
+                logger.warning("Image %s does not belong to user %s, skipping insight", image_id, user_id)
+                return
+        except Exception as exc:
+            logger.warning("Could not verify image ownership for %s: %s", image_id, exc)
+            # Proceed anyway — the image may not exist yet in rare timing cases
+
         content: dict[str, Any] = {
             "face_shape": face_shape,
             "symmetry_score": symmetry_score,

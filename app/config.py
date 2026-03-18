@@ -2,6 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # extra="ignore": typos in env var names are silently ignored.
+    # Consider "forbid" if strict validation is needed (breaks if CI adds extra vars).
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # App
@@ -72,6 +74,12 @@ class Settings(BaseSettings):
     GENERATION_EMERGENCY_STOP: bool = False
     MAX_GENERATIONS_PER_USER_PER_DAY: int = 50
     MAX_QUEUE_DEPTH: int = 15000
+
+    # Cost tracker circuit breaker tuning (L-11)
+    CB_FAILURE_THRESHOLD: int = 5           # failures within window to open circuit
+    CB_FAILURE_WINDOW_SECONDS: int = 300    # 5-minute sliding window
+    CB_COOLDOWN_SECONDS: int = 30           # seconds in OPEN before HALF_OPEN probe
+    COST_BUCKET_TTL_SECONDS: int = 90_000   # 25 hours (24h + 1h buffer)
 
     # Generation models (from generation-spec.md)
     FAL_MODEL_PRIMARY: str = "fal-ai/flux-pulid"

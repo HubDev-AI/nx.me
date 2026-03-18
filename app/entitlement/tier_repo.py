@@ -34,10 +34,22 @@ def _row_to_tier(row: dict) -> TierRecord:
         advisor_nudges_type=row["advisor_nudges_type"],
         advisor_nudges_limit=row.get("advisor_nudges_limit"),
         advisor_nudges_period_seconds=row.get("advisor_nudges_period_seconds"),
-        max_concurrent_generations=row["max_concurrent_generations"],
-        identity_similarity_threshold=float(row["identity_similarity_threshold"]),
-        feature_advisor_chat=row["feature_advisor_chat"],
-        feature_visual_comparison=row["feature_visual_comparison"],
+        max_concurrent_generations=(
+            int(row["max_concurrent_generations"])
+            if row.get("max_concurrent_generations") is not None else 1
+        ),
+        identity_similarity_threshold=(
+            float(row["identity_similarity_threshold"])
+            if row.get("identity_similarity_threshold") is not None else 0.75
+        ),
+        feature_advisor_chat=(
+            bool(row["feature_advisor_chat"])
+            if row.get("feature_advisor_chat") is not None else False
+        ),
+        feature_visual_comparison=(
+            bool(row["feature_visual_comparison"])
+            if row.get("feature_visual_comparison") is not None else False
+        ),
         stripe_price_id=row.get("stripe_price_id"),
         credits_based=row["credits_based"],
     )
@@ -80,7 +92,12 @@ class TierRepository:
         # Check cache
         cached = await self._redis.get(cache_key)
         if cached:
-            return _row_to_tier(json.loads(cached))
+            try:
+                return _row_to_tier(json.loads(cached))
+            except (json.JSONDecodeError, TypeError):
+                logger.warning("Corrupted tier cache for key %s, deleting", cache_key)
+                await self._redis.delete(cache_key)
+                # Fall through to DB lookup below
 
         # Fetch from DB
         result = (

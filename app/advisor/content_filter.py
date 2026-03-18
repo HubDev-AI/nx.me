@@ -83,7 +83,8 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
         await redis_client.expire(key, 3600)  # 1-hour window
 
     if new_count > settings.ADVISOR_CHAT_RATE_LIMIT:
-        await redis_client.decr(key)
+        # Do NOT decr — that would gift the next request a free attempt (M-11).
+        # The count will naturally expire with the key TTL.
         ttl: int = await redis_client.ttl(key)
         raise RateLimitExceeded(retry_after=max(ttl, 0))
 

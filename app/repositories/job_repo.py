@@ -135,11 +135,11 @@ class JobRepository:
         return result.data or []
 
     def get_stuck_jobs(self, cutoff: str) -> list[dict]:
-        """Fetch jobs stuck in 'processing' state before the given UTC cutoff."""
+        """Fetch jobs stuck in 'processing' or 'finalizing' state before the given UTC cutoff."""
         result = (
             self._sb.table("glow_up_jobs")
-            .select("id, credit_reservation_id")
-            .eq("status", "processing")
+            .select("id, credit_reservation_id, status")
+            .in_("status", ["processing", "finalizing"])
             .lt("updated_at", cutoff)
             .execute()
         )

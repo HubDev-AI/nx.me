@@ -18,6 +18,7 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from supabase import Client
 
+from app.config import settings
 from app.entitlement.ledger import CreditLedger
 from app.entitlement.models import (
     CanGenerateResult,
@@ -36,6 +37,18 @@ from app.entitlement.usage_repo import UsageRepository
 from app.services.limits import LimitType
 
 logger = logging.getLogger(__name__)
+
+# Lua script: atomic check-then-increment for concurrent generation guard.
+# Returns 1 if the slot was acquired (counter < limit), 0 if at capacity.
+_CONCURRENT_CHECK_SCRIPT = """
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current >= tonumber(ARGV[1]) then
+    return 0
+end
+redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+return 1
+"""
 
 # Map LimitType → error code
 _LIMIT_CODE: dict[LimitType, str] = {
@@ -68,6 +81,7 @@ class EntitlementService:
         self._tier_repo = TierRepository(supabase, redis_client)
         self._ledger = CreditLedger(supabase)
         self._usage = UsageRepository(supabase)
+        self._concurrent_check_sha: str | None = None
 
     # ------------------------------------------------------------------
     # Core: get_entitlement (AC-1)
@@ -99,7 +113,9 @@ class EntitlementService:
         # Fetch tier record (Redis-cached)
         tier = await self._tier_repo.get(tier_id)
 
-        # Compute credit balance from ledger (authoritative)
+        # Compute credit balance from ledger (authoritative).
+        # M-13: This is the "worst case" balance — in-flight reserves are already
+        # deducted as negative deltas, so pending reserves don't inflate it.
         credit_balance = self._ledger.balance(user_id)
 
         # Check active subscription
@@ -188,14 +204,26 @@ class EntitlementService:
 
     async def _check_generation(self, user_id: UUID, tier: TierRecord) -> EntitlementResult:
         """Generation-specific check: concurrent guard + credits/window."""
-        # 1. Concurrent guard (Redis)
-        # Note: this is a read-only check. The actual INCR/DECR happens in the
-        # ARQ worker at job start/end. A small race window exists between this
-        # check and the worker INCR, but it's acceptable — the worker also
-        # checks and rejects if over limit.
+        # 1. Concurrent guard (Redis) — atomic check-and-increment via Lua script.
+        # The Lua script increments the counter only if it is below the limit,
+        # eliminating the race window between check and increment.
+        # The worker only DECRs in its finally block.
         concurrent_key = f"concurrent:{user_id}"
-        current = int(await self._redis.get(concurrent_key) or 0)
-        if current >= tier.max_concurrent_generations:
+        ttl = settings.GENERATION_TIMEOUT_SECONDS + 60
+
+        if self._concurrent_check_sha is None:
+            self._concurrent_check_sha = await self._redis.script_load(
+                _CONCURRENT_CHECK_SCRIPT
+            )
+
+        acquired = await self._redis.evalsha(
+            self._concurrent_check_sha,
+            1,
+            concurrent_key,
+            str(tier.max_concurrent_generations),
+            str(ttl),
+        )
+        if not acquired:
             return EntitlementResult(
                 allowed=False,
                 error_code=TIER_CONCURRENT_LIMIT,

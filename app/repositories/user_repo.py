@@ -116,7 +116,13 @@ class UserRepository:
         self._sb.table("users").update(updates).eq("id", user_id).execute()
 
     def soft_delete(self, user_id: str, now_utc: datetime, reserved_until: datetime) -> list[dict]:
-        """Soft-delete a user row; returns the updated rows (empty if already deleted)."""
+        """Soft-delete a user row; returns the updated rows (empty if already deleted).
+
+        Atomicity note (M-12): both ``deleted_at`` and ``username_reserved_until``
+        are set in a single ``.update()`` call, so they are applied in the same
+        database statement — no transaction wrapper needed.  The ``is_("deleted_at", "null")``
+        guard ensures idempotency (a concurrent call sees zero rows).
+        """
         result = (
             self._sb.table("users")
             .update(

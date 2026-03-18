@@ -15,13 +15,13 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Named constants for magic numbers
-_COST_BUCKET_TTL_SECONDS = 90_000  # 25 hours (24h + 1h buffer)
-
-# Circuit breaker: sliding window failure tracking
-_CB_FAILURE_THRESHOLD = 5           # failures within window to open circuit
-_CB_FAILURE_WINDOW_SECONDS = 300    # 5-minute sliding window
-_CB_COOLDOWN_SECONDS = 30           # time in OPEN before attempting HALF_OPEN
+# Circuit breaker constants — sourced from settings (L-11).
+# These module-level aliases avoid repeated attribute access in hot paths.
+# The authoritative values live in app.config.Settings.
+_COST_BUCKET_TTL_SECONDS = settings.COST_BUCKET_TTL_SECONDS
+_CB_FAILURE_THRESHOLD = settings.CB_FAILURE_THRESHOLD
+_CB_FAILURE_WINDOW_SECONDS = settings.CB_FAILURE_WINDOW_SECONDS
+_CB_COOLDOWN_SECONDS = settings.CB_COOLDOWN_SECONDS
 
 # Redis key patterns
 _COST_BUCKET_PREFIX = "gen:cost:24h:"
@@ -36,11 +36,25 @@ _CB_FAILURES_KEY = "gen:cb:failures"  # sorted set of failure timestamps
 _CB_OPEN_AT_KEY = "gen:cb:open_at"  # float timestamp when circuit was opened
 
 
+_CB_TRANSITION_SCRIPT = """
+local open_at = redis.call('GET', KEYS[1])
+if not open_at then return 0 end
+local cooldown = tonumber(ARGV[1])
+local now = tonumber(ARGV[2])
+if (now - tonumber(open_at)) >= cooldown then
+    redis.call('DEL', KEYS[1])
+    return 1
+end
+return 0
+"""
+
+
 class CostTracker:
     """Tracks generation costs and enforces circuit breakers."""
 
     def __init__(self, redis_client: aioredis.Redis) -> None:
         self._redis = redis_client
+        self._cb_transition_sha: str | None = None
 
     # ------------------------------------------------------------------
     # Record cost
@@ -57,7 +71,10 @@ class CostTracker:
         pipe.expire(cost_key, _COST_BUCKET_TTL_SECONDS)
         pipe.incr(count_key)
         pipe.expire(count_key, _COST_BUCKET_TTL_SECONDS)
-        await pipe.execute()
+        results = await pipe.execute()
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error("Redis pipeline command %d failed in record_cost: %s", i, result)
 
     # ------------------------------------------------------------------
     # Rolling 24h average cost per generation
@@ -140,7 +157,10 @@ class CostTracker:
         pipe = self._redis.pipeline()
         pipe.incr(key)
         pipe.expire(key, 86400)
-        await pipe.execute()
+        results = await pipe.execute()
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error("Redis pipeline command %d failed in increment_user_daily: %s", i, result)
 
     # ------------------------------------------------------------------
     # Circuit breaker (fal.ai failures) — sliding window + half-open state
@@ -164,7 +184,10 @@ class CostTracker:
         pipe.zadd(_CB_FAILURES_KEY, {str(now): now})
         # Trim entries outside the sliding window
         pipe.zremrangebyscore(_CB_FAILURES_KEY, 0, window_start)
-        await pipe.execute()
+        results = await pipe.execute()
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error("Redis pipeline command %d failed in record_failure: %s", i, result)
 
         failure_count = await self._redis.zcard(_CB_FAILURES_KEY)
 
@@ -202,7 +225,10 @@ class CostTracker:
             pipe.set(_CB_STATE_KEY, "closed")
             pipe.delete(_CB_FAILURES_KEY)
             pipe.delete(_CB_OPEN_AT_KEY)
-            await pipe.execute()
+            results = await pipe.execute()
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error("Redis pipeline command %d failed in record_success: %s", i, result)
             logger.info("Circuit breaker CLOSED: probe succeeded")
         # In CLOSED state intentionally do nothing — failure history is preserved
         # so a single success cannot mask a genuinely flapping provider.
@@ -213,7 +239,8 @@ class CostTracker:
         Returns True  → reject the request (circuit OPEN and still cooling down).
         Returns False → allow the request (CLOSED or HALF_OPEN probe slot).
 
-        Side effect: transitions OPEN → HALF_OPEN when cooldown has elapsed.
+        Side effect: transitions OPEN → HALF_OPEN when cooldown has elapsed,
+        using an atomic Lua script to prevent multiple concurrent probes (M-9).
         """
         current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
         if isinstance(current_state, bytes):
@@ -223,10 +250,22 @@ class CostTracker:
             return False
 
         if current_state == "open":
-            raw_open_at = await self._redis.get(_CB_OPEN_AT_KEY)
-            open_at = float(raw_open_at) if raw_open_at else 0.0
-            if time.time() - open_at >= _CB_COOLDOWN_SECONDS:
-                # Cooldown elapsed — allow one probe request through
+            # Atomic check-and-transition: delete open_at only if cooldown elapsed.
+            # This prevents two concurrent callers from both seeing "cooldown elapsed"
+            # and both transitioning to half_open (letting two probes through).
+            if self._cb_transition_sha is None:
+                self._cb_transition_sha = await self._redis.script_load(
+                    _CB_TRANSITION_SCRIPT
+                )
+
+            transitioned = await self._redis.evalsha(
+                self._cb_transition_sha,
+                1,
+                _CB_OPEN_AT_KEY,
+                str(_CB_COOLDOWN_SECONDS),
+                str(time.time()),
+            )
+            if transitioned:
                 await self._redis.set(_CB_STATE_KEY, "half_open")
                 logger.info(
                     "Circuit breaker → HALF_OPEN: allowing probe after %ds cooldown",

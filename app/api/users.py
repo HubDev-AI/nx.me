@@ -8,6 +8,7 @@ Story 6-3:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -160,9 +161,10 @@ def get_user_history(
     user_id: str = user["id"]
 
     if claims["sub"] != user_id:
+        # Return 404 (not 403) to prevent user enumeration (L-1)
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view this user's history",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
         )
 
     fetch_limit = limit + 1
@@ -290,16 +292,17 @@ def update_user_profile(
     user_id: str = user["id"]
 
     if claims["sub"] != user_id:
+        # Return 404 (not 403) to prevent user enumeration (L-1)
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to update this user's profile",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
         )
 
     updates: dict = {}
     if body.display_name is not None:
         updates["display_name"] = body.display_name
     if body.avatar_storage_key is not None:
-        if not body.avatar_storage_key.startswith(f"avatars/{user_id}/"):
+        if not re.match(rf"^avatars/{re.escape(user_id)}/[a-zA-Z0-9_\-\.]+$", body.avatar_storage_key):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid avatar storage key",

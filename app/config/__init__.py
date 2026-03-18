@@ -97,8 +97,13 @@ class Settings(BaseSettings):
     REGISTRATION_IP_WINDOW_SECONDS: int = 3_600   # 1 hour
 
     # Rate limiting — login (LE-5: independent from registration)
-    LOGIN_IP_LIMIT: int = 10                      # max login attempts per IP address
+    # Tightened to prevent brute force on shared IPs (corporate/mobile networks)
+    LOGIN_IP_LIMIT: int = 5
     LOGIN_IP_WINDOW_SECONDS: int = 900            # 15 minutes
+
+    # Proxy headers — enable only when deployed behind a trusted reverse proxy
+    # (e.g., ALB, nginx) that sets X-Forwarded-For.
+    TRUST_PROXY_HEADERS: bool = False
 
     # Guest reaction token registry (LR-8)
     GUEST_TOKEN_TTL_SECONDS: int = 86_400         # 24 hours — registration window per token

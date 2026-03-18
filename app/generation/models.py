@@ -15,6 +15,7 @@ class JobStatus(StrEnum):
     PENDING = "pending"
     QUEUED = "queued"
     PROCESSING = "processing"
+    FINALIZING = "finalizing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"

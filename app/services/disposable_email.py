@@ -16,9 +16,9 @@ try:
     from disposable_email_domains import blocklist as _DISPOSABLE_DOMAINS
 
     if len(_DISPOSABLE_DOMAINS) < 100:
-        logger.critical(
-            "Disposable email blocklist suspiciously small (%d domains) — possible package issue",
-            len(_DISPOSABLE_DOMAINS),
+        raise RuntimeError(
+            f"Disposable email blocklist has only {len(_DISPOSABLE_DOMAINS)} domains. "
+            "Expected 100+. Check disposable-email-domains package."
         )
     else:
         logger.info("Loaded disposable email blocklist: %d domains", len(_DISPOSABLE_DOMAINS))

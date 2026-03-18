@@ -62,24 +62,38 @@ class SubscriptionRepository:
         updates: dict,
     ) -> None:
         """Apply field updates to a subscription row identified by provider ID."""
-        self._sb.table("subscriptions").update(updates).eq(
+        result = self._sb.table("subscriptions").update(updates).eq(
             "provider_subscription_id", provider_subscription_id
         ).execute()
+        if not result.data:
+            logger.warning(
+                "Subscription update affected 0 rows for provider_subscription_id=%s",
+                provider_subscription_id,
+            )
 
     # ------------------------------------------------------------------
     # processed_webhook_events table
     # ------------------------------------------------------------------
 
-    def record_webhook_event(self, provider: str, event_id: str) -> None:
-        """Insert a processed webhook event record.
+    def record_webhook_event(self, provider: str, event_id: str) -> bool:
+        """Record a processed webhook event, returning True if this is the first time.
 
-        Raises the underlying exception (including unique constraint violation)
-        so the caller can detect duplicate events.
+        Uses upsert with ``ignore_duplicates=True`` so concurrent duplicate
+        webhooks don't both pass the existence check (M-15).  The caller
+        should treat a ``False`` return as "already processed — skip".
         """
-        self._sb.table("processed_webhook_events").insert({
-            "provider": provider,
-            "event_id": event_id,
-        }).execute()
+        result = (
+            self._sb.table("processed_webhook_events")
+            .upsert(
+                {"provider": provider, "event_id": event_id},
+                on_conflict="event_id",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
+        # When ignore_duplicates=True and the row already existed, Supabase
+        # returns an empty data list.  A non-empty list means this was a fresh insert.
+        return bool(result.data)
 
     # ------------------------------------------------------------------
     # users table — tier updates driven by webhook events

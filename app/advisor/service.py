@@ -94,9 +94,22 @@ class AdvisorService:
         history = self._load_conversation_history(conversation_id)
 
         # Auto-summarize if threshold reached (spec Section 5.2)
+        # L-7: Guard against double-trigger — skip if recently summarized
         if len(history) >= settings.ADVISOR_CONVERSATION_SUMMARY_THRESHOLD:
-            await self._summarize_conversation(conversation_id, history)
-            history = self._load_conversation_history(conversation_id)
+            should_summarize = True
+            summarized_at_str = conversation.get("summarized_at")
+            if summarized_at_str:
+                try:
+                    last_summary = datetime.fromisoformat(summarized_at_str)
+                    if last_summary.tzinfo is None:
+                        last_summary = last_summary.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) - last_summary < timedelta(minutes=5):
+                        should_summarize = False
+                except (ValueError, TypeError):
+                    pass
+            if should_summarize:
+                await self._summarize_conversation(conversation_id, history)
+                history = self._load_conversation_history(conversation_id)
 
         # Step 4: Retrieve relevant memories
         memories = await self._memory_manager.get_relevant_memories(user_id, message)
@@ -135,7 +148,8 @@ class AdvisorService:
         # Update conversation updated_at
         self._repo.update_conversation_timestamp(conversation_id)
 
-        # Step 10: Async memory extraction (fire and forget)
+        # Step 10: Async memory extraction (fire and forget, L-5)
+        # No explicit retry — extraction will naturally re-trigger on next message.
         task = asyncio.create_task(
             self._memory_manager.extract_memories_from_turn(
                 user_id=user_id,
@@ -143,9 +157,14 @@ class AdvisorService:
                 advisor_response=advisor_response,
             )
         )
+        _uid, _mid = str(user_id), user_msg_row.get("id", "")
         task.add_done_callback(
-            lambda t: t.exception() and logger.warning(
-                "Memory extraction failed", exc_info=t.exception()
+            lambda t, uid=_uid, mid=_mid: (
+                t.exception() and logger.warning(
+                    "Memory extraction failed for user %s, message %s. "
+                    "Will retry on next message.",
+                    uid, mid, exc_info=t.exception(),
+                )
             )
         )
 
@@ -237,6 +256,9 @@ class AdvisorService:
         has_more = len(rows) > limit
         if has_more:
             rows = rows[:limit]
+        # L-8: Cursor format: {created_at}|{id}
+        # Assumes (created_at, id) is unique. The id tiebreaker prevents skipped records
+        # when multiple messages share the same created_at timestamp.
         next_cursor = (
             f"{rows[-1]['created_at']}|{rows[-1]['id']}"
             if has_more and rows
@@ -500,7 +522,7 @@ def _first_sentence(text: str) -> str:
 
 def _post_check(response: str, recent_messages: list[str]) -> str | None:
     """Check response quality. Returns a regeneration hint, or None if OK."""
-    if recent_messages:
+    if recent_messages:  # L-4: Guard — skip repetition check when no prior messages
         last_sentence = _first_sentence(recent_messages[-1])
         this_sentence = _first_sentence(response)
         if last_sentence and last_sentence == this_sentence:

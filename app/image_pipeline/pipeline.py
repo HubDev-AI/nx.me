@@ -44,8 +44,14 @@ _CONTENT_TYPE_EXT = {
 def _get_nsfw_screener() -> NSFWScreenerPort:
     """Resolve NSFW screener adapter from config (lazy import)."""
     if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
-        from app.image_pipeline.nsfw_screener import RekognitionAdapter
-        return RekognitionAdapter()
+        try:
+            from app.image_pipeline.nsfw_screener import RekognitionAdapter
+            return RekognitionAdapter()
+        except ImportError:
+            logger.warning(
+                "Rekognition adapter not available, falling back to mock NSFW screener. "
+                "This is expected in development but NOT in production."
+            )
     from app.image_pipeline.nsfw_screener import MockNSFWAdapter
     return MockNSFWAdapter()
 
@@ -95,10 +101,15 @@ class ImagePipeline:
         now_utc = datetime.now(tz=timezone.utc).isoformat()
 
         # Step 1: Magic bytes validation (AC-1)
-        self._magic_validator.validate(file_bytes)
-
         # Step 2: Size and dimension validation (AC-2)
-        self._dimension_validator.validate(file_bytes)
+        try:
+            self._magic_validator.validate(file_bytes)
+            self._dimension_validator.validate(file_bytes)
+        except (ValueError, TypeError, OSError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Image validation failed: {exc}",
+            ) from exc
 
         # Step 3: NSFW screening (AC-3)
         nsfw_result = await self._nsfw_screener.screen(file_bytes)
@@ -116,8 +127,9 @@ class ImagePipeline:
                     "screened_at": now_utc,
                 })
             except Exception as exc:
-                # DB failure must not mask the quarantine decision
+                # DB failure must not mask the quarantine decision — fail closed
                 logger.error("Failed to insert quarantined images row for user %s: %s", user_id, exc)
+                raise  # Fail closed — do not allow unrecorded quarantined images
 
             logger.info(
                 "Image quarantined for user %s (confidence=%.1f%%, labels=%s)",

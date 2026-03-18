@@ -136,6 +136,16 @@ def create_post(
     before_url = published.before_url
     after_url = published.after_url
 
+    # Re-verify job status right before insert to minimise TOCTOU window (M-5).
+    # The job could have been re-queued or failed between the first check and
+    # the image publish above.
+    fresh_job = job_repo.get_jobs_for_post(body.glow_up_job_id)
+    if not fresh_job or fresh_job["status"] != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": {"code": "JOB_STATUS_CHANGED", "message": "Job status changed during post creation."}},
+        )
+
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
     post = post_repo.insert_post({
