@@ -7,10 +7,6 @@
    Dark-first design matching the NXME design system tokens.
 ----------------------------------------------------------------------- */
 
-:root {
-  --font-inter: 'Inter', system-ui, sans-serif;
-}
-
 html {
   color-scheme: dark;
 }
