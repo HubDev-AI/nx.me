@@ -10,3 +10,6 @@ AS $$
       updated_at    = now()
   WHERE id = p_post_id;
 $$;
+
+-- DOWN
+DROP FUNCTION IF EXISTS public.increment_comment_count(UUID);

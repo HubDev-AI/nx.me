@@ -44,3 +44,8 @@ AS $$
     AND posts.reaction_count IS DISTINCT FROM actual.cnt
   RETURNING posts.id;
 $$;
+
+-- DOWN
+DROP FUNCTION IF EXISTS public.reconcile_reaction_counts(TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS public.decrement_reaction_count(UUID);
+DROP FUNCTION IF EXISTS public.increment_reaction_count(UUID);

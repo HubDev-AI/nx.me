@@ -13,3 +13,6 @@ AS $$
   WHERE user_id = p_user_id
     AND is_deleted = false;
 $$;
+
+-- DOWN
+DROP FUNCTION IF EXISTS public.user_post_stats(UUID);
