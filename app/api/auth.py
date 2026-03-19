@@ -69,7 +69,7 @@ _ACCEPTED_PROVIDERS = frozenset({"google", "apple"})
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=8, max_length=128)
     username: str = Field(min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_]+$")
     display_name: str = Field(min_length=1, max_length=50)
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
