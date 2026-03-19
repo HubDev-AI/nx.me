@@ -29,3 +29,8 @@ build/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# TikTok autoresearch results (generated content, not source)
+tools/tiktok-autoresearch/results/*.tsv
+tools/tiktok-autoresearch/results/*.md
+!tools/tiktok-autoresearch/results/.gitkeep
