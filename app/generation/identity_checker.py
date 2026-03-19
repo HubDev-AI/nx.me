@@ -67,9 +67,11 @@ def check_identity(
     if threshold is None:
         threshold = settings.IDENTITY_SIMILARITY_THRESHOLD
 
-    # Load images as numpy arrays
-    source_img = np.array(PIL.Image.open(io.BytesIO(source_image_bytes)).convert("RGB"))
-    gen_img = np.array(PIL.Image.open(io.BytesIO(generated_image_bytes)).convert("RGB"))
+    # Load images as numpy arrays (context managers prevent resource leaks)
+    with PIL.Image.open(io.BytesIO(source_image_bytes)) as _src_pil:
+        source_img = np.array(_src_pil.convert("RGB"))
+    with PIL.Image.open(io.BytesIO(generated_image_bytes)) as _gen_pil:
+        gen_img = np.array(_gen_pil.convert("RGB"))
 
     # Detect faces and extract embeddings (lock for thread safety)
     with _arcface_lock:
