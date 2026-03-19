@@ -21,6 +21,7 @@ import {
   TEXT_SECONDARY,
   FEED_DIVIDER,
   BEFORE_OVERLAY,
+  AFTER_OVERLAY_STRONG,
 } from "../../constants/colors";
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
@@ -38,6 +39,7 @@ interface FeedCardProps {
   hasReacted: boolean;
   onReact: (postId: string) => void;
   onReport: (postId: string) => void;
+  onBlock: (userId: string, displayName: string) => void;
   onCommentPress: (postId: string) => void;
 }
 
@@ -52,6 +54,7 @@ export function FeedCard({
   hasReacted,
   onReact,
   onReport,
+  onBlock,
   onCommentPress,
 }: FeedCardProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -97,18 +100,23 @@ export function FeedCard({
 
   const handleLongPress = useCallback(() => {
     const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${post.post_id}`;
+    const blockLabel = post.display_name
+      ? `Block ${post.display_name}`
+      : "Block User";
 
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ["Share", "Report", "Cancel"],
-          cancelButtonIndex: 2,
-          destructiveButtonIndex: 1,
+          options: ["Share", blockLabel, "Report", "Cancel"],
+          cancelButtonIndex: 3,
+          destructiveButtonIndex: 2,
         },
         (buttonIndex) => {
           if (buttonIndex === 0) {
             Share.share({ url: shareUrl });
           } else if (buttonIndex === 1) {
+            onBlock(post.user_id, post.display_name ?? "this user");
+          } else if (buttonIndex === 2) {
             onReport(post.post_id);
           }
         },
@@ -121,6 +129,10 @@ export function FeedCard({
           onPress: () => Share.share({ message: shareUrl }),
         },
         {
+          text: blockLabel,
+          onPress: () => onBlock(post.user_id, post.display_name ?? "this user"),
+        },
+        {
           text: "Report",
           style: "destructive",
           onPress: () => onReport(post.post_id),
@@ -128,7 +140,7 @@ export function FeedCard({
         { text: "Cancel", style: "cancel" },
       ]);
     }
-  }, [post.post_id, onReport]);
+  }, [post.post_id, post.user_id, post.display_name, onReport, onBlock]);
 
   const timeAgo = formatTimeAgo(post.created_at);
 
@@ -147,7 +159,7 @@ export function FeedCard({
         delayLongPress={LONG_PRESS_DELAY_MS}
         accessibilityLabel={`Post${post.caption ? `: ${post.caption}` : ""}, ${post.reaction_count} reactions, ${post.comment_count} comments, ${timeAgo}`}
         accessibilityRole="button"
-        accessibilityHint="Long press for share and report options"
+        accessibilityHint="Long press for share, block, and report options"
       >
         {/* Before / After images side by side */}
         <View style={styles.imageRow}>
@@ -251,7 +263,7 @@ const styles = StyleSheet.create({
   afterLabel: {
     left: undefined,
     right: 8,
-    backgroundColor: "rgba(244, 63, 94, 0.72)",
+    backgroundColor: AFTER_OVERLAY_STRONG,
   },
   imageLabelText: {
     fontSize: 11,

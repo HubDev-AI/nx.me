@@ -129,7 +129,7 @@ class EntitlementService:
         )
         has_subscription = bool(sub_result.data)
         billing_end: datetime | None = None
-        if has_subscription and sub_result.data:
+        if sub_result.data:
             end_str = sub_result.data[0].get("billing_period_end")
             if end_str:
                 billing_end = datetime.fromisoformat(end_str)

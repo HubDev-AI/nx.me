@@ -58,7 +58,6 @@ export default function ProfileScreen() {
   }, []);
 
   // Load profile when authenticated
-  // TODO: Get username from auth context once available
   useEffect(() => {
     if (isAuthenticated && profile === null) {
       loadProfile("me");

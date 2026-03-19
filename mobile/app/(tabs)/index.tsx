@@ -25,6 +25,8 @@ import { SortTabs } from "../../components/feed/SortTabs";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
 import { useFeed } from "../../components/feed/useFeed";
 import type { FeedPost } from "../../components/feed/types";
+import { blockUser } from "../../lib/block";
+import { reportPost } from "../../lib/report";
 
 /** Home / Feed tab — Story 5-4 */
 export default function HomeScreen() {
@@ -42,6 +44,8 @@ export default function HomeScreen() {
     refresh,
     changeSort,
     reactToPost,
+    incrementCommentCount,
+    removePostsByUser,
   } = useFeed();
 
   // Comments sheet state
@@ -61,30 +65,67 @@ export default function HomeScreen() {
     setCommentsPostId(null);
   }, []);
 
-  const handleCommentPosted = useCallback((_postId: string) => {
-    // Optimistically increment comment_count on the feed card
-    // The useFeed hook doesn't expose a setter, so we rely on the
-    // feed data being refreshed eventually. For now, this is a no-op
-    // placeholder that the parent can use for future enhancements.
-  }, []);
+  const handleCommentPosted = useCallback((postId: string) => {
+    incrementCommentCount(postId);
+  }, [incrementCommentCount]);
 
-  const handleReport = useCallback((_postId: string) => {
+  const handleReport = useCallback((postId: string) => {
     Alert.alert(
       "Report Post",
-      "Are you sure you want to report this post?",
+      "Are you sure you want to report this post as inappropriate?",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Report",
           style: "destructive",
-          onPress: () => {
-            // Report API call will be implemented in a future story
-            Alert.alert("Reported", "Thank you for your feedback.");
+          onPress: async () => {
+            try {
+              await reportPost(postId);
+              Alert.alert(
+                "Report Submitted",
+                "Thanks for helping keep NXME safe. We'll review this post.",
+              );
+            } catch (err: unknown) {
+              const status = (err as { status?: number }).status;
+              if (status === 429) {
+                Alert.alert(
+                  "Slow Down",
+                  "You've submitted several reports recently. Please try again later.",
+                );
+              } else {
+                Alert.alert("Error", "Failed to submit report. Please try again.");
+              }
+            }
           },
         },
       ],
     );
   }, []);
+
+  const handleBlock = useCallback(
+    (userId: string, displayName: string) => {
+      Alert.alert(
+        `Block ${displayName}?`,
+        "They won't be able to see your posts or comment on them.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Block",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await blockUser(userId);
+                removePostsByUser(userId);
+              } catch {
+                Alert.alert("Error", "Failed to block user. Please try again.");
+              }
+            },
+          },
+        ],
+      );
+    },
+    [removePostsByUser],
+  );
 
   const keyExtractor = useCallback(
     (item: FeedPost) => item.post_id,
@@ -99,10 +140,11 @@ export default function HomeScreen() {
         hasReacted={reactedPostIds.has(item.post_id)}
         onReact={reactToPost}
         onReport={handleReport}
+        onBlock={handleBlock}
         onCommentPress={handleCommentPress}
       />
     ),
-    [reactedPostIds, reactToPost, handleReport, handleCommentPress],
+    [reactedPostIds, reactToPost, handleReport, handleBlock, handleCommentPress],
   );
 
   const renderFooter = useCallback(() => {

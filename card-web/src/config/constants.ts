@@ -36,17 +36,9 @@ export const API_BASE_URL: string = (() => {
   return process.env.NEXT_PUBLIC_API_URL ?? "https://api.nxme.ai";
 })();
 
-/**
- * Backend API base URL (client-safe).
- * Only use this in client components where the URL must be exposed to the browser.
- */
-export const PUBLIC_API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-
 /** App Store URL for iOS */
 export const APP_STORE_URL =
-  process.env.NEXT_PUBLIC_APP_STORE_URL ??
-  'https://apps.apple.com/app/nxme/id0000000000';
+  process.env.NEXT_PUBLIC_APP_STORE_URL ?? '';
 
 /** Play Store URL for Android */
 export const PLAY_STORE_URL =

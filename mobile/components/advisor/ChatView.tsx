@@ -96,8 +96,10 @@ export function ChatView() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [paginationFailed, setPaginationFailed] = useState(false);
 
   const listRef = useRef<FlatList<AdvisorMessage>>(null);
+  const retryCountRef = useRef(0);
 
   // -------------------------------------------------------------------------
   // Load initial messages
@@ -136,8 +138,19 @@ export function ChatView() {
       const older = response.messages.slice().reverse();
       setMessages((prev) => [...older, ...prev]);
       setHasMore(response.has_more);
+      retryCountRef.current = 0;
+      setPaginationFailed(false);
     } catch {
-      // Silently ignore pagination errors — user can scroll up again
+      retryCountRef.current += 1;
+      if (retryCountRef.current < 3) {
+        const delay = retryCountRef.current === 1 ? 2000 : 3000;
+        setIsLoadingMore(false);
+        setTimeout(() => {
+          loadOlderMessages();
+        }, delay);
+        return;
+      }
+      setPaginationFailed(true);
     } finally {
       setIsLoadingMore(false);
     }

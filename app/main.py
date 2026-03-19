@@ -15,7 +15,10 @@ from arq.connections import RedisSettings
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 
-from app.api import analyses, auth, entitlement, generation, health, posts, public, social, users, webhooks
+from app.api import (
+    admin, analyses, auth, blocks, entitlement, generation, health,
+    posts, public, social, users, webhooks,
+)
 from app.api.errors import (
     ApiError,
     RateLimitExceeded,
@@ -177,6 +180,9 @@ def create_app() -> FastAPI:
     # Webhooks are unversioned (external providers call fixed URLs)
     app.include_router(webhooks.router)
 
+    # Admin endpoints — unversioned, keyed by X-Admin-Key header
+    app.include_router(admin.router)
+
     # Public endpoints — no auth, no versioning, under /api prefix
     app.include_router(public.router, prefix="/api")
 
@@ -189,6 +195,7 @@ def create_app() -> FastAPI:
     v1.include_router(generation.router)
     v1.include_router(social.router)
     v1.include_router(posts.router)
+    v1.include_router(blocks.router)
     v1.include_router(users.router)
 
     if settings.ADVISOR_ENABLED:

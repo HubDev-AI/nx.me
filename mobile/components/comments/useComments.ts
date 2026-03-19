@@ -14,6 +14,7 @@ interface UseCommentsReturn {
   isAuthenticated: boolean;
   isPosting: boolean;
   postError: string | null;
+  paginationFailed: boolean;
   loadComments: (postId: string) => Promise<void>;
   loadMore: (postId: string) => Promise<void>;
   postComment: (postId: string, content: string) => Promise<void>;
@@ -33,9 +34,11 @@ export function useComments(): UseCommentsReturn {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [paginationFailed, setPaginationFailed] = useState(false);
 
   const cursorRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
+  const retryCountRef = useRef(0);
 
   const checkAuth = useCallback(async () => {
     const jwt = await getStoredJwt();
@@ -92,8 +95,20 @@ export function useComments(): UseCommentsReturn {
         setComments((prev) => [...prev, ...response.comments]);
         cursorRef.current = response.next_cursor;
         setHasMore(response.has_more);
+        retryCountRef.current = 0;
+        setPaginationFailed(false);
       } catch {
-        // Silently fail on load-more — user can scroll again
+        retryCountRef.current += 1;
+        if (retryCountRef.current < 3) {
+          const delay = retryCountRef.current === 1 ? 2000 : 3000;
+          isLoadingRef.current = false;
+          setIsLoadingMore(false);
+          setTimeout(() => {
+            loadMore(postId);
+          }, delay);
+          return;
+        }
+        setPaginationFailed(true);
       } finally {
         setIsLoadingMore(false);
         isLoadingRef.current = false;
@@ -170,7 +185,9 @@ export function useComments(): UseCommentsReturn {
     setError(null);
     setPostError(null);
     setIsPosting(false);
+    setPaginationFailed(false);
     cursorRef.current = null;
+    retryCountRef.current = 0;
   }, []);
 
   return {
@@ -182,6 +199,7 @@ export function useComments(): UseCommentsReturn {
     isAuthenticated,
     isPosting,
     postError,
+    paginationFailed,
     loadComments,
     loadMore,
     postComment,

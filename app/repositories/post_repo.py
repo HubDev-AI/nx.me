@@ -152,6 +152,25 @@ class PostRepository:
         }).execute()
         return result.data[0]
 
+    def count_unique_reporters(self, post_id: str) -> int:
+        """Count distinct reporters for a post."""
+        result = (
+            self._sb.table("reports")
+            .select("reporter_user_id")
+            .eq("post_id", post_id)
+            .execute()
+        )
+        unique_reporters = {r["reporter_user_id"] for r in (result.data or [])}
+        return len(unique_reporters)
+
+    def hide_post(self, post_id: str) -> None:
+        """Set is_hidden=true on a post (auto-hide on report threshold)."""
+        self._sb.table("posts").update({"is_hidden": True}).eq("id", post_id).execute()
+
+    def unhide_post(self, post_id: str) -> None:
+        """Set is_hidden=false on a post (admin un-hide)."""
+        self._sb.table("posts").update({"is_hidden": False}).eq("id", post_id).execute()
+
     # ------------------------------------------------------------------
     # users table — comment author profile (used in posts context)
     # ------------------------------------------------------------------

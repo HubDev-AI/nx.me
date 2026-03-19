@@ -37,8 +37,7 @@ export function CardView({ card }: CardViewProps) {
         <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-surface-elevated">
           {/* Desaturating veil over before image */}
           <div
-            className="absolute inset-0 z-10 rounded-2xl"
-            style={{ backgroundColor: 'rgba(15, 23, 42, 0.72)' }}
+            className="absolute inset-0 z-10 rounded-2xl bg-before-900/[0.72]"
             aria-hidden="true"
           />
           <Image
@@ -57,8 +56,7 @@ export function CardView({ card }: CardViewProps) {
         <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-surface-elevated">
           {/* Barely-there coral tint over after image */}
           <div
-            className="absolute inset-0 z-10 rounded-2xl"
-            style={{ backgroundColor: 'rgba(244, 63, 94, 0.08)' }}
+            className="absolute inset-0 z-10 rounded-2xl bg-after-500/[0.08]"
             aria-hidden="true"
           />
           <Image
@@ -71,8 +69,7 @@ export function CardView({ card }: CardViewProps) {
           />
           {/* Glow ring border */}
           <div
-            className="absolute inset-0 z-20 rounded-2xl ring-2"
-            style={{ boxShadow: '0 0 0 2px rgba(255, 140, 66, 0.40)' }}
+            className="absolute inset-0 z-20 rounded-2xl ring-2 ring-glow-ring"
             aria-hidden="true"
           />
           <span className="absolute bottom-3 left-3 z-30 text-xs font-semibold text-after-400 uppercase tracking-wider">

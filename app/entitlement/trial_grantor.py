@@ -48,10 +48,19 @@ class TrialGrantor:
                 settings.FREE_TRIAL_ANALYSES,
             )
         except Exception as exc:
-            exc_str = str(exc).lower()
-            if "unique" in exc_str or "duplicate" in exc_str or "23505" in exc_str:
+            # Check for PostgreSQL unique violation (23505) via structured error code.
+            # Supabase PostgREST wraps PG errors in APIError with a .code attribute.
+            pg_code = getattr(exc, "code", None)
+            if pg_code == "23505":
                 logger.info("trial_grant already applied for user %s — skipping", user_id_str)
                 return
+
+            # Fallback: some Supabase client versions embed the code in the message
+            exc_str = str(exc).lower()
+            if "23505" in exc_str or "unique_violation" in exc_str:
+                logger.info("trial_grant already applied for user %s — skipping", user_id_str)
+                return
+
             logger.error("grant_trial RPC failed for user %s: %s", user_id_str, exc)
             raise RuntimeError(
                 f"Failed to grant trial for user {user_id_str}"

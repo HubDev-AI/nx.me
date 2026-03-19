@@ -9,6 +9,7 @@ import asyncio
 import logging
 import time
 
+from app.config import settings
 from app.generation.models import GenerationOptions, GenerationResult
 
 logger = logging.getLogger(__name__)
@@ -118,10 +119,10 @@ class FalAiAdapter:
         raise ValueError(f"Could not extract image URL from fal.ai response: {list(result.keys())}")
 
     def _estimate_cost(self, model: str) -> float:
-        """Estimate cost per generation by model."""
+        """Estimate cost per generation by model (from config)."""
         costs = {
-            "fal-ai/flux-pulid": 0.035,
-            "fal-ai/flux-general/image-to-image": 0.026,
-            "fal-ai/instantid": 0.020,
+            settings.FAL_MODEL_PRIMARY: settings.FAL_COST_FLUX_PULID,
+            settings.FAL_MODEL_FALLBACK_1: settings.FAL_COST_FLUX_DEV_IMG2IMG,
+            settings.FAL_MODEL_FALLBACK_2: settings.FAL_COST_INSTANTID,
         }
-        return costs.get(model, 0.035)
+        return costs.get(model, settings.FAL_COST_DEFAULT)

@@ -44,6 +44,18 @@ _ALLOWED_IMAGE_HOSTS = frozenset([
     "cdn.stablediffusionapi.com",  # StableDiffusion API CDN
 ])
 
+# Atomic DECR + conditional cleanup (B-4: prevents leaked counter on crash)
+_CONCURRENT_CLEANUP_SCRIPT = """
+local val = redis.call('DECR', KEYS[1])
+if val <= 0 then
+    redis.call('DEL', KEYS[1])
+    return 0
+else
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+    return val
+end
+"""
+
 
 def _validate_provider_url(url: str) -> None:
     """Reject URLs pointing to non-allowed hosts."""
@@ -457,6 +469,10 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     """
     supabase: Client = ctx["supabase"]
     redis = ctx["redis"]
+    cleanup_sha_key = "_concurrent_cleanup_sha"
+    if cleanup_sha_key not in ctx:
+        ctx[cleanup_sha_key] = await redis.script_load(_CONCURRENT_CLEANUP_SCRIPT)
+    cleanup_sha = ctx[cleanup_sha_key]
     cost_tracker = CostTracker(redis)
     generator = _get_generator()
     job_repo = JobRepository(supabase)
@@ -515,21 +531,19 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         await cost_tracker.record_failure()
         await _fail_job(job_repo, job_id, job_data, FAILURE_PROVIDER, supabase=supabase)
     finally:
-        # G-2: Always DECR concurrent counter with TTL-based auto-cleanup.
-        # Set a short TTL on the key so that even if DECR brings it to 0 but
-        # the worker crashes before cleanup, the key auto-expires.
         if user_id_for_concurrent:
-            concurrent_key = f"concurrent:{user_id_for_concurrent}"
             try:
-                new_val = await redis.decr(concurrent_key)
-                if new_val <= 0:
-                    # Clean up the key entirely when counter reaches zero
-                    await redis.delete(concurrent_key)
-                else:
-                    # Ensure TTL exists as safety net against stuck counters
-                    await redis.expire(concurrent_key, settings.GENERATION_TIMEOUT_SECONDS + 60)
+                await redis.evalsha(
+                    cleanup_sha,
+                    1,
+                    f"concurrent:{user_id_for_concurrent}",
+                    str(settings.GENERATION_TIMEOUT_SECONDS + 60),
+                )
             except Exception:
-                logger.error("Failed to DECR concurrent counter for user %s", user_id_for_concurrent)
+                logger.error(
+                    "Failed to cleanup concurrent counter for user %s",
+                    user_id_for_concurrent,
+                )
 
 
 async def _fail_job(

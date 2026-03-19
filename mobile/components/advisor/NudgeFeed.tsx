@@ -4,7 +4,7 @@
  * Available to all tiers. Supports pull-to-refresh and pagination.
  * Tapping an unread nudge fires POST /advisor/nudges/{id}/read.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   FlatList,
@@ -85,6 +85,9 @@ export function NudgeFeed() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paginationFailed, setPaginationFailed] = useState(false);
+
+  const retryCountRef = useRef(0);
 
   // -------------------------------------------------------------------------
   // Load nudges
@@ -136,8 +139,19 @@ export function NudgeFeed() {
       const response = await fetchNudges(lastNudge.id);
       setNudges((prev) => [...prev, ...response.nudges]);
       setHasMore(response.has_more);
+      retryCountRef.current = 0;
+      setPaginationFailed(false);
     } catch {
-      // Silently ignore
+      retryCountRef.current += 1;
+      if (retryCountRef.current < 3) {
+        const delay = retryCountRef.current === 1 ? 2000 : 3000;
+        setIsLoadingMore(false);
+        setTimeout(() => {
+          loadMore();
+        }, delay);
+        return;
+      }
+      setPaginationFailed(true);
     } finally {
       setIsLoadingMore(false);
     }
