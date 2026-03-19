@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "nxme",
+    "_TODO_H6": "Remove custom URI scheme ('scheme: nxme') once all deep links use Universal Links (https://nxme.ai/...)",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",

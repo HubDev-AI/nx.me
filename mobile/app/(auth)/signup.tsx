@@ -60,7 +60,9 @@ interface FieldErrors {
 export default function SignupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { card } = useLocalSearchParams<{ card?: string }>();
+  const { card: rawCard } = useLocalSearchParams<{ card?: string }>();
+  // Validate card param against username pattern before rendering (M-15)
+  const card = rawCard && AUTH_VALIDATION.USERNAME_PATTERN.test(rawCard) ? rawCard : undefined;
 
   const [screenState, setScreenState] = useState<ScreenState>("form");
   const [username, setUsername] = useState("");

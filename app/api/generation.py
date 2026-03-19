@@ -367,7 +367,13 @@ async def create_generation(
 
     queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
     tier_name = _SLUG_TO_TIER_NAME.get(tier.slug, tier.slug.upper())
-    queue_position = await redis_client.llen(f"arq:queue:{queue_lane}")
+    raw_position = await redis_client.llen(f"arq:queue:{queue_lane}")
+    if raw_position <= 5:
+        queue_position = raw_position
+    elif raw_position <= 50:
+        queue_position = (raw_position // 10) * 10
+    else:
+        queue_position = (raw_position // 50) * 50
 
     return await _enqueue_job(
         job_repo=job_repo,

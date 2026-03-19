@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +10,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ADMIN_API_KEY: str
 
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _secret_key_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters")
+        return v
+
     # Supabase
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
@@ -16,7 +24,7 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str
 
     # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = "redis://:localdev@localhost:6379/0"
 
     # External APIs
     FAL_API_KEY: str = ""
@@ -89,8 +97,8 @@ class Settings(BaseSettings):
     ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"
 
     # Stripe checkout return URLs (server-controlled — never user-supplied)
-    STRIPE_SUCCESS_URL: str = "nxme://payment/success"
-    STRIPE_CANCEL_URL: str = "nxme://payment/cancel"
+    STRIPE_SUCCESS_URL: str = "https://nxme.ai/payment/success"
+    STRIPE_CANCEL_URL: str = "https://nxme.ai/payment/cancel"
 
     # Stripe credit pack price IDs (Story 4-4 — set per-environment)
     STRIPE_PRICE_CREDITS_10: str = ""

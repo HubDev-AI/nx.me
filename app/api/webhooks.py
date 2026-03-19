@@ -52,11 +52,10 @@ async def stripe_webhook(request: Request) -> dict:
 
     logger.info("Stripe webhook received: type=%s, id=%s", event_type, event_id)
 
-    # --- Idempotency check ---
+    # --- Idempotency check (read-only, before processing) ---
     sub_repo = SubscriptionRepository(request.app.state.supabase)
 
-    is_new = sub_repo.record_webhook_event(provider="stripe", event_id=event_id)
-    if not is_new:
+    if sub_repo.is_webhook_event_processed(provider="stripe", event_id=event_id):
         logger.info("Duplicate webhook event %s — skipping", event_id)
         return {"status": "already_processed"}
 
@@ -78,11 +77,14 @@ async def stripe_webhook(request: Request) -> dict:
             logger.info("Unhandled webhook event type: %s", event_type)
 
     except (httpx.HTTPError, ConnectionError, TimeoutError, OSError) as exc:
-        logger.warning("Transient error processing webhook event %s (type=%s): %s", event_id, event_type, exc)
-        # Transient network error — return 200 to prevent Stripe retries.
-        # Event is already recorded in processed_webhook_events.
-        return {"status": "processing_error"}
+        logger.warning("Transient error processing webhook %s: %s", event_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": {"code": "TRANSIENT_ERROR", "message": "Temporary processing error"}},
+        ) from exc
 
+    # Record idempotency AFTER successful processing
+    sub_repo.record_webhook_event(provider="stripe", event_id=event_id)
     return {"status": "processed"}
 
 

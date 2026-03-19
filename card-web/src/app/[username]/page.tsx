@@ -86,7 +86,9 @@ export default async function CardPage({ params }: PageProps) {
     <main className="min-h-screen bg-surface-page py-10 px-4">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c'),
+        }}
       />
       <div className="max-w-2xl mx-auto space-y-8">
         <CardView card={card} />

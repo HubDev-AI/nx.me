@@ -6,12 +6,14 @@ import * as Linking from "expo-linking";
 import { View } from "react-native";
 import { StripeProvider } from "@stripe/stripe-react-native";
 
+import * as SecureStore from "expo-secure-store";
+
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { BG_PAGE } from "../constants/colors";
-import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID } from "../constants/config";
+import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "../constants/config";
 
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
@@ -31,14 +33,23 @@ export default function RootLayout() {
           // Silently ignore — user may have denied permissions
         });
 
-        // 3. Check for stored JWT (auto-login check)
+        // 3. Check for stored JWT (auto-login check + M-12 expiry validation)
         const jwt = await getStoredJwt();
         if (jwt) {
-          // JWT exists — user is authenticated.
-          // Full token validation will happen in later stories.
+          try {
+            const parts = jwt.split(".");
+            if (!parts[1]) throw new Error("malformed JWT");
+            const payload = JSON.parse(atob(parts[1]));
+            if (payload.exp && payload.exp * 1000 < Date.now()) {
+              await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
+              // Don't set auth state — token is expired
+            }
+          } catch {
+            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
+          }
         }
       } catch (error) {
-        console.warn("App initialization error:", error);
+        console.warn("App initialization failed");
       } finally {
         setIsReady(true);
       }
@@ -51,7 +62,7 @@ export default function RootLayout() {
   useEffect(() => {
     const subscription = Linking.addEventListener("url", (event) => {
       if (!isAllowedDeepLink(event.url)) {
-        console.warn("Rejected non-universal deep link:", event.url);
+        console.warn("Rejected non-universal deep link");
         // Do not navigate — silently drop the redirect
       }
     });
@@ -73,7 +84,7 @@ export default function RootLayout() {
   return (
     <StripeProvider
       publishableKey={STRIPE_PUBLISHABLE_KEY}
-      urlScheme="nxme"
+      urlScheme="https"
       merchantIdentifier={APPLE_MERCHANT_ID}
     >
       <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>

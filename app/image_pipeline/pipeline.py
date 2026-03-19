@@ -106,9 +106,10 @@ class ImagePipeline:
             self._magic_validator.validate(file_bytes)
             self._dimension_validator.validate(file_bytes)
         except (ValueError, TypeError, OSError) as exc:
+            logger.warning("Image validation failed: %s", exc)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Image validation failed: {exc}",
+                detail="Image validation failed. Please upload a valid JPEG or PNG image.",
             ) from exc
 
         # Step 3: NSFW screening (AC-3)

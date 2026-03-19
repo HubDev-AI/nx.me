@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 
 import redis.asyncio as aioredis
 
@@ -42,6 +43,16 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"jailbreak", re.IGNORECASE),
     re.compile(r"<\s*system\s*>", re.IGNORECASE),
     re.compile(r"\[INST\]", re.IGNORECASE),
+    re.compile(r"new\s+instructions?\s*:", re.IGNORECASE),
+    re.compile(r"override\s+(previous|system)\s+", re.IGNORECASE),
+    re.compile(r"reveal\s+(your|the)\s+(system|prompt|instructions?)", re.IGNORECASE),
+    re.compile(r"what\s+(are|is)\s+your\s+(system|initial)\s+(prompt|instructions?)", re.IGNORECASE),
+    re.compile(r"repeat\s+(your|the)\s+(system|initial)\s+", re.IGNORECASE),
+    re.compile(r"(print|output|show|display)\s+(your|the)\s+(system|initial)\s+", re.IGNORECASE),
+    re.compile(r"bypass\s+(safety|content|filter)", re.IGNORECASE),
+    re.compile(r"do\s+not\s+follow\s+(your|any)\s+", re.IGNORECASE),
+    re.compile(r"base64\s*:", re.IGNORECASE),
+    re.compile(r"<<\s*SYS\s*>>", re.IGNORECASE),
 ]
 
 # Redis key templates
@@ -58,7 +69,10 @@ def sanitize_input(text: str) -> str:
             f"Message too long: {len(text)} chars (max {settings.ADVISOR_MAX_MESSAGE_LENGTH})"
         )
 
-    cleaned = text
+    # Normalize unicode to NFC to defeat homoglyph attacks
+    cleaned = unicodedata.normalize("NFC", text)
+    # Strip zero-width characters
+    cleaned = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff]", "", cleaned)
     for pattern in _INJECTION_PATTERNS:
         cleaned = pattern.sub("", cleaned)
 

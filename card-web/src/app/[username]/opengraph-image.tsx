@@ -8,6 +8,23 @@ import {
 } from '@/config/constants';
 import { getCardData } from '@/lib/api';
 
+const ALLOWED_IMAGE_HOSTS = ["supabase.co", "fal.ai", "fal.media", "fal.run"];
+
+function isAllowedImageUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return ALLOWED_IMAGE_HOSTS.some(
+      (h) => hostname === h || hostname.endsWith(`.${h}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeImageUrl(url: string): string {
+  return isAllowedImageUrl(url) ? url : "";
+}
+
 export const runtime = 'edge';
 
 export const alt = 'NXME Glow-Up Card';
@@ -123,7 +140,7 @@ export default async function OgImage({ params }: Props) {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={card.before_image_url}
+              src={sanitizeImageUrl(card.before_image_url)}
               alt="Before"
               style={{
                 width: '100%',
@@ -161,7 +178,7 @@ export default async function OgImage({ params }: Props) {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={card.after_image_url}
+              src={sanitizeImageUrl(card.after_image_url)}
               alt="After"
               style={{
                 width: '100%',

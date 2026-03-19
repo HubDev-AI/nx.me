@@ -64,8 +64,8 @@ export async function purchaseCredits(
     method: "POST",
     body: JSON.stringify({
       credit_pack_id: creditPackId,
-      success_url: "nxme://payment/success",
-      cancel_url: "nxme://payment/cancel",
+      success_url: "https://nxme.ai/payment/success",
+      cancel_url: "https://nxme.ai/payment/cancel",
     }),
   });
 }
@@ -75,8 +75,8 @@ export async function createSubscription(): Promise<SubscriptionResponse> {
   return apiFetch<SubscriptionResponse>(ENTITLEMENT_ENDPOINTS.SUBSCRIBE, {
     method: "POST",
     body: JSON.stringify({
-      success_url: "nxme://payment/success",
-      cancel_url: "nxme://payment/cancel",
+      success_url: "https://nxme.ai/payment/success",
+      cancel_url: "https://nxme.ai/payment/cancel",
     }),
   });
 }

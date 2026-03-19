@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+
 import { API_BASE_URL } from "../constants/config";
 import { getStoredJwt } from "./auth";
 import { getOrCreateGuestToken } from "./guest-session";
@@ -30,6 +32,11 @@ export async function apiFetch<T = unknown>(
   }
 
   const url = `${API_BASE_URL}${path}`;
+
+  if (!__DEV__ && !url.startsWith("https://")) {
+    throw new Error("API calls must use HTTPS in production");
+  }
+
   const response = await fetch(url, { ...options, headers });
 
   if (!response.ok) {
@@ -40,13 +47,26 @@ export async function apiFetch<T = unknown>(
   return response.json() as Promise<T>;
 }
 
+/**
+ * Store refresh token from login/signup response.
+ * Call after storing the JWT on successful authentication.
+ */
+export async function storeRefreshToken(
+  response: { refresh_token?: string },
+): Promise<void> {
+  if (response.refresh_token) {
+    await SecureStore.setItemAsync("nxme_refresh_token", response.refresh_token);
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly body: string,
     public readonly url: string,
   ) {
-    super(`API ${status}: ${url}`);
+    const message = __DEV__ ? `API ${status}: ${url}` : `API ${status}`;
+    super(message);
     this.name = "ApiError";
   }
 }

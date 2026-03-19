@@ -15,6 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Remove build tools after pip install (L-18)
+RUN apt-get purge -y gcc && apt-get autoremove -y
+
 
 # ── Dev ─────────────────────────────────────────────────────────────────────
 FROM base AS dev
@@ -22,7 +25,12 @@ FROM base AS dev
 COPY requirements-dev.txt .
 RUN pip install -r requirements-dev.txt
 
-COPY . .
+# Non-root user for dev (M-22)
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+COPY --chown=appuser:appuser . .
+
+USER appuser
 
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -38,7 +46,6 @@ COPY --chown=appuser:appuser . .
 USER appuser
 
 EXPOSE 8000
-# IMPORTANT: --proxy-headers trusts X-Forwarded-For. Must run behind a reverse proxy
-# (ALB/nginx) that strips/normalizes forwarded headers. Do NOT expose directly.
+# IMPORTANT: --proxy-headers trusts X-Forwarded-For. Must run behind a reverse proxy.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--workers", "4", "--proxy-headers"]

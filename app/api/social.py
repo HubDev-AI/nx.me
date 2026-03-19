@@ -32,6 +32,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["social"])
 
+
+def _get_client_ip(request: Request) -> str:
+    """Get client IP, respecting TRUST_PROXY_HEADERS setting."""
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    if not request.client:
+        return "unknown"
+    return request.client.host
+
 _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # Lua script: atomic INCR + conditional EXPIRE + limit check (L-2).
@@ -171,7 +182,7 @@ async def validate_guest_token(redis_client: aioredis.Redis, token: str) -> bool
     Returns False if the token has exceeded GUEST_REACTION_LIMIT reactions within
     GUEST_TOKEN_TTL_SECONDS.
     """
-    token_hash = hashlib.sha256(token.encode()).hexdigest()[:32]
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
 
     # Register token idempotently — NX means "only set if not exists"
     registration_key = f"guest_token:{token_hash}"
@@ -239,12 +250,7 @@ async def react_to_post(
         )
 
     # --- Rate limit by IP (atomic Lua script to avoid TOCTOU — L-2) ---
-    if not request.client:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot determine client IP address",
-        )
-    client_ip = request.client.host
+    client_ip = _get_client_ip(request)
     rate_key = f"reaction_rate:{client_ip}"
     allowed = await redis_client.eval(
         _RATE_LIMIT_SCRIPT,

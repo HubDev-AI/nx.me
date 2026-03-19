@@ -33,7 +33,19 @@ from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 
+from urllib.parse import urlparse
+
 logger = logging.getLogger(__name__)
+
+_ALLOWED_IMAGE_HOSTS = frozenset(["fal.ai", "fal.run", "fal.media", "storage.googleapis.com"])
+
+
+def _validate_provider_url(url: str) -> None:
+    """Reject URLs pointing to non-allowed hosts."""
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    if not any(hostname == h or hostname.endswith(f".{h}") for h in _ALLOWED_IMAGE_HOSTS):
+        raise ValueError(f"Image URL host not in allowlist: {hostname}")
 
 
 def _get_generator() -> GlowUpGeneratorPort:
@@ -185,6 +197,7 @@ async def _generate_and_validate(
 
     # Download generated image from provider immediately — the fal.ai
     # URL must not be used for any downstream processing after this point.
+    _validate_provider_url(gen_result.image_url)
     async with httpx.AsyncClient() as client:
         resp = await client.get(gen_result.image_url)
         resp.raise_for_status()
@@ -254,6 +267,7 @@ async def _generate_and_validate(
             await cost_tracker.record_cost(retry_result.estimated_cost_usd)
 
         # Download retry image from provider and overwrite storage
+        _validate_provider_url(retry_result.image_url)
         async with httpx.AsyncClient() as client:
             resp = await client.get(retry_result.image_url)
             resp.raise_for_status()
@@ -435,7 +449,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     except Exception as exc:
         logger.exception("Job %s failed: %s", job_id, exc)
         await cost_tracker.record_failure()
-        await _fail_job(job_repo, job_id, job_data if 'job_data' in locals() else {}, FAILURE_PROVIDER, supabase=supabase)
+        await _fail_job(job_repo, job_id, job_data, FAILURE_PROVIDER, supabase=supabase)
     finally:
         # Always DECR concurrent counter
         if user_id_for_concurrent:

@@ -101,10 +101,9 @@ export async function signInWithApple(): Promise<SocialAuthResult | null> {
   // Generate a cryptographic nonce for replay protection.
   // Supabase expects the raw (unhashed) nonce so it can hash and compare
   // against the nonce claim inside the id_token from Apple.
-  const rawNonce = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    Crypto.getRandomBytes(32).toString(),
-  );
+  const rawNonce = Array.from(Crypto.getRandomBytes(32))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
   try {
     const credential = await AppleAuthentication.signInAsync({
