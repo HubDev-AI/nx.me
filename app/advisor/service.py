@@ -35,8 +35,8 @@ from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
-# Model identifiers — A-5: Haiku model sourced from config to avoid duplication
-_MODEL_SONNET = "claude-3-5-sonnet-20241022"
+# Model identifiers — A-5: sourced from config to avoid duplication
+_MODEL_SONNET = settings.ADVISOR_MODEL_SONNET
 
 # Max tokens for chat response (keep concise per SOUL.md)
 _MAX_TOKENS_CHAT = 256

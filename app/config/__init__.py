@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     # Generation httpx timeout (audit G-5)
     GENERATION_HTTPX_TIMEOUT_SECONDS: float = 30.0
 
+    # Model cost estimates (USD per generation, from provider pricing)
+    FAL_COST_FLUX_PULID: float = 0.035
+    FAL_COST_FLUX_DEV_IMG2IMG: float = 0.026
+    FAL_COST_INSTANTID: float = 0.020
+    FAL_COST_DEFAULT: float = 0.035
+
+    # Advisor Sonnet model (chat responses)
+    ADVISOR_MODEL_SONNET: str = "claude-3-5-sonnet-20241022"
+
     # Public storage — stable CDN URLs for post images (no signing)
     # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}
     # Production: override with CloudFront distribution URL
