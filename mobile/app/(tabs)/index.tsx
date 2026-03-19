@@ -42,6 +42,7 @@ export default function HomeScreen() {
     refresh,
     changeSort,
     reactToPost,
+    incrementCommentCount,
   } = useFeed();
 
   // Comments sheet state
@@ -61,12 +62,9 @@ export default function HomeScreen() {
     setCommentsPostId(null);
   }, []);
 
-  const handleCommentPosted = useCallback((_postId: string) => {
-    // Optimistically increment comment_count on the feed card
-    // The useFeed hook doesn't expose a setter, so we rely on the
-    // feed data being refreshed eventually. For now, this is a no-op
-    // placeholder that the parent can use for future enhancements.
-  }, []);
+  const handleCommentPosted = useCallback((postId: string) => {
+    incrementCommentCount(postId);
+  }, [incrementCommentCount]);
 
   const handleReport = useCallback((_postId: string) => {
     Alert.alert(

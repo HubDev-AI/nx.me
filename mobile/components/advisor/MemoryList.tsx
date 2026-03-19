@@ -514,19 +514,29 @@ export function MemoryList() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            const deletedItem = memories.find((m) => m.id === memoryId);
             // Optimistic removal
             setMemories((prev) => prev.filter((m) => m.id !== memoryId));
             try {
               await deleteMemory(memoryId);
             } catch {
-              // Re-load on failure
-              loadMemories();
+              // Re-insert on failure, preserving sort order
+              if (deletedItem) {
+                setMemories((prev) =>
+                  [...prev, deletedItem].sort(
+                    (a, b) =>
+                      new Date(b.created_at).getTime() -
+                      new Date(a.created_at).getTime(),
+                  ),
+                );
+              }
+              Alert.alert("Error", "Failed to delete memory. Please try again.");
             }
           },
         },
       ],
     );
-  }, [loadMemories]);
+  }, [memories]);
 
   // -------------------------------------------------------------------------
   // Render helpers

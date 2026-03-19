@@ -18,11 +18,13 @@ interface UseFeedReturn {
   error: string | null;
   activeSort: FeedSortValue;
   reactedPostIds: Set<string>;
+  paginationFailed: boolean;
   loadFeed: () => Promise<void>;
   loadMore: () => Promise<void>;
   refresh: () => Promise<void>;
   changeSort: (sort: FeedSortValue) => void;
   reactToPost: (postId: string) => Promise<void>;
+  incrementCommentCount: (postId: string) => void;
 }
 
 /**
@@ -39,8 +41,11 @@ export function useFeed(): UseFeedReturn {
   const [activeSort, setActiveSort] = useState<FeedSortValue>(FEED_SORT.NEWEST);
   const [reactedPostIds, setReactedPostIds] = useState<Set<string>>(new Set());
 
+  const [paginationFailed, setPaginationFailed] = useState(false);
+
   const cursorRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
+  const retryCountRef = useRef(0);
 
   const fetchFeed = useCallback(
     async (cursor: string | null, sort: FeedSortValue): Promise<FeedResponse> => {
@@ -89,9 +94,20 @@ export function useFeed(): UseFeedReturn {
       setPosts((prev) => [...prev, ...response.posts]);
       cursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
+      retryCountRef.current = 0;
+      setPaginationFailed(false);
     } catch (err) {
-      // Silently fail on load-more — user can scroll again
       console.warn("Feed loadMore error:", err);
+      retryCountRef.current += 1;
+      if (retryCountRef.current < 3) {
+        const delay = retryCountRef.current === 1 ? 2000 : 3000;
+        setTimeout(() => {
+          isLoadingRef.current = false;
+          loadMore();
+        }, delay);
+        return;
+      }
+      setPaginationFailed(true);
     } finally {
       setIsLoadingMore(false);
       isLoadingRef.current = false;
@@ -196,6 +212,16 @@ export function useFeed(): UseFeedReturn {
     [reactedPostIds],
   );
 
+  const incrementCommentCount = useCallback((postId: string) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.post_id === postId
+          ? { ...p, comment_count: (p.comment_count ?? 0) + 1 }
+          : p,
+      ),
+    );
+  }, []);
+
   return {
     posts,
     isLoading,
@@ -205,10 +231,12 @@ export function useFeed(): UseFeedReturn {
     error,
     activeSort,
     reactedPostIds,
+    paginationFailed,
     loadFeed,
     loadMore,
     refresh,
     changeSort,
     reactToPost,
+    incrementCommentCount,
   };
 }
