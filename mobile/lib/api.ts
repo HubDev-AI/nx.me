@@ -19,9 +19,11 @@ export async function apiFetch<T = unknown>(
   const guestToken = jwt ? null : await getOrCreateGuestToken();
 
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...options.headers,
   };
+  if (options.body) {
+    headers["Content-Type"] ??= "application/json";
+  }
 
   if (jwt) {
     headers["Authorization"] = `Bearer ${jwt}`;
