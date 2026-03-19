@@ -65,38 +65,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="search"
-        options={{
-          title: "Search",
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon
-              name={focused ? "search" : "search-outline"}
-              color={color}
-              focused={focused}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="create"
         options={{
           title: "Create",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               name={focused ? "add-circle" : "add-circle-outline"}
-              color={color}
-              focused={focused}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="notifications"
-        options={{
-          title: "Notifications",
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon
-              name={focused ? "notifications" : "notifications-outline"}
               color={color}
               focused={focused}
             />
