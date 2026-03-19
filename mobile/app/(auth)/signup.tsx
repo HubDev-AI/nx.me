@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  KeyboardAvoidingView,
   ScrollView,
   Platform,
   Pressable,
@@ -291,22 +290,19 @@ export default function SignupScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + 16,
+            paddingBottom: 40,
+          },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        showsVerticalScrollIndicator={true}
+        automaticallyAdjustKeyboardInsets
       >
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            {
-              paddingTop: insets.top + 48,
-              paddingBottom: insets.bottom + 24,
-            },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
           {/* Logo / Wordmark */}
           <Text style={styles.logo} accessibilityRole="header">
             NXME
@@ -378,8 +374,8 @@ export default function SignupScreen() {
               error={errors.password}
               isPassword
               autoCapitalize="none"
-              autoComplete="password-new"
-              textContentType="newPassword"
+              autoComplete="off"
+              textContentType="oneTimeCode"
               returnKeyType="next"
               onSubmitEditing={() => confirmPasswordRef.current?.focus()}
               editable={!isAnyLoading}
@@ -392,8 +388,8 @@ export default function SignupScreen() {
               error={errors.confirmPassword}
               isPassword
               autoCapitalize="none"
-              autoComplete="password-new"
-              textContentType="newPassword"
+              autoComplete="off"
+              textContentType="oneTimeCode"
               returnKeyType="done"
               onSubmitEditing={handleSignup}
               editable={!isAnyLoading}
@@ -427,8 +423,7 @@ export default function SignupScreen() {
               <Text style={styles.switchLink}>Log in</Text>
             </Pressable>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </>
   );
 }
@@ -448,7 +443,7 @@ const styles = StyleSheet.create({
     color: TEXT_PRIMARY,
     textAlign: "center",
     letterSpacing: 2,
-    marginBottom: 32,
+    marginBottom: 16,
   },
   title: {
     fontSize: 24,

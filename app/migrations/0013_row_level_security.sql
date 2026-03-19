@@ -156,7 +156,7 @@ CREATE POLICY reactions_read ON reactions
   USING (true);
 
 
--- DOWN
+-- DOWN:
 
 -- Drop all policies
 DROP POLICY IF EXISTS users_own ON users;

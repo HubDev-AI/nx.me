@@ -13,12 +13,29 @@
 import { Platform } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
-import {
-  GoogleSignin,
-  statusCodes,
-} from "@react-native-google-signin/google-signin";
 
 import { GOOGLE_WEB_CLIENT_ID } from "../constants/config";
+
+// Lazy-load Google Sign-In to avoid crashing in Expo Go where
+// the native module (RNGoogleSignin) is not available.
+let _GoogleSignin: typeof import("@react-native-google-signin/google-signin").GoogleSignin | null = null;
+let _statusCodes: typeof import("@react-native-google-signin/google-signin").statusCodes | null = null;
+
+function getGoogleSignin() {
+  if (!_GoogleSignin) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require("@react-native-google-signin/google-signin");
+      _GoogleSignin = mod.GoogleSignin;
+      _statusCodes = mod.statusCodes;
+    } catch {
+      throw new Error(
+        "Google Sign-In is not available. Use a development build instead of Expo Go.",
+      );
+    }
+  }
+  return { GoogleSignin: _GoogleSignin!, statusCodes: _statusCodes! };
+}
 
 /** Result shape returned by both social sign-in helpers. */
 export interface SocialAuthResult {
@@ -36,6 +53,7 @@ let googleConfigured = false;
 
 function ensureGoogleConfigured(): void {
   if (googleConfigured) return;
+  const { GoogleSignin } = getGoogleSignin();
   GoogleSignin.configure({
     webClientId: GOOGLE_WEB_CLIENT_ID,
     offlineAccess: false,
@@ -50,6 +68,7 @@ function ensureGoogleConfigured(): void {
  */
 export async function signInWithGoogle(): Promise<SocialAuthResult | null> {
   ensureGoogleConfigured();
+  const { GoogleSignin, statusCodes } = getGoogleSignin();
 
   try {
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });

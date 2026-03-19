@@ -110,7 +110,7 @@ END;
 $$;
 
 
--- DOWN
+-- DOWN:
 
 DROP FUNCTION IF EXISTS public.sum_credit_balance(UUID);
 DROP FUNCTION IF EXISTS public.credit_reserve(UUID, UUID);

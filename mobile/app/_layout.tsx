@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Slot } from "expo-router";
+import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
@@ -10,6 +10,7 @@ import * as SecureStore from "expo-secure-store";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
+import { AuthProvider, useAuth } from "../lib/auth-context";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { BG_PAGE } from "../constants/colors";
@@ -18,22 +19,37 @@ import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "..
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
 
+function AuthGuard() {
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    const inAuthGroup = segments[0] === "(auth)";
+
+    if (!isAuthenticated && !inAuthGroup) {
+      router.replace("/(auth)/login");
+    } else if (isAuthenticated && inAuthGroup) {
+      router.replace("/(tabs)");
+    }
+  }, [isAuthenticated, segments]);
+
+  return <Slot />;
+}
+
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
+  const [initialAuth, setInitialAuth] = useState(false);
 
   // Cold start initialization
   useEffect(() => {
     async function initialize() {
+      let authed = false;
       try {
-        // 1. Get or create guest session token
         await getOrCreateGuestToken();
 
-        // 2. Register for push notifications (non-blocking)
-        registerForPushNotifications().catch(() => {
-          // Silently ignore — user may have denied permissions
-        });
+        registerForPushNotifications().catch(() => {});
 
-        // 3. Check for stored JWT (auto-login check + M-12 expiry validation)
         const jwt = await getStoredJwt();
         if (jwt) {
           try {
@@ -42,7 +58,8 @@ export default function RootLayout() {
             const payload = JSON.parse(atob(parts[1]));
             if (payload.exp && payload.exp * 1000 < Date.now()) {
               await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
-              // Don't set auth state — token is expired
+            } else {
+              authed = true;
             }
           } catch {
             await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
@@ -51,6 +68,7 @@ export default function RootLayout() {
       } catch (error) {
         console.warn("App initialization failed");
       } finally {
+        setInitialAuth(authed);
         setIsReady(true);
       }
     }
@@ -58,19 +76,16 @@ export default function RootLayout() {
     initialize();
   }, []);
 
-  // Deep link guard: reject custom URI scheme redirects
+  // Deep link guard
   useEffect(() => {
     const subscription = Linking.addEventListener("url", (event) => {
       if (!isAllowedDeepLink(event.url)) {
         console.warn("Rejected non-universal deep link");
-        // Do not navigate — silently drop the redirect
       }
     });
-
     return () => subscription.remove();
   }, []);
 
-  // Hide splash when ready and navigation is mounted
   const onLayoutReady = useCallback(async () => {
     if (isReady) {
       await SplashScreen.hideAsync();
@@ -82,15 +97,17 @@ export default function RootLayout() {
   }
 
   return (
-    <StripeProvider
-      publishableKey={STRIPE_PUBLISHABLE_KEY}
-      urlScheme="https"
-      merchantIdentifier={APPLE_MERCHANT_ID}
-    >
-      <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
-        <StatusBar style="light" />
-        <Slot />
-      </View>
-    </StripeProvider>
+    <AuthProvider initialAuth={initialAuth}>
+      <StripeProvider
+        publishableKey={STRIPE_PUBLISHABLE_KEY}
+        urlScheme="https"
+        merchantIdentifier={APPLE_MERCHANT_ID}
+      >
+        <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
+          <StatusBar style="light" />
+          <AuthGuard />
+        </View>
+      </StripeProvider>
+    </AuthProvider>
   );
 }

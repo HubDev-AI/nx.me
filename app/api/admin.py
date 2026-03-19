@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
@@ -146,13 +146,14 @@ async def ban_user(
 @router.delete(
     "/users/{user_id}/ban",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
     dependencies=[Depends(require_admin)],
 )
 async def unban_user(
     user_id: UUID,
     supabase: Client = Depends(get_supabase),
     redis_client: aioredis.Redis = Depends(get_redis),
-):
+) -> Response:
     """Unban a user and restore visibility for posts without active reports."""
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     await run_sync(
@@ -179,6 +180,7 @@ async def unban_user(
     )
 
     logger.info("User %s unbanned", user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/users", dependencies=[Depends(require_admin)])

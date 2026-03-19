@@ -1,4 +1,4 @@
-"""Auth API — registration, email verification, social login, logout & account deletion.
+"""Auth API — registration, email verification, login, logout & account deletion.
 
 Story 2-1:
   POST /auth/register      — create account
@@ -6,6 +6,7 @@ Story 2-1:
 
 Story 2-2:
   POST /auth/login         — social login via id_token (Google / Apple)
+  POST /auth/email-login   — email + password login
   POST /auth/logout        — server-side session invalidation
   DELETE /auth/account     — soft delete + 180-day username reservation
 """
@@ -15,7 +16,7 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal, NoReturn
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from slugify import slugify
 from supabase import Client
@@ -499,16 +500,96 @@ async def social_login(
 
 
 # ---------------------------------------------------------------------------
+# Email/Password Login — POST /auth/email-login
+# ---------------------------------------------------------------------------
+
+
+class EmailLoginRequest(BaseModel):
+    """Email + password login.
+
+    Used by the mobile app login screen which sends email/password credentials
+    directly (as opposed to social login which sends a provider id_token).
+    """
+
+    email: EmailStr
+    password: str = Field(min_length=1)
+
+
+@router.post("/email-login", response_model=LoginResponse)
+async def email_login(
+    request: Request,
+    body: EmailLoginRequest,
+    supabase: Client = Depends(get_supabase),
+    r: aioredis.Redis = Depends(get_redis),
+) -> LoginResponse:
+    """Authenticate with email and password.
+
+    Calls Supabase auth.sign_in_with_password and returns the session tokens.
+    Applies the same per-IP rate limiting as social login (CS-1 AC-4).
+    """
+    # Per-IP rate limit (same as social login)
+    client_ip = get_client_ip(request)
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
+    login_allowed, login_ttl = await check_login_rate_limit(client_ip, r)
+    if not login_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this IP. Try again later.",
+            headers={"Retry-After": str(login_ttl)},
+        )
+
+    # Sign in with Supabase email/password auth
+    try:
+        auth_response = await run_sync(
+            supabase.auth.sign_in_with_password,
+            {"email": str(body.email), "password": body.password},
+        )
+    except Exception as exc:
+        msg = str(exc).lower()
+        logger.warning("sign_in_with_password failed for %s: %s", body.email, exc)
+        if "invalid" in msg or "credentials" in msg or "wrong" in msg or "not confirmed" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Authentication service error.",
+        )
+
+    if not auth_response.session or not auth_response.user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+        )
+
+    session = auth_response.session
+    user_id = str(auth_response.user.id)
+
+    logger.info("Email login successful for user %s", user_id)
+    return LoginResponse(
+        user_id=user_id,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        expires_at=int(session.expires_at) if session.expires_at else 0,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Logout — POST /auth/logout
 # ---------------------------------------------------------------------------
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def logout(
     claims: UserClaims = Depends(get_current_user),
     authorization: Annotated[str | None, Header()] = None,
     user_repo: UserRepository = Depends(get_user_repo),
-) -> None:
+) -> Response:
     """Invalidate the current session server-side (AC-2).
 
     Calls supabase.auth.admin.sign_out() which revokes the token in
@@ -540,6 +621,7 @@ async def logout(
             },
             # The token will expire naturally even if server revocation failed.
         ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -547,13 +629,13 @@ async def logout(
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_account(
     claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
     redis_client: aioredis.Redis = Depends(get_redis),
-) -> None:
+) -> Response:
     """Permanently delete the authenticated user's account (AC-3).
 
     Actions:
@@ -631,3 +713,4 @@ async def delete_account(
             logger.info("Cleaned up %d Redis keys for deleted user %s", len(redis_keys_to_delete), user_id)
     except Exception as exc:
         logger.warning("Redis cleanup failed for deleted user %s: %s", user_id, exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

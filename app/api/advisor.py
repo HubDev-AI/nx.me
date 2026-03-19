@@ -209,13 +209,14 @@ class NudgeUpdateRequest(BaseModel):
 @router.patch(
     "/advisor/nudges/{nudge_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 async def update_nudge(
     nudge_id: UUID,
     body: NudgeUpdateRequest,
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> None:
+) -> Response:
     """Update a nudge. Currently supports marking as read (idempotent)."""
     user_id = UUID(claims["sub"])
     found = await svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
@@ -224,18 +225,20 @@ async def update_nudge(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nudge not found",
         )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
     "/advisor/nudges/{nudge_id}/read",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
     deprecated=True,
 )
 async def mark_nudge_read(
     nudge_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> None:
+) -> Response:
     """Deprecated alias — use PATCH /advisor/nudges/{nudge_id} instead."""
     user_id = UUID(claims["sub"])
     found = await svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
@@ -244,6 +247,7 @@ async def mark_nudge_read(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Nudge not found",
         )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -331,12 +335,12 @@ async def list_memories(
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_memory(
     memory_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
-) -> None:
+) -> Response:
     """Delete a user-owned memory. All tiers."""
     user_id = UUID(claims["sub"])
     deleted = await svc.delete_memory(user_id=user_id, memory_id=memory_id)
@@ -345,3 +349,4 @@ async def delete_memory(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Memory not found",
         )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

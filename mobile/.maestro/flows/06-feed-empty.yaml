@@ -1,0 +1,32 @@
+appId: host.exp.Exponent
+---
+# Test: Feed screen with empty feed (new user, no posts)
+# Prerequisite: User must be logged in
+
+# Just take a screenshot of current state
+- takeScreenshot: feed_01_current_state
+
+# Check sort tabs are visible
+- runFlow:
+    when:
+      visible: "Newest"
+    commands:
+      - assertVisible: "Newest"
+      - assertVisible: "Trending"
+
+# Test sort tab switching
+- runFlow:
+    when:
+      visible: "Trending"
+    commands:
+      - tapOn: "Trending"
+      - waitForAnimationToEnd
+      - takeScreenshot: feed_02_trending_tab
+
+- runFlow:
+    when:
+      visible: "Newest"
+    commands:
+      - tapOn: "Newest"
+      - waitForAnimationToEnd
+      - takeScreenshot: feed_03_newest_tab

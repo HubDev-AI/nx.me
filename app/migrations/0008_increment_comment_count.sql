@@ -11,5 +11,5 @@ AS $$
   WHERE id = p_post_id;
 $$;
 
--- DOWN
+-- DOWN:
 DROP FUNCTION IF EXISTS public.increment_comment_count(UUID);

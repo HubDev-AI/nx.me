@@ -76,6 +76,14 @@
           "enableGooglePay": true
         }
       ]
-    ]
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:8001",
+      "stripePublishableKey": "",
+      "googleClientId": "",
+      "googleWebClientId": "",
+      "appleClientId": "",
+      "appleMerchantId": "merchant.ai.nxme.app"
+    }
   }
 }

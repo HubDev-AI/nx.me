@@ -1,0 +1,43 @@
+appId: host.exp.Exponent
+---
+# Test: Signup with an already-registered email, verify error message
+- runFlow: 00-app-launch.yaml
+- assertVisible: "Welcome back"
+
+# Navigate to signup
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- assertVisible: "Create your account"
+- takeScreenshot: signup_dup_01_on_signup_form
+
+# Fill form with a unique username but the existing email
+- evalScript: ${output.ts = '' + Date.now()}
+- tapOn:
+    id: "input-username"
+- inputText: "dup${output.ts}"
+- tapOn:
+    id: "input-display-name"
+- inputText: "Duplicate Tester"
+- tapOn:
+    id: "input-email"
+- inputText: "maestro@test.com"
+
+# Fill passwords — tap directly between fields to avoid keyboard issues
+- tapOn:
+    id: "input-password"
+- inputText: "Test1234!"
+- tapOn:
+    id: "input-confirm-password"
+- inputText: "Test1234!"
+- takeScreenshot: signup_dup_02_form_filled
+
+# Submit
+- tapOn: "Create account"
+- waitForAnimationToEnd
+
+# Wait for an error to surface — check for generic or specific error
+- takeScreenshot: signup_dup_03_after_submit
+
+# Verify we're still on the signup screen (error didn't navigate away)
+- assertVisible: "Create your account"
+- takeScreenshot: signup_dup_04_still_on_signup

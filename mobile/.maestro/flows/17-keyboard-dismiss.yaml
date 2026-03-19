@@ -1,0 +1,37 @@
+appId: host.exp.Exponent
+---
+# Test: On login screen, tap email field to focus, then tap outside to dismiss keyboard
+- runFlow: 00-app-launch.yaml
+- assertVisible: "Welcome back"
+- takeScreenshot: keyboard_01_login_screen
+
+# Tap the email input to focus it and show keyboard
+- tapOn:
+    id: "input-email"
+- takeScreenshot: keyboard_02_email_focused
+
+# Type something to confirm input is active
+- inputText: "test"
+- takeScreenshot: keyboard_03_text_entered
+
+# Tap outside the input area (top of screen) to dismiss keyboard
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd
+- takeScreenshot: keyboard_04_keyboard_dismissed
+
+# Tap the password field — first show password, then tap
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- takeScreenshot: keyboard_05_password_focused
+
+# Type into password field
+- inputText: "pass"
+- takeScreenshot: keyboard_06_password_entered
+
+# Dismiss keyboard again by tapping outside
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd
+- takeScreenshot: keyboard_07_dismissed_again

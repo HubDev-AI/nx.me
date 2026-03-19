@@ -101,7 +101,7 @@ END;
 $$;
 
 
--- DOWN
+-- DOWN:
 
 DROP FUNCTION IF EXISTS public.insert_comment_atomic(UUID, UUID, TEXT);
 DROP FUNCTION IF EXISTS public.persist_reaction_atomic(UUID, UUID, TEXT);
