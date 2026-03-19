@@ -52,7 +52,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── BEFORE / AFTER ─────────────────────────────────── */}
+      {/* ── THE TRANSFORMATION ────────────────────────────────
+          Two contrasting portraits side by side. No labels —
+          the visual contrast speaks for itself.
+      ─────────────────────────────────────────────────────── */}
       <section className="section-rule">
         <div className="px-6 sm:px-12 py-16 sm:py-24">
           <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-12">The transformation</p>
@@ -60,15 +63,13 @@ export default function HomePage() {
         <div className="grid grid-cols-2">
           <div className="relative aspect-[3/4] sm:aspect-[4/5]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={t.before} alt="Before: casual everyday look" className="absolute inset-0 w-full h-full object-cover grayscale-[30%]" />
+            <img src={t.before} alt="Everyday look" className="absolute inset-0 w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent" />
-            <span className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 text-xs tracking-[0.2em] uppercase text-white/50">Before</span>
           </div>
           <div className="relative aspect-[3/4] sm:aspect-[4/5]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={t.after} alt="After: styled and confident" className="absolute inset-0 w-full h-full object-cover" />
+            <img src={t.after} alt="Elevated style" className="absolute inset-0 w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent" />
-            <span className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 text-xs tracking-[0.2em] uppercase" style={{ color: 'var(--accent)' }}>After</span>
           </div>
         </div>
         <div className="px-6 sm:px-12 py-16 sm:py-24">
@@ -138,6 +139,22 @@ export default function HomePage() {
                 Brows, facial hair, skin health. Plus lighting that brings it all together.
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Accessories — reversed layout */}
+        <div className="grid sm:grid-cols-2">
+          <div className="flex items-center px-6 sm:px-12 py-12 sm:py-0 order-2 sm:order-1">
+            <div>
+              <h3 className="font-display text-3xl sm:text-4xl text-white">Accessories</h3>
+              <p className="mt-4 text-sm text-[#888] leading-relaxed max-w-sm">
+                Glasses, watches, jewellery, scarves. The details that complete the look.
+              </p>
+            </div>
+          </div>
+          <div className="relative aspect-[4/3] order-1 sm:order-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={t.accessories} alt="Accessories and details" className="absolute inset-0 w-full h-full object-cover" />
           </div>
         </div>
 
