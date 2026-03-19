@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from app.payment.ports import PaymentPort
     from app.repositories.advisor_repo import AdvisorRepository
     from app.repositories.analysis_repo import AnalysisRepository
+    from app.repositories.block_repo import BlockRepository
     from app.repositories.feed_repo import FeedRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
@@ -55,12 +56,13 @@ def get_redis(request: Request) -> aioredis.Redis:
 
 def get_current_user(
     authorization: Annotated[str | None, Header()] = None,
-    supabase: Client = Depends(get_supabase),  # noqa: ARG001 — reserved for token introspection
+    supabase: Client = Depends(get_supabase),
 ) -> UserClaims:
     """Validate the Bearer JWT and return the decoded claims.
 
     Delegates to ``validate_jwt`` (Story 2-2 interface contract).
     Raises HTTP 401 if the token is missing, expired, or invalid.
+    Checks the user's ban status before returning claims.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -70,7 +72,43 @@ def get_current_user(
         )
 
     token = authorization.removeprefix("Bearer ").strip()
-    return validate_jwt(token)
+    claims = validate_jwt(token)
+
+    # Ban check — every authenticated request verifies the user is not banned.
+    # NOTE: This adds a DB call per request. Consider caching in Redis if
+    # this becomes a performance bottleneck.
+    user_row = (
+        supabase.table("users")
+        .select("is_banned")
+        .eq("id", claims["sub"])
+        .maybe_single()
+        .execute()
+    )
+    if user_row.data and user_row.data.get("is_banned"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": {
+                    "code": "ACCOUNT_BANNED",
+                    "message": "Your account has been suspended.",
+                }
+            },
+        )
+
+    return claims
+
+
+def require_admin(
+    x_admin_key: Annotated[str | None, Header(alias="X-Admin-Key")] = None,
+) -> None:
+    """Require admin API key for admin endpoints."""
+    from app.config import settings
+
+    if not x_admin_key or x_admin_key != settings.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +142,13 @@ def get_analysis_repo(request: Request) -> "AnalysisRepository":
     from app.repositories.analysis_repo import AnalysisRepository
 
     return AnalysisRepository(request.app.state.supabase)
+
+
+def get_block_repo(request: Request) -> "BlockRepository":
+    """Return a BlockRepository wired to the app's Supabase client."""
+    from app.repositories.block_repo import BlockRepository
+
+    return BlockRepository(request.app.state.supabase)
 
 
 def get_post_repo(request: Request) -> "PostRepository":
