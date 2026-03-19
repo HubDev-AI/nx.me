@@ -6,6 +6,7 @@ feature = new module file + config flag. No pipeline changes.
 """
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -34,7 +35,12 @@ class TransformationModule(Protocol):
     def is_applicable(self, analysis_result) -> bool:
         ...
 
-    def build_output(self, analysis_result, mode: str) -> TransformationOutput:
+    def build_output(
+        self,
+        analysis_result,
+        mode: str,
+        rng: random.Random | None = None,
+    ) -> TransformationOutput:
         ...
 
     def get_allowed_keywords(self) -> frozenset[str]:
@@ -43,5 +49,10 @@ class TransformationModule(Protocol):
     def get_blocked_keywords(self) -> frozenset[str]:
         ...
 
-    def adjust_params(self, base_params: dict) -> dict:
+    def adjust_params(
+        self,
+        face_ratio: float,
+        symmetry_score: float,
+        keyword_count: int,
+    ) -> dict:
         ...
