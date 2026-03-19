@@ -46,7 +46,8 @@ class NSFWResult:
 class NSFWScreenerPort(Protocol):
     """Interface for NSFW content screening adapters."""
 
-    async def screen(self, image_bytes: bytes) -> NSFWResult: ...
+    async def screen(self, image_bytes: bytes) -> NSFWResult:
+        ...
 
 
 # ---------------------------------------------------------------------------

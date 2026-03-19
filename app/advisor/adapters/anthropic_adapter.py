@@ -5,7 +5,6 @@ Lazy-imports anthropic SDK so tests don't require the package installed.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any
 
@@ -14,8 +13,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Embedding model
-_EMBEDDING_MODEL = "text-embedding-3-small"
+# Embedding dimensions (fixed for text-embedding-3-small)
 _EMBEDDING_DIMENSIONS = 1536
 
 
@@ -27,11 +25,14 @@ class AnthropicAdapter:
         import openai
 
         self._anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        # Embeddings use OpenAI — never send Anthropic key to OpenAI
+        # A-4: Fail fast if OPENAI_API_KEY missing — embeddings are required
         openai_key = settings.OPENAI_API_KEY
         if not openai_key:
-            logger.warning("OPENAI_API_KEY not set — embedding calls will fail")
-        self._openai = openai.AsyncOpenAI(api_key=openai_key or "not-configured")
+            raise ValueError(
+                "OPENAI_API_KEY is required for advisor embeddings. "
+                "Set it in .env or environment variables."
+            )
+        self._openai = openai.AsyncOpenAI(api_key=openai_key)
 
     async def create_message(
         self,
@@ -97,7 +98,7 @@ class AnthropicAdapter:
     async def compute_embedding(self, text: str) -> list[float]:
         """Compute a 1536-dim text embedding via OpenAI text-embedding-3-small."""
         response = await self._openai.embeddings.create(
-            model=_EMBEDDING_MODEL,
+            model=settings.ADVISOR_EMBEDDING_MODEL,
             input=text,
             dimensions=_EMBEDDING_DIMENSIONS,
         )

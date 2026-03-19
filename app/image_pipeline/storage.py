@@ -11,11 +11,11 @@ Port/Adapter pattern:
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from app.config import settings
+if TYPE_CHECKING:
+    from app.repositories.image_repo import ImageRepository
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,11 @@ logger = logging.getLogger(__name__)
 class StoragePort(Protocol):
     """Interface for image storage adapters."""
 
-    async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str: ...
+    async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:
+        ...
 
-    async def create_signed_url(self, bucket: str, key: str, expires_in: int) -> str: ...
+    async def create_signed_url(self, bucket: str, key: str, expires_in: int) -> str:
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -47,8 +49,7 @@ class SupabaseStorageAdapter:
     Delegates to ImageRepository so all storage calls go through one place.
     """
 
-    def __init__(self, image_repo: "ImageRepository") -> None:
-        from app.repositories.image_repo import ImageRepository  # noqa: F401 (type hint)
+    def __init__(self, image_repo: ImageRepository) -> None:
         self._image_repo = image_repo
 
     async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:

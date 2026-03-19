@@ -181,7 +181,7 @@ def build_prompt(
     """
     from app.generation.modules.styling import StylingModule
 
-    module = StylingModule()
+    _module = StylingModule()  # noqa: F841
 
     # Extract and prepare keywords
     keywords = []

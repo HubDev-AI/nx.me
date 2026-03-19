@@ -5,8 +5,6 @@ and composite back after. Color-matched blending at edges.
 """
 from __future__ import annotations
 
-import io
-
 import numpy as np
 import PIL.Image
 

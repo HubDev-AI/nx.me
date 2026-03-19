@@ -71,9 +71,9 @@ class WorkerSettings:
     queues = [*QUEUE_LANES, "default"]
 
     cron_jobs = [
-        cron(watchdog_stuck_jobs, second=0),               # Every minute
-        cron(check_nudge_eligibility, hour=6, minute=0),   # Daily at 06:00 UTC
-        cron(reconcile_reaction_counts, hour=3, minute=0), # Nightly at 03:00 UTC
+        cron(watchdog_stuck_jobs, second=0),  # Every minute
+        cron(check_nudge_eligibility, hour=6, minute=0),  # Daily at 06:00 UTC
+        cron(reconcile_reaction_counts, hour=3, minute=0),  # Nightly at 03:00 UTC
     ]
 
     redis_settings = None

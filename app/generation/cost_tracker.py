@@ -34,6 +34,10 @@ _QUEUE_DEPTH_KEY = "gen:queue_depth"
 _CB_STATE_KEY = "gen:cb:state"      # "closed" | "open" | "half_open"
 _CB_FAILURES_KEY = "gen:cb:failures"  # sorted set of failure timestamps
 _CB_OPEN_AT_KEY = "gen:cb:open_at"  # float timestamp when circuit was opened
+_CB_HALF_OPEN_SUCCESSES_KEY = "gen:cb:half_open_successes"  # G-7: consecutive success counter
+
+# G-7: Require this many consecutive successes in HALF_OPEN before closing
+_CB_HYSTERESIS_THRESHOLD = 3
 
 
 _CB_TRANSITION_SCRIPT = """
@@ -156,6 +160,10 @@ class CostTracker:
 
         pipe = self._redis.pipeline()
         pipe.incr(key)
+        # G-12: Uses 86400s (exactly 24h) for daily cap TTL.
+        # This is intentionally shorter than COST_BUCKET_TTL_SECONDS (25h / 90000s)
+        # which uses a 1h buffer for rolling cost aggregation across hour-bucket boundaries.
+        # The daily cap is a hard per-calendar-day limit, so 24h is correct.
         pipe.expire(key, 86400)
         results = await pipe.execute()
         for i, result in enumerate(results):
@@ -204,15 +212,16 @@ class CostTracker:
                 _CB_FAILURE_WINDOW_SECONDS,
             )
         elif current_state == "half_open":
-            # Probe failed — return to OPEN
+            # Probe failed — return to OPEN, reset success counter (G-7)
             await self._redis.set(_CB_STATE_KEY, "open")
             await self._redis.set(_CB_OPEN_AT_KEY, str(now))
+            await self._redis.delete(_CB_HALF_OPEN_SUCCESSES_KEY)
             logger.warning("Circuit breaker probe FAILED — returning to OPEN")
 
     async def record_success(self) -> None:
         """Record a fal.ai success.
 
-        In HALF_OPEN: single success closes the circuit and clears failure history.
+        G-7: In HALF_OPEN, require 3 consecutive successes before closing (hysteresis).
         In CLOSED: do not wipe failure history (prevents flap on a single success).
         """
         current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
@@ -220,16 +229,24 @@ class CostTracker:
             current_state = current_state.decode()
 
         if current_state == "half_open":
-            # Probe succeeded — close the circuit and clear failure history
-            pipe = self._redis.pipeline()
-            pipe.set(_CB_STATE_KEY, "closed")
-            pipe.delete(_CB_FAILURES_KEY)
-            pipe.delete(_CB_OPEN_AT_KEY)
-            results = await pipe.execute()
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    logger.error("Redis pipeline command %d failed in record_success: %s", i, result)
-            logger.info("Circuit breaker CLOSED: probe succeeded")
+            # G-7: Hysteresis — require multiple consecutive successes to close
+            count = await self._redis.incr(_CB_HALF_OPEN_SUCCESSES_KEY)
+            await self._redis.expire(_CB_HALF_OPEN_SUCCESSES_KEY, _CB_COOLDOWN_SECONDS * 3)
+
+            if count >= _CB_HYSTERESIS_THRESHOLD:
+                # Enough consecutive successes — close the circuit
+                pipe = self._redis.pipeline()
+                pipe.set(_CB_STATE_KEY, "closed")
+                pipe.delete(_CB_FAILURES_KEY)
+                pipe.delete(_CB_OPEN_AT_KEY)
+                pipe.delete(_CB_HALF_OPEN_SUCCESSES_KEY)
+                results = await pipe.execute()
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.error("Redis pipeline command %d failed in record_success: %s", i, result)
+                logger.info("Circuit breaker CLOSED: %d consecutive probes succeeded", count)
+            else:
+                logger.info("Circuit breaker HALF_OPEN: probe %d/%d succeeded", count, _CB_HYSTERESIS_THRESHOLD)
         # In CLOSED state intentionally do nothing — failure history is preserved
         # so a single success cannot mask a genuinely flapping provider.
 

@@ -102,7 +102,11 @@ class AdvisorRepository:
             .limit(fetch_limit)
         )
         if cursor:
-            cursor_created_at, cursor_id = cursor.split("|", 1)
+            # A-7: Validate cursor format to return 400 on malformed input
+            try:
+                cursor_created_at, cursor_id = cursor.split("|", 1)
+            except ValueError:
+                raise ValueError(f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'")
             query = query.or_(
                 f"created_at.gt.{cursor_created_at},"
                 f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
@@ -175,7 +179,11 @@ class AdvisorRepository:
         if unread_only:
             query = query.is_("read_at", "null")
         if cursor:
-            cursor_created_at, cursor_id = cursor.split("|", 1)
+            # A-7: Validate cursor format
+            try:
+                cursor_created_at, cursor_id = cursor.split("|", 1)
+            except ValueError:
+                raise ValueError(f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'")
             # Rows before the cursor (newest-first): same created_at and id < cursor_id,
             # OR created_at < cursor_created_at
             query = query.or_(
@@ -284,7 +292,11 @@ class AdvisorRepository:
         if type_filter is not None:
             query = query.eq("type", type_filter)
         if cursor:
-            cursor_created_at, cursor_id = cursor.split("|", 1)
+            # A-7: Validate cursor format
+            try:
+                cursor_created_at, cursor_id = cursor.split("|", 1)
+            except ValueError:
+                raise ValueError(f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'")
             query = query.or_(
                 f"created_at.lt.{cursor_created_at},"
                 f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"

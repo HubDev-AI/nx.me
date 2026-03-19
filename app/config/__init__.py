@@ -60,6 +60,25 @@ class Settings(BaseSettings):
     IDENTITY_SIMILARITY_THRESHOLD: float = 0.80
     MAX_CONCURRENT_GENERATIONS_PER_USER: int = 3
 
+    # Advisor tuning (audit A-3, A-5, A-6)
+    ADVISOR_CHAT_RATE_LIMIT_WINDOW_SECONDS: int = 3600
+    ADVISOR_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    ADVISOR_MODEL_HAIKU: str = "claude-3-haiku-20240307"
+
+    # Identity retry tuning (audit G-4)
+    IDENTITY_RETRY_ID_WEIGHT_DELTA: float = 0.10
+    IDENTITY_RETRY_ID_WEIGHT_CAP: float = 0.95
+    IDENTITY_RETRY_GUIDANCE_DELTA: float = 0.5
+    IDENTITY_RETRY_GUIDANCE_FLOOR: float = 3.5
+
+    # Color normalization tuning (audit G-8)
+    COLOR_NORM_BRIGHTNESS_DELTA: int = 20
+    COLOR_NORM_FACTOR_MIN: float = 0.8
+    COLOR_NORM_FACTOR_MAX: float = 1.2
+
+    # Generation httpx timeout (audit G-5)
+    GENERATION_HTTPX_TIMEOUT_SECONDS: float = 30.0
+
     # Public storage — stable CDN URLs for post images (no signing)
     # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}
     # Production: override with CloudFront distribution URL

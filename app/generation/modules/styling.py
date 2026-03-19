@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.generation.modules.base import TransformationModule, TransformationOutput
+from app.generation.modules.base import TransformationOutput
 from app.generation.modules.registry import register
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"

@@ -270,6 +270,11 @@ class MemoryManager:
                 continue
             await self.write_memory(user_id, MemoryType.USER_NOTE, {"text": note_text})
 
+        # A-18: Note — async extraction is fire-and-forget (create_task in service.py).
+        # Out-of-order dedup may miss concurrent extractions for the same turn.
+        # Accepted trade-off: duplicate memories are low-impact and naturally
+        # deduplicated by the hybrid retrieval scoring.
+
     async def write_analysis_insight(
         self,
         user_id: UUID,
@@ -292,8 +297,12 @@ class MemoryManager:
                 logger.warning("Image %s does not belong to user %s, skipping insight", image_id, user_id)
                 return
         except Exception as exc:
-            logger.warning("Could not verify image ownership for %s: %s", image_id, exc)
-            # Proceed anyway — the image may not exist yet in rare timing cases
+            # A-8: Log and skip instead of proceeding with unverified data
+            logger.warning(
+                "Could not verify image ownership for %s — skipping insight storage: %s",
+                image_id, exc,
+            )
+            return
 
         content: dict[str, Any] = {
             "face_shape": face_shape,
