@@ -15,6 +15,7 @@ from app.advisor.nudge_policy import (
     WEEKLY_CHECKIN_DAYS,
 )
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
@@ -29,11 +30,11 @@ async def find_weekly_checkin_eligible(advisor_repo: AdvisorRepository) -> list[
     now_utc = datetime.now(tz=timezone.utc)
     weekly_cutoff = (now_utc - timedelta(days=WEEKLY_CHECKIN_DAYS)).isoformat()
 
-    user_ids_with_goals = advisor_repo.get_all_goal_user_ids()
+    user_ids_with_goals = await run_sync(advisor_repo.get_all_goal_user_ids)
 
     eligible: list[str] = []
     for uid_str in user_ids_with_goals:
-        last_nudge = advisor_repo.get_latest_nudge_for_user(uid_str)
+        last_nudge = await run_sync(advisor_repo.get_latest_nudge_for_user, uid_str)
         if not last_nudge:
             # Never had a nudge — eligible
             eligible.append(uid_str)
@@ -58,7 +59,7 @@ async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
     ).isoformat()
 
     # Single COUNT query grouped by user_id — avoids fetching every insight row.
-    count_per_user = advisor_repo.count_insights_by_user()
+    count_per_user = await run_sync(advisor_repo.count_insights_by_user)
 
     eligible: list[str] = []
 
@@ -71,8 +72,9 @@ async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
 
         for uid_str in milestone_users:
             # Avoid duplicate milestone nudges within dedup window
-            recent = advisor_repo.find_recent_nudges(
-                uid_str, TRIGGER_MILESTONE, recent_milestone_cutoff
+            recent = await run_sync(
+                advisor_repo.find_recent_nudges,
+                uid_str, TRIGGER_MILESTONE, recent_milestone_cutoff,
             )
             if not recent:
                 eligible.append(uid_str)
@@ -97,7 +99,7 @@ async def find_re_engagement_eligible(advisor_repo: AdvisorRepository) -> list[s
     ).isoformat()
 
     # "Last activity" = most recent analysis insight
-    insight_date_rows = advisor_repo.get_all_insights_with_timestamps()
+    insight_date_rows = await run_sync(advisor_repo.get_all_insights_with_timestamps)
 
     # Latest insight per user
     latest_activity: dict[str, str] = {}
@@ -116,8 +118,9 @@ async def find_re_engagement_eligible(advisor_repo: AdvisorRepository) -> list[s
     eligible: list[str] = []
     for uid_str in inactive_users:
         # Avoid spamming: skip if a re-engagement nudge was sent recently
-        recent = advisor_repo.find_recent_nudges(
-            uid_str, TRIGGER_RE_ENGAGEMENT, last_re_engagement_nudge_cutoff
+        recent = await run_sync(
+            advisor_repo.find_recent_nudges,
+            uid_str, TRIGGER_RE_ENGAGEMENT, last_re_engagement_nudge_cutoff,
         )
         if not recent:
             eligible.append(uid_str)
