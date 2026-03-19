@@ -59,7 +59,7 @@ class GenerationOptions:
     guidance_scale: float = 4.0
     num_inference_steps: int = 30
     image_size: str = "square_hd"
-    max_sequence_length: str = "512"
+    max_sequence_length: int = 512
     # Flux Dev img2img specific
     strength: float | None = None
     ip_adapter_scale: float | None = None

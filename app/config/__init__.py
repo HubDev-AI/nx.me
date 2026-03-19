@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     STRIPE_API_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     ANTHROPIC_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""              # For embeddings (advisor memory); falls back to ANTHROPIC_API_KEY
+    OPENAI_API_KEY: str = ""              # Required when ADAPTER__LLM_ADAPTER=anthropic (used for embeddings via OpenAI API)
 
     # Adapter selection
     ADAPTER__NSFW_ADAPTER: str = "mock"
@@ -107,7 +107,6 @@ class Settings(BaseSettings):
     IMAGE_GEN_COST_CEILING_USD: float = 0.06
     GENERATION_TIMEOUT_SECONDS: int = 60
     CREDIT_COST_ALERT_USD: float = 0.05
-    GENERATION_OUTPUT_RESOLUTION: int = 1024
     IDENTITY_MAX_RETRIES: int = 1
     MAX_PROMPT_KEYWORDS: int = 6
     FACE_CROP_THRESHOLD: float = 0.25

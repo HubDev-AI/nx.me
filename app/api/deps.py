@@ -54,9 +54,10 @@ def get_redis(request: Request) -> aioredis.Redis:
 # ---------------------------------------------------------------------------
 
 
-def get_current_user(
+async def get_current_user(
     authorization: Annotated[str | None, Header()] = None,
     supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> UserClaims:
     """Validate the Bearer JWT and return the decoded claims.
 
@@ -74,17 +75,25 @@ def get_current_user(
     token = authorization.removeprefix("Bearer ").strip()
     claims = validate_jwt(token)
 
-    # Ban check — every authenticated request verifies the user is not banned.
-    # NOTE: This adds a DB call per request. Consider caching in Redis if
-    # this becomes a performance bottleneck.
-    user_row = (
-        supabase.table("users")
-        .select("is_banned")
-        .eq("id", claims["sub"])
-        .maybe_single()
-        .execute()
-    )
-    if user_row.data and user_row.data.get("is_banned"):
+    # Ban check with Redis cache (C-1: avoids DB call on every request)
+    user_id = claims["sub"]
+    ban_key = f"ban:{user_id}"
+    cached = await redis_client.get(ban_key)
+
+    if cached is None:
+        # Cache miss — query DB and cache for 60s
+        user_row = (
+            supabase.table("users")
+            .select("is_banned")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        is_banned = bool(user_row.data and user_row.data.get("is_banned"))
+        await redis_client.set(ban_key, "1" if is_banned else "0", ex=60)
+        cached = "1" if is_banned else "0"
+
+    if cached == "1":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
