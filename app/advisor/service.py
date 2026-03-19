@@ -12,7 +12,9 @@ Spec Section 5.3 message flow:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import random
 import re
 import weakref
 from datetime import datetime, timedelta, timezone
@@ -37,9 +39,6 @@ from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
-
-# Model identifiers — A-5: sourced from config to avoid duplication
-_MODEL_SONNET = settings.ADVISOR_MODEL_SONNET
 
 # Max tokens for chat response (keep concise per SOUL.md)
 _MAX_TOKENS_CHAT = 256
@@ -150,12 +149,17 @@ class AdvisorService:
             vision_content = await run_sync(self._fetch_vision_content, user_id)
 
         # Step 7: Build LLM context
+        # Deterministic RNG for context assembly (hashlib, not hash() — cross-process safe)
+        _seed = int(hashlib.md5(conversation_id.encode()).hexdigest(), 16) % (2**32)
+        _rng = random.Random(_seed)
+
         messages = build_context(
             soul_md=_SOUL_MD,
             user_data=user_data_block,
             memories=memories,
             conversation=history,
             message=message,
+            rng=_rng,
         )
 
         # Step 8: Call LLM (with post-generation check + one retry)
@@ -253,7 +257,7 @@ class AdvisorService:
             logger.info("User %s exceeded daily threshold (%d > %d) — using Haiku",
                          user_id, count, settings.ADVISOR_DEGRADATION_THRESHOLD)
             return settings.ADVISOR_MODEL_HAIKU
-        return _MODEL_SONNET
+        return settings.ADVISOR_MODEL_SONNET
 
     # -----------------------------------------------------------------------
     # Conversation history
