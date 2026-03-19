@@ -9,7 +9,6 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // NXME design tokens — dark-first, before/after dual-accent architecture
         after: {
           50: '#FFF1F3',
           100: '#FFE4E8',
@@ -35,29 +34,30 @@ const config: Config = {
           900: '#0F172A',
         },
         surface: {
-          page: '#080808',
+          page: '#0a0a0a',
           card: '#111111',
-          elevated: '#1A1A1A',
-          subtle: '#222222',
+          elevated: '#181818',
+          subtle: '#1f1f1f',
         },
         border: {
-          default: '#2A2A2A',
-          strong: '#3A3A3A',
+          default: 'rgba(255, 255, 255, 0.06)',
+          strong: 'rgba(255, 255, 255, 0.12)',
         },
         content: {
-          primary: '#F8F8F8',
-          secondary: '#A0A0A0',
-          disabled: '#555555',
-          inverse: '#111111',
+          primary: '#e8e8e8',
+          secondary: '#888888',
+          disabled: '#444444',
+          inverse: '#0a0a0a',
         },
         glow: {
           DEFAULT: '#FF8C42',
-          soft: 'rgba(255, 140, 66, 0.25)',
-          ring: 'rgba(255, 140, 66, 0.40)',
+          soft: 'rgba(255, 140, 66, 0.20)',
+          ring: 'rgba(255, 140, 66, 0.35)',
         },
       },
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-display)', 'Georgia', 'Times New Roman', 'serif'],
       },
     },
   },

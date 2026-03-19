@@ -57,6 +57,11 @@ export const APP_BASE_URL =
 /** ms to wait for the native app to open before redirecting to the store */
 export const APP_OPEN_TIMEOUT_MS = 1500;
 
+/** ms before a backend API fetch is aborted (prevents hanging when backend is down) */
+export const API_FETCH_TIMEOUT_MS = Number(
+  process.env.API_FETCH_TIMEOUT_MS ?? '3000',
+);
+
 /** Site name used in metadata */
 export const SITE_NAME = 'NXME';
 

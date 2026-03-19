@@ -1,90 +1,47 @@
-import type { Metadata } from 'next';
+'use client';
+
 import Link from 'next/link';
 
 import { APP_STORE_URL, PLAY_STORE_URL, SITE_NAME } from '@/config/constants';
-
-export const metadata: Metadata = {
-  title: `${SITE_NAME} — Your Style, Elevated`,
-  description:
-    'Discover your personalised glow-up plan. Real transformations, AI-powered style recommendations.',
-};
-
-/** Force dynamic rendering — each visitor gets a random theme */
-export const dynamic = 'force-dynamic';
+import { useTheme } from '@/components/theme-provider';
 
 /**
- * Themed variants. Each refresh picks one randomly.
- * Same editorial structure, different personality.
+ * Photography-driven editorial landing page.
+ * Each refresh: different hero, before/after pair, and accent color.
+ * Features aligned to generation-spec.md keyword categories.
  */
-const THEMES = [
-  { hero: '/images/hero-1.jpg', before: '/images/before-1.jpg', after: '/images/after-1.jpg', accent: '#F43F5E', label: 'rose' },
-  { hero: '/images/hero-2.jpg', before: '/images/before-2.jpg', after: '/images/after-2.jpg', accent: '#D4A060', label: 'gold' },
-  { hero: '/images/hero-3.jpg', before: '/images/before-3.jpg', after: '/images/after-3.jpg', accent: '#14B8A6', label: 'teal' },
-  { hero: '/images/hero-4.jpg', before: '/images/before-5.jpg', after: '/images/after-5.jpg', accent: '#A78BFA', label: 'violet' },
-  { hero: '/images/hero-1.jpg', before: '/images/before-6.jpg', after: '/images/after-6.jpg', accent: '#FB923C', label: 'amber' },
-  { hero: '/images/hero-2.jpg', before: '/images/before-7.jpg', after: '/images/after-7.jpg', accent: '#F472B6', label: 'pink' },
-  { hero: '/images/hero-3.jpg', before: '/images/before-4.jpg', after: '/images/after-4.jpg', accent: '#38BDF8', label: 'sky' },
-  { hero: '/images/hero-4.jpg', before: '/images/before-8.jpg', after: '/images/after-8.jpg', accent: '#E879F9', label: 'fuchsia' },
-  { hero: '/images/hero-1.jpg', before: '/images/before-9.jpg', after: '/images/after-9.jpg', accent: '#F43F5E', label: 'rose' },
-  { hero: '/images/hero-2.jpg', before: '/images/before-10.jpg', after: '/images/after-10.jpg', accent: '#34D399', label: 'emerald' },
-] as const;
-
-function getTheme() {
-  const idx = Math.floor(Math.random() * THEMES.length);
-  return THEMES[idx] ?? THEMES[0];
-}
-
 export default function HomePage() {
-  const t = getTheme();
-
-  /* Inline CSS variable so the accent color cascades through the whole page */
-  const style = { '--accent': t.accent } as React.CSSProperties;
+  const t = useTheme();
 
   return (
-    <main className="bg-[#0a0a0a] text-[#e8e8e8]" style={style}>
+    <main className="bg-[#0a0a0a] text-[#e8e8e8]" style={{ '--accent': t.accent } as React.CSSProperties}>
 
       {/* ── HERO ───────────────────────────────────────────── */}
       <section className="relative min-h-screen">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={t.hero}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover object-top"
-          role="presentation"
-        />
+        <img src={t.hero} alt="" className="absolute inset-0 w-full h-full object-cover object-top" role="presentation" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/60 to-transparent" />
 
         <div className="relative z-10 min-h-screen flex flex-col justify-end px-6 sm:px-12 pb-16 sm:pb-24">
-          <p className="animate-enter text-xs tracking-[0.25em] uppercase text-white/40 mb-6">
-            {SITE_NAME}
-          </p>
-          <h1 className="animate-enter animate-enter-delay-1 font-display text-[clamp(3rem,11vw,7.5rem)] leading-[0.9] tracking-[-0.02em] text-white max-w-3xl">
-            Your style,
-            <br />
+          <p className="text-xs tracking-[0.25em] uppercase text-white/40 mb-6">{SITE_NAME}</p>
+          <h1 className="font-display text-[clamp(3rem,11vw,7.5rem)] leading-[0.9] tracking-[-0.02em] text-white max-w-3xl">
+            Your style,<br />
             <em style={{ color: 'var(--accent)' }}>elevated.</em>
           </h1>
-          <p className="animate-enter animate-enter-delay-2 mt-6 text-sm sm:text-base text-white/50 max-w-sm leading-relaxed">
+          <p className="mt-6 text-sm sm:text-base text-white/50 max-w-sm leading-relaxed">
             AI-powered style recommendations. See your transformation before you commit.
           </p>
-          <div className="animate-enter animate-enter-delay-3 mt-8 flex items-center gap-6">
-            <Link
-              href={APP_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+          <div className="mt-8 flex items-center gap-6">
+            <Link href={APP_STORE_URL} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70"
-              style={{ backgroundColor: 'var(--accent)' }}
-            >
+              style={{ backgroundColor: 'var(--accent)' }}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
               </svg>
               Get the app
             </Link>
-            <Link
-              href={PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-white/40 hover:text-white/70 transition-colors underline underline-offset-4 decoration-white/20"
-            >
+            <Link href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer"
+              className="text-sm text-white/40 hover:text-white/70 transition-colors underline underline-offset-4 decoration-white/20">
               Android
             </Link>
           </div>
@@ -94,40 +51,25 @@ export default function HomePage() {
       {/* ── BEFORE / AFTER ─────────────────────────────────── */}
       <section className="section-rule">
         <div className="px-6 sm:px-12 py-16 sm:py-24">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-12">
-            The transformation
-          </p>
+          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-12">The transformation</p>
         </div>
         <div className="grid grid-cols-2">
           <div className="relative aspect-[3/4] sm:aspect-[4/5]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={t.before}
-              alt="Before: casual everyday look"
-              className="absolute inset-0 w-full h-full object-cover grayscale-[30%]"
-            />
+            <img src={t.before} alt="Before: casual everyday look" className="absolute inset-0 w-full h-full object-cover grayscale-[30%]" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent" />
-            <span className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 text-xs tracking-[0.2em] uppercase text-white/50">
-              Before
-            </span>
+            <span className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 text-xs tracking-[0.2em] uppercase text-white/50">Before</span>
           </div>
           <div className="relative aspect-[3/4] sm:aspect-[4/5]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={t.after}
-              alt="After: styled and confident"
-              className="absolute inset-0 w-full h-full object-cover"
-            />
+            <img src={t.after} alt="After: styled and confident" className="absolute inset-0 w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent" />
-            <span className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 text-xs tracking-[0.2em] uppercase" style={{ color: 'var(--accent)' }}>
-              After
-            </span>
+            <span className="absolute bottom-4 left-4 sm:bottom-6 sm:left-6 text-xs tracking-[0.2em] uppercase" style={{ color: 'var(--accent)' }}>After</span>
           </div>
         </div>
         <div className="px-6 sm:px-12 py-16 sm:py-24">
           <p className="font-display text-2xl sm:text-4xl text-white leading-snug max-w-2xl">
-            Same person. Different presence.
-            <br />
+            Same person. Different presence.<br />
             <em className="text-white/40">That&apos;s what a glow-up looks like.</em>
           </p>
         </div>
@@ -137,10 +79,8 @@ export default function HomePage() {
       <section className="section-rule px-6 sm:px-12 py-24 sm:py-40">
         <div className="max-w-4xl">
           <p className="font-display text-[clamp(1.5rem,4.5vw,3.2rem)] leading-[1.15] text-white">
-            We don&apos;t smooth your skin.
-            <br />
-            We don&apos;t change your face.
-            <br />
+            We don&apos;t smooth your skin.<br />
+            We don&apos;t change your face.<br />
             <em style={{ color: 'var(--accent)' }}>We show you what your style could be.</em>
           </p>
         </div>
@@ -149,16 +89,13 @@ export default function HomePage() {
       {/* ── WHAT WE ANALYSE ────────────────────────────────── */}
       <section className="section-rule">
         <div className="px-6 sm:px-12 py-16 sm:py-24">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555]">
-            What we analyse
-          </p>
+          <p className="text-xs tracking-[0.25em] uppercase text-[#555]">What we analyse</p>
         </div>
 
-        {/* Hair */}
         <div className="grid sm:grid-cols-2">
           <div className="relative aspect-[4/3]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/detail-hair.jpg" alt="Hair styling" className="absolute inset-0 w-full h-full object-cover" />
+            <img src={t.hair} alt="Hair styling" className="absolute inset-0 w-full h-full object-cover" />
           </div>
           <div className="flex items-center px-6 sm:px-12 py-12 sm:py-0">
             <div>
@@ -170,7 +107,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Clothing — reversed */}
         <div className="grid sm:grid-cols-2">
           <div className="flex items-center px-6 sm:px-12 py-12 sm:py-0 order-2 sm:order-1">
             <div>
@@ -182,15 +118,14 @@ export default function HomePage() {
           </div>
           <div className="relative aspect-[4/3] order-1 sm:order-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/detail-accessories.jpg" alt="Style details" className="absolute inset-0 w-full h-full object-cover" />
+            <img src={t.clothing} alt="Clothing and style" className="absolute inset-0 w-full h-full object-cover" />
           </div>
         </div>
 
-        {/* Grooming */}
         <div className="grid sm:grid-cols-2">
           <div className="relative aspect-[4/3]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/images/detail-grooming.jpg" alt="Grooming" className="absolute inset-0 w-full h-full object-cover" />
+            <img src={t.grooming} alt="Grooming and skincare" className="absolute inset-0 w-full h-full object-cover" />
           </div>
           <div className="flex items-center px-6 sm:px-12 py-12 sm:py-0">
             <div>
@@ -202,27 +137,13 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* All 7 real categories from generation-spec.md */}
         <div className="px-6 sm:px-12 py-16 sm:py-24">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-8">
-            All categories
-          </p>
+          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-8">All categories</p>
           <div className="flex flex-wrap gap-3">
-            {[
-              { name: 'Hair', count: 30 },
-              { name: 'Eyebrows', count: 8 },
-              { name: 'Facial hair', count: 7 },
-              { name: 'Clothing', count: 10 },
-              { name: 'Accessories', count: 8 },
-              { name: 'Grooming', count: 3 },
-              { name: 'Lighting', count: 8 },
-            ].map((cat) => (
-              <span
-                key={cat.name}
-                className="px-4 py-2 text-xs tracking-wide border rounded-full"
-                style={{ color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}
-              >
-                {cat.name} <span className="text-[#555] ml-1">{cat.count}</span>
+            {['Hair', 'Eyebrows', 'Facial hair', 'Clothing', 'Accessories', 'Grooming', 'Lighting'].map((cat) => (
+              <span key={cat} className="px-4 py-2 text-xs tracking-wide border rounded-full"
+                style={{ color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent) 25%, transparent)' }}>
+                {cat}
               </span>
             ))}
           </div>
@@ -232,9 +153,7 @@ export default function HomePage() {
       {/* ── HOW IT WORKS ───────────────────────────────────── */}
       <section className="section-rule px-6 sm:px-12 py-24 sm:py-40">
         <div className="max-w-5xl">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20">
-            How it works
-          </p>
+          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20">How it works</p>
           <div className="space-y-16 sm:space-y-20">
             {[
               { n: '01', title: 'Upload a selfie', desc: 'One photo. No angles, no filters. Just you.' },
@@ -267,12 +186,10 @@ export default function HomePage() {
       {/* ── WHAT YOU GET ───────────────────────────────────── */}
       <section className="section-rule px-6 sm:px-12 py-24 sm:py-40">
         <div className="max-w-5xl">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20">
-            What you get
-          </p>
+          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20">What you get</p>
           <div className="space-y-16 sm:space-y-24">
             {[
-              { title: 'Ranked recommendations', desc: 'Specific changes ordered by impact. Hair, grooming, eyebrows, clothing, facial hair, accessories, lighting — scored and prioritised.' },
+              { title: 'Ranked recommendations', desc: 'Specific changes ordered by impact. Hair, grooming, eyebrows, clothing, accessories, lighting — scored and prioritised.' },
               { title: 'Before & after card', desc: 'A shareable transformation card with your photo and top improvements. Post it, send it, or save it.' },
               { title: 'Style advisor', desc: 'Chat with Ada, your AI style coach. Follow-up questions, deeper insights, weekly check-ins.' },
               { title: 'Identity preserved', desc: 'Three layers of identity protection — model conditioning, ArcFace verification, and prompt design. Your glow-up looks like you.' },
@@ -293,32 +210,23 @@ export default function HomePage() {
       <section className="section-rule flex flex-col justify-center min-h-[80vh] px-6 sm:px-12 py-24">
         <div className="max-w-3xl">
           <h2 className="font-display text-[clamp(2.5rem,9vw,6.5rem)] leading-[0.9] tracking-[-0.02em] text-white">
-            Ready for
-            <br />
+            Ready for<br />
             <em style={{ color: 'var(--accent)' }}>yours?</em>
           </h2>
           <p className="mt-8 text-sm sm:text-base text-[#888] max-w-sm leading-relaxed">
             Free to try. Just a selfie and thirty seconds.
           </p>
           <div className="mt-10 flex items-center gap-6">
-            <Link
-              href={APP_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link href={APP_STORE_URL} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70"
-              style={{ backgroundColor: 'var(--accent)' }}
-            >
+              style={{ backgroundColor: 'var(--accent)' }}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z" />
               </svg>
               Download for iOS
             </Link>
-            <Link
-              href={PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-[#888] hover:text-white transition-colors underline underline-offset-4 decoration-[#333] hover:decoration-[#888]"
-            >
+            <Link href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer"
+              className="text-sm text-[#888] hover:text-white transition-colors underline underline-offset-4 decoration-[#333] hover:decoration-[#888]">
               Android
             </Link>
           </div>

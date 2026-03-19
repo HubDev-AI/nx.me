@@ -12,7 +12,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'fal.media' },
     ],
   },
-  async headers() {
+  headers() {
     return [
       {
         source: '/:path*',

@@ -93,16 +93,21 @@ export function CtaButton({ username }: CtaButtonProps) {
       onClick={mounted ? handleClick : undefined}
       aria-label="Get Your Free Glow-Up — open app or download"
       className={[
-        'block w-full text-center py-4 px-6 rounded-2xl',
-        'text-base font-bold tracking-wide text-white',
-        'bg-after-500 hover:bg-after-600 active:bg-after-700',
-        'transition-colors duration-150',
+        'group relative block w-full text-center py-4 px-6 rounded-2xl overflow-hidden',
+        'text-base font-bold font-display tracking-wide text-white',
+        'bg-gradient-to-r from-after-600 via-after-500 to-glow',
+        'glow-shadow-cta',
+        'transition-all duration-200',
+        'hover:scale-[1.01] hover:glow-shadow-cta active:scale-[0.99]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-after-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
-        // Visible from the start with default href; JS swaps click handler on mount
-        'opacity-100',
       ].join(' ')}
     >
-      Get Your Free Glow-Up &rarr;
+      {/* Shimmer effect on hover */}
+      <span
+        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+        aria-hidden="true"
+      />
+      <span className="relative">Get Your Free Glow-Up &rarr;</span>
     </a>
   );
 }
