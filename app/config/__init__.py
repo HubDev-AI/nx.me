@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # Advisor Sonnet model (chat responses)
     ADVISOR_MODEL_SONNET: str = "claude-sonnet-4-6"
 
+    # LLM call timeouts (M-6)
+    ADVISOR_LLM_TIMEOUT_SECONDS: float = 30.0
+    ADVISOR_EMBEDDING_TIMEOUT_SECONDS: float = 15.0
+
     # Public storage — stable CDN URLs for post images (no signing)
     # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}
     # Production: override with CloudFront distribution URL
