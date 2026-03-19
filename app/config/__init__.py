@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # Advisor tuning (audit A-3, A-5, A-6)
     ADVISOR_CHAT_RATE_LIMIT_WINDOW_SECONDS: int = 3600
     ADVISOR_EMBEDDING_MODEL: str = "text-embedding-3-small"
-    ADVISOR_MODEL_HAIKU: str = "claude-3-haiku-20240307"
+    ADVISOR_MODEL_HAIKU: str = "claude-haiku-4-5-20251001"
 
     # Identity retry tuning (audit G-4)
     IDENTITY_RETRY_ID_WEIGHT_DELTA: float = 0.10
@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     FAL_COST_DEFAULT: float = 0.035
 
     # Advisor Sonnet model (chat responses)
-    ADVISOR_MODEL_SONNET: str = "claude-3-5-sonnet-20241022"
+    ADVISOR_MODEL_SONNET: str = "claude-sonnet-4-6"
 
     # Public storage — stable CDN URLs for post images (no signing)
     # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}
