@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import weakref
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -48,6 +50,17 @@ try:
     _SOUL_MD: str = _SOUL_MD_PATH.read_text(encoding="utf-8")
 except FileNotFoundError:
     raise RuntimeError(f"SOUL.md not found at {_SOUL_MD_PATH}. Advisor service cannot start.")
+
+_background_tasks: weakref.WeakSet = weakref.WeakSet()
+
+
+def _task_done(t: asyncio.Task) -> None:
+    """Log errors from background tasks instead of letting them silently fail."""
+    if t.cancelled():
+        return
+    exc = t.exception()
+    if exc:
+        logger.error("Background task failed: %s", exc, exc_info=exc)
 
 
 class AdvisorService:
@@ -179,7 +192,9 @@ class AdvisorService:
                     extra={"metric": "advisor.memory_extraction_failure", "user_id": str(user_id)},
                 )
 
-        asyncio.create_task(_extract_with_logging())
+        task = asyncio.create_task(_extract_with_logging())
+        task.add_done_callback(_task_done)
+        _background_tasks.add(task)
 
         return advisor_msg_row
 
@@ -534,7 +549,6 @@ class AdvisorService:
 
 def _first_sentence(text: str) -> str:
     """Return the first sentence of text (split on .!?) lowercased and stripped."""
-    import re
     parts = re.split(r"[.!?]", text.strip())
     first = parts[0].strip().lower() if parts else ""
     return first
@@ -548,12 +562,7 @@ def _post_check(response: str, recent_messages: list[str]) -> str | None:
         if last_sentence and last_sentence == this_sentence:
             return "Start differently."
 
-    sentence_count = (
-        response.count(". ")
-        + response.count("? ")
-        + response.count("! ")
-        + 1
-    )
+    sentence_count = len(re.split(r'(?<=[.!?])\s+', response.strip()))
     if sentence_count > 3:
         return "Shorter. Say less."
     if sentence_count == 3:
