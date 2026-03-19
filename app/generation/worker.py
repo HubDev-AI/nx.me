@@ -76,6 +76,18 @@ def _get_generator() -> GlowUpGeneratorPort:
     return MockGeneratorAdapter()
 
 
+def _get_nsfw_screener():
+    """Resolve NSFW screening adapter from config (lazy import)."""
+    adapter = settings.ADAPTER__NSFW_ADAPTER
+    if adapter == "rekognition":
+        from app.image_pipeline.nsfw_screener import RekognitionAdapter
+        return RekognitionAdapter()
+    if adapter != "mock":
+        logger.warning("Unknown NSFW adapter '%s' — falling back to mock", adapter)
+    from app.image_pipeline.nsfw_screener import MockNSFWAdapter
+    return MockNSFWAdapter()
+
+
 async def _fetch_and_claim_job(
     job_repo: JobRepository,
     cost_tracker: CostTracker,
@@ -259,19 +271,17 @@ async def _generate_and_validate(
     await _refresh_concurrent_ttl()
 
     # NSFW screen output — uses in-memory bytes (from NXME storage write)
-    if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
-        from app.image_pipeline.nsfw_screener import RekognitionAdapter
-        screener = RekognitionAdapter()
-        nsfw_result = await screener.screen(gen_image_bytes)
+    screener = _get_nsfw_screener()
+    nsfw_result = await screener.screen(gen_image_bytes)
 
-        if nsfw_result.is_explicit:
-            # G-3: Clean up image — log and re-raise on delete failure instead of swallowing
-            try:
-                image_repo.remove("generated-images", [storage_key])
-            except Exception:
-                logger.error("Failed to remove NSFW image %s from storage — orphaned image", storage_key, exc_info=True)
-            await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
-            return None
+    if nsfw_result.is_explicit:
+        # G-3: Clean up image — log and re-raise on delete failure instead of swallowing
+        try:
+            image_repo.remove("generated-images", [storage_key])
+        except Exception:
+            logger.error("Failed to remove NSFW image %s from storage — orphaned image", storage_key, exc_info=True)
+        await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
+        return None
 
     # Download source for identity check
     # G-5: Explicit timeout on httpx calls
