@@ -5,6 +5,12 @@
 |------|--------|----------------|-------------------|
 | 2026-03-13 | self | Assumed the repo napkin existed; `.claude/napkin.md` was missing | Create the napkin immediately at session start when it does not exist |
 | 2026-03-17 | user | Trusted story-creator agent's stripe version (14.4.0) without verifying via Context7/PyPI — actual latest was 14.4.1 | ALWAYS verify package versions yourself via Context7 + PyPI. Never trust subagent version claims. |
+ | 2026-03-17 | self | Used `next.config.ts` — Next.js 14.2.x does not support TypeScript config files | Use `next.config.mjs` for Next.js 14.x; `.ts` config only supported from Next.js 15+ |
+ | 2026-03-17 | self | Ran `pytest` directly and hit globally installed plugin import failures unrelated to this repo | Use `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest ...` first in this workspace unless the repo explicitly depends on external pytest plugins |
+| 2026-03-17 | self | Treated the first `X-Forwarded-For` value as trustworthy for auth rate limiting | Behind proxies/load balancers, do not trust raw client-supplied `X-Forwarded-For`; use a trusted proxy strategy or socket IP |
+| 2026-03-17 | self | Nearly repeated stale review findings from an earlier pass without re-checking the current tree | Before writing review docs, reopen the live files and re-validate every high-severity finding against current code, scripts, and docs |
+| 2026-03-17 | self | Assumed the migration runner lived under `app/scripts/` while reviewing migration docs | In this repo the runner is `app/migrations/run.py`; verify actual file paths before citing migration workflow details |
+| 2026-03-17 | self | Treated spec validity as ID coverage only and missed acceptance-detail gaps | When validating backlog/spec docs, also compare each source finding's required branches/status codes/scope against the sprint summary, not just whether the ID appears |
 
 ## User Preferences
 - Follow repo `AGENTS.md` skill instructions before doing substantive work.
