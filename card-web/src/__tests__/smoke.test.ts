@@ -39,8 +39,7 @@ describe('parseCardData', () => {
   })
 
   it('throws on missing required string field', () => {
-    const { username: _username, ...withoutUsername } = VALID_CARD
-    void _username
+    const { username: _, ...withoutUsername } = VALID_CARD
     expect(() => parseCardData(withoutUsername)).toThrow('"username"')
   })
 

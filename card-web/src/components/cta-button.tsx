@@ -55,7 +55,11 @@ export function CtaButton({ username }: CtaButtonProps) {
       // in the background and the setTimeout never fires a redirect.
       // If the app is not installed, the universal link 404s silently (or the
       // browser ignores it) and we redirect to the store after the timeout.
-      window.location.href = universalLink;
+      try {
+        window.location.href = universalLink;
+      } catch {
+        // Invalid URL — fall through to store redirect
+      }
 
       if (platform !== 'desktop' && storeUrl) {
         // On mobile: after the app-open window, fall back to the store.
@@ -69,6 +73,11 @@ export function CtaButton({ username }: CtaButtonProps) {
           window.removeEventListener('focus', clearOnFocus);
         };
         window.addEventListener('focus', clearOnFocus);
+
+        // Safety cleanup: remove listener if focus never fires
+        setTimeout(() => {
+          window.removeEventListener('focus', clearOnFocus);
+        }, APP_OPEN_TIMEOUT_MS + 500);
       }
     },
     [username],
