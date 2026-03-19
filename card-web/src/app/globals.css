@@ -72,3 +72,25 @@ body {
 .animate-enter-delay-2 { animation-delay: 0.3s; }
 .animate-enter-delay-3 { animation-delay: 0.45s; }
 .animate-enter-delay-4 { animation-delay: 0.6s; }
+
+/* ── Hero parallax: image scrolls at 60% speed (CSS scroll-driven) ── */
+@supports (animation-timeline: scroll()) {
+  .hero-parallax {
+    animation: hero-parallax-move linear both;
+    animation-timeline: scroll();
+    animation-range: 0vh 100vh;
+  }
+
+  @keyframes hero-parallax-move {
+    from { transform: translateY(0); }
+    to   { transform: translateY(-15%); }
+  }
+}
+
+/* Fallback: no parallax, just static positioning */
+@supports not (animation-timeline: scroll()) {
+  .hero-parallax {
+    position: absolute;
+    inset: 0;
+  }
+}

@@ -16,11 +16,15 @@ export default function HomePage() {
   return (
     <main className="bg-[#0a0a0a] text-[#e8e8e8]" style={{ '--accent': t.accent } as React.CSSProperties}>
 
-      {/* ── HERO ───────────────────────────────────────────── */}
-      <section className="relative min-h-screen">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={t.hero} alt="" className="absolute inset-0 w-full h-full object-cover object-top" role="presentation" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/60 to-transparent" />
+      {/* ── HERO — parallax image, 120vh so face isn't cropped ── */}
+      <section className="relative min-h-screen overflow-hidden">
+        {/* Image container: 120% height for parallax room, sticks to top */}
+        <div className="absolute inset-x-0 top-0 h-[120vh] hero-parallax">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={t.hero} alt="" className="w-full h-full object-cover object-center" role="presentation" />
+        </div>
+        {/* Gradient: stronger at bottom for text, subtle vignette at top */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/50 to-[#0a0a0a]/20" />
 
         <div className="relative z-10 min-h-screen flex flex-col justify-end px-6 sm:px-12 pb-16 sm:pb-24">
           <p className="text-xs tracking-[0.25em] uppercase text-white/40 mb-6">{SITE_NAME}</p>
@@ -32,7 +36,7 @@ export default function HomePage() {
             AI-powered style recommendations. See your transformation before you commit.
           </p>
           <div className="mt-8 flex items-center gap-6">
-            <Link href={APP_STORE_URL} target="_blank" rel="noopener noreferrer"
+            <Link href={APP_STORE_URL} prefetch={false} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70"
               style={{ backgroundColor: 'var(--accent)' }}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -40,7 +44,7 @@ export default function HomePage() {
               </svg>
               Get the app
             </Link>
-            <Link href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer"
+            <Link href={PLAY_STORE_URL} prefetch={false} target="_blank" rel="noopener noreferrer"
               className="text-sm text-white/40 hover:text-white/70 transition-colors underline underline-offset-4 decoration-white/20">
               Android
             </Link>
@@ -217,7 +221,7 @@ export default function HomePage() {
             Free to try. Just a selfie and thirty seconds.
           </p>
           <div className="mt-10 flex items-center gap-6">
-            <Link href={APP_STORE_URL} target="_blank" rel="noopener noreferrer"
+            <Link href={APP_STORE_URL} prefetch={false} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70"
               style={{ backgroundColor: 'var(--accent)' }}>
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -225,7 +229,7 @@ export default function HomePage() {
               </svg>
               Download for iOS
             </Link>
-            <Link href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer"
+            <Link href={PLAY_STORE_URL} prefetch={false} target="_blank" rel="noopener noreferrer"
               className="text-sm text-[#888] hover:text-white transition-colors underline underline-offset-4 decoration-[#333] hover:decoration-[#888]">
               Android
             </Link>
@@ -237,8 +241,8 @@ export default function HomePage() {
       <footer className="section-rule px-6 sm:px-12 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-[#444]">
         <span>&copy; {new Date().getFullYear()} {SITE_NAME}</span>
         <div className="flex gap-6">
-          <Link href="#" className="hover:text-[#888] transition-colors">Privacy</Link>
-          <Link href="#" className="hover:text-[#888] transition-colors">Terms</Link>
+          <Link href="#" prefetch={false} className="hover:text-[#888] transition-colors">Privacy</Link>
+          <Link href="#" prefetch={false} className="hover:text-[#888] transition-colors">Terms</Link>
         </div>
       </footer>
     </main>
