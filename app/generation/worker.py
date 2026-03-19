@@ -11,6 +11,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+import httpx
+import PIL.Image
 import redis.asyncio as aioredis
 from supabase import Client
 
@@ -72,6 +74,18 @@ def _get_generator() -> GlowUpGeneratorPort:
         return FalAiAdapter()
     from app.generation.adapters.mock import MockGeneratorAdapter
     return MockGeneratorAdapter()
+
+
+def _get_nsfw_screener():
+    """Resolve NSFW screening adapter from config (lazy import)."""
+    adapter = settings.ADAPTER__NSFW_ADAPTER
+    if adapter == "rekognition":
+        from app.image_pipeline.nsfw_screener import RekognitionAdapter
+        return RekognitionAdapter()
+    if adapter != "mock":
+        logger.warning("Unknown NSFW adapter '%s' — falling back to mock", adapter)
+    from app.image_pipeline.nsfw_screener import MockNSFWAdapter
+    return MockNSFWAdapter()
 
 
 async def _fetch_and_claim_job(
@@ -149,7 +163,9 @@ async def _build_generation_context(
 
     # Build prompt
     if analysis:
-        prompt, negative, adaptive_params = build_prompt(analysis)
+        prompt, negative, adaptive_params = build_prompt(
+            analysis, analysis_id=job_data.get("analysis_id", ""),
+        )
     else:
         prompt = "Professional portrait with improved styling"
         negative = ""
@@ -195,8 +211,6 @@ async def _generate_and_validate(
     Returns (gen_result, gen_image_bytes, source_image_bytes, identity_result) on success,
     or None if the job was failed (NSFW or identity).
     """
-    import httpx
-
     _concurrent_ttl = settings.GENERATION_TIMEOUT_SECONDS + 60
 
     async def _refresh_concurrent_ttl() -> None:
@@ -246,8 +260,7 @@ async def _generate_and_validate(
         gen_image_bytes = resp.content
 
     # G-11: Log generated image dimensions for debugging
-    import PIL.Image as _PILImage
-    with _PILImage.open(io.BytesIO(gen_image_bytes)) as _dim_img:
+    with PIL.Image.open(io.BytesIO(gen_image_bytes)) as _dim_img:
         logger.info("Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height)
 
     # Write raw generated image to NXME storage before any checks
@@ -260,19 +273,17 @@ async def _generate_and_validate(
     await _refresh_concurrent_ttl()
 
     # NSFW screen output — uses in-memory bytes (from NXME storage write)
-    if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
-        from app.image_pipeline.nsfw_screener import RekognitionAdapter
-        screener = RekognitionAdapter()
-        nsfw_result = await screener.screen(gen_image_bytes)
+    screener = _get_nsfw_screener()
+    nsfw_result = await screener.screen(gen_image_bytes)
 
-        if nsfw_result.is_explicit:
-            # G-3: Clean up image — log and re-raise on delete failure instead of swallowing
-            try:
-                image_repo.remove("generated-images", [storage_key])
-            except Exception:
-                logger.error("Failed to remove NSFW image %s from storage — orphaned image", storage_key, exc_info=True)
-            await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
-            return None
+    if nsfw_result.is_explicit:
+        # G-3: Clean up image — log and re-raise on delete failure instead of swallowing
+        try:
+            image_repo.remove("generated-images", [storage_key])
+        except Exception:
+            logger.error("Failed to remove NSFW image %s from storage — orphaned image", storage_key, exc_info=True)
+        await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
+        return None
 
     # Download source for identity check
     # G-5: Explicit timeout on httpx calls
@@ -315,7 +326,7 @@ async def _generate_and_validate(
     # G-4: Retry parameters sourced from config
     if not identity_result.identity_preserved:
         logger.info("Identity check failed (%.3f < %.2f) — retrying with tighter params",
-                    identity_result.similarity_score, settings.IDENTITY_SIMILARITY_THRESHOLD)
+                    identity_result.similarity_score, identity_threshold)
 
         retry_options = GenerationOptions(
             model=settings.FAL_MODEL_PRIMARY,
@@ -353,7 +364,7 @@ async def _generate_and_validate(
             check_identity,
             source_image_bytes,
             retry_image_bytes,
-            settings.IDENTITY_SIMILARITY_THRESHOLD,
+            identity_threshold,
         )
 
         if retry_identity.identity_preserved:
@@ -400,8 +411,6 @@ async def _finalize_job(
     4. Mark job "completed"
     If step 3 fails, the job stays in "finalizing" and the stuck-job watchdog can retry.
     """
-    import PIL.Image
-
     with PIL.Image.open(io.BytesIO(gen_image_bytes)) as gen_img, \
          PIL.Image.open(io.BytesIO(source_image_bytes)) as source_img_pil:
         gen_img = normalize_output(source_img_pil, gen_img)
@@ -473,7 +482,9 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         ctx[cleanup_sha_key] = await redis.script_load(_CONCURRENT_CLEANUP_SCRIPT)
     cleanup_sha = ctx[cleanup_sha_key]
     cost_tracker = CostTracker(redis)
-    generator = _get_generator()
+    if "generator" not in ctx:
+        ctx["generator"] = _get_generator()
+    generator = ctx["generator"]
     job_repo = JobRepository(supabase)
     image_repo = ImageRepository(supabase)
     analysis_repo = AnalysisRepository(supabase)

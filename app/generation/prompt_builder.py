@@ -1,7 +1,8 @@
-"""Prompt builder — assembles generation prompts from face analysis data.
+"""Prompt builder — thin compositor that delegates to the module registry.
 
-3 modes (everyday/polished/editorial), identity phrase rotation,
-style theme injection, adaptive parameter computation.
+Selects mode based on keyword count, delegates prompt/negative/params
+construction to active transformation modules, and applies cross-module
+identity phrase rotation with deterministic seeding.
 """
 from __future__ import annotations
 
@@ -12,6 +13,10 @@ from pathlib import Path
 
 from app.config import settings
 from app.face_analysis.models import AnalysisResult
+from app.generation.modules import registry
+
+# Ensure StylingModule is imported so it auto-registers via register().
+import app.generation.modules.styling  # noqa: F401
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
@@ -22,7 +27,6 @@ _allowlist_module = importlib.util.module_from_spec(_allowlist_spec)  # type: ig
 _allowlist_spec.loader.exec_module(_allowlist_module)  # type: ignore[union-attr]
 sys.modules.setdefault("prompts.keyword_allowlist", _allowlist_module)
 
-HAIR_KEYWORDS: frozenset[str] = _allowlist_module.HAIR_KEYWORDS
 ALLOWED_KEYWORDS: frozenset[str] = _allowlist_module.ALLOWED_KEYWORDS
 
 # ---------------------------------------------------------------------------
@@ -46,7 +50,7 @@ def _validate_templates() -> None:
 _validate_templates()  # Fail fast at import time
 
 # ---------------------------------------------------------------------------
-# Identity phrase rotation
+# Identity phrase rotation (cross-module concern)
 # ---------------------------------------------------------------------------
 
 _IDENTITY_PHRASES = [
@@ -56,19 +60,6 @@ _IDENTITY_PHRASES = [
     "This exact person",
     "Recognizably the same face",
     "The same person, unmistakably",
-]
-
-# ---------------------------------------------------------------------------
-# Style themes (injected when keyword_count <= 4)
-# ---------------------------------------------------------------------------
-
-_STYLE_THEMES = [
-    "modern clean aesthetic",
-    "relaxed streetwear vibe",
-    "elegant and refined",
-    "minimal and sharp",
-    "warm and approachable",
-    "contemporary and bold",
 ]
 
 # ---------------------------------------------------------------------------
@@ -86,134 +77,64 @@ def select_mode(keyword_count: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Adaptive parameters
-# ---------------------------------------------------------------------------
-
-
-def compute_adaptive_params(
-    face_ratio: float,
-    symmetry_score: float,
-    keyword_count: int,
-) -> dict:
-    """Adjust generation parameters based on input characteristics."""
-    id_weight = 0.86
-    guidance = 4.0
-
-    # Keyword scaling
-    if keyword_count >= 5:
-        id_weight = 0.82
-        guidance = 4.5
-    elif keyword_count in (3, 4):
-        id_weight = 0.85
-        guidance = 4.0
-    elif keyword_count <= 2:
-        id_weight = 0.87
-        guidance = 3.8
-
-    # Symmetry adjustment
-    if symmetry_score < 0.75:
-        id_weight = min(id_weight + 0.04, 0.93)
-        guidance = max(guidance - 0.2, 3.5)
-
-    # Face size adjustment
-    if face_ratio < 0.15:
-        id_weight = min(id_weight + 0.02, 0.93)
-
-    # Clamp to safe ranges
-    id_weight = max(0.80, min(0.93, round(id_weight, 2)))
-    guidance = max(3.5, min(4.8, round(guidance, 1)))
-
-    return {
-        "id_weight": id_weight,
-        "guidance_scale": guidance,
-        "num_inference_steps": 30,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Keyword preparation
-# ---------------------------------------------------------------------------
-
-
-def prepare_keywords(keywords: list[str]) -> list[str]:
-    """Optimize keyword list: hair first, cap at 5, add style theme if sparse."""
-    # Hair keywords first (most visible change)
-    hair_first = [k for k in keywords if k in HAIR_KEYWORDS]
-    rest = [k for k in keywords if k not in HAIR_KEYWORDS]
-    ordered = hair_first + rest
-
-    # Inject style theme when sparse (before cap to ensure it counts)
-    if len(ordered) <= 4:
-        ordered.append(random.choice(_STYLE_THEMES))
-
-    # Cap at MAX_PROMPT_KEYWORDS (after theme injection)
-    if len(ordered) > settings.MAX_PROMPT_KEYWORDS:
-        ordered = ordered[:settings.MAX_PROMPT_KEYWORDS]
-
-    return ordered
-
-
-# ---------------------------------------------------------------------------
-# Lighting keyword from symmetry
-# ---------------------------------------------------------------------------
-
-
-def select_lighting_keyword(symmetry_score: float) -> str:
-    """Choose lighting keyword based on face symmetry."""
-    if symmetry_score > 0.85:
-        return random.choice(["studio lighting", "golden hour glow"])
-    return random.choice(["soft natural lighting", "even skin lighting"])
-
-
-# ---------------------------------------------------------------------------
-# Main builder
+# Main builder (compositor)
 # ---------------------------------------------------------------------------
 
 
 def build_prompt(
     analysis_result: AnalysisResult,
     face_ratio: float = 0.30,
+    analysis_id: str = "",
 ) -> tuple[str, str, dict]:
-    """Build generation prompt from face analysis.
+    """Build generation prompt by delegating to the module registry.
+
+    Args:
+        analysis_result: Face analysis data used for keyword extraction.
+        face_ratio: Ratio of face area to image area.
+        analysis_id: Unique analysis identifier for deterministic seeding.
 
     Returns:
         (prompt, negative_prompt, adaptive_params)
     """
-    from app.generation.modules.styling import StylingModule
+    # Deterministic RNG seeded from analysis_id
+    rng = random.Random(hash(analysis_id))
 
-    _module = StylingModule()  # noqa: F841
+    # Count keywords from analysis to determine mode
+    keyword_count = sum(
+        1
+        for rec in analysis_result.recommendations
+        for kw in ALLOWED_KEYWORDS
+        if kw in rec.suggestion_text.lower()
+    )
+    mode = select_mode(min(keyword_count, settings.MAX_PROMPT_KEYWORDS))
 
-    # Extract and prepare keywords
-    keywords = []
-    for rec in analysis_result.recommendations:
-        text = rec.suggestion_text.lower()
-        for kw in ALLOWED_KEYWORDS:
-            if kw in text and kw not in keywords:
-                keywords.append(kw)
+    # Resolve active modules from registry
+    enabled_slugs = [
+        s.strip()
+        for s in settings.ENABLED_TRANSFORMATION_MODULES.split(",")
+        if s.strip()
+    ]
+    active_modules = registry.get_active_modules(analysis_result, enabled_slugs)
 
-    # Add lighting
-    keywords.append(select_lighting_keyword(analysis_result.symmetry_score))
+    if not active_modules:
+        raise RuntimeError(
+            f"No active transformation modules for slugs {enabled_slugs}"
+        )
 
-    # Prepare (order, cap, inject theme)
-    keywords = prepare_keywords(keywords)
+    module = active_modules[0]
 
-    # Select mode
-    mode = select_mode(len(keywords))
+    # Delegate prompt/negative/keywords to module
+    output = module.build_output(analysis_result, mode, rng=rng)
 
-    # Load template and build prompt
-    template = (_PROMPTS_DIR / f"glowup_{mode}.txt").read_text().strip()
-    identity_phrase = random.choice(_IDENTITY_PHRASES)
-    prompt = template.replace("{identity_phrase}", identity_phrase)
-    prompt = prompt.replace("{keywords}", ", ".join(keywords))
-
-    # Negative prompt
-    negative = (_PROMPTS_DIR / "glowup_negative.txt").read_text().strip()
-
-    # Adaptive params
-    params = compute_adaptive_params(
+    # Adaptive params from module
+    params = module.adjust_params(
         face_ratio=face_ratio,
         symmetry_score=analysis_result.symmetry_score,
-        keyword_count=len(keywords),
+        keyword_count=len(output.keywords_used),
     )
 
-    return prompt, negative, params
+    # Apply identity phrase (cross-module concern)
+    identity_phrase = rng.choice(_IDENTITY_PHRASES)
+    prompt = output.prompt_fragment.replace("{identity_phrase}", identity_phrase)
+
+    return prompt, output.negative_fragment, params
