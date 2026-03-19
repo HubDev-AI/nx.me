@@ -33,10 +33,12 @@ class FeedRepository:
 
         Uses v_feed_posts view which JOINs images to enforce AC-D7
         (both images must be 'cleared') at the database level.
+        Hidden posts (auto-hidden via report threshold) are excluded.
         """
         query = (
             self._sb.table("v_feed_posts")
             .select(_POST_COLUMNS)
+            .eq("is_hidden", False)
             .order("created_at", desc=True)
             .limit(limit)
         )

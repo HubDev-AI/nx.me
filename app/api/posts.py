@@ -20,6 +20,7 @@ from supabase import Client
 
 from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_post_repo, get_redis, get_supabase
 from app.api.middleware.auth import UserClaims
+from app.config import settings
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.post_repo import PostRepository
@@ -31,8 +32,6 @@ router = APIRouter(tags=["posts"])
 
 _COMMENT_RATE_LIMIT = 10
 _COMMENT_RATE_WINDOW = 60
-_REPORT_RATE_LIMIT = 5
-_REPORT_RATE_WINDOW = 3600
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +359,6 @@ def get_comments(
     "/posts/{post_id}/report",
     response_model=ReportResponse,
     status_code=status.HTTP_201_CREATED,
-    deprecated=True,
 )
 async def report_post(
     post_id: UUID,
@@ -376,8 +374,8 @@ async def report_post(
     rate_key = f"report_rate:{user_id}"
     count = await redis_client.incr(rate_key)
     if count == 1:
-        await redis_client.expire(rate_key, _REPORT_RATE_WINDOW)
-    if count > _REPORT_RATE_LIMIT:
+        await redis_client.expire(rate_key, settings.REPORT_RATE_WINDOW_SECONDS)
+    if count > settings.REPORT_RATE_LIMIT:
         raise HTTPException(status_code=429, detail="Too many reports. Please slow down.")
 
     # Verify post exists
@@ -390,6 +388,13 @@ async def report_post(
         reporter_user_id=user_id,
         reason=body.reason,
     )
+
+    # Auto-hide: count unique reporters, hide if threshold reached
+    report_count = post_repo.count_unique_reporters(str(post_id))
+    if report_count >= settings.REPORT_AUTO_HIDE_THRESHOLD:
+        post_repo.hide_post(str(post_id))
+        logger.warning("Post %s auto-hidden: %d unique reports", post_id, report_count)
+
     logger.info("Report %s on post %s by user %s", report["id"], post_id, user_id)
 
     return ReportResponse(

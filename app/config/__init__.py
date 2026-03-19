@@ -144,6 +144,13 @@ class Settings(BaseSettings):
     LOGIN_IP_LIMIT: int = 5
     LOGIN_IP_WINDOW_SECONDS: int = 900            # 15 minutes
 
+    # Rate limiting — reports
+    REPORT_RATE_LIMIT: int = 5
+    REPORT_RATE_WINDOW_SECONDS: int = 3600
+
+    # Content moderation
+    REPORT_AUTO_HIDE_THRESHOLD: int = 3
+
     # Proxy headers — enable only when deployed behind a trusted reverse proxy
     # (e.g., ALB, nginx) that sets X-Forwarded-For.
     TRUST_PROXY_HEADERS: bool = False
