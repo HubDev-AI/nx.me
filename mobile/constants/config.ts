@@ -35,8 +35,11 @@ export const GOOGLE_WEB_CLIENT_ID: string =
 /** Auth API paths */
 export const AUTH_ENDPOINTS = {
   REGISTER: "/v1/auth/register",
+  /** Email/password login — backend accepts { email, password } */
+  EMAIL_LOGIN: "/v1/auth/email-login",
+  /** @deprecated Use EMAIL_LOGIN for email/password, SOCIAL_LOGIN for social providers */
   LOGIN: "/v1/auth/login",
-  /** Social login uses the same /login endpoint — backend accepts { provider, id_token, nonce? } */
+  /** Social login uses the /login endpoint — backend accepts { provider, id_token, nonce? } */
   SOCIAL_LOGIN: "/v1/auth/login",
   /** Refresh token endpoint — POST with { refresh_token } */
   REFRESH: "/v1/auth/refresh",

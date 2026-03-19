@@ -24,6 +24,7 @@ import {
 import { AUTH_ENDPOINTS, AUTH_VALIDATION } from "../../constants/config";
 import { apiFetch, ApiError } from "../../lib/api";
 import { storeJwt, storeRefreshToken } from "../../lib/auth";
+import { useAuth } from "../../lib/auth-context";
 import { AuthInput } from "../../components/auth/AuthInput";
 import { AuthButton } from "../../components/auth/AuthButton";
 import { SocialLoginButtons } from "../../components/auth/SocialLoginButtons";
@@ -39,6 +40,7 @@ interface FieldErrors {
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { setAuthenticated } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,7 +97,7 @@ export default function LoginScreen() {
     setErrors({});
 
     try {
-      const response = await apiFetch<LoginResponse>(AUTH_ENDPOINTS.LOGIN, {
+      const response = await apiFetch<LoginResponse>(AUTH_ENDPOINTS.EMAIL_LOGIN, {
         method: "POST",
         body: JSON.stringify({
           email: email.trim(),
@@ -107,7 +109,7 @@ export default function LoginScreen() {
       if (response.refresh_token) {
         await storeRefreshToken(response.refresh_token);
       }
-      router.replace("/(tabs)");
+      setAuthenticated(true);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401) {

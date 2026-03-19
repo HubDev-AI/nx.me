@@ -1,0 +1,19 @@
+appId: host.exp.Exponent
+---
+# Reusable: Launch app from Expo Go and dismiss overlays
+- clearState
+- launchApp
+- waitForAnimationToEnd
+- tapOn: "NXME"
+- extendedWaitUntil:
+    visible: "NXME"
+    timeout: 30000
+- waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "×"
+    commands:
+      - tapOn: "×"
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd

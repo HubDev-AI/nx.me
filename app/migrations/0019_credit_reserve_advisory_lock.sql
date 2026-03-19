@@ -39,7 +39,7 @@ END;
 $$;
 
 
--- DOWN
+-- DOWN:
 
 CREATE OR REPLACE FUNCTION public.credit_reserve(
   p_user_id UUID,

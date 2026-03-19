@@ -12,7 +12,7 @@ ALTER TABLE usage_events
   ADD CONSTRAINT usage_events_user_id_fkey
   FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
--- DOWN
+-- DOWN:
 
 ALTER TABLE usage_events
   DROP CONSTRAINT IF EXISTS usage_events_user_id_fkey;

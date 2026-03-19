@@ -1,0 +1,41 @@
+appId: host.exp.Exponent
+---
+# Test: Create tab UI and navigation to upload
+
+- takeScreenshot: create_00_initial_state
+
+# Login if needed
+- runFlow:
+    when:
+      visible: "Welcome back"
+    commands:
+      - tapOn:
+          id: "input-email"
+      - inputText: "maestro@test.com"
+      # Toggle password visibility if the button exists
+      - runFlow:
+          when:
+            visible: "Show password"
+          commands:
+            - tapOn: "Show password"
+      - tapOn:
+          id: "input-password"
+      - inputText: "Test1234!"
+      - pressKey: Enter
+      - waitForAnimationToEnd
+
+# Navigate to Create tab (middle icon)
+- tapOn:
+    point: "50%,97%"
+- waitForAnimationToEnd
+- takeScreenshot: create_01_tab
+
+# Check for create screen content
+- runFlow:
+    when:
+      visible: "Create your glow-up"
+    commands:
+      - takeScreenshot: create_02_create_screen
+      - tapOn: "Upload Photo"
+      - waitForAnimationToEnd
+      - takeScreenshot: create_03_upload_screen

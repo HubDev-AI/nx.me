@@ -26,8 +26,11 @@ $$;
 -- Called via supabase.rpc('reconcile_reaction_counts', {'cutoff_iso': ...})
 CREATE OR REPLACE FUNCTION public.reconcile_reaction_counts(cutoff_iso TIMESTAMPTZ)
 RETURNS INT
-LANGUAGE sql
+LANGUAGE plpgsql
 AS $$
+DECLARE
+  row_count INT;
+BEGIN
   WITH actual AS (
     SELECT post_id, COUNT(*) AS cnt
     FROM reactions
@@ -41,11 +44,13 @@ AS $$
       updated_at     = now()
   FROM actual
   WHERE posts.id = actual.post_id
-    AND posts.reaction_count IS DISTINCT FROM actual.cnt
-  RETURNING posts.id;
+    AND posts.reaction_count IS DISTINCT FROM actual.cnt;
+  GET DIAGNOSTICS row_count = ROW_COUNT;
+  RETURN row_count;
+END;
 $$;
 
--- DOWN
+-- DOWN:
 DROP FUNCTION IF EXISTS public.reconcile_reaction_counts(TIMESTAMPTZ);
 DROP FUNCTION IF EXISTS public.decrement_reaction_count(UUID);
 DROP FUNCTION IF EXISTS public.increment_reaction_count(UUID);

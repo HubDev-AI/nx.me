@@ -12,6 +12,7 @@ import { useRouter } from "expo-router";
 
 import { apiFetch, ApiError } from "../lib/api";
 import { storeJwt, storeRefreshToken } from "../lib/auth";
+import { useAuth } from "../lib/auth-context";
 import { signInWithGoogle, signInWithApple } from "../lib/social-auth";
 import { AUTH_ENDPOINTS } from "../constants/config";
 import type { LoginResponse } from "../components/auth/types";
@@ -26,6 +27,7 @@ interface UseSocialAuthReturn {
 
 export function useSocialAuth(): UseSocialAuthReturn {
   const router = useRouter();
+  const { setAuthenticated } = useAuth();
   const [isSocialLoading, setIsSocialLoading] = useState(false);
   const [socialError, setSocialError] = useState<string | null>(null);
 
@@ -52,7 +54,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
         if (response.refresh_token) {
           await storeRefreshToken(response.refresh_token);
         }
-        router.replace("/(tabs)");
+        setAuthenticated(true);
       } catch (err) {
         if (err instanceof ApiError) {
           setSocialError("Social login failed. Please try again.");

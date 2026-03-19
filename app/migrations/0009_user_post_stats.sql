@@ -14,5 +14,5 @@ AS $$
     AND is_deleted = false;
 $$;
 
--- DOWN
+-- DOWN:
 DROP FUNCTION IF EXISTS public.user_post_stats(UUID);

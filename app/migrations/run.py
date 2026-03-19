@@ -226,6 +226,7 @@ def main() -> None:
         _ensure_schema_migrations(conn)
         migrations = _discover_migrations()
         applied = _get_applied(conn)
+        conn.rollback()  # end implicit transaction so _apply_migration can set autocommit
 
         if args.down:
             # Find all applied migrations from current back to target (inclusive),

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
 from app.api.deps import get_block_repo, get_current_user
@@ -41,12 +41,13 @@ class BlockedListResponse(BaseModel):
 @router.post(
     "/users/{user_id}/block",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 def block_user(
     user_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     block_repo: BlockRepository = Depends(get_block_repo),
-) -> None:
+) -> Response:
     """Block a user. Idempotent."""
     blocker_id = claims["sub"]
     if str(user_id) == blocker_id:
@@ -56,6 +57,7 @@ def block_user(
         )
     block_repo.block(blocker_id, str(user_id))
     logger.info("User %s blocked %s", blocker_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
@@ -66,12 +68,13 @@ def block_user(
 @router.delete(
     "/users/{user_id}/block",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
 )
 def unblock_user(
     user_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     block_repo: BlockRepository = Depends(get_block_repo),
-) -> None:
+) -> Response:
     """Unblock a user."""
     blocker_id = claims["sub"]
     found = block_repo.unblock(blocker_id, str(user_id))
@@ -81,6 +84,7 @@ def unblock_user(
             detail="Block relationship not found",
         )
     logger.info("User %s unblocked %s", blocker_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------

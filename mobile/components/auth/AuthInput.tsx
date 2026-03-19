@@ -79,6 +79,7 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
             onBlur={handleBlur}
             accessibilityLabel={label}
             accessibilityState={{ disabled: rest.editable === false }}
+            testID={`input-${label.toLowerCase().replace(/\s+/g, "-")}`}
             {...rest}
           />
           {isPassword && (

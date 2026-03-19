@@ -6,5 +6,5 @@
 -- UP
 ALTER TABLE advisor_messages ADD COLUMN IF NOT EXISTS summarized_at TIMESTAMPTZ;
 
--- DOWN
+-- DOWN:
 -- ALTER TABLE advisor_messages DROP COLUMN IF EXISTS summarized_at;

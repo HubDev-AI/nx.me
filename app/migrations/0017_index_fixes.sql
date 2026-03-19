@@ -44,7 +44,7 @@ AS $$
   WHERE id = p_post_id;
 $$;
 
--- DOWN
+-- DOWN:
 
 -- Restore original usage_events index
 DROP INDEX IF EXISTS idx_usage_events_committed;

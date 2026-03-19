@@ -1,0 +1,19 @@
+appId: host.exp.Exponent
+---
+# Test: Profile tab UI and edit profile
+# Prerequisite: User must be logged in
+
+# Navigate to Profile tab
+- tapOn:
+    point: "75%,97%"
+- waitForAnimationToEnd
+- takeScreenshot: profile_01_loaded
+
+# Look for edit profile button
+- runFlow:
+    when:
+      visible: "Edit profile"
+    commands:
+      - tapOn: "Edit profile"
+      - waitForAnimationToEnd
+      - takeScreenshot: profile_02_edit_sheet

@@ -1,0 +1,11 @@
+appId: host.exp.Exponent
+---
+# Test: Auth guard redirects unauthenticated users to login
+- runFlow: 00-app-launch.yaml
+
+# Should land on login screen (no JWT stored)
+- assertVisible: "Welcome back"
+- assertVisible: "Log in to your account"
+- assertVisible: "Email"
+- assertVisible: "Password"
+- takeScreenshot: auth_guard_01_redirected_to_login
