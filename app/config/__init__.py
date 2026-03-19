@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     ADVISOR_CONTEXT_MEMORY_LIMIT: int = 3        # Max memories per request. Less = more human.
     ADVISOR_MAX_MESSAGE_LENGTH: int = 2000        # Max chars per user message
     ADVISOR_CHAT_RATE_LIMIT: int = 30             # Max messages per hour per user
+    ADVISOR_DEGRADATION_THRESHOLD: int = 50       # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30   # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7   # Days before auto-new conversation
     ADVISOR_MILESTONE_DEDUP_HOURS: int = 48       # Hours before a duplicate milestone nudge is allowed

@@ -121,6 +121,13 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
         )
         raise RateLimitExceeded(retry_after=max(ttl, 0))
 
+    # H-4: Track daily message count for model degradation (separate from hourly rate limit)
+    from datetime import datetime, timezone
+    daily_key = f"advisor_daily_msgs:{user_id}:{datetime.now(tz=timezone.utc).strftime('%Y%m%d')}"
+    daily_count = await redis_client.incr(daily_key)
+    if daily_count == 1:
+        await redis_client.expire(daily_key, 86400)
+
 
 def scan_output(text: str) -> bool:
     """Return True if the text contains C-2 violations (forbidden terms)."""

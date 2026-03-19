@@ -162,6 +162,7 @@ class AdvisorService:
             m["content"] for m in history if m.get("role") == "advisor"
         ]
         advisor_response = await self._call_llm_with_check(
+            user_id=user_id,
             messages=messages,
             vision_content=vision_content,
             recent_responses=recent_advisor_messages,
@@ -200,13 +201,14 @@ class AdvisorService:
 
     async def _call_llm_with_check(
         self,
+        user_id: UUID,
         messages: list[dict[str, Any]],
         vision_content: list[dict[str, Any]] | None,
         recent_responses: list[str],
     ) -> str:
         """Call LLM, apply post-generation check, retry once if needed (spec Section 11)."""
         # Determine model based on daily usage guard (spec Section 10)
-        model = self._select_model()
+        model = await self._select_model(str(user_id))
 
         for attempt in range(2):
             response: LLMResponse = await self._llm.create_message(
@@ -238,12 +240,18 @@ class AdvisorService:
 
         return content_filter.get_fallback_response("c2_violation")
 
-    def _select_model(self) -> str:
-        """Select chat model (Sonnet normally, Haiku under high load guard).
+    async def _select_model(self, user_id: str) -> str:
+        """Select chat model — Sonnet normally, Haiku if daily threshold exceeded.
 
-        Spec Section 10: >50 messages/day → degrade to Haiku.
-        For now, always Sonnet (daily count check left for future story).
+        Spec Section 10: >50 messages/day → degrade to Haiku to cap costs.
         """
+        from datetime import datetime, timezone
+        daily_key = f"advisor_daily_msgs:{user_id}:{datetime.now(tz=timezone.utc).strftime('%Y%m%d')}"
+        count = int(await self._redis.get(daily_key) or 0)
+        if count > settings.ADVISOR_DEGRADATION_THRESHOLD:
+            logger.info("User %s exceeded daily threshold (%d > %d) — using Haiku",
+                         user_id, count, settings.ADVISOR_DEGRADATION_THRESHOLD)
+            return settings.ADVISOR_MODEL_HAIKU
         return _MODEL_SONNET
 
     # -----------------------------------------------------------------------
