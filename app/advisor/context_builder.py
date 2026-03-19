@@ -26,6 +26,7 @@ def build_context(
     memories: list[dict[str, Any]],
     conversation: list[dict[str, str]],
     message: str,
+    rng: random.Random | None = None,
 ) -> list[dict[str, Any]]:
     """Build the messages array for the LLM call.
 
@@ -41,7 +42,7 @@ def build_context(
         {"role": "system", "content": user_data},
     ]
 
-    enhanced_memories = maybe_add_trajectory(memories)
+    enhanced_memories = maybe_add_trajectory(memories, rng=rng)
 
     if enhanced_memories:
         memory_text = "\n".join(
@@ -81,14 +82,18 @@ def build_user_data_block(
     return ", ".join(parts) if parts else ""
 
 
-def maybe_add_trajectory(memories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def maybe_add_trajectory(
+    memories: list[dict[str, Any]],
+    rng: random.Random | None = None,
+) -> list[dict[str, Any]]:
     """Optionally append a soft trajectory hint (spec Section 6.3).
 
     If 2+ accepted suggestions exist and random chance triggers (15%),
     add a hint typed as user_note. No analytical language.
     """
+    _rng = rng or random
     accepted = [m for m in memories if m.get("type") == "accepted_suggestion"]
-    if len(accepted) < 2 or random.random() > _TRAJECTORY_CHANCE:
+    if len(accepted) < 2 or _rng.random() > _TRAJECTORY_CHANCE:
         return memories
 
     # Detect common area from accepted suggestion texts
