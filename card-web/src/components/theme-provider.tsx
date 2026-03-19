@@ -3,15 +3,16 @@
 import { useEffect, useState } from 'react';
 
 /**
- * Demographic pools — each render picks ONE demographic,
- * then assembles a fully consistent theme from that pool.
- * No gender mixing ever.
+ * Pool-based theme system. Gender-audited pairs only.
+ * Removed: pairs 16,32,38 (gender mismatch), pairs 18,21,23-27,33,36 (duplicates).
+ * Every pair verified: same gender in both images.
  */
 
 const ACCENTS = [
   '#F43F5E', '#14B8A6', '#D4A060', '#38BDF8', '#FB923C',
   '#6366F1', '#EF4444', '#A78BFA', '#F472B6', '#E879F9',
   '#34D399', '#F59E0B', '#EC4899', '#8B5CF6', '#10B981',
+  '#0EA5E9', '#F97316', '#84CC16', '#E11D48', '#7C3AED',
 ];
 
 interface DemoPool {
@@ -23,74 +24,107 @@ interface DemoPool {
   accessories: string[];
 }
 
+// Verified M+M pairs only, no duplicates
 const MEN: DemoPool = {
-  heroes: ['/images/hero-1.jpg', '/images/hero-3.jpg', '/images/hero-7.jpg', '/images/hero-10.jpg', '/images/hero-11.jpg'],
+  heroes: [
+    '/images/hero-1.jpg', '/images/hero-3.jpg', '/images/hero-7.jpg',
+    '/images/hero-10.jpg', '/images/hero-11.jpg',
+    '/images/after-1.jpg', '/images/after-3.jpg', '/images/after-22.jpg',
+    '/images/before-3.jpg', '/images/before-1.jpg', '/images/after-37.jpg',
+    '/images/after-9.jpg', '/images/before-22.jpg', '/images/after-12.jpg',
+  ],
   pairs: [
-    { before: '/images/before-1.jpg', after: '/images/after-1.jpg' },
-    { before: '/images/before-2.jpg', after: '/images/after-2.jpg' },
-    { before: '/images/before-3.jpg', after: '/images/after-3.jpg' },
-    { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },
-    { before: '/images/before-11.jpg', after: '/images/after-11.jpg' },
-    { before: '/images/before-12.jpg', after: '/images/after-12.jpg' },
-    { before: '/images/before-13.jpg', after: '/images/after-13.jpg' },
-    { before: '/images/before-21.jpg', after: '/images/after-21.jpg' },
-    { before: '/images/before-22.jpg', after: '/images/after-22.jpg' },
-    { before: '/images/before-23.jpg', after: '/images/after-23.jpg' },
-    { before: '/images/before-24.jpg', after: '/images/after-24.jpg' },
-    { before: '/images/before-25.jpg', after: '/images/after-25.jpg' },
-    { before: '/images/before-26.jpg', after: '/images/after-26.jpg' },
-    { before: '/images/before-27.jpg', after: '/images/after-27.jpg' },
+    { before: '/images/before-1.jpg', after: '/images/after-1.jpg' },   // M+M verified
+    { before: '/images/before-2.jpg', after: '/images/after-2.jpg' },   // M+M verified
+    { before: '/images/before-3.jpg', after: '/images/after-3.jpg' },   // M+M verified
+    { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },   // M+M verified
+    { before: '/images/before-9.jpg', after: '/images/after-9.jpg' },   // M+M verified
+    { before: '/images/before-11.jpg', after: '/images/after-11.jpg' }, // M+M verified
+    { before: '/images/before-12.jpg', after: '/images/after-12.jpg' }, // M+M verified
+    { before: '/images/before-13.jpg', after: '/images/after-13.jpg' }, // M+M verified
+    { before: '/images/before-17.jpg', after: '/images/after-17.jpg' }, // M+M verified
+    { before: '/images/before-19.jpg', after: '/images/after-19.jpg' }, // M+M verified
+    { before: '/images/before-22.jpg', after: '/images/after-22.jpg' }, // M+M verified
+    { before: '/images/before-35.jpg', after: '/images/after-35.jpg' }, // M+M verified
+    { before: '/images/before-37.jpg', after: '/images/after-37.jpg' }, // M+M verified
+    { before: '/images/before-39.jpg', after: '/images/after-39.jpg' }, // M+M verified
   ],
   hair: ['/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg', '/images/detail-hair.jpg'],
-  clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg', '/images/detail-accessories.jpg'],
+  clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg'],
   grooming: ['/images/detail-grooming-men.jpg', '/images/detail-grooming-men-2.jpg', '/images/detail-grooming.jpg'],
-  accessories: ['/images/detail-accessories-men.jpg', '/images/detail-accessories.jpg'],
+  accessories: ['/images/detail-accessories-men.jpg', '/images/detail-accessories-men-2.jpg'],
 };
 
+// Verified F+F pairs only, no duplicates
 const WOMEN: DemoPool = {
-  heroes: ['/images/hero-2.jpg', '/images/hero-4.jpg', '/images/hero-8.jpg', '/images/hero-9.jpg', '/images/hero-12.jpg'],
+  heroes: [
+    '/images/hero-2.jpg', '/images/hero-4.jpg', '/images/hero-8.jpg',
+    '/images/hero-9.jpg', '/images/hero-12.jpg',
+    '/images/after-5.jpg', '/images/after-6.jpg', '/images/after-7.jpg',
+    '/images/after-28.jpg', '/images/after-29.jpg', '/images/before-7.jpg',
+    '/images/after-14.jpg', '/images/after-31.jpg', '/images/before-34.jpg',
+  ],
   pairs: [
-    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },
-    { before: '/images/before-6.jpg', after: '/images/after-6.jpg' },
-    { before: '/images/before-7.jpg', after: '/images/after-7.jpg' },
-    { before: '/images/before-8.jpg', after: '/images/after-8.jpg' },
-    { before: '/images/before-14.jpg', after: '/images/after-14.jpg' },
-    { before: '/images/before-15.jpg', after: '/images/after-15.jpg' },
-    { before: '/images/before-16.jpg', after: '/images/after-16.jpg' },
-    { before: '/images/before-28.jpg', after: '/images/after-28.jpg' },
-    { before: '/images/before-29.jpg', after: '/images/after-29.jpg' },
-    { before: '/images/before-30.jpg', after: '/images/after-30.jpg' },
-    { before: '/images/before-31.jpg', after: '/images/after-31.jpg' },
-    { before: '/images/before-32.jpg', after: '/images/after-32.jpg' },
-    { before: '/images/before-33.jpg', after: '/images/after-33.jpg' },
-    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' },
+    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },   // F+F verified
+    { before: '/images/before-6.jpg', after: '/images/after-6.jpg' },   // F+F verified
+    { before: '/images/before-7.jpg', after: '/images/after-7.jpg' },   // F+F verified
+    { before: '/images/before-8.jpg', after: '/images/after-8.jpg' },   // F+F verified
+    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' }, // F+F verified
+    { before: '/images/before-14.jpg', after: '/images/after-14.jpg' }, // F+F verified
+    { before: '/images/before-15.jpg', after: '/images/after-15.jpg' }, // F+F verified
+    { before: '/images/before-20.jpg', after: '/images/after-20.jpg' }, // F+F verified
+    { before: '/images/before-28.jpg', after: '/images/after-28.jpg' }, // F+F verified
+    { before: '/images/before-29.jpg', after: '/images/after-29.jpg' }, // F+F verified
+    { before: '/images/before-30.jpg', after: '/images/after-30.jpg' }, // F+F verified
+    { before: '/images/before-31.jpg', after: '/images/after-31.jpg' }, // F+F verified
+    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' }, // F+F verified
+    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' }, // F+F verified
   ],
   hair: ['/images/detail-hair-women.jpg', '/images/detail-hair-women-2.jpg'],
   clothing: ['/images/detail-clothing-women.jpg', '/images/detail-clothing-women-2.jpg'],
   grooming: ['/images/detail-grooming-women.jpg', '/images/detail-grooming-women-2.jpg'],
-  accessories: ['/images/detail-accessories-women.jpg'],
+  accessories: ['/images/detail-accessories-women.jpg', '/images/detail-accessories-women-2.jpg'],
 };
 
+// 20 young/teen pairs + dedicated teen detail images and heroes
 const YOUNG: DemoPool = {
-  heroes: ['/images/hero-3.jpg', '/images/hero-7.jpg', '/images/hero-8.jpg', '/images/hero-11.jpg'],
-  pairs: [
-    { before: '/images/before-9.jpg', after: '/images/after-9.jpg' },
-    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' },
-    { before: '/images/before-17.jpg', after: '/images/after-17.jpg' },
-    { before: '/images/before-18.jpg', after: '/images/after-18.jpg' },
-    { before: '/images/before-19.jpg', after: '/images/after-19.jpg' },
-    { before: '/images/before-20.jpg', after: '/images/after-20.jpg' },
-    { before: '/images/before-35.jpg', after: '/images/after-35.jpg' },
-    { before: '/images/before-36.jpg', after: '/images/after-36.jpg' },
-    { before: '/images/before-37.jpg', after: '/images/after-37.jpg' },
-    { before: '/images/before-38.jpg', after: '/images/after-38.jpg' },
-    { before: '/images/before-39.jpg', after: '/images/after-39.jpg' },
-    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' },
+  heroes: [
+    '/images/hero-13.jpg', '/images/hero-14.jpg', '/images/hero-15.jpg',
+    '/images/hero-16.jpg', '/images/hero-3.jpg', '/images/hero-7.jpg',
+    '/images/hero-8.jpg', '/images/hero-11.jpg', '/images/hero-12.jpg',
+    '/images/after-41.jpg', '/images/after-42.jpg', '/images/before-46.jpg',
+    '/images/before-47.jpg', '/images/after-48.jpg', '/images/before-51.jpg',
+    '/images/after-43.jpg', '/images/before-42.jpg', '/images/after-51.jpg',
+    '/images/before-49.jpg', '/images/after-46.jpg',
   ],
-  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-2.jpg'],
-  clothing: ['/images/detail-clothing-teen.jpg', '/images/detail-clothing-teen-2.jpg'],
-  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-2.jpg'],
-  accessories: ['/images/detail-accessories-teen.jpg'],
+  pairs: [
+    // Original young pairs
+    { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },
+    { before: '/images/before-13.jpg', after: '/images/after-13.jpg' },
+    { before: '/images/before-35.jpg', after: '/images/after-35.jpg' },
+    { before: '/images/before-39.jpg', after: '/images/after-39.jpg' },
+    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },
+    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' },
+    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' },
+    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' },
+    // New teen pairs 41-52
+    { before: '/images/before-41.jpg', after: '/images/after-41.jpg' },
+    { before: '/images/before-42.jpg', after: '/images/after-42.jpg' },
+    { before: '/images/before-43.jpg', after: '/images/after-43.jpg' },
+    { before: '/images/before-44.jpg', after: '/images/after-44.jpg' },
+    { before: '/images/before-45.jpg', after: '/images/after-45.jpg' },
+    { before: '/images/before-46.jpg', after: '/images/after-46.jpg' },
+    { before: '/images/before-47.jpg', after: '/images/after-47.jpg' },
+    { before: '/images/before-48.jpg', after: '/images/after-48.jpg' },
+    { before: '/images/before-49.jpg', after: '/images/after-49.jpg' },
+    { before: '/images/before-50.jpg', after: '/images/after-50.jpg' },
+    { before: '/images/before-51.jpg', after: '/images/after-51.jpg' },
+    { before: '/images/before-52.jpg', after: '/images/after-52.jpg' },
+  ],
+  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-2.jpg', '/images/detail-hair-teen-3.jpg', '/images/detail-hair-teen-4.jpg'],
+  clothing: ['/images/detail-clothing-teen.jpg', '/images/detail-clothing-teen-2.jpg', '/images/detail-clothing-teen-3.jpg', '/images/detail-clothing-teen-4.jpg'],
+  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-2.jpg', '/images/detail-grooming-teen-3.jpg', '/images/detail-grooming-teen-4.jpg'],
+  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-teen-3.jpg'],
 };
 
 const POOLS = [MEN, WOMEN, YOUNG];
