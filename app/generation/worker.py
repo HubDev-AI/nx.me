@@ -11,6 +11,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+import httpx
+import PIL.Image
 import redis.asyncio as aioredis
 from supabase import Client
 
@@ -195,8 +197,6 @@ async def _generate_and_validate(
     Returns (gen_result, gen_image_bytes, source_image_bytes, identity_result) on success,
     or None if the job was failed (NSFW or identity).
     """
-    import httpx
-
     _concurrent_ttl = settings.GENERATION_TIMEOUT_SECONDS + 60
 
     async def _refresh_concurrent_ttl() -> None:
@@ -246,8 +246,7 @@ async def _generate_and_validate(
         gen_image_bytes = resp.content
 
     # G-11: Log generated image dimensions for debugging
-    import PIL.Image as _PILImage
-    with _PILImage.open(io.BytesIO(gen_image_bytes)) as _dim_img:
+    with PIL.Image.open(io.BytesIO(gen_image_bytes)) as _dim_img:
         logger.info("Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height)
 
     # Write raw generated image to NXME storage before any checks
@@ -400,8 +399,6 @@ async def _finalize_job(
     4. Mark job "completed"
     If step 3 fails, the job stays in "finalizing" and the stuck-job watchdog can retry.
     """
-    import PIL.Image
-
     with PIL.Image.open(io.BytesIO(gen_image_bytes)) as gen_img, \
          PIL.Image.open(io.BytesIO(source_image_bytes)) as source_img_pil:
         gen_img = normalize_output(source_img_pil, gen_img)
