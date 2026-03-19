@@ -28,7 +28,6 @@ from app.advisor.nudge_eligibility import (
 from app.repositories.advisor_repo import AdvisorRepository
 from app.advisor.nudge_policy import (
     MAX_TOKENS_NUDGE,
-    MODEL_HAIKU,
     TRIGGER_MILESTONE,
     TRIGGER_POST_ANALYSIS,
     TRIGGER_RE_ENGAGEMENT,
@@ -91,7 +90,7 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
     llm = _get_llm_adapter()
     try:
         response = await llm.create_message(
-            model=MODEL_HAIKU,
+            model=settings.ADVISOR_MODEL_HAIKU,
             system=(
                 f"You are {settings.ADVISOR_PERSONA_NAME}, a warm personal style advisor. "
                 "Keep responses brief and human. Never use generic phrases."

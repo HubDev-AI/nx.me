@@ -23,7 +23,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
-from app.api.deps import get_feed_repo, get_redis
+from app.api.deps import get_client_ip, get_feed_repo, get_redis
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.feed_repo import FeedRepository
@@ -31,17 +31,6 @@ from app.repositories.feed_repo import FeedRepository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["social"])
-
-
-def _get_client_ip(request: Request) -> str:
-    """Get client IP, respecting TRUST_PROXY_HEADERS setting."""
-    if settings.TRUST_PROXY_HEADERS:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    if not request.client:
-        return "unknown"
-    return request.client.host
 
 
 _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -251,7 +240,7 @@ async def react_to_post(
         )
 
     # --- Rate limit by IP (atomic Lua script to avoid TOCTOU — L-2) ---
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     rate_key = f"reaction_rate:{client_ip}"
     allowed = await redis_client.eval(
         _RATE_LIMIT_SCRIPT,

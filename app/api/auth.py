@@ -22,7 +22,7 @@ from supabase import Client
 
 import redis.asyncio as aioredis
 
-from app.api.deps import get_credit_ledger, get_current_user, get_redis, get_supabase, get_tier_repo, get_user_repo
+from app.api.deps import get_client_ip, get_credit_ledger, get_current_user, get_redis, get_supabase, get_tier_repo, get_user_repo
 from app.entitlement.ledger import CreditLedger
 from app.api.middleware.auth import UserClaims
 from app.config import settings
@@ -39,20 +39,6 @@ from app.services.rate_limiter import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["auth"])
-
-
-def _get_client_ip(request: Request) -> str:
-    """Extract client IP, preferring X-Forwarded-For when behind trusted proxy.
-
-    NOTE: In production, this assumes deployment behind ALB/nginx that sets
-    X-Forwarded-For. The first IP in the chain is used (set by the outermost proxy).
-    """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded and settings.TRUST_PROXY_HEADERS:
-        # Use the first (client) IP from the chain
-        # In production, ALB/nginx should strip spoofed headers
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else ""
 
 
 # Minimum age for account creation (AC-U7)
@@ -117,7 +103,7 @@ async def register(
           (trial credited only after email verification via TrialGrantor.grant)
     """
     # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     if not client_ip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -387,7 +373,7 @@ async def social_login(
     CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
     # Per-IP rate limit (CS-1 T-3)
-    client_ip = _get_client_ip(request)
+    client_ip = get_client_ip(request)
     if not client_ip:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

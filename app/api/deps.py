@@ -35,6 +35,22 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Request helpers
+# ---------------------------------------------------------------------------
+
+
+def get_client_ip(request: Request) -> str:
+    """Get client IP, respecting TRUST_PROXY_HEADERS setting."""
+    from app.config import settings
+
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+# ---------------------------------------------------------------------------
 # Infrastructure deps
 # ---------------------------------------------------------------------------
 

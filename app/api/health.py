@@ -11,6 +11,7 @@ from supabase import Client
 import redis.asyncio as aioredis
 
 from app.api.deps import get_redis, get_supabase
+from app.db.async_helpers import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ async def readiness(
 
     # Supabase: lightweight query
     try:
-        supabase.table("tiers").select("id").limit(1).execute()
+        await run_sync(lambda: supabase.table("tiers").select("id").limit(1).execute())
         checks["supabase"] = "ok"
     except Exception as exc:  # noqa: BLE001
         logger.error("Supabase readiness check failed: %s", exc)
