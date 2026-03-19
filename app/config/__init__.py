@@ -17,6 +17,13 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be at least 32 characters")
         return v
 
+    @field_validator("ADMIN_API_KEY")
+    @classmethod
+    def _admin_api_key_min_length(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("ADMIN_API_KEY must be at least 32 characters")
+        return v
+
     # Supabase
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
@@ -118,6 +125,9 @@ class Settings(BaseSettings):
     MAX_GENERATIONS_PER_USER_PER_DAY: int = 50
     MAX_QUEUE_DEPTH: int = 15000
 
+    # Generation wait estimation (M-3)
+    AVG_SECONDS_PER_JOB: int = 15
+
     # Cost tracker circuit breaker tuning (L-11)
     CB_FAILURE_THRESHOLD: int = 5           # failures within window to open circuit
     CB_FAILURE_WINDOW_SECONDS: int = 300    # 5-minute sliding window
@@ -151,6 +161,10 @@ class Settings(BaseSettings):
     # Tightened to prevent brute force on shared IPs (corporate/mobile networks)
     LOGIN_IP_LIMIT: int = 5
     LOGIN_IP_WINDOW_SECONDS: int = 900            # 15 minutes
+
+    # Rate limiting — comments
+    COMMENT_RATE_LIMIT: int = 10
+    COMMENT_RATE_WINDOW_SECONDS: int = 60
 
     # Rate limiting — reports
     REPORT_RATE_LIMIT: int = 5

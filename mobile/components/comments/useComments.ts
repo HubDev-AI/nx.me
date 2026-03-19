@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { getStoredJwt } from "../../lib/auth";
@@ -39,6 +39,7 @@ export function useComments(): UseCommentsReturn {
   const cursorRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
   const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkAuth = useCallback(async () => {
     const jwt = await getStoredJwt();
@@ -103,7 +104,7 @@ export function useComments(): UseCommentsReturn {
           const delay = retryCountRef.current === 1 ? 2000 : 3000;
           isLoadingRef.current = false;
           setIsLoadingMore(false);
-          setTimeout(() => {
+          retryTimeoutRef.current = setTimeout(() => {
             loadMore(postId);
           }, delay);
           return;
@@ -188,6 +189,19 @@ export function useComments(): UseCommentsReturn {
     setPaginationFailed(false);
     cursorRef.current = null;
     retryCountRef.current = 0;
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
   }, []);
 
   return {

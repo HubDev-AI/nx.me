@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 import { apiFetch } from "../../lib/api";
 import {
@@ -47,6 +47,7 @@ export function useFeed(): UseFeedReturn {
   const cursorRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
   const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchFeed = useCallback(
     async (cursor: string | null, sort: FeedSortValue): Promise<FeedResponse> => {
@@ -102,7 +103,7 @@ export function useFeed(): UseFeedReturn {
       retryCountRef.current += 1;
       if (retryCountRef.current < 3) {
         const delay = retryCountRef.current === 1 ? 2000 : 3000;
-        setTimeout(() => {
+        retryTimeoutRef.current = setTimeout(() => {
           isLoadingRef.current = false;
           loadMore();
         }, delay);
@@ -225,6 +226,15 @@ export function useFeed(): UseFeedReturn {
 
   const removePostsByUser = useCallback((userId: string) => {
     setPosts((prev) => prev.filter((p) => p.user_id !== userId));
+  }, []);
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
   }, []);
 
   return {

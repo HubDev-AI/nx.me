@@ -11,7 +11,7 @@ helper logic without importing the route-level symbols that fail on 3.10.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 import sys

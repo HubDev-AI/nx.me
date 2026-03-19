@@ -1,7 +1,6 @@
 """Smoke tests for advisor pipeline — validates sanitization, content filter, and post-check."""
 from __future__ import annotations
 
-import pytest
 
 from app.advisor.content_filter import sanitize_input, scan_output
 

@@ -6,11 +6,10 @@ Exercises production code in:
 """
 from __future__ import annotations
 
-from uuid import uuid4
 
 import pytest
 
-from app.services.public_url import get_public_url, build_avatar_url, PublishedImageURLs
+from app.services.public_url import get_public_url, build_avatar_url
 from app.config import settings
 from tests.conftest import MockSupabase, requires_routers
 

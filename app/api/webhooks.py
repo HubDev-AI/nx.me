@@ -13,9 +13,9 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.deps import get_payment_adapter
+from app.api.deps import get_payment_adapter, get_subscription_repo
 from app.constants.tiers import TIER_ID_CREDIT_HOLDER, TIER_ID_PREMIUM, TIER_ID_TRIAL
 from app.repositories.subscription_repo import SubscriptionRepository
 
@@ -25,7 +25,10 @@ router = APIRouter(tags=["webhooks"])
 
 
 @router.post("/webhooks/stripe", status_code=status.HTTP_200_OK)
-async def stripe_webhook(request: Request) -> dict:
+async def stripe_webhook(
+    request: Request,
+    sub_repo: SubscriptionRepository = Depends(get_subscription_repo),
+) -> dict:
     """Handle Stripe webhook events with idempotent processing.
 
     AC-2: Duplicate events return 200 without re-processing.
@@ -53,8 +56,7 @@ async def stripe_webhook(request: Request) -> dict:
     logger.info("Stripe webhook received: type=%s, id=%s", event_type, event_id)
 
     # --- Idempotency check (read-only, before processing) ---
-    sub_repo = SubscriptionRepository(request.app.state.supabase)
-
+    # M-7: sub_repo injected via Depends(get_subscription_repo) — no inline creation
     if sub_repo.is_webhook_event_processed(provider="stripe", event_id=event_id):
         logger.info("Duplicate webhook event %s — skipping", event_id)
         return {"status": "already_processed"}

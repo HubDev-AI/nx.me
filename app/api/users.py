@@ -18,6 +18,7 @@ from app.api.deps import get_analysis_repo, get_current_user, get_image_repo, ge
 from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
@@ -94,7 +95,7 @@ def _lookup_user(user_repo: UserRepository, username: str) -> dict:
 
 
 @router.get("/users/{username}/profile", response_model=ProfileResponse)
-def get_user_profile(
+async def get_user_profile(
     username: str,
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
@@ -103,17 +104,18 @@ def get_user_profile(
 
     No auth required. Returns 404 for deleted or non-existent users.
     """
-    user = _lookup_user(user_repo, username)
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    user = await run_sync(_lookup_user, user_repo, username)
     user_id: str = user["id"]
 
     # Aggregate post_count and total_reactions via DB function (single query)
-    stats = user_repo.get_user_post_stats(user_id)
+    stats = await run_sync(user_repo.get_user_post_stats, user_id)
     post_count = stats.get("post_count", 0)
     total_reactions = stats.get("total_reactions", 0)
 
     avatar_storage_key = user.get("avatar_storage_key")
     avatar_url = (
-        image_repo.build_avatar_signed_url(avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+        await run_sync(image_repo.build_avatar_signed_url, avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
         if avatar_storage_key
         else None
     )
@@ -136,7 +138,7 @@ def get_user_profile(
 
 
 @router.get("/users/{username}/history", response_model=HistoryResponse)
-def get_user_history(
+async def get_user_history(
     username: str,
     cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(
@@ -156,7 +158,8 @@ def get_user_history(
     Owner only — returns 403 if the token does not belong to the requested user.
     Cursor-paginated using created_at timestamp.
     """
-    user = _lookup_user(user_repo, username)
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    user = await run_sync(_lookup_user, user_repo, username)
     user_id: str = user["id"]
 
     if claims["sub"] != user_id:
@@ -168,7 +171,7 @@ def get_user_history(
 
     fetch_limit = limit + 1
 
-    analyses = analysis_repo.list_for_user(user_id, fetch_limit, cursor)
+    analyses = await run_sync(analysis_repo.list_for_user, user_id, fetch_limit, cursor)
 
     has_more = len(analyses) > limit
     if has_more:
@@ -190,7 +193,7 @@ def get_user_history(
     ]
     before_images_by_id: dict[str, dict] = {}
     if original_image_ids:
-        for img in image_repo.get_by_ids(original_image_ids):
+        for img in await run_sync(image_repo.get_by_ids, original_image_ids):
             if img.get("storage_key"):
                 before_images_by_id[img["id"]] = img
 
@@ -199,7 +202,7 @@ def get_user_history(
     #    for these analyses and pick the latest per analysis_id in Python.
     jobs_by_analysis: dict[str, str] = {}  # analysis_id -> generated_image_id
     if analysis_ids:
-        for job in job_repo.get_completed_jobs_for_analyses(analysis_ids):
+        for job in await run_sync(job_repo.get_completed_jobs_for_analyses, analysis_ids):
             aid = job["analysis_id"]
             # First seen per analysis_id is the latest (ordered desc)
             if aid not in jobs_by_analysis and job.get("generated_image_id"):
@@ -209,7 +212,7 @@ def get_user_history(
     generated_image_ids = list(jobs_by_analysis.values())
     after_images_by_id: dict[str, dict] = {}
     if generated_image_ids:
-        for img in image_repo.get_by_ids(generated_image_ids):
+        for img in await run_sync(image_repo.get_by_ids, generated_image_ids):
             if img.get("storage_key"):
                 after_images_by_id[img["id"]] = img
 
@@ -274,7 +277,7 @@ def get_user_history(
 
 
 @router.patch("/users/{username}", response_model=UpdateProfileResponse)
-def update_user_profile(
+async def update_user_profile(
     username: str,
     body: UpdateProfileRequest,
     claims: UserClaims = Depends(get_current_user),
@@ -287,7 +290,8 @@ def update_user_profile(
     Username cannot be changed via this endpoint; any username field in the body
     is silently ignored per AC.
     """
-    user = _lookup_user(user_repo, username)
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    user = await run_sync(_lookup_user, user_repo, username)
     user_id: str = user["id"]
 
     if claims["sub"] != user_id:
@@ -311,14 +315,14 @@ def update_user_profile(
 
     if updates:
         updates["updated_at"] = datetime.now(tz=timezone.utc).isoformat()
-        user_repo.update_profile(user_id, updates)
+        await run_sync(user_repo.update_profile, user_id, updates)
         logger.info("Profile updated for user %s: fields=%s", user_id, list(updates.keys()))
 
     # Re-fetch to return the current state
-    refreshed = _lookup_user(user_repo, username)
+    refreshed = await run_sync(_lookup_user, user_repo, username)
     refreshed_avatar_key = refreshed.get("avatar_storage_key")
     avatar_url = (
-        image_repo.build_avatar_signed_url(refreshed_avatar_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+        await run_sync(image_repo.build_avatar_signed_url, refreshed_avatar_key, settings.SIGNED_URL_EXPIRY_SECONDS)
         if refreshed_avatar_key
         else None
     )

@@ -59,10 +59,6 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
       },
-      backgroundImage: {
-        'before-overlay': 'rgba(15, 23, 42, 0.72)',
-        'after-overlay': 'rgba(244, 63, 94, 0.08)',
-      },
     },
   },
   plugins: [],

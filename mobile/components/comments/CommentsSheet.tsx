@@ -29,6 +29,7 @@ import {
   TEXT_SECONDARY,
   TEXT_DISABLED,
   ERROR_DARK,
+  ERROR_BG,
   BG_ELEVATED,
 } from "../../constants/colors";
 import { COMMENTS_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
@@ -388,7 +389,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: "rgba(248,113,113,0.1)",
+    backgroundColor: ERROR_BG,
     borderRadius: 8,
     padding: 10,
   },

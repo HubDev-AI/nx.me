@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.deps import get_analysis_repo, get_job_repo, get_post_repo, get_user_repo
+from app.db.async_helpers import run_sync
 from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.post_repo import PostRepository
@@ -54,7 +55,7 @@ class CardResponse(BaseModel):
 
 
 @router.get("/public/cards/{username}", response_model=CardResponse)
-def get_shareable_card(
+async def get_shareable_card(
     username: str,
     user_repo: UserRepository = Depends(get_user_repo),
     post_repo: PostRepository = Depends(get_post_repo),
@@ -70,7 +71,8 @@ def get_shareable_card(
         HTTP 404: user has no published posts.
     """
     # Step 1 — look up user by username
-    user = user_repo.get_by_username_for_card(username)
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    user = await run_sync(user_repo.get_by_username_for_card, username)
 
     if not user:
         # Username not found — treat as Gone so callers don't leak enumeration
@@ -90,7 +92,7 @@ def get_shareable_card(
     user_id: str = user["id"]
 
     # Step 2 — latest non-deleted post for this user
-    post = post_repo.get_latest_for_user(user_id)
+    post = await run_sync(post_repo.get_latest_for_user, user_id)
 
     if not post:
         raise HTTPException(
@@ -103,12 +105,12 @@ def get_shareable_card(
 
     glow_up_job_id: str | None = post.get("glow_up_job_id")
     if glow_up_job_id:
-        job_data = job_repo.get_for_analysis(glow_up_job_id)
+        job_data = await run_sync(job_repo.get_for_analysis, glow_up_job_id)
 
         if job_data:
             analysis_id: str | None = job_data.get("analysis_id")
             if analysis_id:
-                recommendations = analysis_repo.get_recommendations(analysis_id)
+                recommendations = await run_sync(analysis_repo.get_recommendations, analysis_id)
 
     logger.info(
         "Shareable card served for user %s (post %s, %d recommendations)",

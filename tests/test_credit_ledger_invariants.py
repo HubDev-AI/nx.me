@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 try:
     from app.entitlement.ledger import CreditLedger

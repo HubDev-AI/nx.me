@@ -35,12 +35,10 @@ success "Prerequisites OK"
 
 # ── Environment ───────────────────────────────────────────────────────────────
 if [[ ! -f .env ]]; then
-  info "Creating .env from .env.example..."
-  cp .env.example .env
-  warn ".env created — fill in your API keys before running the app."
-  warn "Required: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,"
-  warn "          SUPABASE_JWT_SECRET, FAL_API_KEY, AWS_* keys, STRIPE_API_KEY,"
-  warn "          ANTHROPIC_API_KEY, ADMIN_API_KEY, SECRET_KEY"
+  info "Creating .env via local-env.sh..."
+  ./scripts/local-env.sh
+  warn ".env created with local Supabase defaults."
+  warn "All adapters set to mock — edit .env to use real APIs."
 else
   success ".env already exists"
 fi

@@ -34,12 +34,23 @@ class MockPaymentAdapter:
         logger.info("Mock cancel subscription: %s", subscription_id)
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
-        """Accept any signature in mock mode. Parse payload as JSON."""
+        """Accept any signature in mock mode. Parse payload as JSON.
+
+        H-1: The webhook handler accesses event.data["data"]["object"], matching
+        the Stripe SDK's event dict structure. Ensure mock data has the same nesting.
+        """
         import json
 
-        data: dict = json.loads(payload)
+        raw: dict = json.loads(payload)
+        # If the payload already has the nested Stripe structure, use as-is.
+        # Otherwise, wrap it so event.data["data"]["object"] resolves correctly.
+        if "data" in raw and isinstance(raw.get("data"), dict) and "object" in raw["data"]:
+            data = raw
+        else:
+            # Wrap the raw payload so the handler's data["data"]["object"] path works
+            data = {**raw, "data": {"object": raw}}
         return WebhookEvent(
-            event_type=data.get("type", ""),
-            event_id=data.get("id", ""),
+            event_type=raw.get("type", ""),
+            event_id=raw.get("id", ""),
             data=data,
         )

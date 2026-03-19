@@ -30,6 +30,7 @@ import {
   CTA_PRIMARY,
   CTA_PRESSED,
   ERROR_DARK,
+  ERROR_BG,
   BORDER_DEFAULT,
 } from "../../constants/colors";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
@@ -100,6 +101,9 @@ export function ChatView() {
 
   const listRef = useRef<FlatList<AdvisorMessage>>(null);
   const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Track the last message ID to only auto-scroll on appended messages */
+  const lastMessageIdRef = useRef<string | null>(null);
 
   // -------------------------------------------------------------------------
   // Load initial messages
@@ -123,6 +127,12 @@ export function ChatView() {
 
   useEffect(() => {
     loadMessages();
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
   }, [loadMessages]);
 
   // -------------------------------------------------------------------------
@@ -144,7 +154,7 @@ export function ChatView() {
       if (retryCountRef.current < 3) {
         const delay = retryCountRef.current === 1 ? 2000 : 3000;
         setIsLoadingMore(false);
-        setTimeout(() => {
+        retryTimeoutRef.current = setTimeout(() => {
           loadOlderMessages();
         }, delay);
         return;
@@ -215,15 +225,22 @@ export function ChatView() {
   }, [inputText, isSending]);
 
   // -------------------------------------------------------------------------
-  // Auto-scroll when new messages arrive
+  // Auto-scroll only when a NEW message is appended (not on prepend/pagination)
   // -------------------------------------------------------------------------
   useEffect(() => {
-    if (messages.length > 0 && !isLoading) {
+    if (messages.length === 0 || isLoading) return;
+
+    const currentLastId = messages[messages.length - 1]?.id ?? null;
+    const previousLastId = lastMessageIdRef.current;
+    lastMessageIdRef.current = currentLastId;
+
+    // Only scroll when the last message changed (new message appended)
+    if (currentLastId && currentLastId !== previousLastId) {
       setTimeout(() => {
         listRef.current?.scrollToEnd({ animated: true });
       }, ADVISOR_CONFIG.AUTO_SCROLL_DELAY_MS);
     }
-  }, [messages.length, isLoading]);
+  }, [messages, isLoading]);
 
   // -------------------------------------------------------------------------
   // Render
@@ -327,7 +344,7 @@ export function ChatView() {
           placeholder="Message Ada..."
           placeholderTextColor={TEXT_DISABLED}
           multiline
-          maxLength={2000}
+          maxLength={ADVISOR_CONFIG.MESSAGE_MAX_LENGTH}
           returnKeyType="default"
           accessibilityLabel="Message input"
         />
@@ -438,7 +455,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginHorizontal: 16,
     marginBottom: 4,
-    backgroundColor: "rgba(248,113,113,0.1)",
+    backgroundColor: ERROR_BG,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,

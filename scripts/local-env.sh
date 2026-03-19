@@ -24,7 +24,7 @@ SUPABASE_JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://:localdev@localhost:6379/0
 
 # ── Adapters (all mocked for local dev — no external API calls) ──────────────
 ADAPTER__NSFW_ADAPTER=mock

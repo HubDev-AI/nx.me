@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -48,7 +48,7 @@ interface FeedCardProps {
  * caption, reaction button, comment count.
  * Long-press triggers share/report context menu.
  */
-export function FeedCard({
+export const FeedCard = React.memo(function FeedCard({
   post,
   index,
   hasReacted,
@@ -224,7 +224,7 @@ export function FeedCard({
       </Pressable>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

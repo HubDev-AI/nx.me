@@ -48,6 +48,7 @@ import {
   CTA_PRIMARY,
   CTA_PRESSED,
   ERROR_DARK,
+  ERROR_BG,
   COLORS,
 } from "../constants/colors";
 import { ANALYSIS_POLLING } from "../constants/config";
@@ -449,7 +450,7 @@ const styles = StyleSheet.create({
   },
   // Error card
   errorCard: {
-    backgroundColor: "rgba(248, 113, 113, 0.1)",
+    backgroundColor: ERROR_BG,
     borderRadius: 12,
     padding: SPACING * 2,
     marginBottom: SPACING * 2,

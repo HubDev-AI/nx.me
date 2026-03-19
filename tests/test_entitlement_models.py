@@ -13,11 +13,9 @@ import pytest
 from app.entitlement.models import (
     EntitlementResult,
     TierRecord,
-    EntitlementState,
     CanGenerateResult,
     TIER_LIMIT_DAILY,
     TIER_LIMIT_WEEKLY,
-    TIER_LIMIT_MONTHLY,
     TIER_LIMIT_TOTAL,
     TIER_LIMIT_CREDITS,
     TIER_FEATURE_LOCKED,

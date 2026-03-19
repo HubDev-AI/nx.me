@@ -16,3 +16,14 @@ export function formatTimeAgo(isoDate: string): string {
   const diffMonths = Math.floor(diffDays / 30);
   return `${diffMonths}mo`;
 }
+
+/** Format large numbers compactly: 1200 -> 1.2k, 1200000 -> 1.2m */
+export function formatCount(count: number): string {
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}m`;
+  }
+  if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}k`;
+  }
+  return String(count);
+}

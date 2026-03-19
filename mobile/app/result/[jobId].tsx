@@ -64,17 +64,26 @@ export default function ResultScreen() {
   // Fetch job result
   useEffect(() => {
     if (!jobId) return;
+    let cancelled = false;
 
     setLoading(true);
     getJobStatus(jobId)
       .then((data) => {
-        setResult(data);
-        setLoading(false);
+        if (!cancelled) {
+          setResult(data);
+          setLoading(false);
+        }
       })
       .catch(() => {
-        setError("Failed to load results. Please try again.");
-        setLoading(false);
+        if (!cancelled) {
+          setError("Failed to load results. Please try again.");
+          setLoading(false);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [jobId]);
 
   const handleRevealComplete = useCallback(() => {
@@ -257,10 +266,10 @@ export default function ResultScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           {/* Before / After Reveal */}
-          {hasBothImages ? (
+          {hasBothImages && result.before_url && result.after_url ? (
             <BeforeAfterReveal
-              beforeUrl={result.before_url!}
-              afterUrl={result.after_url!}
+              beforeUrl={result.before_url}
+              afterUrl={result.after_url}
               onRevealComplete={handleRevealComplete}
             />
           ) : (

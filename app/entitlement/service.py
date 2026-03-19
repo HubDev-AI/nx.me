@@ -19,6 +19,7 @@ import redis.asyncio as aioredis
 from supabase import Client
 
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.entitlement.ledger import CreditLedger
 from app.entitlement.models import (
     CanGenerateResult,
@@ -96,8 +97,9 @@ class EntitlementService:
         user_id_str = str(user_id)
 
         # Fetch user row
-        user_result = (
-            self._sb.table("users")
+        # C-3: Wrap sync Supabase calls to avoid blocking the event loop
+        user_result = await run_sync(
+            lambda: self._sb.table("users")
             .select("tier_id, trial_analyses_remaining")
             .eq("id", user_id_str)
             .is_("deleted_at", "null")
@@ -116,11 +118,12 @@ class EntitlementService:
         # Compute credit balance from ledger (authoritative).
         # M-13: This is the "worst case" balance — in-flight reserves are already
         # deducted as negative deltas, so pending reserves don't inflate it.
-        credit_balance = self._ledger.balance(user_id)
+        credit_balance = await run_sync(self._ledger.balance, user_id)
 
         # Check active subscription
-        sub_result = (
-            self._sb.table("subscriptions")
+        # C-3: Wrap sync Supabase call
+        sub_result = await run_sync(
+            lambda: self._sb.table("subscriptions")
             .select("status, billing_period_end")
             .eq("user_id", user_id_str)
             .eq("status", "active")
@@ -162,17 +165,17 @@ class EntitlementService:
             return CanGenerateResult(can_generate=True)
 
         if gen_type == LimitType.CREDITS:
-            balance = self._ledger.balance(user_id)
+            balance = await run_sync(self._ledger.balance, user_id)
             if balance > 0:
                 return CanGenerateResult(can_generate=True)
             return CanGenerateResult(can_generate=False, reason="No credits remaining")
 
         # Time-window or total limit
         if gen_type == LimitType.TOTAL:
-            used = self._usage.count_total(user_id, "generation")
+            used = await run_sync(self._usage.count_total, user_id, "generation")
         else:
             window_seconds = _get_window_seconds(gen_type, tier.generation_period_seconds)
-            used = self._usage.count_in_window(user_id, "generation", window_seconds)
+            used = await run_sync(self._usage.count_in_window, user_id, "generation", window_seconds)
 
         limit = tier.generation_limit or 0
         if used < limit:
@@ -232,8 +235,11 @@ class EntitlementService:
 
         # 2. Credits check
         if tier.credits_based:
-            balance = self._ledger.balance(user_id)
+            balance = await run_sync(self._ledger.balance, user_id)
             if balance <= 0:
+                # C-2: Decrement concurrent counter — the Lua script already
+                # incremented it, but we're denying the request.
+                await self._redis.decr(concurrent_key)
                 return EntitlementResult(
                     allowed=False,
                     error_code=TIER_LIMIT_CREDITS,
@@ -242,13 +248,18 @@ class EntitlementService:
             return EntitlementResult(allowed=True)
 
         # 3. Time-window / total check
-        return await self._check_window(
+        window_result = await self._check_window(
             user_id,
             action="generation",
             limit_type=LimitType(tier.generation_type),
             limit=tier.generation_limit,
             period_seconds=tier.generation_period_seconds,
         )
+        if not window_result.allowed:
+            # C-2: Decrement concurrent counter — the Lua script already
+            # incremented it, but we're denying the request.
+            await self._redis.decr(concurrent_key)
+        return window_result
 
     async def _check_window(
         self,
@@ -268,11 +279,12 @@ class EntitlementService:
         error_code = _LIMIT_CODE.get(limit_type, TIER_LIMIT_DAILY)
 
         # Get usage count
+        # C-3: Wrap sync Supabase calls
         if limit_type == LimitType.TOTAL:
-            used = self._usage.count_total(user_id, action)
+            used = await run_sync(self._usage.count_total, user_id, action)
         else:
             window_seconds = _get_window_seconds(limit_type, period_seconds)
-            used = self._usage.count_in_window(user_id, action, window_seconds)
+            used = await run_sync(self._usage.count_in_window, user_id, action, window_seconds)
 
         if used < limit:
             return EntitlementResult(allowed=True, limit=limit, used=used)
@@ -284,7 +296,7 @@ class EntitlementService:
         window = _LIMIT_WINDOW.get(limit_type)
         if window is not None and limit_type != LimitType.TOTAL:
             window_seconds = _get_window_seconds(limit_type, period_seconds)
-            earliest = self._usage.earliest_in_window(user_id, action, window_seconds)
+            earliest = await run_sync(self._usage.earliest_in_window, user_id, action, window_seconds)
             if earliest:
                 retry_after = earliest + window
                 reset_in = max(0, int((retry_after - datetime.now(tz=timezone.utc)).total_seconds()))
@@ -312,10 +324,11 @@ class EntitlementService:
         """Public accessor for the user's tier record."""
         return await self._get_tier(user_id)
 
-    def get_tier_stripe_price_id(self, slug: str) -> str | None:
+    async def get_tier_stripe_price_id(self, slug: str) -> str | None:
         """Get stripe_price_id for a tier by slug."""
-        result = (
-            self._sb.table("tiers")
+        # C-3: Converted to async and wrap sync Supabase call
+        result = await run_sync(
+            lambda: self._sb.table("tiers")
             .select("stripe_price_id")
             .eq("slug", slug)
             .single()
@@ -337,8 +350,9 @@ class EntitlementService:
 
     async def _get_tier(self, user_id: UUID) -> TierRecord:
         """Fetch the user's tier record (Redis-cached)."""
-        user_result = (
-            self._sb.table("users")
+        # C-3: Wrap sync Supabase call
+        user_result = await run_sync(
+            lambda: self._sb.table("users")
             .select("tier_id")
             .eq("id", str(user_id))
             .is_("deleted_at", "null")

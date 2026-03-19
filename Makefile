@@ -1,4 +1,4 @@
-.PHONY: up down reset migrate worker test
+.PHONY: up down reset migrate worker test lint format
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv .env
@@ -39,6 +39,13 @@ worker:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest tests/ -x -q
+
+# ── Lint & Format ────────────────────────────────────────────────────────
+lint:
+	.venv/bin/ruff check app/ tests/
+
+format:
+	.venv/bin/ruff format app/ tests/
 
 # ── Internal targets ──────────────────────────────────────────────────────────
 .venv:

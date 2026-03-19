@@ -9,8 +9,6 @@ route registration which can fail on FastAPI 0.104 / Python 3.10.
 """
 from __future__ import annotations
 
-import sys
-import time
 from uuid import uuid4
 
 import pytest

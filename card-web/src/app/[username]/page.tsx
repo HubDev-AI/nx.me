@@ -65,6 +65,7 @@ export async function generateMetadata({
  */
 export default async function CardPage({ params }: PageProps) {
   const { username } = await params;
+  // Next.js automatically deduplicates this fetch with the one in generateMetadata
   const card = await getCardData(username);
 
   if (!card) {
