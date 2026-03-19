@@ -12,6 +12,7 @@ from uuid import UUID
 import redis.asyncio as aioredis
 from supabase import Client
 
+from app.db.async_helpers import run_sync
 from app.entitlement.models import TierRecord
 
 logger = logging.getLogger(__name__)
@@ -100,8 +101,9 @@ class TierRepository:
                 # Fall through to DB lookup below
 
         # Fetch from DB
-        result = (
-            self._sb.table("tiers")
+        # C-3: Wrap sync Supabase call to avoid blocking the event loop
+        result = await run_sync(
+            lambda: self._sb.table("tiers")
             .select("*")
             .eq("id", str(tier_id))
             .single()
@@ -119,8 +121,9 @@ class TierRepository:
 
     async def get_default(self) -> TierRecord:
         """Fetch the active default tier."""
-        result = (
-            self._sb.table("tiers")
+        # C-3: Wrap sync Supabase call to avoid blocking the event loop
+        result = await run_sync(
+            lambda: self._sb.table("tiers")
             .select("*")
             .eq("is_default", True)
             .eq("is_active", True)

@@ -10,17 +10,19 @@ Story 5-3:
 from __future__ import annotations
 
 import logging
+import re as re_module
 from datetime import datetime, timezone
 from uuid import UUID
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from supabase import Client
 
 from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_post_repo, get_redis, get_supabase
 from app.api.middleware.auth import UserClaims
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.post_repo import PostRepository
@@ -30,8 +32,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["posts"])
 
-_COMMENT_RATE_LIMIT = 10
-_COMMENT_RATE_WINDOW = 60
+# M-3: Comment rate limit constants moved to app/config/__init__.py
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,14 @@ _COMMENT_RATE_WINDOW = 60
 class CreatePostRequest(BaseModel):
     glow_up_job_id: str
     caption: str | None = Field(None, max_length=500)
+
+    @field_validator("caption")
+    @classmethod
+    def caption_no_html(cls, v: str | None) -> str | None:
+        """H-5: Strip HTML tags to prevent stored XSS."""
+        if v is not None:
+            v = re_module.sub(r"<[^>]*>", "", v)
+        return v
 
 
 class PostResponse(BaseModel):
@@ -54,6 +63,12 @@ class PostResponse(BaseModel):
 
 class CreateCommentRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=1000)
+
+    @field_validator("content")
+    @classmethod
+    def content_no_html(cls, v: str) -> str:
+        """H-5: Strip HTML tags to prevent stored XSS."""
+        return re_module.sub(r"<[^>]*>", "", v)
 
 
 class CommentResponse(BaseModel):
@@ -88,7 +103,7 @@ class ReportResponse(BaseModel):
 
 
 @router.post("/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
-def create_post(
+async def create_post(
     body: CreatePostRequest,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
@@ -103,7 +118,8 @@ def create_post(
     user_id = claims["sub"]
 
     # Verify glow-up job exists, is owned, and is completed
-    job_data = job_repo.get_jobs_for_post(body.glow_up_job_id)
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    job_data = await run_sync(job_repo.get_jobs_for_post, body.glow_up_job_id)
     if not job_data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     if job_data["user_id"] != user_id:
@@ -120,12 +136,12 @@ def create_post(
         )
 
     # Get image storage keys from private buckets
-    before_img_data = image_repo.get_by_id_with_fields(job_data["original_image_id"], "storage_key, bucket")
-    after_img_data = image_repo.get_by_id_with_fields(job_data["generated_image_id"], "storage_key, bucket")
+    before_img_data = await run_sync(image_repo.get_by_id_with_fields, job_data["original_image_id"], "storage_key, bucket")
+    after_img_data = await run_sync(image_repo.get_by_id_with_fields, job_data["generated_image_id"], "storage_key, bucket")
 
     # Copy images from private buckets to public bucket and get CDN URLs
     try:
-        published = publish_post_images(
+        published = await run_sync(publish_post_images,
             supabase,
             user_id=user_id,
             before_image=before_img_data,
@@ -144,7 +160,7 @@ def create_post(
     # Re-verify job status right before insert to minimise TOCTOU window (M-5).
     # The job could have been re-queued or failed between the first check and
     # the image publish above.
-    fresh_job = job_repo.get_jobs_for_post(body.glow_up_job_id)
+    fresh_job = await run_sync(job_repo.get_jobs_for_post, body.glow_up_job_id)
     if not fresh_job or fresh_job["status"] != "completed":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -153,7 +169,7 @@ def create_post(
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-    post = post_repo.insert_post({
+    post = await run_sync(post_repo.insert_post, {
         "user_id": user_id,
         "glow_up_job_id": body.glow_up_job_id,
         "caption": body.caption,
@@ -191,7 +207,7 @@ def create_post(
 
 
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_post(
+async def delete_post(
     post_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     post_repo: PostRepository = Depends(get_post_repo),
@@ -199,11 +215,13 @@ def delete_post(
     """Soft-delete own post. AC-FR5: is_deleted = TRUE, removed from feed."""
     user_id = claims["sub"]
 
-    post = post_repo.get_post_with_ownership(str(post_id))
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    post = await run_sync(post_repo.get_post_with_ownership, str(post_id))
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     if post["user_id"] != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        # H-2: Return 404 (not 403) to prevent ownership enumeration
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     if post["is_deleted"]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -211,7 +229,7 @@ def delete_post(
         )
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
-    post_repo.soft_delete_post(str(post_id), now_utc)
+    await run_sync(post_repo.soft_delete_post, str(post_id), now_utc)
 
     logger.info("Post %s deleted by user %s", post_id, user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -242,17 +260,19 @@ async def create_comment(
     rate_key = f"comment_rate:{user_id}"
     count = await redis_client.incr(rate_key)
     if count == 1:
-        await redis_client.expire(rate_key, _COMMENT_RATE_WINDOW)
-    if count > _COMMENT_RATE_LIMIT:
+        await redis_client.expire(rate_key, settings.COMMENT_RATE_WINDOW_SECONDS)
+    if count > settings.COMMENT_RATE_LIMIT:
         raise HTTPException(status_code=429, detail="Too many comments. Please slow down.")
 
     # Verify post exists and is not deleted
-    post = post_repo.get_active_post(str(post_id))
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    post = await run_sync(post_repo.get_active_post, str(post_id))
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
     # Atomic: insert comment + increment count in single transaction
-    comment = post_repo.insert_comment_atomic(
+    comment = await run_sync(
+        post_repo.insert_comment_atomic,
         p_post_id=str(post_id),
         p_user_id=user_id,
         p_content=body.content,
@@ -263,7 +283,7 @@ async def create_comment(
     logger.info("Comment %s on post %s by user %s", comment_id, post_id, user_id)
 
     # Fetch author profile for display name and avatar
-    author = post_repo.get_commenter_profile(user_id)
+    author = await run_sync(post_repo.get_commenter_profile, user_id)
     display_name: str | None = None
     avatar_url: str | None = None
     if author:
@@ -295,7 +315,7 @@ async def create_comment(
 
 
 @router.get("/posts/{post_id}/comments", response_model=CommentsListResponse)
-def get_comments(
+async def get_comments(
     post_id: UUID,
     cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(20, ge=1, le=100),
@@ -306,7 +326,8 @@ def get_comments(
     """List comments on a post. Public read — no auth required (FR-22)."""
     fetch_limit = limit + 1
 
-    comments = post_repo.get_comments_page(
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    comments = await run_sync(post_repo.get_comments_page,
         post_id=str(post_id),
         fetch_limit=fetch_limit,
         cursor=cursor,
@@ -379,20 +400,22 @@ async def report_post(
         raise HTTPException(status_code=429, detail="Too many reports. Please slow down.")
 
     # Verify post exists
-    post = post_repo.get_active_post(str(post_id))
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
+    post = await run_sync(post_repo.get_active_post, str(post_id))
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
 
-    report = post_repo.insert_report(
+    report = await run_sync(
+        post_repo.insert_report,
         post_id=str(post_id),
         reporter_user_id=user_id,
         reason=body.reason,
     )
 
     # Auto-hide: count unique reporters, hide if threshold reached
-    report_count = post_repo.count_unique_reporters(str(post_id))
+    report_count = await run_sync(post_repo.count_unique_reporters, str(post_id))
     if report_count >= settings.REPORT_AUTO_HIDE_THRESHOLD:
-        post_repo.hide_post(str(post_id))
+        await run_sync(post_repo.hide_post, str(post_id))
         logger.warning("Post %s auto-hidden: %d unique reports", post_id, report_count)
 
     logger.info("Report %s on post %s by user %s", report["id"], post_id, user_id)

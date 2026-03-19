@@ -30,6 +30,10 @@ build/
 .coverage
 htmlcov/
 
+# Linting / type checking caches
+.ruff_cache/
+.mypy_cache/
+
 # TikTok autoresearch results (generated content, not source)
 tools/tiktok-autoresearch/results/*.tsv
 tools/tiktok-autoresearch/results/*.md

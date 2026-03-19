@@ -86,19 +86,28 @@ export default function CardDetailScreen() {
 
   useEffect(() => {
     if (!username) return;
+    let cancelled = false;
 
     setLoading(true);
     setError(null);
 
     fetchPublicCard(username)
       .then((data) => {
-        setCard(data);
-        setLoading(false);
+        if (!cancelled) {
+          setCard(data);
+          setLoading(false);
+        }
       })
       .catch(() => {
-        setError("Could not load this card. It may no longer be available.");
-        setLoading(false);
+        if (!cancelled) {
+          setError("Could not load this card. It may no longer be available.");
+          setLoading(false);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [username]);
 
   const handleRevealComplete = useCallback(() => {

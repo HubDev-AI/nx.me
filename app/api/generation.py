@@ -58,8 +58,7 @@ _SLUG_TO_LANE: dict[str, str] = {
 # Maps tier slug → public tier name (for user_tier_at_enqueue column)
 _SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
 
-# Average seconds per generation job (for wait estimation)
-_AVG_SECONDS_PER_JOB = 15
+# M-3: Average seconds per generation job moved to app/config/__init__.py
 
 # Error messages for entitlement failures
 _ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
@@ -308,7 +307,7 @@ async def _enqueue_job(
 
     logger.info("Generation job %s enqueued for user %s on lane %s", job_id, user_id_str, queue_lane)
 
-    estimated_wait = queue_position * _AVG_SECONDS_PER_JOB
+    estimated_wait = queue_position * settings.AVG_SECONDS_PER_JOB
     return GenerateResponse(
         job_id=str(job_id),
         status=JobStatus.QUEUED,
@@ -433,11 +432,11 @@ async def get_job(
         queued_ahead = await redis_client.llen(f"arq:queue:{queue_lane}")
 
         if job_status == JobStatus.QUEUED:
-            estimated_wait = queued_ahead * _AVG_SECONDS_PER_JOB
+            estimated_wait = queued_ahead * settings.AVG_SECONDS_PER_JOB
         else:
             updated_at = datetime.fromisoformat(job["updated_at"])
             elapsed = max(0, int((datetime.now(tz=timezone.utc) - updated_at).total_seconds()))
-            estimated_wait = max(0, _AVG_SECONDS_PER_JOB - elapsed)
+            estimated_wait = max(0, settings.AVG_SECONDS_PER_JOB - elapsed)
 
     # --- Completed: generate signed URLs ---
     before_url: str | None = None

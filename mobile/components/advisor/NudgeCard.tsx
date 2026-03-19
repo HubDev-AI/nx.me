@@ -16,29 +16,12 @@ import {
   ADA_BUBBLE_BORDER,
 } from "../../constants/colors";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
+import { formatTimeAgo } from "../../lib/format";
 import type { Nudge } from "../../lib/advisor";
 
 interface NudgeCardProps {
   nudge: Nudge;
   onMarkRead: (id: string) => void;
-}
-
-function formatRelativeTime(isoDate: string): string {
-  const now = Date.now();
-  const then = new Date(isoDate).getTime();
-  const diffMs = now - then;
-  const diffMin = Math.floor(diffMs / 60000);
-  const diffHr = Math.floor(diffMs / 3600000);
-  const diffDay = Math.floor(diffMs / 86400000);
-
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHr < 24) return `${diffHr}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(isoDate).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 function nudgeIcon(type: string): React.ComponentProps<typeof Ionicons>["name"] {
@@ -96,7 +79,7 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
         <Text style={styles.body} numberOfLines={3}>
           {nudge.content}
         </Text>
-        <Text style={styles.time}>{formatRelativeTime(nudge.created_at)}</Text>
+        <Text style={styles.time}>{formatTimeAgo(nudge.created_at)}</Text>
       </View>
     </Pressable>
   );

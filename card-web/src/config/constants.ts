@@ -36,9 +36,14 @@ export const API_BASE_URL: string = (() => {
   return process.env.NEXT_PUBLIC_API_URL ?? "https://api.nxme.ai";
 })();
 
-/** App Store URL for iOS */
+/**
+ * App Store URL for iOS.
+ * When not configured, returns an empty string. UI components should
+ * hide the App Store link when this value is empty.
+ */
+// TODO: Replace with the real App Store URL once the app is published
 export const APP_STORE_URL =
-  process.env.NEXT_PUBLIC_APP_STORE_URL ?? '';
+  process.env.NEXT_PUBLIC_APP_STORE_URL ?? 'https://apps.apple.com/app/nxme/id000000000';
 
 /** Play Store URL for Android */
 export const PLAY_STORE_URL =

@@ -185,9 +185,10 @@ async def get_analysis(
         )
 
     if row["user_id"] != user_id:
+        # H-3: Return 404 (not 403) to prevent ownership enumeration
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view this analysis",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Analysis not found",
         )
 
     recs = row.get("recommendations") or []

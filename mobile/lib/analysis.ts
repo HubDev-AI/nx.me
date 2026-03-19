@@ -99,14 +99,11 @@ export async function createAnalysis(
     type: mimeType,
   } as unknown as Blob);
 
-  // Use apiFetch but override Content-Type for multipart
+  // Do not set Content-Type manually — fetch sets it automatically with the
+  // correct multipart boundary when the body is FormData.
   return apiFetch<AnalysisCreateResponse>(ANALYSIS_ENDPOINTS.CREATE, {
     method: "POST",
     body: formData,
-    headers: {
-      // Let fetch set the multipart boundary automatically
-      "Content-Type": "multipart/form-data",
-    },
   });
 }
 

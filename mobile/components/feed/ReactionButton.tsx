@@ -7,6 +7,7 @@ import {
   TEXT_SECONDARY,
   BG_ELEVATED,
 } from "../../constants/colors";
+import { formatCount } from "../../lib/format";
 
 const PRESS_SCALE = 0.9;
 const ANIMATION_DURATION_MS = 150;
@@ -75,17 +76,6 @@ export function ReactionButton({
       </Pressable>
     </Animated.View>
   );
-}
-
-/** Format large numbers compactly: 1200 -> 1.2k */
-function formatCount(count: number): string {
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}m`;
-  }
-  if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}k`;
-  }
-  return String(count);
 }
 
 const styles = StyleSheet.create({

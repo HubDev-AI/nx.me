@@ -237,7 +237,7 @@ class VerifyEmailResponse(BaseModel):
 
 
 @router.post("/verify-email", response_model=VerifyEmailResponse)
-def verify_email(
+async def verify_email(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     user_repo: UserRepository = Depends(get_user_repo),
@@ -256,8 +256,9 @@ def verify_email(
     user_id_str: str = claims["sub"]
 
     # Verify that Supabase auth has confirmed the email
+    # M-1: Wrap sync Supabase calls to avoid blocking the event loop
     try:
-        auth_user = user_repo.auth_get_user(user_id_str)
+        auth_user = await run_sync(user_repo.auth_get_user, user_id_str)
     except Exception as exc:
         logger.error("Failed to fetch auth user %s: %s", user_id_str, exc)
         raise HTTPException(
@@ -272,14 +273,14 @@ def verify_email(
         )
 
     # Mark email_verified in our users table
-    user_repo.set_email_verified(user_id_str)
+    await run_sync(user_repo.set_email_verified, user_id_str)
 
     # Grant trial analyses (idempotent)
     grantor = TrialGrantor(supabase)
-    grantor.grant(UUID(user_id_str))
+    await run_sync(grantor.grant, UUID(user_id_str))
 
     # Read updated count for response
-    remaining: int = user_repo.get_trial_analyses_remaining(user_id_str)
+    remaining: int = await run_sync(user_repo.get_trial_analyses_remaining, user_id_str)
 
     logger.info("Email verified and trial granted for user %s", user_id_str)
     return VerifyEmailResponse(
@@ -503,7 +504,7 @@ async def social_login(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(
+async def logout(
     claims: UserClaims = Depends(get_current_user),
     authorization: Annotated[str | None, Header()] = None,
     user_repo: UserRepository = Depends(get_user_repo),
@@ -524,7 +525,8 @@ def logout(
     user_id: str = claims["sub"]
 
     try:
-        user_repo.auth_sign_out(token)
+        # M-2: Wrap sync Supabase call to avoid blocking the event loop
+        await run_sync(user_repo.auth_sign_out, token)
         logger.info("Session invalidated for user %s", user_id)
     except Exception as exc:
         logger.error("sign_out failed for user %s: %s", user_id, exc)

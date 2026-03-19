@@ -4,6 +4,7 @@ Shared dependencies injected into route handlers via Depends().
 """
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import TYPE_CHECKING, Annotated
 
@@ -13,6 +14,7 @@ from supabase import Client
 import redis.asyncio as aioredis
 
 from app.api.middleware.auth import UserClaims, validate_jwt
+from app.db.async_helpers import run_sync
 from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, EntitlementResult, PAYMENT_REQUIRED_CODES
 
 if TYPE_CHECKING:
@@ -98,8 +100,9 @@ async def get_current_user(
 
     if cached is None:
         # Cache miss — query DB and cache for 60s
-        user_row = (
-            supabase.table("users")
+        # C-3: Wrap sync Supabase call to avoid blocking the event loop
+        user_row = await run_sync(
+            lambda: supabase.table("users")
             .select("is_banned")
             .eq("id", user_id)
             .maybe_single()
@@ -129,7 +132,7 @@ def require_admin(
     """Require admin API key for admin endpoints."""
     from app.config import settings
 
-    if not x_admin_key or x_admin_key != settings.ADMIN_API_KEY:
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, settings.ADMIN_API_KEY):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",

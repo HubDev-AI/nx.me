@@ -28,9 +28,9 @@ import {
   Dimensions,
   PanResponder,
   AccessibilityInfo,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useStripe } from "@stripe/stripe-react-native";
 
 import {
   BG_PAGE,
@@ -39,6 +39,7 @@ import {
   TEXT_SECONDARY,
   TEXT_DISABLED,
   ERROR_DARK,
+  ERROR_BG,
 } from "../../constants/colors";
 import { PAYWALL_ANIMATION, MIN_TOUCH_TARGET } from "../../constants/config";
 import {
@@ -71,8 +72,6 @@ export function PaywallModal({
   onClose,
   onPurchaseComplete,
 }: PaywallModalProps) {
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
-
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -231,35 +230,15 @@ export function PaywallModal({
         // 1. Get checkout URL from backend
         const { checkout_url } = await purchaseCredits(pack.pack_id);
 
-        // 2. Initialize Stripe Payment Sheet with the checkout URL
-        // The checkout_url contains the session ID; we use it as the client secret
-        // for the Payment Sheet flow.
-        const { error: initError } = await initPaymentSheet({
-          merchantDisplayName: "NXME",
-          paymentIntentClientSecret: checkout_url,
-          returnURL: "nxme://payment/success",
-        });
+        // TODO: Backend returns a Stripe Checkout Session URL, not a PaymentIntent
+        // client secret. The Payment Sheet requires a paymentIntentClientSecret.
+        // When the backend is updated to return a payment_intent_client_secret,
+        // replace the Linking.openURL fallback with initPaymentSheet + presentPaymentSheet.
+        // For now, open the Stripe-hosted checkout page in the browser.
+        await Linking.openURL(checkout_url);
 
-        if (initError) {
-          setPurchaseState("error");
-          setPurchaseError(initError.message);
-          return;
-        }
-
-        // 3. Present the Payment Sheet
-        const { error: presentError } = await presentPaymentSheet();
-
-        if (presentError) {
-          // User cancelled or payment failed
-          setPurchaseState("idle");
-          if (presentError.code !== "Canceled") {
-            setPurchaseError(presentError.message);
-            setPurchaseState("error");
-          }
-          return;
-        }
-
-        // 4. Payment succeeded — re-fetch entitlement for updated balance
+        // Re-fetch entitlement after returning from checkout.
+        // The user may have completed or cancelled payment externally.
         const updatedState = await fetchEntitlement();
         setEntitlement(updatedState);
         setPurchaseState("success");
@@ -273,7 +252,7 @@ export function PaywallModal({
         setActivePurchaseId(null);
       }
     },
-    [initPaymentSheet, presentPaymentSheet, onPurchaseComplete],
+    [onPurchaseComplete],
   );
 
   // ---------------------------------------------------------------------------
@@ -302,31 +281,12 @@ export function PaywallModal({
         return;
       }
 
-      // Initialize and present Payment Sheet
-      const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: "NXME",
-        paymentIntentClientSecret: response.checkout_url,
-        returnURL: "nxme://payment/success",
-      });
+      // TODO: Backend returns a Stripe Checkout Session URL, not a PaymentIntent
+      // client secret. When the backend is updated to return a payment_intent_client_secret,
+      // replace the Linking.openURL fallback with initPaymentSheet + presentPaymentSheet.
+      await Linking.openURL(response.checkout_url);
 
-      if (initError) {
-        setPurchaseState("error");
-        setPurchaseError(initError.message);
-        return;
-      }
-
-      const { error: presentError } = await presentPaymentSheet();
-
-      if (presentError) {
-        setPurchaseState("idle");
-        if (presentError.code !== "Canceled") {
-          setPurchaseError(presentError.message);
-          setPurchaseState("error");
-        }
-        return;
-      }
-
-      // Subscription succeeded — re-fetch entitlement
+      // Re-fetch entitlement after returning from checkout
       const updatedState = await fetchEntitlement();
       setEntitlement(updatedState);
       setPurchaseState("success");
@@ -337,7 +297,7 @@ export function PaywallModal({
       setPurchaseError(message);
       setPurchaseState("error");
     }
-  }, [initPaymentSheet, presentPaymentSheet, onPurchaseComplete]);
+  }, [onPurchaseComplete]);
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -625,7 +585,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(248,113,113,0.1)",
+    backgroundColor: ERROR_BG,
     borderRadius: 10,
     padding: 12,
     marginBottom: 16,

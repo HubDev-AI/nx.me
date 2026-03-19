@@ -16,8 +16,8 @@ interface CardViewProps {
  */
 export function CardView({ card }: CardViewProps) {
   const topRecommendations = card.recommendations
-    .slice(0, RECOMMENDATIONS_DISPLAY_COUNT)
-    .sort((a, b) => a.rank - b.rank);
+    .toSorted((a, b) => a.rank - b.rank)
+    .slice(0, RECOMMENDATIONS_DISPLAY_COUNT);
 
   return (
     <article className="w-full max-w-2xl mx-auto space-y-6">

@@ -4,10 +4,10 @@ Multi-agent social simulation for predicting TikTok audience reactions before yo
 
 ## What this does vs. the autoresearch tool
 
-| Tool | Purpose | When to use |
-|------|---------|-------------|
-| **mirofish-simulator** | Predict which strategy wins before you execute | Campaign planning, launch strategy, crisis prep |
-| **tiktok-autoresearch** | Generate and score actual content | Daily content production |
+| Tool                    | Purpose                                        | When to use                                     |
+| ----------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| **mirofish-simulator**  | Predict which strategy wins before you execute | Campaign planning, launch strategy, crisis prep |
+| **tiktok-autoresearch** | Generate and score actual content              | Daily content production                        |
 
 MiroFish answers "what should we do?" — autoresearch answers "how do we do it well?"
 
@@ -21,14 +21,14 @@ MiroFish answers "what should we do?" — autoresearch answers "how do we do it 
 
 ### Installation
 
-The MiroFish repo is cloned at `/Users/vladimirtrifonov/src/ai/MiroFish`. All NXME-specific configuration is already in place.
+Clone the MiroFish repo at `./tools/mirofish-simulator/MiroFish`. All NXME-specific configuration is already in place.
 
 ```bash
 # 1. Set your API key
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # 2. Launch (starts LiteLLM proxy + MiroFish Docker)
-cd /Users/vladimirtrifonov/src/ai/MiroFish
+cd /tools/mirofish-simulator/MiroFish
 ./start.sh
 
 # 3. Open the UI
@@ -57,27 +57,31 @@ MiroFish expects OpenAI SDK format. LiteLLM proxy runs locally and translates al
 
 ### Step 1: Upload seed documents
 
-In the MiroFish UI, upload the seed files from `/Users/vladimirtrifonov/src/ai/MiroFish/nxme-seeds/`:
+In the MiroFish UI, upload the seed files from `tools/mirofish-simulator/nxme-seeds`:
 
-| File | What it provides |
-|------|-----------------|
+| File                          | What it provides                                                       |
+| ----------------------------- | ---------------------------------------------------------------------- |
 | `tiktok-launch-simulation.md` | 3 launch strategies, 5 audience segments, 4 weekly scenario injections |
-| `competitor-landscape.md` | FaceApp/Lensa/YouCam positioning for agent awareness |
+| `competitor-landscape.md`     | FaceApp/Lensa/YouCam positioning for agent awareness                   |
 
 ### Step 2: Enter your prediction query
 
 Example queries to try:
 
 **Strategy comparison (start here):**
+
 > Simulate 30 days of NXME's TikTok launch. Compare Strategy A (curiosity-led: "what's my face shape?"), Strategy B (transformation-led: "before/after reveal"), and Strategy C (identity-preservation-led: "this actually looks like me"). Which strategy generates the highest engagement and most organic UGC?
 
 **Crisis simulation:**
+
 > NXME launched with Strategy B two weeks ago. A tech blogger publishes "AI beauty app rates your face — here's why that's toxic." Simulate how each audience segment reacts and what the optimal response strategy is.
 
 **Influencer impact:**
+
 > A micro-influencer with 50K followers posts a genuine positive reaction to NXME. Simulate the cascade effect across audience segments. Does it cross over from beauty to self-improvement audiences?
 
 **Competitor response:**
+
 > FaceApp launches a "style recommendations" feature similar to NXME. Simulate how this affects NXME's positioning and which content strategy best defends market position.
 
 ### Step 3: Configure simulation rounds
@@ -93,12 +97,14 @@ MiroFish produces several output types:
 ### 1. Prediction Report
 
 The main output. Contains:
+
 - **Strategy rankings** — which approach wins on each metric (engagement, UGC, conversion signals, resilience)
 - **Segment breakdowns** — how each audience persona (beauty enthusiasts, skeptics, content creators, etc.) responded
 - **Timeline analysis** — how sentiment evolves over the simulated 30 days
 - **Inflection points** — when and why the simulation shifted (e.g., "Week 3 influencer post caused 40% sentiment spike in self-improvement segment")
 
 **What to look for:**
+
 - Which strategy has the highest engagement-to-conversion ratio (not just raw engagement)
 - Which audience segment becomes the strongest organic advocate
 - How quickly negative sentiment spreads and through which segments
@@ -108,6 +114,7 @@ The main output. Contains:
 Detailed records of what simulated agents "said" and "did." These read like social media comments and reactions.
 
 **What to look for:**
+
 - Common objections ("is this just another filter?") — these become FAQ/response templates
 - Viral triggers ("I need to try this") — these become hook inspiration
 - Drop-off points ("cool but I'm not paying") — these inform your free-to-paid funnel
@@ -123,6 +130,7 @@ After the simulation, you can talk directly to individual agents:
 This is the highest-value feature — it's like a focus group that runs in 10 minutes instead of 2 weeks.
 
 **Best questions to ask agents:**
+
 - "What was the moment you decided to try/skip the app?"
 - "What would you tell a friend about NXME?"
 - "What content would you create about this product?"
@@ -131,6 +139,7 @@ This is the highest-value feature — it's like a focus group that runs in 10 mi
 ### 4. Variable Injection Results
 
 When you inject variables (competitor launch, negative press, influencer post), the report shows:
+
 - **Before/after sentiment shift** per segment
 - **Recovery time** — how many days until sentiment stabilizes
 - **Best response action** — what the simulation suggests as optimal reaction
@@ -139,13 +148,13 @@ When you inject variables (competitor launch, negative press, influencer post), 
 
 The seed document configures 5 agent populations:
 
-| Segment | % of agents | Behavior pattern | Key metric |
-|---------|------------|-------------------|------------|
-| Beauty enthusiasts | 40% | High engagement, share transformations | UGC rate |
-| Self-improvement seekers | 25% | Save content, pragmatic, moderate engagement | Conversion intent |
-| Skeptics | 15% | Critical comments, demand proof, but convert if convinced | Sentiment shift |
-| Content creators | 10% | Try app for content, may create UGC | UGC creation rate |
-| Casual scrollers | 10% | Passive, rarely engage | Scroll-stop rate |
+| Segment                  | % of agents | Behavior pattern                                          | Key metric        |
+| ------------------------ | ----------- | --------------------------------------------------------- | ----------------- |
+| Beauty enthusiasts       | 40%         | High engagement, share transformations                    | UGC rate          |
+| Self-improvement seekers | 25%         | Save content, pragmatic, moderate engagement              | Conversion intent |
+| Skeptics                 | 15%         | Critical comments, demand proof, but convert if convinced | Sentiment shift   |
+| Content creators         | 10%         | Try app for content, may create UGC                       | UGC creation rate |
+| Casual scrollers         | 10%         | Passive, rarely engage                                    | Scroll-stop rate  |
 
 ## Workflow: MiroFish -> Autoresearch -> TikTok
 
@@ -173,12 +182,12 @@ The recommended full workflow:
 
 ## Cost estimates
 
-| Simulation type | Rounds | Estimated cost |
-|----------------|--------|---------------|
-| Quick strategy test | 20 | $5-10 |
-| Full strategy comparison | 40 | $10-20 |
-| Multi-strategy + all variables | 60+ | $30-50 |
-| Interactive agent dialogue (per session) | — | $1-3 |
+| Simulation type                          | Rounds | Estimated cost |
+| ---------------------------------------- | ------ | -------------- |
+| Quick strategy test                      | 20     | $5-10          |
+| Full strategy comparison                 | 40     | $10-20         |
+| Multi-strategy + all variables           | 60+    | $30-50         |
+| Interactive agent dialogue (per session) | —      | $1-3           |
 
 All costs are Claude Sonnet 4.6 API usage via Anthropic.
 
@@ -192,7 +201,7 @@ kill <litellm_pid>
 
 ## Files
 
-All MiroFish files live at `/Users/vladimirtrifonov/src/ai/MiroFish/`:
+All MiroFish files live at `tools/mirofish-simulator/nxme-seeds/MiroFish/`:
 
 ```
 MiroFish/

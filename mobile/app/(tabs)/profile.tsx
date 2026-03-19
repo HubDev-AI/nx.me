@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 
 import {
   BG_PAGE,
@@ -31,6 +32,7 @@ import type { UpdateProfilePayload } from "../../components/profile/types";
  */
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
 
@@ -52,9 +54,15 @@ export default function ProfileScreen() {
 
   // Check auth state on mount
   useEffect(() => {
+    let cancelled = false;
     getStoredJwt().then((jwt) => {
-      setIsAuthenticated(jwt !== null);
+      if (!cancelled) {
+        setIsAuthenticated(jwt !== null);
+      }
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Load profile when authenticated
@@ -114,6 +122,14 @@ export default function ProfileScreen() {
         <Text style={styles.signInSubtitle}>
           Track your glow-ups and reactions
         </Text>
+        <Pressable
+          onPress={() => router.push("/(auth)/login")}
+          style={styles.signInButton}
+          accessibilityLabel="Sign in"
+          accessibilityRole="button"
+        >
+          <Text style={styles.signInButtonText}>Sign In</Text>
+        </Pressable>
       </View>
     );
   }
@@ -209,6 +225,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: TEXT_SECONDARY,
     textAlign: "center",
+  },
+  signInButton: {
+    marginTop: 20,
+    backgroundColor: CTA_PRIMARY,
+    borderRadius: 10,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    minHeight: MIN_TOUCH_TARGET,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
   loadingText: {
     fontSize: 14,

@@ -49,6 +49,18 @@ end
 return 1
 """
 
+# H-4: Atomic seed-and-increment Lua script for reaction counters.
+# If the key does not exist, seed it from the DB value (ARGV[1]) and then
+# increment by 1. If the key already exists, just increment.
+# This eliminates the race window between SETNX and INCR.
+_REACTION_SEED_AND_INCR_SCRIPT = """
+local exists = redis.call('EXISTS', KEYS[1])
+if exists == 0 then
+    redis.call('SET', KEYS[1], tonumber(ARGV[1]))
+end
+return redis.call('INCR', KEYS[1])
+"""
+
 _DEFAULT_PAGE_SIZE = 10
 _MAX_PAGE_SIZE = 50
 
@@ -87,7 +99,7 @@ class FeedResponse(BaseModel):
 
 
 @router.get("/feed", response_model=FeedResponse)
-def get_feed(
+async def get_feed(
     sort: FeedSort = Query(FeedSort.NEWEST, description="Sort strategy"),
     cursor: str | None = Query(None, description="Cursor for pagination (ISO timestamp or composite)"),
     limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"),
@@ -102,14 +114,15 @@ def get_feed(
     # Fetch limit+1 to determine has_more
     fetch_limit = limit + 1
 
+    # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     if sort == FeedSort.NEWEST:
-        posts = feed_repo.fetch_newest(cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit)
     elif sort == FeedSort.TRENDING:
-        posts = feed_repo.fetch_trending(cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_trending, cursor, fetch_limit)
     elif sort == FeedSort.BIGGEST_IMPROVEMENTS:
-        posts = feed_repo.fetch_biggest_improvements(cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_biggest_improvements, cursor, fetch_limit)
     else:
-        posts = feed_repo.fetch_newest(cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit)
 
     has_more = len(posts) > limit
     if has_more:
@@ -268,10 +281,15 @@ async def react_to_post(
     # --- Optimistic Redis INCR ---
     redis_counter_key = f"posts:{post_id}:reactions"
 
-    # Seed from DB on cache miss using SETNX to avoid overwriting a concurrent write,
-    # then always INCR — eliminates the race between SET and INCR.
-    await redis_client.setnx(redis_counter_key, post["reaction_count"])
-    new_count = await redis_client.incr(redis_counter_key)
+    # H-4: Atomic seed-and-increment via Lua script. If the key does not exist,
+    # seeds from the DB count and increments in one atomic operation, eliminating
+    # the race window between SETNX and INCR.
+    new_count = await redis_client.eval(
+        _REACTION_SEED_AND_INCR_SCRIPT,
+        1,
+        redis_counter_key,
+        str(post["reaction_count"]),
+    )
 
     # --- Background DB write via ARQ ---
     reaction_data = {

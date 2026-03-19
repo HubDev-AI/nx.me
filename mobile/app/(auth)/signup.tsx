@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -25,27 +25,16 @@ import {
 } from "../../constants/colors";
 import { AUTH_ENDPOINTS, AUTH_VALIDATION } from "../../constants/config";
 import { apiFetch, ApiError } from "../../lib/api";
-import { storeJwt } from "../../lib/auth";
 import { AuthInput } from "../../components/auth/AuthInput";
 import { AuthButton } from "../../components/auth/AuthButton";
 import { SocialLoginButtons } from "../../components/auth/SocialLoginButtons";
-import {
-  signInWithGoogle,
-  signInWithApple,
-} from "../../lib/social-auth";
+import { useSocialAuth } from "../../hooks/useSocialAuth";
 
 type ScreenState = "form" | "verification";
 
 interface RegisterResponse {
   message: string;
   email: string;
-}
-
-interface LoginResponse {
-  access_token: string;
-  refresh_token: string;
-  user_id: string;
-  expires_at: number;
 }
 
 interface FieldErrors {
@@ -72,7 +61,22 @@ export default function SignupScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [isSocialLoading, setIsSocialLoading] = useState(false);
+
+  const {
+    isSocialLoading,
+    socialError,
+    handleGoogleLogin: handleGoogleSignup,
+    handleAppleLogin: handleAppleSignup,
+    clearSocialError,
+  } = useSocialAuth();
+
+  // Surface social auth errors into the general error field
+  useEffect(() => {
+    if (socialError) {
+      setErrors({ general: socialError });
+      clearSocialError();
+    }
+  }, [socialError, clearSocialError]);
 
   const usernameRef = useRef<TextInput>(null);
   const displayNameRef = useRef<TextInput>(null);
@@ -189,64 +193,6 @@ export default function SignupScreen() {
       setIsLoading(false);
     }
   }, [username, displayName, email, password, validate]);
-
-  const handleSocialLogin = useCallback(
-    async (provider: "google" | "apple", idToken: string, nonce?: string) => {
-      setIsSocialLoading(true);
-      setErrors({});
-
-      try {
-        const body: Record<string, string> = { provider, id_token: idToken };
-        if (nonce) {
-          body.nonce = nonce;
-        }
-
-        const response = await apiFetch<LoginResponse>(
-          AUTH_ENDPOINTS.SOCIAL_LOGIN,
-          {
-            method: "POST",
-            body: JSON.stringify(body),
-          },
-        );
-
-        await storeJwt(response.access_token);
-        router.replace("/(tabs)");
-      } catch (err) {
-        if (err instanceof ApiError) {
-          setErrors({ general: "Social signup failed. Please try again." });
-        } else {
-          setErrors({
-            general: "Unable to connect. Check your internet connection.",
-          });
-        }
-      } finally {
-        setIsSocialLoading(false);
-      }
-    },
-    [router],
-  );
-
-  const handleGoogleSignup = useCallback(async () => {
-    try {
-      const result = await signInWithGoogle();
-      if (result) {
-        await handleSocialLogin("google", result.idToken);
-      }
-    } catch {
-      setErrors({ general: "Google sign-in failed. Please try again." });
-    }
-  }, [handleSocialLogin]);
-
-  const handleAppleSignup = useCallback(async () => {
-    try {
-      const result = await signInWithApple();
-      if (result) {
-        await handleSocialLogin("apple", result.idToken, result.nonce);
-      }
-    } catch {
-      setErrors({ general: "Apple sign-in failed. Please try again." });
-    }
-  }, [handleSocialLogin]);
 
   const handleOpenEmailApp = useCallback(async () => {
     // On iOS, opens mail app; on Android, opens chooser

@@ -88,6 +88,7 @@ export function NudgeFeed() {
 
 
   const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // -------------------------------------------------------------------------
   // Load nudges
@@ -110,6 +111,12 @@ export function NudgeFeed() {
 
   useEffect(() => {
     loadNudges();
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
   }, [loadNudges]);
 
   // -------------------------------------------------------------------------
@@ -145,7 +152,7 @@ export function NudgeFeed() {
       if (retryCountRef.current < 3) {
         const delay = retryCountRef.current === 1 ? 2000 : 3000;
         setIsLoadingMore(false);
-        setTimeout(() => {
+        retryTimeoutRef.current = setTimeout(() => {
           loadMore();
         }, delay);
         return;

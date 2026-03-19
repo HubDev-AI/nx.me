@@ -179,7 +179,8 @@ class MemoryManager:
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
         for _, row in scored:
-            key = hashlib.md5(str(row.get("content", "")).encode()).hexdigest()
+            # M-4: Use SHA-256 instead of MD5 for content dedup fingerprint
+            key = hashlib.sha256(str(row.get("content", "")).encode()).hexdigest()
             if key not in seen:
                 seen.add(key)
                 results.append(row)

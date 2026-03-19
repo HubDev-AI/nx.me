@@ -9,7 +9,6 @@ version is older than the one the code targets (0.115 vs 0.104).
 """
 from __future__ import annotations
 
-import sys
 from datetime import date
 
 import pytest
@@ -19,7 +18,7 @@ from pydantic import ValidationError
 # Check if importing auth module works at all (FastAPI compat)
 _AUTH_IMPORT_ERROR = None
 try:
-    from app.api.auth import RegisterRequest
+    from app.api.auth import RegisterRequest  # noqa: F401 — availability check
     _AUTH_AVAILABLE = True
 except (ImportError, AttributeError) as exc:
     _AUTH_AVAILABLE = False

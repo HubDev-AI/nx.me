@@ -504,6 +504,9 @@ export function MemoryList() {
   // -------------------------------------------------------------------------
   // Delete memory
   // -------------------------------------------------------------------------
+  const memoriesRef = useRef(memories);
+  memoriesRef.current = memories;
+
   const handleDelete = useCallback((memoryId: string) => {
     Alert.alert(
       "Delete Memory",
@@ -514,7 +517,8 @@ export function MemoryList() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            const deletedItem = memories.find((m) => m.id === memoryId);
+            // Read from ref to avoid stale closure over memories
+            const deletedItem = memoriesRef.current.find((m) => m.id === memoryId);
             // Optimistic removal
             setMemories((prev) => prev.filter((m) => m.id !== memoryId));
             try {
@@ -536,7 +540,7 @@ export function MemoryList() {
         },
       ],
     );
-  }, [memories]);
+  }, []);
 
   // -------------------------------------------------------------------------
   // Render helpers

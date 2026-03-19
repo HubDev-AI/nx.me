@@ -17,6 +17,7 @@ export const UNIVERSAL_LINK_ORIGIN = "https://nxme.ai";
 export const SECURE_STORE_KEYS = {
   GUEST_TOKEN: "nxme_guest_token",
   JWT: "nxme_jwt",
+  REFRESH_TOKEN: "nxme_refresh_token",
   PUSH_TOKEN: "nxme_push_token",
 } as const;
 
@@ -37,6 +38,8 @@ export const AUTH_ENDPOINTS = {
   LOGIN: "/v1/auth/login",
   /** Social login uses the same /login endpoint — backend accepts { provider, id_token, nonce? } */
   SOCIAL_LOGIN: "/v1/auth/login",
+  /** Refresh token endpoint — POST with { refresh_token } */
+  REFRESH: "/v1/auth/refresh",
 } as const;
 
 /** Analysis API paths */
@@ -143,6 +146,8 @@ export const ADVISOR_CONFIG = {
   NUDGE_PAGE_SIZE: 20,
   /** Number of messages per page */
   MESSAGE_PAGE_SIZE: 30,
+  /** Maximum message length (characters) */
+  MESSAGE_MAX_LENGTH: 2000,
   /** Typing indicator dot animation duration (ms) */
   TYPING_DOT_DURATION_MS: 400,
   /** Typing indicator dot delay between dots (ms) */

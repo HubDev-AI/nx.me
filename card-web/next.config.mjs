@@ -4,10 +4,10 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: process.env.NEXT_PUBLIC_SUPABASE_HOSTNAME ?? '**.supabase.co',
-        // L-17: Ideally pin to project-specific hostname via NEXT_PUBLIC_SUPABASE_HOSTNAME
+        hostname: process.env.NEXT_PUBLIC_SUPABASE_HOSTNAME ?? 'CONFIGURE_SUPABASE_HOSTNAME.supabase.co',
       },
       { protocol: 'https', hostname: '*.fal.ai' },
+      { protocol: 'https', hostname: '*.fal.run' },
       { protocol: 'https', hostname: 'fal.media' },
     ],
   },
@@ -26,14 +26,16 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              // Supabase storage images + fal.ai generated images + data URIs
-              "img-src 'self' https://*.supabase.co https://*.fal.ai https://fal.media data:",
+              // Supabase storage images + fal.ai/fal.run generated images + data URIs
+              "img-src 'self' https://*.supabase.co https://*.fal.ai https://*.fal.run https://fal.media data:",
               // Next.js injects inline styles at runtime
               "style-src 'self' 'unsafe-inline'",
               "font-src 'self'",
-              "script-src 'self'",
+              // Next.js requires unsafe-inline for inline scripts (nonce-based CSP preferred long-term)
+              "script-src 'self' 'unsafe-inline'",
             ].join('; '),
           },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=()' },
         ],
       },
     ];

@@ -161,6 +161,13 @@ def create_app() -> FastAPI:
                 status_code=413,
                 content={"detail": "Request body too large"},
             )
+        # M-6: Chunked Transfer-Encoding bypasses Content-Length check.
+        # In production, the upstream reverse proxy (nginx / ALB / CloudFront)
+        # MUST enforce client_max_body_size / payload size limits. Starlette's
+        # ServerErrorMiddleware will close connections that exceed memory, but
+        # the authoritative size gate is at the infrastructure layer. If no
+        # reverse proxy is present (local dev), the Content-Length check above
+        # still protects well-behaved clients.
         return await call_next(request)
 
     # M-25: No CORSMiddleware — API consumed by mobile app (native HTTP, no CORS)

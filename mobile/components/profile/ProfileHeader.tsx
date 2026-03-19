@@ -22,6 +22,7 @@ import {
   UNIVERSAL_LINK_ORIGIN,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
+import { formatCount } from "../../lib/format";
 import type { UserProfile } from "./types";
 
 const AVATAR_SIZE = 80;
@@ -147,24 +148,13 @@ function StatItem({ icon, value, label }: StatItemProps) {
   return (
     <View
       style={styles.statItem}
-      accessibilityLabel={`${formatStatValue(value)} ${label}`}
+      accessibilityLabel={`${formatCount(value)} ${label}`}
     >
       <Ionicons name={icon} size={STAT_ICON_SIZE} color={TEXT_SECONDARY} />
-      <Text style={styles.statValue}>{formatStatValue(value)}</Text>
+      <Text style={styles.statValue}>{formatCount(value)}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
-}
-
-/** Format large numbers compactly: 1200 -> 1.2k */
-function formatStatValue(count: number): string {
-  if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}m`;
-  }
-  if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}k`;
-  }
-  return String(count);
 }
 
 const styles = StyleSheet.create({
