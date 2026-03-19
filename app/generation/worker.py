@@ -163,7 +163,9 @@ async def _build_generation_context(
 
     # Build prompt
     if analysis:
-        prompt, negative, adaptive_params = build_prompt(analysis)
+        prompt, negative, adaptive_params = build_prompt(
+            analysis, analysis_id=job_data.get("analysis_id", ""),
+        )
     else:
         prompt = "Professional portrait with improved styling"
         negative = ""
