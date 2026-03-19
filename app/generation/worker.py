@@ -480,7 +480,9 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         ctx[cleanup_sha_key] = await redis.script_load(_CONCURRENT_CLEANUP_SCRIPT)
     cleanup_sha = ctx[cleanup_sha_key]
     cost_tracker = CostTracker(redis)
-    generator = _get_generator()
+    if "generator" not in ctx:
+        ctx["generator"] = _get_generator()
+    generator = ctx["generator"]
     job_repo = JobRepository(supabase)
     image_repo = ImageRepository(supabase)
     analysis_repo = AnalysisRepository(supabase)
