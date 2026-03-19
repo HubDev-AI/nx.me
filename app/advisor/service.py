@@ -33,6 +33,7 @@ from app.advisor.context_builder import (
 from app.advisor.memory_manager import MemoryManager
 from app.advisor.models import LLMResponse, MemoryType
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
@@ -99,11 +100,11 @@ class AdvisorService:
         await content_filter.check_rate_limit(str(user_id), self._redis)
 
         # Step 2: Get/create active conversation
-        conversation = self._get_or_create_conversation(user_id)
+        conversation = await run_sync(self._get_or_create_conversation, user_id)
         conversation_id = conversation["id"]
 
         # Step 3: Load conversation history
-        history = self._load_conversation_history(conversation_id)
+        history = await run_sync(self._load_conversation_history, conversation_id)
 
         # Auto-summarize if threshold reached (spec Section 5.2)
         # L-7: Guard against double-trigger — skip if recently summarized
@@ -131,7 +132,7 @@ class AdvisorService:
                             self._summarize_conversation(conversation_id, history),
                             timeout=10.0,
                         )
-                        history = self._load_conversation_history(conversation_id)
+                        history = await run_sync(self._load_conversation_history, conversation_id)
                     except asyncio.TimeoutError:
                         logger.warning("Summarization timed out for conversation %s", conversation_id)
                     finally:
@@ -141,12 +142,12 @@ class AdvisorService:
         memories = await self._memory_manager.get_relevant_memories(user_id, message)
 
         # Step 5: Build user data block from latest analysis
-        user_data_block = self._build_user_data(user_id)
+        user_data_block = await run_sync(self._build_user_data, user_id)
 
         # Step 6: Check for visual context triggers
         vision_content: list[dict[str, Any]] | None = None
         if has_visual_trigger(message):
-            vision_content = self._fetch_vision_content(user_id)
+            vision_content = await run_sync(self._fetch_vision_content, user_id)
 
         # Step 7: Build LLM context
         messages = build_context(
@@ -169,11 +170,11 @@ class AdvisorService:
         )
 
         # Step 9: Persist messages
-        self._save_message(conversation_id, "user", message)
-        advisor_msg_row = self._save_message(conversation_id, "advisor", advisor_response)
+        await run_sync(self._save_message, conversation_id, "user", message)
+        advisor_msg_row = await run_sync(self._save_message, conversation_id, "advisor", advisor_response)
 
         # Update conversation updated_at
-        self._repo.update_conversation_timestamp(conversation_id)
+        await run_sync(self._repo.update_conversation_timestamp, conversation_id)
 
         # Step 10: Async memory extraction (fire and forget, L-5 / M-6)
         # No explicit retry — extraction will naturally re-trigger on next message.
@@ -258,10 +259,10 @@ class AdvisorService:
     # Conversation history
     # -----------------------------------------------------------------------
 
-    def get_conversation_history(self, user_id: UUID) -> dict[str, Any]:
+    async def get_conversation_history(self, user_id: UUID) -> dict[str, Any]:
         """Return the active conversation and its messages."""
-        conversation = self._get_or_create_conversation(user_id)
-        messages = self._load_conversation_history(conversation["id"])
+        conversation = await run_sync(self._get_or_create_conversation, user_id)
+        messages = await run_sync(self._load_conversation_history, conversation["id"])
         return {
             "conversation_id": conversation["id"],
             "messages": [
@@ -275,16 +276,17 @@ class AdvisorService:
             ],
         }
 
-    def get_conversation_history_page(
+    async def get_conversation_history_page(
         self,
         user_id: UUID,
         limit: int = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Return a paginated page of conversation messages."""
-        conversation = self._get_or_create_conversation(user_id)
+        conversation = await run_sync(self._get_or_create_conversation, user_id)
         fetch_limit = limit + 1
-        rows = self._repo.get_messages_page(
+        rows = await run_sync(
+            self._repo.get_messages_page,
             conversation_id=conversation["id"],
             fetch_limit=fetch_limit,
             cursor=cursor,
@@ -319,11 +321,11 @@ class AdvisorService:
     # Nudges
     # -----------------------------------------------------------------------
 
-    def get_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
+    async def get_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
         """Return the nudge feed for a user (newest first)."""
-        return self._repo.get_nudges(str(user_id))
+        return await run_sync(self._repo.get_nudges, str(user_id))
 
-    def get_nudges_page(
+    async def get_nudges_page(
         self,
         user_id: UUID,
         limit: int = 50,
@@ -332,7 +334,8 @@ class AdvisorService:
     ) -> dict[str, Any]:
         """Return a paginated page of nudges."""
         fetch_limit = limit + 1
-        rows = self._repo.get_nudges_page(
+        rows = await run_sync(
+            self._repo.get_nudges_page,
             user_id=str(user_id),
             fetch_limit=fetch_limit,
             cursor=cursor,
@@ -352,9 +355,9 @@ class AdvisorService:
             "has_more": has_more,
         }
 
-    def mark_nudge_read(self, user_id: UUID, nudge_id: UUID) -> bool:
+    async def mark_nudge_read(self, user_id: UUID, nudge_id: UUID) -> bool:
         """Mark a nudge as read. Returns True if found and updated."""
-        existing = self._repo.get_nudge_by_id(str(nudge_id), str(user_id))
+        existing = await run_sync(self._repo.get_nudge_by_id, str(nudge_id), str(user_id))
         if not existing:
             return False
 
@@ -362,7 +365,7 @@ class AdvisorService:
             # Already read — idempotent success
             return True
 
-        self._repo.mark_nudge_read(str(nudge_id))
+        await run_sync(self._repo.mark_nudge_read, str(nudge_id))
         logger.info("Nudge %s marked read for user %s", nudge_id, user_id)
         return True
 
@@ -379,11 +382,11 @@ class AdvisorService:
         """Add a user-authored memory (goal or note)."""
         return await self._memory_manager.write_memory(user_id, memory_type, content)
 
-    def list_memories(self, user_id: UUID) -> list[dict[str, Any]]:
+    async def list_memories(self, user_id: UUID) -> list[dict[str, Any]]:
         """List all memories for a user."""
-        return self._memory_manager.list_memories(user_id)
+        return await run_sync(self._memory_manager.list_memories, user_id)
 
-    def list_memories_page(
+    async def list_memories_page(
         self,
         user_id: UUID,
         limit: int = 50,
@@ -391,7 +394,8 @@ class AdvisorService:
     ) -> dict[str, Any]:
         """Return a paginated page of memories."""
         fetch_limit = limit + 1
-        rows = self._repo.get_memories_page(
+        rows = await run_sync(
+            self._repo.get_memories_page,
             user_id=str(user_id),
             fetch_limit=fetch_limit,
             cursor=cursor,
@@ -410,9 +414,9 @@ class AdvisorService:
             "has_more": has_more,
         }
 
-    def delete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
+    async def delete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
         """Delete a user-owned memory."""
-        return self._memory_manager.delete_memory(user_id, memory_id)
+        return await run_sync(self._memory_manager.delete_memory, user_id, memory_id)
 
     # -----------------------------------------------------------------------
     # Internal helpers

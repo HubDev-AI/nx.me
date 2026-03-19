@@ -130,7 +130,7 @@ async def send_advisor_message(
 
 
 @router.get("/advisor/messages", response_model=ConversationHistoryPageResponse)
-def get_advisor_messages(
+async def get_advisor_messages(
     cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(50, ge=1, le=100),
     claims: UserClaims = Depends(get_current_user),
@@ -139,7 +139,7 @@ def get_advisor_messages(
     """Return the active conversation history for the current user (paginated)."""
     user_id = UUID(claims["sub"])
     try:
-        result = svc.get_conversation_history_page(user_id, limit=limit, cursor=cursor)
+        result = await svc.get_conversation_history_page(user_id, limit=limit, cursor=cursor)
     except ValueError as exc:
         # A-7: Malformed cursor returns 400
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -166,7 +166,7 @@ def get_advisor_messages(
 
 
 @router.get("/advisor/nudges", response_model=NudgeFeedResponse)
-def get_nudges(
+async def get_nudges(
     cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(50, ge=1, le=100),
     unread: bool = Query(False, description="When true, return only unread nudges (read_at IS NULL)"),
@@ -176,7 +176,7 @@ def get_nudges(
     """Return the nudge feed for the current user (all tiers, paginated)."""
     user_id = UUID(claims["sub"])
     try:
-        result = svc.get_nudges_page(user_id, limit=limit, cursor=cursor, unread_only=unread)
+        result = await svc.get_nudges_page(user_id, limit=limit, cursor=cursor, unread_only=unread)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -210,7 +210,7 @@ class NudgeUpdateRequest(BaseModel):
     "/advisor/nudges/{nudge_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-def update_nudge(
+async def update_nudge(
     nudge_id: UUID,
     body: NudgeUpdateRequest,
     claims: UserClaims = Depends(get_current_user),
@@ -218,7 +218,7 @@ def update_nudge(
 ) -> None:
     """Update a nudge. Currently supports marking as read (idempotent)."""
     user_id = UUID(claims["sub"])
-    found = svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
+    found = await svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -231,14 +231,14 @@ def update_nudge(
     status_code=status.HTTP_204_NO_CONTENT,
     deprecated=True,
 )
-def mark_nudge_read(
+async def mark_nudge_read(
     nudge_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> None:
     """Deprecated alias — use PATCH /advisor/nudges/{nudge_id} instead."""
     user_id = UUID(claims["sub"])
-    found = svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
+    found = await svc.mark_nudge_read(user_id=user_id, nudge_id=nudge_id)
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -298,7 +298,7 @@ async def add_memory(
 
 
 @router.get("/memories", response_model=MemoryListPageResponse)
-def list_memories(
+async def list_memories(
     cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
     limit: int = Query(50, ge=1, le=100),
     claims: UserClaims = Depends(get_current_user),
@@ -307,7 +307,7 @@ def list_memories(
     """List memories for the current user (paginated). All tiers."""
     user_id = UUID(claims["sub"])
     try:
-        result = svc.list_memories_page(user_id, limit=limit, cursor=cursor)
+        result = await svc.list_memories_page(user_id, limit=limit, cursor=cursor)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -332,14 +332,14 @@ def list_memories(
 
 
 @router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_memory(
+async def delete_memory(
     memory_id: UUID,
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> None:
     """Delete a user-owned memory. All tiers."""
     user_id = UUID(claims["sub"])
-    deleted = svc.delete_memory(user_id=user_id, memory_id=memory_id)
+    deleted = await svc.delete_memory(user_id=user_id, memory_id=memory_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
