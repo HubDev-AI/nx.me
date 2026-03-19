@@ -21,6 +21,7 @@ import {
   TEXT_SECONDARY,
   FEED_DIVIDER,
   BEFORE_OVERLAY,
+  AFTER_OVERLAY_STRONG,
 } from "../../constants/colors";
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
   afterLabel: {
     left: undefined,
     right: 8,
-    backgroundColor: "rgba(244, 63, 94, 0.72)",
+    backgroundColor: AFTER_OVERLAY_STRONG,
   },
   imageLabelText: {
     fontSize: 11,
