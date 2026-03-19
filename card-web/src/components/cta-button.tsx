@@ -57,7 +57,7 @@ export function CtaButton({ username }: CtaButtonProps) {
       // browser ignores it) and we redirect to the store after the timeout.
       window.location.href = universalLink;
 
-      if (platform !== 'desktop') {
+      if (platform !== 'desktop' && storeUrl) {
         // On mobile: after the app-open window, fall back to the store.
         const timer = setTimeout(() => {
           window.location.href = storeUrl;
