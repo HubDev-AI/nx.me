@@ -13,11 +13,12 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
-from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_post_repo, get_supabase
+from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_post_repo, get_redis, get_supabase
 from app.api.middleware.auth import UserClaims
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
@@ -27,6 +28,11 @@ from app.services.public_url import build_avatar_url, publish_post_images
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["posts"])
+
+_COMMENT_RATE_LIMIT = 10
+_COMMENT_RATE_WINDOW = 60
+_REPORT_RATE_LIMIT = 5
+_REPORT_RATE_WINDOW = 3600
 
 
 # ---------------------------------------------------------------------------
@@ -222,15 +228,24 @@ def delete_post(
     response_model=CommentResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_comment(
+async def create_comment(
     post_id: UUID,
     body: CreateCommentRequest,
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> Response:
     """Add a comment to a post. Auth required (AC-U6)."""
     user_id = claims["sub"]
+
+    # Rate limit comments per user
+    rate_key = f"comment_rate:{user_id}"
+    count = await redis_client.incr(rate_key)
+    if count == 1:
+        await redis_client.expire(rate_key, _COMMENT_RATE_WINDOW)
+    if count > _COMMENT_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many comments. Please slow down.")
 
     # Verify post exists and is not deleted
     post = post_repo.get_active_post(str(post_id))
@@ -347,14 +362,23 @@ def get_comments(
     status_code=status.HTTP_201_CREATED,
     deprecated=True,
 )
-def report_post(
+async def report_post(
     post_id: UUID,
     body: ReportRequest,
     claims: UserClaims = Depends(get_current_user),
     post_repo: PostRepository = Depends(get_post_repo),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> ReportResponse:
     """Report a post for review. Auth required."""
     user_id = claims["sub"]
+
+    # Rate limit reports per user
+    rate_key = f"report_rate:{user_id}"
+    count = await redis_client.incr(rate_key)
+    if count == 1:
+        await redis_client.expire(rate_key, _REPORT_RATE_WINDOW)
+    if count > _REPORT_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many reports. Please slow down.")
 
     # Verify post exists
     post = post_repo.get_active_post(str(post_id))

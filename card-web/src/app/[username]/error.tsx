@@ -13,9 +13,11 @@ interface ErrorProps {
  */
 export default function CardError({ error, reset }: ErrorProps) {
   useEffect(() => {
-    // Log to monitoring service in production
-    // eslint-disable-next-line no-console
-    console.error('[CardWeb] Card route error:', error);
+    // Log full error details only in non-production environments
+    if (process.env.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.error(error);
+    }
   }, [error]);
 
   return (

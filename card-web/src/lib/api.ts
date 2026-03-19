@@ -42,9 +42,7 @@ export async function getCardData(username: string): Promise<CardData | null> {
   }
 
   if (!res.ok) {
-    throw new Error(
-      `Failed to fetch card for "${username}": ${res.status} ${res.statusText}`,
-    );
+    throw new Error("Unable to load this card. Please try again later.");
   }
 
   const json: unknown = await res.json();

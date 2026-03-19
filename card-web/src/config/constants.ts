@@ -23,10 +23,18 @@ export const APP_DEEP_LINK_PATH = '/signup';
 /**
  * Backend API base URL (server-only).
  * Used by server-side data fetching (e.g. getCardData).
- * Falls back to NEXT_PUBLIC_API_URL, then localhost for local development.
+ * Falls back to NEXT_PUBLIC_API_URL, then the production URL.
  */
-export const API_BASE_URL =
-  process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+export const API_BASE_URL: string = (() => {
+  const serverUrl = process.env.API_URL;
+  if (serverUrl) return serverUrl;
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      "[config] API_URL not set — falling back to NEXT_PUBLIC_API_URL."
+    );
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? "https://api.nxme.ai";
+})();
 
 /**
  * Backend API base URL (client-safe).

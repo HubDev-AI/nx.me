@@ -24,7 +24,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import BeforeAfterReveal from "../../components/result/BeforeAfterReveal";
 import SuggestionPills from "../../components/result/SuggestionPills";
-import { API_BASE_URL, CARD_ENDPOINTS } from "../../constants/config";
+import { CARD_ENDPOINTS } from "../../constants/config";
+import { apiFetch } from "../../lib/api";
 import {
   BG_PAGE,
   BG_ELEVATED,
@@ -55,16 +56,20 @@ interface PublicCard {
 const SPACING = 8;
 
 // ---------------------------------------------------------------------------
+// Username validation
+// ---------------------------------------------------------------------------
+
+const _USERNAME_RE = /^[a-zA-Z0-9_]{1,30}$/;
+
+// ---------------------------------------------------------------------------
 // API helper (no auth — public endpoint)
 // ---------------------------------------------------------------------------
 
 async function fetchPublicCard(username: string): Promise<PublicCard> {
-  const url = `${API_BASE_URL}${CARD_ENDPOINTS.PUBLIC(username)}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+  if (!_USERNAME_RE.test(username)) {
+    throw new Error("Invalid username format");
   }
-  return response.json() as Promise<PublicCard>;
+  return apiFetch<PublicCard>(CARD_ENDPOINTS.PUBLIC(encodeURIComponent(username)));
 }
 
 // ---------------------------------------------------------------------------

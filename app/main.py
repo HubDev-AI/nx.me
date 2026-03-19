@@ -48,6 +48,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.critical(msg)
             raise SystemExit(msg)
 
+    # H-8: Block well-known demo JWT secrets in non-development environments
+    _DEMO_SECRETS = {
+        "super-secret-jwt-token-with-at-least-32-characters-long",
+        "local-dev-secret-key-change-in-production",
+    }
+    if settings.APP_ENV != "development":
+        if settings.SUPABASE_JWT_SECRET in _DEMO_SECRETS:
+            msg = "FATAL: Well-known demo SUPABASE_JWT_SECRET in non-development environment"
+            logger.critical(msg)
+            raise SystemExit(msg)
+        if settings.SECRET_KEY in _DEMO_SECRETS:
+            msg = "FATAL: Well-known demo SECRET_KEY in non-development environment"
+            logger.critical(msg)
+            raise SystemExit(msg)
+
     # Validate required API keys for configured (non-mock) adapters
     adapter_key_map: dict[str, tuple[str, ...]] = {
         "falai": ("FAL_API_KEY",),
@@ -110,13 +125,32 @@ def create_app() -> FastAPI:
         description="AI-powered appearance improvement social platform",
         version="1.0.0",
         lifespan=lifespan,
-        # Disable docs in production
-        docs_url="/docs" if settings.APP_ENV != "production" else None,
-        redoc_url="/redoc" if settings.APP_ENV != "production" else None,
+        # M-2: Disable docs in all non-development environments
+        docs_url="/docs" if settings.APP_ENV == "development" else None,
+        redoc_url="/redoc" if settings.APP_ENV == "development" else None,
     )
 
     # ── Security headers ─────────────────────────────────────────────────────
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # ── C-2: Body size limit ──────────────────────────────────────────────────
+    from fastapi.responses import JSONResponse as JSONResp
+
+    max_body = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+    @app.middleware("http")
+    async def limit_request_body(request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > max_body:
+            return JSONResp(
+                status_code=413,
+                content={"detail": "Request body too large"},
+            )
+        return await call_next(request)
+
+    # M-25: No CORSMiddleware — API consumed by mobile app (native HTTP, no CORS)
+    # and card-web (server-side rendering). If browser-direct calls needed later,
+    # add CORSMiddleware with explicit allow_origins (never "*").
 
     # ── Exception handlers ───────────────────────────────────────────────────
     app.add_exception_handler(ApiError, api_error_handler)

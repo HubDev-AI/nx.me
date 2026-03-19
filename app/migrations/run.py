@@ -214,6 +214,7 @@ def main() -> None:
         print("Error: --down requires --target", file=sys.stderr)
         sys.exit(1)
 
+    # Security: DSN contains credentials — never log it.
     dsn = _get_dsn()
     conn = psycopg2.connect(dsn)
 

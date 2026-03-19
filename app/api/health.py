@@ -3,12 +3,16 @@
 GET /health   — liveness probe: app is running
 GET /readiness — readiness probe: app can serve traffic (Redis + Supabase reachable)
 """
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
 import redis.asyncio as aioredis
 
 from app.api.deps import get_redis, get_supabase
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["health"])
 
@@ -32,14 +36,16 @@ async def readiness(
         await r.ping()
         checks["redis"] = "ok"
     except Exception as exc:  # noqa: BLE001
-        checks["redis"] = f"error: {exc}"
+        logger.error("Redis readiness check failed: %s", exc)
+        checks["redis"] = "unavailable"
 
     # Supabase: lightweight query
     try:
         supabase.table("tiers").select("id").limit(1).execute()
         checks["supabase"] = "ok"
     except Exception as exc:  # noqa: BLE001
-        checks["supabase"] = f"error: {exc}"
+        logger.error("Supabase readiness check failed: %s", exc)
+        checks["supabase"] = "unavailable"
 
     if any(v != "ok" for v in checks.values()):
         raise HTTPException(

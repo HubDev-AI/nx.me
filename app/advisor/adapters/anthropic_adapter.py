@@ -27,14 +27,11 @@ class AnthropicAdapter:
         import openai
 
         self._anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self._openai = openai.AsyncOpenAI(api_key=settings.ANTHROPIC_API_KEY)  # reuses key slot; real OPENAI_API_KEY needed for embeddings
-        # Use a separate openai client with its own key if configured
-        try:
-            from app.config import settings as s
-            openai_key = getattr(s, "OPENAI_API_KEY", None) or settings.ANTHROPIC_API_KEY
-            self._openai = openai.AsyncOpenAI(api_key=openai_key)
-        except Exception:
-            pass
+        # Embeddings use OpenAI — never send Anthropic key to OpenAI
+        openai_key = settings.OPENAI_API_KEY
+        if not openai_key:
+            logger.warning("OPENAI_API_KEY not set — embedding calls will fail")
+        self._openai = openai.AsyncOpenAI(api_key=openai_key or "not-configured")
 
     async def create_message(
         self,

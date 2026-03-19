@@ -231,7 +231,7 @@ async def register(
             detail="Account creation failed.",
         ) from exc
 
-    logger.info("Registered user %s (%s)", user_id, body.email)
+    logger.info("Registered user %s", user_id)
 
     return RegisterResponse(
         user_id=user_id,

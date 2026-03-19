@@ -190,24 +190,20 @@ class TestTrialGrantor:
         uid = uuid4()
         grantor.grant(uid)
 
-    def test_grant_uses_fallback_when_rpc_fails(self):
+    def test_grant_raises_when_rpc_fails(self):
+        """C-3 fix: non-atomic fallback removed — RPC failure raises RuntimeError."""
         sb = MockSupabase()
         sb.set_table_data("credit_ledger", [])
 
-        original_rpc = sb.rpc
-        call_count = [0]
-
         def failing_rpc(name, params=None):
-            call_count[0] += 1
             if name == "grant_trial":
                 raise Exception("RPC not available")
-            return original_rpc(name, params)
 
         sb.rpc = failing_rpc
         grantor = TrialGrantor(sb)
         uid = uuid4()
-        grantor.grant(uid)
-        assert call_count[0] >= 1
+        with pytest.raises(RuntimeError, match="Failed to grant trial"):
+            grantor.grant(uid)
 
 
 # ===========================================================================

@@ -148,25 +148,23 @@ class AdvisorService:
         # Update conversation updated_at
         self._repo.update_conversation_timestamp(conversation_id)
 
-        # Step 10: Async memory extraction (fire and forget, L-5)
+        # Step 10: Async memory extraction (fire and forget, L-5 / M-6)
         # No explicit retry — extraction will naturally re-trigger on next message.
-        task = asyncio.create_task(
-            self._memory_manager.extract_memories_from_turn(
-                user_id=user_id,
-                user_message=message,
-                advisor_response=advisor_response,
-            )
-        )
-        _uid, _mid = str(user_id), user_msg_row.get("id", "")
-        task.add_done_callback(
-            lambda t, uid=_uid, mid=_mid: (
-                t.exception() and logger.warning(
-                    "Memory extraction failed for user %s, message %s. "
-                    "Will retry on next message.",
-                    uid, mid, exc_info=t.exception(),
+        async def _extract_with_logging() -> None:
+            try:
+                await self._memory_manager.extract_memories_from_turn(
+                    user_id=user_id,
+                    user_message=message,
+                    advisor_response=advisor_response,
                 )
-            )
-        )
+            except Exception:
+                logger.warning(
+                    "Memory extraction failed for user %s. Will retry on next message.",
+                    str(user_id),
+                    exc_info=True,
+                )
+
+        asyncio.create_task(_extract_with_logging())
 
         return advisor_msg_row
 

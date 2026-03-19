@@ -75,6 +75,18 @@ class SubscriptionRepository:
     # processed_webhook_events table
     # ------------------------------------------------------------------
 
+    def is_webhook_event_processed(self, provider: str, event_id: str) -> bool:
+        """Check if a webhook event has already been processed (read-only)."""
+        result = (
+            self._sb.table("processed_webhook_events")
+            .select("id")
+            .eq("provider", provider)
+            .eq("event_id", event_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+
     def record_webhook_event(self, provider: str, event_id: str) -> bool:
         """Record a processed webhook event, returning True if this is the first time.
 

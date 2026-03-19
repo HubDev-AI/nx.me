@@ -2,7 +2,11 @@
 const nextConfig = {
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: '*.supabase.co' },
+      {
+        protocol: 'https',
+        hostname: process.env.NEXT_PUBLIC_SUPABASE_HOSTNAME ?? '**.supabase.co',
+        // L-17: Ideally pin to project-specific hostname via NEXT_PUBLIC_SUPABASE_HOSTNAME
+      },
       { protocol: 'https', hostname: '*.fal.ai' },
       { protocol: 'https', hostname: 'fal.media' },
     ],

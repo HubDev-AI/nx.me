@@ -1,5 +1,12 @@
+import { timingSafeEqual } from 'node:crypto';
+
 import { revalidatePath } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
+
+// Security notes:
+// - M-17: Uses timing-safe comparison to prevent brute-force via timing side-channel
+// - M-18: Rate limiting should be configured at infra level (Vercel/CDN WAF)
+// - No CSRF needed — uses shared secret header, not cookies. Server-to-server only.
 
 /**
  * POST /api/revalidate
@@ -19,10 +26,16 @@ import { NextRequest, NextResponse } from 'next/server';
  *   401 { error: "Unauthorized" }
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const secret = request.headers.get('x-revalidation-secret');
-  const expectedSecret = process.env.REVALIDATION_SECRET;
+  const secret = request.headers.get('x-revalidation-secret') ?? '';
+  const expectedSecret = process.env.REVALIDATION_SECRET ?? '';
 
-  if (!expectedSecret || secret !== expectedSecret) {
+  const secretBuf = Buffer.from(secret);
+  const expectedBuf = Buffer.from(expectedSecret);
+  if (
+    !expectedSecret ||
+    secretBuf.length !== expectedBuf.length ||
+    !timingSafeEqual(secretBuf, expectedBuf)
+  ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
