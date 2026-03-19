@@ -25,6 +25,7 @@ interface UseFeedReturn {
   changeSort: (sort: FeedSortValue) => void;
   reactToPost: (postId: string) => Promise<void>;
   incrementCommentCount: (postId: string) => void;
+  removePostsByUser: (userId: string) => void;
 }
 
 /**
@@ -222,6 +223,10 @@ export function useFeed(): UseFeedReturn {
     );
   }, []);
 
+  const removePostsByUser = useCallback((userId: string) => {
+    setPosts((prev) => prev.filter((p) => p.user_id !== userId));
+  }, []);
+
   return {
     posts,
     isLoading,
@@ -238,5 +243,6 @@ export function useFeed(): UseFeedReturn {
     changeSort,
     reactToPost,
     incrementCommentCount,
+    removePostsByUser,
   };
 }

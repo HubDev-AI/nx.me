@@ -25,6 +25,7 @@ import { SortTabs } from "../../components/feed/SortTabs";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
 import { useFeed } from "../../components/feed/useFeed";
 import type { FeedPost } from "../../components/feed/types";
+import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
 
 /** Home / Feed tab — Story 5-4 */
@@ -44,6 +45,7 @@ export default function HomeScreen() {
     changeSort,
     reactToPost,
     incrementCommentCount,
+    removePostsByUser,
   } = useFeed();
 
   // Comments sheet state
@@ -100,6 +102,31 @@ export default function HomeScreen() {
     );
   }, []);
 
+  const handleBlock = useCallback(
+    (userId: string, displayName: string) => {
+      Alert.alert(
+        `Block ${displayName}?`,
+        "They won't be able to see your posts or comment on them.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Block",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await blockUser(userId);
+                removePostsByUser(userId);
+              } catch {
+                Alert.alert("Error", "Failed to block user. Please try again.");
+              }
+            },
+          },
+        ],
+      );
+    },
+    [removePostsByUser],
+  );
+
   const keyExtractor = useCallback(
     (item: FeedPost) => item.post_id,
     [],
@@ -113,10 +140,11 @@ export default function HomeScreen() {
         hasReacted={reactedPostIds.has(item.post_id)}
         onReact={reactToPost}
         onReport={handleReport}
+        onBlock={handleBlock}
         onCommentPress={handleCommentPress}
       />
     ),
-    [reactedPostIds, reactToPost, handleReport, handleCommentPress],
+    [reactedPostIds, reactToPost, handleReport, handleBlock, handleCommentPress],
   );
 
   const renderFooter = useCallback(() => {
