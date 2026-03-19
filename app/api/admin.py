@@ -12,7 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
-from app.api.deps import get_supabase, require_admin
+import redis.asyncio as aioredis
+
+from app.api.deps import get_redis, get_supabase, require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +105,11 @@ def update_report_status(
 
 
 @router.post("/users/{user_id}/ban", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
-def ban_user(
+async def ban_user(
     user_id: UUID,
     body: BanRequest,
     supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ):
     """Ban a user and hide all their posts."""
     now = datetime.now(tz=timezone.utc).isoformat()
@@ -115,6 +118,9 @@ def ban_user(
         "banned_at": now,
         "ban_reason": body.reason,
     }).eq("id", str(user_id)).execute()
+
+    # Invalidate cached ban status so next request sees the ban immediately
+    await redis_client.delete(f"ban:{user_id}")
 
     # Hide all posts by the banned user
     supabase.table("posts").update({
@@ -130,9 +136,10 @@ def ban_user(
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_admin)],
 )
-def unban_user(
+async def unban_user(
     user_id: UUID,
     supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ):
     """Unban a user and restore visibility for posts without active reports."""
     supabase.table("users").update({
@@ -140,6 +147,9 @@ def unban_user(
         "banned_at": None,
         "ban_reason": None,
     }).eq("id", str(user_id)).execute()
+
+    # Invalidate cached ban status so next request sees the unban immediately
+    await redis_client.delete(f"ban:{user_id}")
 
     # Un-hide posts — posts hidden individually by reports stay hidden
     supabase.table("posts").update({
