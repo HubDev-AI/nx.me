@@ -28,6 +28,7 @@ class AnthropicAdapter:
         self._anthropic = anthropic.AsyncAnthropic(
             api_key=settings.ANTHROPIC_API_KEY,
             timeout=httpx.Timeout(settings.ADVISOR_LLM_TIMEOUT_SECONDS),
+            max_retries=settings.LLM_MAX_RETRIES,
         )
         # A-4: Fail fast if OPENAI_API_KEY missing — embeddings are required
         openai_key = settings.OPENAI_API_KEY
@@ -39,6 +40,7 @@ class AnthropicAdapter:
         self._openai = openai.AsyncOpenAI(
             api_key=openai_key,
             timeout=settings.ADVISOR_EMBEDDING_TIMEOUT_SECONDS,
+            max_retries=settings.EMBEDDING_MAX_RETRIES,
         )
 
     async def create_message(
@@ -89,7 +91,7 @@ class AnthropicAdapter:
         if response.content:
             content = response.content[0].text if hasattr(response.content[0], "text") else str(response.content[0])
 
-        logger.info(
+        logger.debug(
             "Anthropic response: model=%s, input_tokens=%d, output_tokens=%d",
             model,
             response.usage.input_tokens,

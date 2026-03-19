@@ -26,3 +26,7 @@ class LLMPort(Protocol):
     ) -> LLMResponse:
         """Send messages to the LLM and return the response."""
         ...
+
+    async def compute_embedding(self, text: str) -> list[float]:
+        """Compute a text embedding vector."""
+        ...

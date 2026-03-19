@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     ADVISOR_LLM_TIMEOUT_SECONDS: float = 30.0
     ADVISOR_EMBEDDING_TIMEOUT_SECONDS: float = 15.0
 
+    # SDK retry config (explicit — do not rely on SDK defaults)
+    LLM_MAX_RETRIES: int = 2
+    EMBEDDING_MAX_RETRIES: int = 2
+
     # Public storage — stable CDN URLs for post images (no signing)
     # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}
     # Production: override with CloudFront distribution URL

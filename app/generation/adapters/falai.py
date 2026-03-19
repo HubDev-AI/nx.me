@@ -18,18 +18,15 @@ logger = logging.getLogger(__name__)
 class FalAiAdapter:
     """Real fal.ai generation adapter."""
 
-    def __init__(self) -> None:
-        import fal_client
-        self._client = fal_client
-
     async def generate(
         self,
         source_image_url: str,
         prompt: str,
         options: GenerationOptions,
     ) -> GenerationResult:
-        """Call fal.ai API for image generation."""
-        loop = asyncio.get_running_loop()
+        """Call fal.ai API for image generation using native async client."""
+        import fal_client
+
         start_ms = int(time.time() * 1000)
 
         # Build request based on model
@@ -42,10 +39,10 @@ class FalAiAdapter:
         else:
             raise ValueError(f"Unknown model: {options.model}")
 
-        # Run sync fal_client call in executor
-        result = await loop.run_in_executor(
-            None,
-            lambda: self._client.subscribe(options.model, arguments=request),
+        # Native async call with timeout protection
+        result = await asyncio.wait_for(
+            fal_client.run_async(options.model, arguments=request),
+            timeout=settings.GENERATION_TIMEOUT_SECONDS,
         )
 
         elapsed_ms = int(time.time() * 1000) - start_ms

@@ -205,6 +205,8 @@ async def _generate_and_validate(
     supabase: Client,
     redis_client: aioredis.Redis | None = None,
     concurrent_key: str | None = None,
+    nsfw_screener=None,
+    http_client=None,
 ) -> tuple[object, bytes, bytes, object] | None:
     """Generate image, screen for NSFW, check identity, retry if needed.
 
@@ -254,10 +256,9 @@ async def _generate_and_validate(
     # URL must not be used for any downstream processing after this point.
     _validate_provider_url(gen_result.image_url)
     # G-5: Explicit timeout on httpx calls
-    async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as client:
-        resp = await client.get(gen_result.image_url)
-        resp.raise_for_status()
-        gen_image_bytes = resp.content
+    resp = await http_client.get(gen_result.image_url)
+    resp.raise_for_status()
+    gen_image_bytes = resp.content
 
     # G-11: Log generated image dimensions for debugging
     with PIL.Image.open(io.BytesIO(gen_image_bytes)) as _dim_img:
@@ -273,7 +274,7 @@ async def _generate_and_validate(
     await _refresh_concurrent_ttl()
 
     # NSFW screen output — uses in-memory bytes (from NXME storage write)
-    screener = _get_nsfw_screener()
+    screener = nsfw_screener or _get_nsfw_screener()
     nsfw_result = await screener.screen(gen_image_bytes)
 
     if nsfw_result.is_explicit:
@@ -287,10 +288,9 @@ async def _generate_and_validate(
 
     # Download source for identity check
     # G-5: Explicit timeout on httpx calls
-    async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as client:
-        resp = await client.get(source_url)
-        resp.raise_for_status()
-        source_image_bytes = resp.content
+    resp = await http_client.get(source_url)
+    resp.raise_for_status()
+    source_image_bytes = resp.content
 
     # G-6: Per-tier identity threshold — look up from tier config if available,
     # fall back to global IDENTITY_SIMILARITY_THRESHOLD.
@@ -352,10 +352,9 @@ async def _generate_and_validate(
         # Download retry image from provider and overwrite storage
         # G-5: Explicit timeout on httpx calls
         _validate_provider_url(retry_result.image_url)
-        async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as client:
-            resp = await client.get(retry_result.image_url)
-            resp.raise_for_status()
-            retry_image_bytes = resp.content
+        resp = await http_client.get(retry_result.image_url)
+        resp.raise_for_status()
+        retry_image_bytes = resp.content
 
         image_repo.update_file("generated-images", storage_key, retry_image_bytes, "image/jpeg")
 
@@ -485,6 +484,9 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     if "generator" not in ctx:
         ctx["generator"] = _get_generator()
     generator = ctx["generator"]
+    if "nsfw_screener" not in ctx:
+        ctx["nsfw_screener"] = _get_nsfw_screener()
+    nsfw_screener = ctx["nsfw_screener"]
     job_repo = JobRepository(supabase)
     image_repo = ImageRepository(supabase)
     analysis_repo = AnalysisRepository(supabase)
@@ -511,16 +513,18 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
 
         storage_key = f"{user_id}/{job_id}.jpg"
 
-        validate_result = await _generate_and_validate(
-            job_repo, image_repo, cost_tracker, generator,
-            job_id, job_data, options, source_url, adaptive_params,
-            prompt, options.negative_prompt, storage_key, user_id, supabase,
-            redis_client=redis, concurrent_key=concurrent_key,
-        )
-        if validate_result is None:
-            return
+        async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as http_client:
+            validate_result = await _generate_and_validate(
+                job_repo, image_repo, cost_tracker, generator,
+                job_id, job_data, options, source_url, adaptive_params,
+                prompt, options.negative_prompt, storage_key, user_id, supabase,
+                redis_client=redis, concurrent_key=concurrent_key,
+                nsfw_screener=nsfw_screener, http_client=http_client,
+            )
+            if validate_result is None:
+                return
 
-        gen_result, gen_image_bytes, source_image_bytes, identity_result = validate_result
+            gen_result, gen_image_bytes, source_image_bytes, identity_result = validate_result
 
         await _finalize_job(
             job_repo, image_repo, ledger,

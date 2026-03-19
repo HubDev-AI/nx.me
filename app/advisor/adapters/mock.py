@@ -1,10 +1,13 @@
 """Mock LLM adapter — deterministic results for testing.
 
-Returns canned responses. No Anthropic API calls. Zero vector for embeddings.
+Returns canned responses. No Anthropic API calls. Deterministic non-zero
+embedding vectors seeded from input text.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import random
 from typing import Any
 
 from app.advisor.models import LLMResponse
@@ -42,6 +45,12 @@ class MockLLMAdapter:
         return LLMResponse(content=content, input_tokens=10, output_tokens=8)
 
     async def compute_embedding(self, text: str) -> list[float]:
-        """Return zero vector (1536d) — no OpenAI calls."""
-        logger.debug("Mock embedding for text length=%d", len(text))
-        return [0.0] * 1536
+        """Return a deterministic non-zero unit vector seeded from input text.
+
+        Zero vectors cause NaN in pgvector cosine similarity.
+        """
+        seed = int(hashlib.md5(text.encode()).hexdigest(), 16) % (2**32)
+        rng = random.Random(seed)
+        vec = [rng.gauss(0, 1) for _ in range(1536)]
+        norm = sum(x * x for x in vec) ** 0.5
+        return [x / norm for x in vec]
