@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     ADVISOR_CONTEXT_MEMORY_LIMIT: int = 3        # Max memories per request. Less = more human.
     ADVISOR_MAX_MESSAGE_LENGTH: int = 2000        # Max chars per user message
     ADVISOR_CHAT_RATE_LIMIT: int = 30             # Max messages per hour per user
+    ADVISOR_DEGRADATION_THRESHOLD: int = 50       # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30   # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7   # Days before auto-new conversation
     ADVISOR_MILESTONE_DEDUP_HOURS: int = 48       # Hours before a duplicate milestone nudge is allowed
@@ -63,7 +64,7 @@ class Settings(BaseSettings):
     # Advisor tuning (audit A-3, A-5, A-6)
     ADVISOR_CHAT_RATE_LIMIT_WINDOW_SECONDS: int = 3600
     ADVISOR_EMBEDDING_MODEL: str = "text-embedding-3-small"
-    ADVISOR_MODEL_HAIKU: str = "claude-3-haiku-20240307"
+    ADVISOR_MODEL_HAIKU: str = "claude-haiku-4-5-20251001"
 
     # Identity retry tuning (audit G-4)
     IDENTITY_RETRY_ID_WEIGHT_DELTA: float = 0.10
@@ -86,7 +87,11 @@ class Settings(BaseSettings):
     FAL_COST_DEFAULT: float = 0.035
 
     # Advisor Sonnet model (chat responses)
-    ADVISOR_MODEL_SONNET: str = "claude-3-5-sonnet-20241022"
+    ADVISOR_MODEL_SONNET: str = "claude-sonnet-4-6"
+
+    # LLM call timeouts (M-6)
+    ADVISOR_LLM_TIMEOUT_SECONDS: float = 30.0
+    ADVISOR_EMBEDDING_TIMEOUT_SECONDS: float = 15.0
 
     # Public storage — stable CDN URLs for post images (no signing)
     # Supabase: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}

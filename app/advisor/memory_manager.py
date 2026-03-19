@@ -8,6 +8,7 @@ Handles:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -178,7 +179,7 @@ class MemoryManager:
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
         for _, row in scored:
-            key = str(row.get("content", ""))[:80]
+            key = hashlib.md5(str(row.get("content", "")).encode()).hexdigest()
             if key not in seen:
                 seen.add(key)
                 results.append(row)

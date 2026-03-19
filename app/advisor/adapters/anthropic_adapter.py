@@ -22,9 +22,13 @@ class AnthropicAdapter:
 
     def __init__(self) -> None:
         import anthropic
+        import httpx
         import openai
 
-        self._anthropic = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self._anthropic = anthropic.AsyncAnthropic(
+            api_key=settings.ANTHROPIC_API_KEY,
+            timeout=httpx.Timeout(settings.ADVISOR_LLM_TIMEOUT_SECONDS),
+        )
         # A-4: Fail fast if OPENAI_API_KEY missing — embeddings are required
         openai_key = settings.OPENAI_API_KEY
         if not openai_key:
@@ -32,7 +36,10 @@ class AnthropicAdapter:
                 "OPENAI_API_KEY is required for advisor embeddings. "
                 "Set it in .env or environment variables."
             )
-        self._openai = openai.AsyncOpenAI(api_key=openai_key)
+        self._openai = openai.AsyncOpenAI(
+            api_key=openai_key,
+            timeout=settings.ADVISOR_EMBEDDING_TIMEOUT_SECONDS,
+        )
 
     async def create_message(
         self,
