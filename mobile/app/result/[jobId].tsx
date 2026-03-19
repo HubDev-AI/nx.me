@@ -19,6 +19,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Share,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -34,15 +36,16 @@ import {
 } from "../../lib/analysis";
 import {
   BG_PAGE,
-  BG_ELEVATED,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   TEXT_DISABLED,
   CTA_PRIMARY,
   CTA_PRESSED,
   ERROR_DARK,
+  CORAL_TINT,
   COLORS,
 } from "../../constants/colors";
+import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -121,15 +124,18 @@ export default function ResultScreen() {
     );
   }, [jobId, router]);
 
-  const handleShare = useCallback(() => {
-    // Placeholder — share functionality in a later story
-    Alert.alert("Coming soon", "Sharing will be available in the next update.");
-  }, []);
-
-  const handleSave = useCallback(() => {
-    // Placeholder — save to gallery functionality in a later story
-    Alert.alert("Coming soon", "Save to gallery will be available in the next update.");
-  }, []);
+  const handleShare = useCallback(async () => {
+    const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/result/${jobId}`;
+    try {
+      if (Platform.OS === "ios") {
+        await Share.share({ url: shareUrl });
+      } else {
+        await Share.share({ message: shareUrl });
+      }
+    } catch {
+      // User cancelled share sheet — not an error
+    }
+  }, [jobId]);
 
   const handleNewGlowUp = useCallback(() => {
     router.replace("/upload");
@@ -283,38 +289,19 @@ export default function ResultScreen() {
               entering={FadeIn.duration(250)}
               style={styles.ctaContainer}
             >
-              {/* Primary actions row */}
-              <View style={styles.ctaRow}>
-                <Pressable
-                  onPress={handleShare}
-                  style={({ pressed }) => [
-                    styles.ctaPrimary,
-                    pressed && styles.ctaPrimaryPressed,
-                  ]}
-                  accessibilityLabel="Share your glow-up"
-                  accessibilityRole="button"
-                >
-                  <Ionicons name="share-outline" size={20} color="#FFFFFF" />
-                  <Text style={styles.ctaPrimaryText}>Share</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={handleSave}
-                  style={({ pressed }) => [
-                    styles.ctaSecondary,
-                    pressed && styles.ctaSecondaryPressed,
-                  ]}
-                  accessibilityLabel="Save to gallery"
-                  accessibilityRole="button"
-                >
-                  <Ionicons
-                    name="download-outline"
-                    size={20}
-                    color={TEXT_PRIMARY}
-                  />
-                  <Text style={styles.ctaSecondaryText}>Save</Text>
-                </Pressable>
-              </View>
+              {/* Primary action */}
+              <Pressable
+                onPress={handleShare}
+                style={({ pressed }) => [
+                  styles.ctaPrimary,
+                  pressed && styles.ctaPrimaryPressed,
+                ]}
+                accessibilityLabel="Share your glow-up"
+                accessibilityRole="button"
+              >
+                <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.ctaPrimaryText}>Share</Text>
+              </Pressable>
 
               {/* Refund action */}
               {!refundRequested ? (
@@ -436,12 +423,7 @@ const styles = StyleSheet.create({
     paddingTop: SPACING * 3,
     gap: SPACING * 2,
   },
-  ctaRow: {
-    flexDirection: "row",
-    gap: SPACING * 1.5,
-  },
   ctaPrimary: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -449,7 +431,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     gap: SPACING,
-    minHeight: 48,
+    minHeight: SPACING * 6,
   },
   ctaPrimaryPressed: {
     backgroundColor: CTA_PRESSED,
@@ -458,27 +440,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#FFFFFF",
-  },
-  ctaSecondary: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: SPACING,
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: COLORS.neutral.dark[400],
-  },
-  ctaSecondaryPressed: {
-    backgroundColor: COLORS.neutral.dark[300],
-  },
-  ctaSecondaryText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
   },
   // Refund
   refundButton: {
@@ -519,7 +480,7 @@ const styles = StyleSheet.create({
     borderColor: CTA_PRIMARY,
   },
   newGlowUpButtonPressed: {
-    backgroundColor: "rgba(244, 63, 94, 0.08)",
+    backgroundColor: CORAL_TINT,
   },
   newGlowUpText: {
     fontSize: 15,
