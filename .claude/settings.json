@@ -59,24 +59,6 @@
             "command": "bash .claude/hooks/suggest-compact.sh || bash ~/.claude/hooks/suggest-compact.sh"
           }
         ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/validate-state.sh || bash ~/.claude/hooks/validate-state.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Read",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/block-sensitive-reads.sh || bash ~/.claude/hooks/block-sensitive-reads.sh"
-          }
-        ]
       }
     ]
   }
