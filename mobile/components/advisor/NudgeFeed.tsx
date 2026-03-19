@@ -85,7 +85,7 @@ export function NudgeFeed() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paginationFailed, setPaginationFailed] = useState(false);
+
 
   const retryCountRef = useRef(0);
 
@@ -140,7 +140,6 @@ export function NudgeFeed() {
       setNudges((prev) => [...prev, ...response.nudges]);
       setHasMore(response.has_more);
       retryCountRef.current = 0;
-      setPaginationFailed(false);
     } catch {
       retryCountRef.current += 1;
       if (retryCountRef.current < 3) {
@@ -151,7 +150,8 @@ export function NudgeFeed() {
         }, delay);
         return;
       }
-      setPaginationFailed(true);
+      // Reset so next user-initiated scroll starts a fresh retry round
+      retryCountRef.current = 0;
     } finally {
       setIsLoadingMore(false);
     }

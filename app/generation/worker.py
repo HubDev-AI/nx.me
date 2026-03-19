@@ -247,9 +247,8 @@ async def _generate_and_validate(
 
     # G-11: Log generated image dimensions for debugging
     import PIL.Image as _PILImage
-    _dim_img = _PILImage.open(io.BytesIO(gen_image_bytes))
-    logger.info("Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height)
-    _dim_img.close()
+    with _PILImage.open(io.BytesIO(gen_image_bytes)) as _dim_img:
+        logger.info("Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height)
 
     # Write raw generated image to NXME storage before any checks
     # (architecture.md §160: write to storage first, never use provider
