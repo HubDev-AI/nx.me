@@ -315,7 +315,7 @@ async def _generate_and_validate(
     # G-4: Retry parameters sourced from config
     if not identity_result.identity_preserved:
         logger.info("Identity check failed (%.3f < %.2f) — retrying with tighter params",
-                    identity_result.similarity_score, settings.IDENTITY_SIMILARITY_THRESHOLD)
+                    identity_result.similarity_score, identity_threshold)
 
         retry_options = GenerationOptions(
             model=settings.FAL_MODEL_PRIMARY,
@@ -353,7 +353,7 @@ async def _generate_and_validate(
             check_identity,
             source_image_bytes,
             retry_image_bytes,
-            settings.IDENTITY_SIMILARITY_THRESHOLD,
+            identity_threshold,
         )
 
         if retry_identity.identity_preserved:
