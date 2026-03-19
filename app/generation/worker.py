@@ -391,13 +391,12 @@ async def _finalize_job(
     """
     import PIL.Image
 
-    gen_img = PIL.Image.open(io.BytesIO(gen_image_bytes))
-    source_img_pil = PIL.Image.open(io.BytesIO(source_image_bytes))
+    with PIL.Image.open(io.BytesIO(gen_image_bytes)) as gen_img, \
+         PIL.Image.open(io.BytesIO(source_image_bytes)) as source_img_pil:
+        gen_img = normalize_output(source_img_pil, gen_img)
 
-    gen_img = normalize_output(source_img_pil, gen_img)
-
-    output_buffer = io.BytesIO()
-    gen_img.save(output_buffer, format="JPEG", quality=95)
+        output_buffer = io.BytesIO()
+        gen_img.save(output_buffer, format="JPEG", quality=95)
     output_bytes = output_buffer.getvalue()
 
     # Overwrite with color-normalized version

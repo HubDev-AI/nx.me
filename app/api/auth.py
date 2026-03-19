@@ -560,10 +560,11 @@ def logout(
 
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
-def delete_account(
+async def delete_account(
     claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
+    redis_client: aioredis.Redis = Depends(get_redis),
 ) -> None:
     """Permanently delete the authenticated user's account (AC-3).
 
@@ -626,3 +627,19 @@ def delete_account(
         logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
         # Soft delete already committed — log the failure, do not surface it.
         # A cleanup job can retry auth deletion using the deleted_at flag.
+
+    # --- Clean up Redis keys for deleted user (A-13) -------------------------
+    try:
+        redis_keys_to_delete = [
+            f"advisor_chat_rate:{user_id}",
+            f"concurrent:{user_id}",
+        ]
+        # Also clean up daily generation counter keys (gen:user_daily:{user_id}:*)
+        daily_keys = await redis_client.keys(f"gen:user_daily:{user_id}:*")
+        if daily_keys:
+            redis_keys_to_delete.extend(daily_keys)
+        if redis_keys_to_delete:
+            await redis_client.delete(*redis_keys_to_delete)
+            logger.info("Cleaned up %d Redis keys for deleted user %s", len(redis_keys_to_delete), user_id)
+    except Exception as exc:
+        logger.warning("Redis cleanup failed for deleted user %s: %s", user_id, exc)

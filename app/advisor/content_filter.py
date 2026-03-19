@@ -60,8 +60,7 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
 ]
 
 # Redis key templates
-# A-13: TODO — rate limit keys for deleted users are not cleaned up.
-# Requires a user deletion event hook to call redis.delete(f"advisor_chat_rate:{user_id}").
+# A-13: Rate limit keys cleaned up in DELETE /auth/account (auth.py).
 _RATE_KEY_TEMPLATE = "advisor_chat_rate:{user_id}"
 
 
