@@ -6,7 +6,7 @@ A-5: EntitlementResult with error codes for rate/feature gating.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 

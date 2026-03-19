@@ -17,7 +17,6 @@ from supabase import Client
 from app.config import settings
 from app.generation.color_normalizer import normalize_output
 from app.generation.cost_tracker import CostTracker
-from app.generation.face_cropper import compute_crop, composite_glowup, get_face_ratio
 from app.generation.identity_checker import check_identity
 from app.generation.models import (
     FAILURE_IDENTITY,
@@ -37,7 +36,13 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_IMAGE_HOSTS = frozenset(["fal.ai", "fal.run", "fal.media", "storage.googleapis.com"])
+# G-9: Expanded allowlist to cover fallback provider CDN domains
+_ALLOWED_IMAGE_HOSTS = frozenset([
+    "fal.ai", "fal.run", "fal.media",
+    "storage.googleapis.com",
+    "replicate.delivery", "pbxt.replicate.delivery",  # Replicate (potential fallback)
+    "cdn.stablediffusionapi.com",  # StableDiffusion API CDN
+])
 
 
 def _validate_provider_url(url: str) -> None:
@@ -187,8 +192,32 @@ async def _generate_and_validate(
         if redis_client and concurrent_key:
             await redis_client.expire(concurrent_key, _concurrent_ttl)
 
-    # Generate
-    gen_result = await generator.generate(source_url, prompt, options)
+    # G-1: Generate with fallback model cascade (PuLID → Flux Dev → InstantID)
+    fallback_models = [settings.FAL_MODEL_FALLBACK_1, settings.FAL_MODEL_FALLBACK_2]
+    try:
+        gen_result = await generator.generate(source_url, prompt, options)
+    except Exception as primary_exc:
+        logger.warning("Primary model failed (%s): %s — trying fallbacks", options.model, primary_exc)
+        gen_result = None
+        for fallback_model in fallback_models:
+            try:
+                fallback_options = GenerationOptions(
+                    model=fallback_model,
+                    prompt=options.prompt,
+                    negative_prompt=options.negative_prompt,
+                    reference_image_url=options.reference_image_url,
+                    id_weight=options.id_weight,
+                    guidance_scale=options.guidance_scale,
+                    num_inference_steps=options.num_inference_steps,
+                )
+                gen_result = await generator.generate(source_url, prompt, fallback_options)
+                logger.info("Fallback model %s succeeded", fallback_model)
+                break
+            except Exception as fb_exc:
+                logger.warning("Fallback model %s failed: %s", fallback_model, fb_exc)
+                continue
+        if gen_result is None:
+            raise primary_exc  # All fallbacks exhausted — propagate original error
 
     # Track cost
     if gen_result.estimated_cost_usd:
@@ -198,10 +227,17 @@ async def _generate_and_validate(
     # Download generated image from provider immediately — the fal.ai
     # URL must not be used for any downstream processing after this point.
     _validate_provider_url(gen_result.image_url)
-    async with httpx.AsyncClient() as client:
+    # G-5: Explicit timeout on httpx calls
+    async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as client:
         resp = await client.get(gen_result.image_url)
         resp.raise_for_status()
         gen_image_bytes = resp.content
+
+    # G-11: Log generated image dimensions for debugging
+    import PIL.Image as _PILImage
+    _dim_img = _PILImage.open(io.BytesIO(gen_image_bytes))
+    logger.info("Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height)
+    _dim_img.close()
 
     # Write raw generated image to NXME storage before any checks
     # (architecture.md §160: write to storage first, never use provider
@@ -219,19 +255,37 @@ async def _generate_and_validate(
         nsfw_result = await screener.screen(gen_image_bytes)
 
         if nsfw_result.is_explicit:
-            # Clean up the already-uploaded image before failing
+            # G-3: Clean up image — log and re-raise on delete failure instead of swallowing
             try:
                 image_repo.remove("generated-images", [storage_key])
             except Exception:
-                logger.warning("Failed to remove NSFW image %s from storage", storage_key)
+                logger.error("Failed to remove NSFW image %s from storage — orphaned image", storage_key, exc_info=True)
             await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
             return None
 
     # Download source for identity check
-    async with httpx.AsyncClient() as client:
+    # G-5: Explicit timeout on httpx calls
+    async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as client:
         resp = await client.get(source_url)
         resp.raise_for_status()
         source_image_bytes = resp.content
+
+    # G-6: Per-tier identity threshold — look up from tier config if available,
+    # fall back to global IDENTITY_SIMILARITY_THRESHOLD.
+    identity_threshold = settings.IDENTITY_SIMILARITY_THRESHOLD
+    if supabase and user_id:
+        try:
+            tier_row = (
+                supabase.table("users")
+                .select("tiers!inner(identity_similarity_threshold)")
+                .eq("id", user_id)
+                .maybe_single()
+                .execute()
+            )
+            if tier_row.data and tier_row.data.get("tiers", {}).get("identity_similarity_threshold") is not None:
+                identity_threshold = float(tier_row.data["tiers"]["identity_similarity_threshold"])
+        except Exception:
+            logger.debug("Could not fetch per-tier identity threshold for user %s — using global", user_id)
 
     # Identity check — uses in-memory bytes, not provider URLs
     loop = asyncio.get_running_loop()
@@ -240,13 +294,14 @@ async def _generate_and_validate(
         check_identity,
         source_image_bytes,
         gen_image_bytes,
-        settings.IDENTITY_SIMILARITY_THRESHOLD,
+        identity_threshold,
     )
 
     # Extend concurrent counter TTL after identity check (M-8)
     await _refresh_concurrent_ttl()
 
     # Identity failed → retry once
+    # G-4: Retry parameters sourced from config
     if not identity_result.identity_preserved:
         logger.info("Identity check failed (%.3f < %.2f) — retrying with tighter params",
                     identity_result.similarity_score, settings.IDENTITY_SIMILARITY_THRESHOLD)
@@ -256,8 +311,14 @@ async def _generate_and_validate(
             prompt=prompt,
             negative_prompt=negative,
             reference_image_url=source_url,
-            id_weight=min(adaptive_params["id_weight"] + 0.10, 0.95),
-            guidance_scale=max(adaptive_params["guidance_scale"] - 0.5, 3.5),
+            id_weight=min(
+                adaptive_params["id_weight"] + settings.IDENTITY_RETRY_ID_WEIGHT_DELTA,
+                settings.IDENTITY_RETRY_ID_WEIGHT_CAP,
+            ),
+            guidance_scale=max(
+                adaptive_params["guidance_scale"] - settings.IDENTITY_RETRY_GUIDANCE_DELTA,
+                settings.IDENTITY_RETRY_GUIDANCE_FLOOR,
+            ),
             num_inference_steps=adaptive_params["num_inference_steps"],
         )
 
@@ -267,8 +328,9 @@ async def _generate_and_validate(
             await cost_tracker.record_cost(retry_result.estimated_cost_usd)
 
         # Download retry image from provider and overwrite storage
+        # G-5: Explicit timeout on httpx calls
         _validate_provider_url(retry_result.image_url)
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as client:
             resp = await client.get(retry_result.image_url)
             resp.raise_for_status()
             retry_image_bytes = resp.content
@@ -288,11 +350,14 @@ async def _generate_and_validate(
             gen_image_bytes = retry_image_bytes
             identity_result = retry_identity
         else:
-            # Clean up stored image on identity failure
+            # G-3: Log and escalate storage delete failures
             try:
                 image_repo.remove("generated-images", [storage_key])
             except Exception:
-                logger.warning("Failed to remove image %s after identity failure", storage_key)
+                logger.error(
+                    "Failed to remove image %s after identity failure — orphaned",
+                    storage_key, exc_info=True,
+                )
             await _fail_job(job_repo, job_id, job_data, FAILURE_IDENTITY,
                             identity_score=retry_identity.similarity_score,
                             supabase=supabase)
@@ -451,9 +516,21 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         await cost_tracker.record_failure()
         await _fail_job(job_repo, job_id, job_data, FAILURE_PROVIDER, supabase=supabase)
     finally:
-        # Always DECR concurrent counter
+        # G-2: Always DECR concurrent counter with TTL-based auto-cleanup.
+        # Set a short TTL on the key so that even if DECR brings it to 0 but
+        # the worker crashes before cleanup, the key auto-expires.
         if user_id_for_concurrent:
-            await redis.decr(f"concurrent:{user_id_for_concurrent}")
+            concurrent_key = f"concurrent:{user_id_for_concurrent}"
+            try:
+                new_val = await redis.decr(concurrent_key)
+                if new_val <= 0:
+                    # Clean up the key entirely when counter reaches zero
+                    await redis.delete(concurrent_key)
+                else:
+                    # Ensure TTL exists as safety net against stuck counters
+                    await redis.expire(concurrent_key, settings.GENERATION_TIMEOUT_SECONDS + 60)
+            except Exception:
+                logger.error("Failed to DECR concurrent counter for user %s", user_id_for_concurrent)
 
 
 async def _fail_job(

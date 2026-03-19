@@ -13,8 +13,8 @@ from app.advisor.memory_manager import summarize_memory_content
 
 logger = logging.getLogger(__name__)
 
-# Visual context trigger keywords (spec Section 6.4)
-_VISUAL_TRIGGERS = ("look at", "see my", "compare", "photo")
+# A-14: Visual context trigger keywords extracted as module-level constant (spec Section 6.4)
+VISUAL_TRIGGER_KEYWORDS: tuple[str, ...] = ("look at", "see my", "compare", "photo", "this picture", "my image")
 
 # Trajectory hint chance (spec Section 6.3)
 _TRAJECTORY_CHANCE = 0.15
@@ -126,4 +126,4 @@ def _detect_area(texts: list[str]) -> str | None:
 def has_visual_trigger(message: str) -> bool:
     """Return True if the message suggests the user wants visual context."""
     lower = message.lower()
-    return any(trigger in lower for trigger in _VISUAL_TRIGGERS)
+    return any(trigger in lower for trigger in VISUAL_TRIGGER_KEYWORDS)

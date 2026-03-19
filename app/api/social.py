@@ -43,6 +43,7 @@ def _get_client_ip(request: Request) -> str:
         return "unknown"
     return request.client.host
 
+
 _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # Lua script: atomic INCR + conditional EXPIRE + limit check (L-2).

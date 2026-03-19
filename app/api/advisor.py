@@ -14,7 +14,6 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-from typing import Any
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -97,6 +96,19 @@ async def send_advisor_message(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error": {"code": "INVALID_MESSAGE", "message": str(exc)}},
         ) from exc
+    except Exception as exc:
+        # A-16: Structured error codes for LLM failures
+        error_msg = str(exc)
+        if "timeout" in error_msg.lower():
+            code = "LLM_TIMEOUT"
+        elif "rate" in error_msg.lower():
+            code = "RATE_LIMITED"
+        else:
+            code = "LLM_ERROR"
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": {"code": code, "message": "Advisor service error"}},
+        ) from exc
 
     message_id = row.get("id", "")
     payload = MessageResponse(
@@ -108,7 +120,7 @@ async def send_advisor_message(
     return JSONResponse(
         content=payload.model_dump(),
         status_code=status.HTTP_201_CREATED,
-        headers={"Location": f"/v1/advisor/messages"},
+        headers={"Location": "/v1/advisor/messages"},
     )
 
 
@@ -126,7 +138,11 @@ def get_advisor_messages(
 ) -> ConversationHistoryPageResponse:
     """Return the active conversation history for the current user (paginated)."""
     user_id = UUID(claims["sub"])
-    result = svc.get_conversation_history_page(user_id, limit=limit, cursor=cursor)
+    try:
+        result = svc.get_conversation_history_page(user_id, limit=limit, cursor=cursor)
+    except ValueError as exc:
+        # A-7: Malformed cursor returns 400
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return ConversationHistoryPageResponse(
         conversation_id=result["conversation_id"],
@@ -159,7 +175,10 @@ def get_nudges(
 ) -> NudgeFeedResponse:
     """Return the nudge feed for the current user (all tiers, paginated)."""
     user_id = UUID(claims["sub"])
-    result = svc.get_nudges_page(user_id, limit=limit, cursor=cursor, unread_only=unread)
+    try:
+        result = svc.get_nudges_page(user_id, limit=limit, cursor=cursor, unread_only=unread)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return NudgeFeedResponse(
         nudges=[
@@ -287,7 +306,10 @@ def list_memories(
 ) -> MemoryListPageResponse:
     """List memories for the current user (paginated). All tiers."""
     user_id = UUID(claims["sub"])
-    result = svc.list_memories_page(user_id, limit=limit, cursor=cursor)
+    try:
+        result = svc.list_memories_page(user_id, limit=limit, cursor=cursor)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return MemoryListPageResponse(
         memories=[

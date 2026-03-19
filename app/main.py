@@ -103,6 +103,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("Face analysis adapter is not mediapipe — skipping MediaPipe model load")
 
+    # G-10: Pre-load ArcFace model in API lifespan (not just worker) to avoid
+    # first-request latency when identity_checker is called from the API process
+    if settings.ADAPTER__IMAGE_GENERATION_ADAPTER != "mock":
+        try:
+            from app.generation.identity_checker import preload_arcface
+            preload_arcface()
+            logger.info("ArcFace identity model pre-loaded")
+        except ImportError:
+            logger.info("ArcFace preload not available — skipping")
+        except Exception as exc:
+            logger.warning("ArcFace preload failed (non-fatal): %s", exc)
+
     # ARQ pool for enqueuing generation jobs
     app.state.arq_pool = await create_pool(
         RedisSettings.from_dsn(settings.REDIS_URL)

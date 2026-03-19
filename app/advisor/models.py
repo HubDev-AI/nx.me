@@ -1,7 +1,6 @@
 """Advisor data models — Pydantic schemas and domain types."""
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Any
 

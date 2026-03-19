@@ -5,7 +5,7 @@ Shared dependencies injected into route handlers via Depends().
 from __future__ import annotations
 
 import logging
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from supabase import Client
@@ -14,6 +14,21 @@ import redis.asyncio as aioredis
 
 from app.api.middleware.auth import UserClaims, validate_jwt
 from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, EntitlementResult, PAYMENT_REQUIRED_CODES
+
+if TYPE_CHECKING:
+    from app.advisor.llm_port import LLMPort
+    from app.entitlement.ledger import CreditLedger
+    from app.entitlement.service import EntitlementService
+    from app.entitlement.tier_repo import TierRepository
+    from app.payment.ports import PaymentPort
+    from app.repositories.advisor_repo import AdvisorRepository
+    from app.repositories.analysis_repo import AnalysisRepository
+    from app.repositories.feed_repo import FeedRepository
+    from app.repositories.image_repo import ImageRepository
+    from app.repositories.job_repo import JobRepository
+    from app.repositories.post_repo import PostRepository
+    from app.repositories.subscription_repo import SubscriptionRepository
+    from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
 

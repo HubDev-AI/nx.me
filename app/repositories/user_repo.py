@@ -6,7 +6,7 @@ methods are synchronous (callers use run_sync for async handlers).
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from supabase import Client
 

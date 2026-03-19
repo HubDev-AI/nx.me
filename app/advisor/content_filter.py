@@ -53,9 +53,15 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"do\s+not\s+follow\s+(your|any)\s+", re.IGNORECASE),
     re.compile(r"base64\s*:", re.IGNORECASE),
     re.compile(r"<<\s*SYS\s*>>", re.IGNORECASE),
+    # A-10: RTL override, zero-width joiners, math alphanumeric variants
+    re.compile(r"[\u202e\u202d\u200f\u200e]"),  # Bidi overrides
+    re.compile(r"[\u2066-\u2069]"),  # Bidi isolates
+    re.compile(r"[\U0001d400-\U0001d7ff]"),  # Math alphanumeric symbols (homoglyphs)
 ]
 
 # Redis key templates
+# A-13: TODO — rate limit keys for deleted users are not cleaned up.
+# Requires a user deletion event hook to call redis.delete(f"advisor_chat_rate:{user_id}").
 _RATE_KEY_TEMPLATE = "advisor_chat_rate:{user_id}"
 
 
@@ -71,8 +77,8 @@ def sanitize_input(text: str) -> str:
 
     # Normalize unicode to NFC to defeat homoglyph attacks
     cleaned = unicodedata.normalize("NFC", text)
-    # Strip zero-width characters
-    cleaned = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff]", "", cleaned)
+    # Strip zero-width characters (including zero-width joiners, A-10)
+    cleaned = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff\u00ad]", "", cleaned)
     for pattern in _INJECTION_PATTERNS:
         cleaned = pattern.sub("", cleaned)
 
@@ -94,12 +100,17 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
     key = _RATE_KEY_TEMPLATE.format(user_id=user_id)
     new_count = await redis_client.incr(key)
     if new_count == 1:
-        await redis_client.expire(key, 3600)  # 1-hour window
+        await redis_client.expire(key, settings.ADVISOR_CHAT_RATE_LIMIT_WINDOW_SECONDS)
 
     if new_count > settings.ADVISOR_CHAT_RATE_LIMIT:
         # Do NOT decr — that would gift the next request a free attempt (M-11).
         # The count will naturally expire with the key TTL.
         ttl: int = await redis_client.ttl(key)
+        # A-12: Log rate limit hits for visibility
+        logger.warning(
+            "Rate limit hit for user %s: %d messages (limit %d)",
+            user_id, new_count, settings.ADVISOR_CHAT_RATE_LIMIT,
+        )
         raise RateLimitExceeded(retry_after=max(ttl, 0))
 
 
@@ -116,11 +127,15 @@ def scan_output(text: str) -> bool:
     return False
 
 
-_GENERIC_FALLBACK = (
-    "Hard to say without more context — want to try describing what you're going for?"
-)
+# A-15: Violation-type-specific fallback messages
+_FALLBACK_RESPONSES: dict[str, str] = {
+    "c2_violation": "Hard to say without more context — want to try describing what you're going for?",
+    "rate_limited": "Let's slow down a bit — I'll be here when you're ready.",
+    "content_violation": "I can't go there — want to try a different angle?",
+    "default": "Hard to say without more context — want to try describing what you're going for?",
+}
 
 
-def get_fallback_response() -> str:
-    """Return the generic fallback response used after a C-2 violation retry."""
-    return _GENERIC_FALLBACK
+def get_fallback_response(violation_type: str = "default") -> str:
+    """Return a fallback response appropriate to the violation type."""
+    return _FALLBACK_RESPONSES.get(violation_type, _FALLBACK_RESPONSES["default"])

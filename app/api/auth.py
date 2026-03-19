@@ -544,8 +544,13 @@ def logout(
         logger.error("sign_out failed for user %s: %s", user_id, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": {"code": "REVOCATION_FAILED", "message": "Session revocation failed. Clear local tokens and retry."}},
-        # The token will expire naturally even if server revocation failed.
+            detail={
+                "error": {
+                    "code": "REVOCATION_FAILED",
+                    "message": "Session revocation failed. Clear local tokens and retry.",
+                }
+            },
+            # The token will expire naturally even if server revocation failed.
         ) from exc
 
 

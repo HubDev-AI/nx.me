@@ -26,7 +26,7 @@ from app.api.deps import (
 )
 from app.api.middleware.auth import UserClaims
 from app.config import settings
-from app.constants.tiers import CREDIT_HOLDER, PREMIUM, SLUG_TO_TIER_NAME, TRIAL
+from app.constants.tiers import SLUG_TO_TIER_NAME
 from app.db.async_helpers import run_sync
 from app.entitlement.ledger import CreditLedger
 from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, PAYMENT_REQUIRED_CODES, TIER_CONCURRENT_LIMIT

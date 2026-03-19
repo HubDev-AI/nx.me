@@ -35,9 +35,8 @@ from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
-# Model identifiers
+# Model identifiers — A-5: Haiku model sourced from config to avoid duplication
 _MODEL_SONNET = "claude-3-5-sonnet-20241022"
-_MODEL_HAIKU = "claude-3-haiku-20240307"
 
 # Max tokens for chat response (keep concise per SOUL.md)
 _MAX_TOKENS_CHAT = 256
@@ -95,6 +94,7 @@ class AdvisorService:
 
         # Auto-summarize if threshold reached (spec Section 5.2)
         # L-7: Guard against double-trigger — skip if recently summarized
+        # A-1: Redis distributed lock prevents race condition on concurrent messages
         if len(history) >= settings.ADVISOR_CONVERSATION_SUMMARY_THRESHOLD:
             should_summarize = True
             summarized_at_str = conversation.get("summarized_at")
@@ -108,8 +108,21 @@ class AdvisorService:
                 except (ValueError, TypeError):
                     pass
             if should_summarize:
-                await self._summarize_conversation(conversation_id, history)
-                history = self._load_conversation_history(conversation_id)
+                lock_key = f"advisor:summarize_lock:{conversation_id}"
+                # Acquire a 60s lock — if another request is already summarizing, skip
+                acquired = await self._redis.set(lock_key, "1", nx=True, ex=60)
+                if acquired:
+                    try:
+                        # A-17: Timeout on summarization to avoid blocking response
+                        await asyncio.wait_for(
+                            self._summarize_conversation(conversation_id, history),
+                            timeout=10.0,
+                        )
+                        history = self._load_conversation_history(conversation_id)
+                    except asyncio.TimeoutError:
+                        logger.warning("Summarization timed out for conversation %s", conversation_id)
+                    finally:
+                        await self._redis.delete(lock_key)
 
         # Step 4: Retrieve relevant memories
         memories = await self._memory_manager.get_relevant_memories(user_id, message)
@@ -142,7 +155,7 @@ class AdvisorService:
         )
 
         # Step 9: Persist messages
-        user_msg_row = self._save_message(conversation_id, "user", message)
+        self._save_message(conversation_id, "user", message)
         advisor_msg_row = self._save_message(conversation_id, "advisor", advisor_response)
 
         # Update conversation updated_at
@@ -150,6 +163,7 @@ class AdvisorService:
 
         # Step 10: Async memory extraction (fire and forget, L-5 / M-6)
         # No explicit retry — extraction will naturally re-trigger on next message.
+        # A-9: Structured error logging with extraction failure counter
         async def _extract_with_logging() -> None:
             try:
                 await self._memory_manager.extract_memories_from_turn(
@@ -162,6 +176,7 @@ class AdvisorService:
                     "Memory extraction failed for user %s. Will retry on next message.",
                     str(user_id),
                     exc_info=True,
+                    extra={"metric": "advisor.memory_extraction_failure", "user_id": str(user_id)},
                 )
 
         asyncio.create_task(_extract_with_logging())
@@ -193,7 +208,7 @@ class AdvisorService:
                 logger.warning("C-2 violation in LLM output (attempt %d)", attempt + 1)
                 if attempt == 0:
                     continue
-                return content_filter.get_fallback_response()
+                return content_filter.get_fallback_response("c2_violation")
 
             # Post-generation check (spec Section 11)
             hint = _post_check(text, recent_responses)
@@ -206,7 +221,7 @@ class AdvisorService:
 
             return text
 
-        return content_filter.get_fallback_response()
+        return content_filter.get_fallback_response("c2_violation")
 
     def _select_model(self) -> str:
         """Select chat model (Sonnet normally, Haiku under high load guard).
@@ -405,7 +420,11 @@ class AdvisorService:
             if updated_at >= cutoff:
                 return existing
 
-        # Create new conversation
+        # A-2: Create new conversation. Note: Supabase JS/Python client does not
+        # support multi-statement transactions. If the subsequent message INSERT fails,
+        # the orphaned conversation row is harmless (no messages = empty, will be
+        # reused or replaced on next inactive-days check). A true fix requires an
+        # RPC function wrapping both INSERTs in a single PostgreSQL transaction.
         created = self._repo.create_conversation(str(user_id))
         logger.info("New conversation created: user=%s id=%s", user_id, created.get("id"))
         return created
@@ -486,8 +505,11 @@ class AdvisorService:
         )
         try:
             response = await self._llm.create_message(
-                model=_MODEL_HAIKU,
-                system="Summarise this conversation in 2-3 sentences, focusing on styling preferences and goals mentioned.",
+                model=settings.ADVISOR_MODEL_HAIKU,
+                system=(
+                    "Summarise this conversation in 2-3 sentences, "
+                    "focusing on styling preferences and goals mentioned."
+                ),
                 messages=[{"role": "user", "content": history_text}],
                 max_tokens=_MAX_TOKENS_SUMMARY,
             )
