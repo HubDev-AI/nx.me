@@ -197,7 +197,9 @@ class TestGetCurrentUser:
     def test_valid_bearer_token_returns_claims(self):
         uid = str(uuid4())
         token = make_jwt(user_id=uid)
-        claims = get_current_user(authorization=f"Bearer {token}")
+        sb = MockSupabase()
+        sb.set_table_data("users", {"id": uid, "is_banned": False})
+        claims = get_current_user(authorization=f"Bearer {token}", supabase=sb)
         assert claims["sub"] == uid
 
     def test_expired_bearer_token_raises_401(self):

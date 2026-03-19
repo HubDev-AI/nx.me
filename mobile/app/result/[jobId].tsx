@@ -36,7 +36,6 @@ import {
 } from "../../lib/analysis";
 import {
   BG_PAGE,
-  TEXT_PRIMARY,
   TEXT_SECONDARY,
   TEXT_DISABLED,
   CTA_PRIMARY,

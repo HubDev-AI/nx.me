@@ -1,5 +1,3 @@
-import * as SecureStore from "expo-secure-store";
-
 import { API_BASE_URL } from "../constants/config";
 import { getStoredJwt } from "./auth";
 import { getOrCreateGuestToken } from "./guest-session";
@@ -47,17 +45,6 @@ export async function apiFetch<T = unknown>(
   return response.json() as Promise<T>;
 }
 
-/**
- * Store refresh token from login/signup response.
- * Call after storing the JWT on successful authentication.
- */
-export async function storeRefreshToken(
-  response: { refresh_token?: string },
-): Promise<void> {
-  if (response.refresh_token) {
-    await SecureStore.setItemAsync("nxme_refresh_token", response.refresh_token);
-  }
-}
 
 export class ApiError extends Error {
   constructor(

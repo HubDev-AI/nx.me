@@ -96,7 +96,7 @@ export function ChatView() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [paginationFailed, setPaginationFailed] = useState(false);
+
 
   const listRef = useRef<FlatList<AdvisorMessage>>(null);
   const retryCountRef = useRef(0);
@@ -139,7 +139,6 @@ export function ChatView() {
       setMessages((prev) => [...older, ...prev]);
       setHasMore(response.has_more);
       retryCountRef.current = 0;
-      setPaginationFailed(false);
     } catch {
       retryCountRef.current += 1;
       if (retryCountRef.current < 3) {
@@ -150,7 +149,8 @@ export function ChatView() {
         }, delay);
         return;
       }
-      setPaginationFailed(true);
+      // Reset so next user-initiated scroll starts a fresh retry round
+      retryCountRef.current = 0;
     } finally {
       setIsLoadingMore(false);
     }

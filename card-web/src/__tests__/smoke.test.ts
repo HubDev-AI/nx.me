@@ -39,6 +39,7 @@ describe('parseCardData', () => {
   })
 
   it('throws on missing required string field', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-omit pattern
     const { username: _, ...withoutUsername } = VALID_CARD
     expect(() => parseCardData(withoutUsername)).toThrow('"username"')
   })
