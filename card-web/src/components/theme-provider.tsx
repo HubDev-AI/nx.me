@@ -49,10 +49,10 @@ const MEN: DemoPool = {
     { before: '/images/before-37.jpg', after: '/images/after-37.jpg' }, // M+M verified
     { before: '/images/before-39.jpg', after: '/images/after-39.jpg' }, // M+M verified
   ],
-  hair: ['/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg', '/images/detail-hair.jpg'],
-  clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg'],
-  grooming: ['/images/detail-grooming-men.jpg', '/images/detail-grooming-men-2.jpg', '/images/detail-grooming.jpg'],
-  accessories: ['/images/detail-accessories-men.jpg', '/images/detail-accessories-men-2.jpg'],
+  hair: ['/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg', '/images/detail-hair.jpg', '/images/detail-hair-men-3.jpg', '/images/detail-hair-men-4.jpg', '/images/detail-hair-men-5.jpg'],
+  clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg', '/images/detail-clothing-men-3.jpg', '/images/detail-clothing-men-4.jpg', '/images/detail-clothing-men-5.jpg'],
+  grooming: ['/images/detail-grooming-men.jpg', '/images/detail-grooming-men-2.jpg', '/images/detail-grooming.jpg', '/images/detail-grooming-men-3.jpg', '/images/detail-grooming-men-4.jpg', '/images/detail-grooming-men-5.jpg'],
+  accessories: ['/images/detail-accessories-men.jpg', '/images/detail-accessories-men-2.jpg', '/images/detail-accessories-men-3.jpg', '/images/detail-accessories-men-4.jpg', '/images/detail-accessories-men-5.jpg'],
 };
 
 // Verified F+F pairs only, no duplicates
@@ -80,10 +80,10 @@ const WOMEN: DemoPool = {
     { before: '/images/before-34.jpg', after: '/images/after-34.jpg' }, // F+F verified
     { before: '/images/before-40.jpg', after: '/images/after-40.jpg' }, // F+F verified
   ],
-  hair: ['/images/detail-hair-women.jpg', '/images/detail-hair-women-2.jpg'],
-  clothing: ['/images/detail-clothing-women.jpg', '/images/detail-clothing-women-2.jpg'],
-  grooming: ['/images/detail-grooming-women.jpg', '/images/detail-grooming-women-2.jpg'],
-  accessories: ['/images/detail-accessories-women.jpg', '/images/detail-accessories-women-2.jpg'],
+  hair: ['/images/detail-hair-women.jpg', '/images/detail-hair-women-2.jpg', '/images/detail-hair-women-3.jpg', '/images/detail-hair-women-4.jpg', '/images/detail-hair-women-5.jpg'],
+  clothing: ['/images/detail-clothing-women.jpg', '/images/detail-clothing-women-2.jpg', '/images/detail-clothing-women-3.jpg', '/images/detail-clothing-women-4.jpg', '/images/detail-clothing-women-5.jpg'],
+  grooming: ['/images/detail-grooming-women.jpg', '/images/detail-grooming-women-2.jpg', '/images/detail-grooming-women-3.jpg', '/images/detail-grooming-women-4.jpg', '/images/detail-grooming-women-5.jpg'],
+  accessories: ['/images/detail-accessories-women.jpg', '/images/detail-accessories-women-2.jpg', '/images/detail-accessories-women-3.jpg', '/images/detail-accessories-women-4.jpg', '/images/detail-accessories-women-5.jpg'],
 };
 
 // 20 young/teen pairs + dedicated teen detail images and heroes
@@ -121,10 +121,10 @@ const YOUNG: DemoPool = {
     { before: '/images/before-51.jpg', after: '/images/after-51.jpg' },
     { before: '/images/before-52.jpg', after: '/images/after-52.jpg' },
   ],
-  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-2.jpg', '/images/detail-hair-teen-3.jpg', '/images/detail-hair-teen-4.jpg'],
-  clothing: ['/images/detail-clothing-teen.jpg', '/images/detail-clothing-teen-2.jpg', '/images/detail-clothing-teen-3.jpg', '/images/detail-clothing-teen-4.jpg'],
-  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-2.jpg', '/images/detail-grooming-teen-3.jpg', '/images/detail-grooming-teen-4.jpg'],
-  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-teen-3.jpg'],
+  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-2.jpg', '/images/detail-hair-teen-3.jpg', '/images/detail-hair-teen-4.jpg', '/images/detail-hair-teen-5.jpg'],
+  clothing: ['/images/detail-clothing-teen.jpg', '/images/detail-clothing-teen-2.jpg', '/images/detail-clothing-teen-3.jpg', '/images/detail-clothing-teen-4.jpg', '/images/detail-clothing-teen-5.jpg'],
+  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-2.jpg', '/images/detail-grooming-teen-3.jpg', '/images/detail-grooming-teen-4.jpg', '/images/detail-grooming-teen-5.jpg'],
+  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-teen-3.jpg', '/images/detail-accessories-teen-4.jpg', '/images/detail-accessories-teen-5.jpg'],
 };
 
 const POOLS = [MEN, WOMEN, YOUNG];
