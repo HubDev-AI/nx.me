@@ -16,22 +16,31 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Forbidden output terms (C-2 violations — from SOUL.md rules)
-_FORBIDDEN_OUTPUT_TERMS: frozenset[str] = frozenset([
-    "attractive",
+# Curation principle: block terms that rate/judge the person's appearance,
+# NOT terms that describe aesthetics. "Your hair looks beautiful" is fine;
+# "you're ugly" is not.
+_FORBIDDEN_OUTPUT_TERMS: tuple[str, ...] = (
+    "ugly",
+    "hideous",
     "unattractive",
     "beauty score",
-    "rating",
-    "ugly",
-    "pretty",
-    "hot",
-    "ranking",
-    "beautiful",
-    "gorgeous",
-    "hideous",
     "out of ten",
     "/10",
-])
+    "ranking",
+    "rating",
+)
+
+# Pre-compiled patterns for word-boundary matching (single words)
+_FORBIDDEN_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
+    for term in _FORBIDDEN_OUTPUT_TERMS
+    if " " not in term and "/" not in term
+)
+# Multi-word and special terms use simple containment (word boundaries are natural)
+_FORBIDDEN_EXACT: tuple[str, ...] = tuple(
+    term for term in _FORBIDDEN_OUTPUT_TERMS
+    if " " in term or "/" in term
+)
 
 # Prompt injection patterns (AC-SEC: block system-override attempts)
 _INJECTION_PATTERNS: list[re.Pattern[str]] = [
@@ -114,12 +123,13 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
 
 
 def scan_output(text: str) -> bool:
-    """Return True if the text contains C-2 violations (forbidden terms).
-
-    False means the response is clean and safe to return.
-    """
+    """Return True if the text contains C-2 violations (forbidden terms)."""
     lower = text.lower()
-    for term in _FORBIDDEN_OUTPUT_TERMS:
+    for pattern in _FORBIDDEN_PATTERNS:
+        if pattern.search(lower):
+            logger.warning("C-2 violation detected: forbidden pattern '%s'", pattern.pattern)
+            return True
+    for term in _FORBIDDEN_EXACT:
         if term in lower:
             logger.warning("C-2 violation detected: forbidden term '%s'", term)
             return True
