@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Background: coral/rose accent with rounded corners -->
+  <rect width="512" height="512" rx="108" fill="#F43F5E"/>
+  <!-- "N" lettermark: bold, geometric, slightly compressed -->
+  <path d="M148 390V122h48l120 180V122h48v268h-48L196 210v180h-48z" fill="#fff"/>
+</svg>

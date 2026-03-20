@@ -19,7 +19,8 @@ import {
   ERROR_DARK,
 } from "../../constants/colors";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
-import { getStoredJwt } from "../../lib/auth";
+import { getStoredJwt, clearAllTokens } from "../../lib/auth";
+import { useAuth } from "../../lib/auth-context";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
@@ -33,6 +34,7 @@ import type { UpdateProfilePayload } from "../../components/profile/types";
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { setAuthenticated: setGlobalAuth } = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
 
@@ -91,6 +93,11 @@ export default function ProfileScreen() {
   const handleCloseEditSheet = useCallback(() => {
     setEditSheetVisible(false);
   }, []);
+
+  const handleLogout = useCallback(async () => {
+    await clearAllTokens();
+    setGlobalAuth(false);
+  }, [setGlobalAuth]);
 
   const handleSaveProfile = useCallback(
     async (payload: UpdateProfilePayload): Promise<boolean> => {
@@ -163,6 +170,16 @@ export default function ProfileScreen() {
         >
           <Text style={styles.retryButtonText}>Retry</Text>
         </Pressable>
+        <Pressable
+          onPress={handleLogout}
+          style={styles.logoutButton}
+          accessibilityLabel="Log out"
+          accessibilityRole="button"
+          testID="logout-button"
+        >
+          <Ionicons name="log-out-outline" size={20} color={ERROR_DARK} />
+          <Text style={styles.logoutText}>Log out</Text>
+        </Pressable>
       </View>
     );
   }
@@ -176,6 +193,22 @@ export default function ProfileScreen() {
     />
   );
 
+  const profileHeaderWithLogout = (
+    <View>
+      {profileHeader}
+      <Pressable
+        onPress={handleLogout}
+        style={styles.logoutButton}
+        accessibilityLabel="Log out"
+        accessibilityRole="button"
+        testID="logout-button"
+      >
+        <Ionicons name="log-out-outline" size={20} color={ERROR_DARK} />
+        <Text style={styles.logoutText}>Log out</Text>
+      </Pressable>
+    </View>
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Single FlatList: profile header + glow-up grid — no nested ScrollView */}
@@ -184,7 +217,7 @@ export default function ProfileScreen() {
         isLoadingMore={isLoadingMore}
         hasMore={hasMoreGlowUps}
         onLoadMore={handleLoadMoreGlowUps}
-        ListHeaderComponent={profileHeader}
+        ListHeaderComponent={profileHeaderWithLogout}
         refreshing={isRefreshing}
         onRefresh={handleRefresh}
       />
@@ -272,5 +305,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 32,
+    marginBottom: 40,
+    paddingVertical: 14,
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  logoutText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: ERROR_DARK,
   },
 });

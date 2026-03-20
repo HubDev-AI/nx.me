@@ -1,0 +1,38 @@
+appId: host.exp.Exponent
+---
+# Test: Social login buttons visible and tappable on both login and signup screens
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Login screen — verify social buttons
+- assertVisible: "Welcome back"
+- scrollUntilVisible:
+    element: "Continue with Google"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Continue with Google"
+- assertVisible: "Continue with Apple"
+- takeScreenshot: social_01_login_buttons
+
+# Navigate to signup
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+
+# Signup screen — verify social buttons
+- assertVisible: "Create your account"
+- scrollUntilVisible:
+    element: "Continue with Google"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Continue with Google"
+- assertVisible: "Continue with Apple"
+- takeScreenshot: social_02_signup_buttons
+
+# Navigate back to login
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- assertVisible: "Welcome back"

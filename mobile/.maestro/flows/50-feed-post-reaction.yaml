@@ -1,0 +1,26 @@
+appId: host.exp.Exponent
+---
+# Test: Tap reaction (heart) button on first feed post card
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: reaction_01_feed_loaded
+
+# Tap the heart icon area of first card (bottom-left, approx 12%,42%)
+- tapOn:
+    point: "12%,42%"
+- waitForAnimationToEnd
+- takeScreenshot: reaction_02_after_tap
+
+# Tap again to toggle reaction off
+- tapOn:
+    point: "12%,42%"
+- waitForAnimationToEnd
+- takeScreenshot: reaction_03_toggled
+
+# Verify feed is stable
+- assertVisible: "Sort by Newest"

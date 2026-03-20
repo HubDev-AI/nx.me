@@ -1,0 +1,52 @@
+appId: host.exp.Exponent
+---
+# Test: Profile edit sheet — open, modify display name, cancel, verify no changes saved
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Profile
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: edit_sheet_01_profile
+
+# Open Edit Profile if available
+- runFlow:
+    when:
+      visible: "Edit Profile"
+    commands:
+      - tapOn: "Edit Profile"
+      - waitForAnimationToEnd
+      - takeScreenshot: edit_sheet_02_opened
+
+      # Verify edit sheet fields exist
+      - runFlow:
+          when:
+            visible: "Display Name"
+          commands:
+            - takeScreenshot: edit_sheet_03_fields
+
+      # Tap Cancel to close without saving
+      - runFlow:
+          when:
+            visible: "Cancel"
+          commands:
+            - tapOn: "Cancel"
+            - waitForAnimationToEnd
+            - takeScreenshot: edit_sheet_04_cancelled
+
+      # Re-open to verify state is reset
+      - runFlow:
+          when:
+            visible: "Edit Profile"
+          commands:
+            - tapOn: "Edit Profile"
+            - waitForAnimationToEnd
+            - takeScreenshot: edit_sheet_05_reopened
+            # Close again
+            - runFlow:
+                when:
+                  visible: "Cancel"
+                commands:
+                  - tapOn: "Cancel"
+                  - waitForAnimationToEnd

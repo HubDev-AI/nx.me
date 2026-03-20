@@ -1,0 +1,26 @@
+appId: host.exp.Exponent
+---
+# Test: Feed sort tabs load content (or empty state) without crashing
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: feed_tabs_01_newest
+
+# Switch to Trending — verify it loads
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- takeScreenshot: feed_tabs_02_trending
+
+# Switch to Top — verify it loads
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: feed_tabs_03_top
+
+# Back to Newest — verify stable
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: feed_tabs_04_back_newest

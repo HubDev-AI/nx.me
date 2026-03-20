@@ -2,6 +2,7 @@ appId: host.exp.Exponent
 ---
 # Test: On login screen, tap email field to focus, then tap outside to dismiss keyboard
 - runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
 - assertVisible: "Welcome back"
 - takeScreenshot: keyboard_01_login_screen
 

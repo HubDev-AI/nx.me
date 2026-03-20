@@ -2,61 +2,62 @@ appId: host.exp.Exponent
 ---
 # Test: Successful signup flow end-to-end
 - runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
 
 # Generate unique suffix
 - evalScript: ${output.ts = '' + Date.now()}
 
-# Navigate to signup
+# Only run if on login screen
 - runFlow:
     when:
       visible: "Sign up"
     commands:
+      # Navigate to signup
       - tapOn: "Sign up"
       - waitForAnimationToEnd
+      - assertVisible: "Create your account"
 
-- assertVisible: "Create your account"
+      # Fill form
+      - tapOn:
+          id: "input-username"
+      - inputText: "t${output.ts}"
+      - tapOn:
+          id: "input-display-name"
+      - inputText: "Maestro Tester"
+      - tapOn:
+          id: "input-email"
+      - inputText: "t${output.ts}@test.com"
 
-# Fill form — tap each field to move focus (auto-dismisses keyboard for previous field)
-- tapOn:
-    id: "input-username"
-- inputText: "t${output.ts}"
-- tapOn:
-    id: "input-display-name"
-- inputText: "Maestro Tester"
-- tapOn:
-    id: "input-email"
-- inputText: "t${output.ts}@test.com"
-
-# Toggle password visibility BEFORE typing so secureTextEntry doesn't clear on blur
-- tapOn: "Show password"
-
-# Fill password
-- tapOn:
-    id: "input-password"
-- inputText: "Test1234!"
-
-# Toggle confirm password visibility if available, then fill
-- runFlow:
-    when:
-      visible: "Show password"
-    commands:
+      # Toggle password visibility BEFORE typing
       - tapOn: "Show password"
-- tapOn:
-    id: "input-confirm-password"
-- inputText: "Test1234!"
 
-# Press Enter to dismiss keyboard and submit the form
-- pressKey: Enter
+      # Fill password
+      - tapOn:
+          id: "input-password"
+      - inputText: "Test1234!"
 
-# Should see verification screen
-- extendedWaitUntil:
-    visible: "Check your email"
-    timeout: 15000
-- assertVisible: "Open email app"
-- takeScreenshot: signup_success_01_verification
+      # Toggle confirm password visibility if available, then fill
+      - runFlow:
+          when:
+            visible: "Show password"
+          commands:
+            - tapOn: "Show password"
+      - tapOn:
+          id: "input-confirm-password"
+      - inputText: "Test1234!"
 
-# Navigate back to login
-- tapOn: "I've verified my email"
-- waitForAnimationToEnd
-- assertVisible: "Welcome back"
-- takeScreenshot: signup_success_02_back_to_login
+      # Press Enter to submit
+      - pressKey: Enter
+
+      # Should see verification screen
+      - extendedWaitUntil:
+          visible: "Check your email"
+          timeout: 15000
+      - assertVisible: "Open email app"
+      - takeScreenshot: signup_success_01_verification
+
+      # Navigate back to login
+      - tapOn: "I've verified my email"
+      - waitForAnimationToEnd
+      - assertVisible: "Welcome back"
+      - takeScreenshot: signup_success_02_back_to_login

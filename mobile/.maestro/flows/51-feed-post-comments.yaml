@@ -1,0 +1,33 @@
+appId: host.exp.Exponent
+---
+# Test: Open comments sheet on first feed post
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: comments_01_feed
+
+# Tap comment button on first card (right of heart, ~25%,42%)
+- tapOn:
+    point: "25%,42%"
+- waitForAnimationToEnd
+- takeScreenshot: comments_02_after_tap
+
+# If comments sheet opened, verify and dismiss
+- runFlow:
+    when:
+      visible: "Comments"
+    commands:
+      - takeScreenshot: comments_03_sheet
+      - swipe:
+          start: "50%,30%"
+          end: "50%,90%"
+          duration: 300
+      - waitForAnimationToEnd
+
+# Verify feed is stable
+- assertVisible: "Sort by Newest"
+- takeScreenshot: comments_04_stable

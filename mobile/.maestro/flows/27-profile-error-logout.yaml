@@ -1,0 +1,29 @@
+appId: host.exp.Exponent
+---
+# Test: Profile screen loads and logout works (handles both success and error states)
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Profile
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: profile_logout_01_loaded
+
+# Scroll to find Log out (present in both success and error states)
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- assertVisible: "Log out"
+- takeScreenshot: profile_logout_02_logout_found
+
+# Tap logout
+- tapOn: "Log out"
+- waitForAnimationToEnd
+
+# Verify we're on login screen
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: profile_logout_03_on_login

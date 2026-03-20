@@ -1,0 +1,53 @@
+appId: host.exp.Exponent
+---
+# Test: Multiple round trips between login and signup screens
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Start on login
+- assertVisible: "Welcome back"
+- takeScreenshot: round_trip_01_on_login
+
+# Go to signup
+- scrollUntilVisible:
+    element: "Sign up"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Create your account"
+    timeout: 10000
+- takeScreenshot: round_trip_02_on_signup
+
+# Go back to login
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- assertVisible: "Welcome back"
+- takeScreenshot: round_trip_03_back_to_login
+
+# Go to signup again
+- scrollUntilVisible:
+    element: "Sign up"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Create your account"
+    timeout: 10000
+- takeScreenshot: round_trip_04_signup_again
+
+# Go to login one more time
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- assertVisible: "Welcome back"
+- takeScreenshot: round_trip_05_final_login

@@ -1,0 +1,9 @@
+appId: host.exp.Exponent
+---
+# Reusable: If on login screen, log in with test credentials.
+# If already on feed, do nothing.
+- runFlow:
+    when:
+      visible: "Welcome back"
+    commands:
+      - runFlow: 00-login.yaml

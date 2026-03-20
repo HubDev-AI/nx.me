@@ -1,0 +1,33 @@
+appId: host.exp.Exponent
+---
+# Test: Rapidly switch feed sort tabs while content is loading — verify no crash
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+
+# Rapidly switch tabs without waiting for content
+- tapOn: "Sort by Trending"
+- tapOn: "Sort by Top"
+- tapOn: "Sort by Newest"
+- tapOn: "Sort by Trending"
+- tapOn: "Sort by Newest"
+- tapOn: "Sort by Top"
+- tapOn: "Sort by Trending"
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: rapid_sort_01_after_spam
+
+# Verify app is stable
+- assertVisible: "Sort by Newest"
+- takeScreenshot: rapid_sort_02_stable
+
+# Now do one clean switch to verify it still works properly
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: rapid_sort_03_clean_switch
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: rapid_sort_04_back_to_newest

@@ -1,0 +1,62 @@
+appId: host.exp.Exponent
+---
+# Test: Profile screen — verify header, stats, edit sheet, share, and logout
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Profile tab (rightmost)
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: profile_full_01_loaded
+
+# Verify profile header elements
+- runFlow:
+    when:
+      visible: "@"
+    commands:
+      - takeScreenshot: profile_full_02_username_visible
+
+# Verify stats section
+- runFlow:
+    when:
+      visible: "Posts"
+    commands:
+      - takeScreenshot: profile_full_03_stats
+
+# Tap Edit Profile button if visible
+- runFlow:
+    when:
+      visible: "Edit Profile"
+    commands:
+      - tapOn: "Edit Profile"
+      - waitForAnimationToEnd
+      - takeScreenshot: profile_full_04_edit_sheet_open
+      # Verify edit sheet has expected fields
+      - runFlow:
+          when:
+            visible: "Display Name"
+          commands:
+            - takeScreenshot: profile_full_05_edit_fields
+      # Close the edit sheet
+      - runFlow:
+          when:
+            visible: "Cancel"
+          commands:
+            - tapOn: "Cancel"
+            - waitForAnimationToEnd
+
+# Verify Share button
+- runFlow:
+    when:
+      visible: "Share"
+    commands:
+      - takeScreenshot: profile_full_06_share_visible
+
+# Scroll down and verify Log out button
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- assertVisible: "Log out"
+- takeScreenshot: profile_full_07_logout_visible

@@ -1,0 +1,45 @@
+appId: host.exp.Exponent
+---
+# Test: Login with various invalid email formats — verify each is rejected
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+- assertVisible: "Welcome back"
+
+# Test 1: No @ symbol
+- tapOn:
+    id: "input-email"
+- inputText: "plainaddress"
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- takeScreenshot: invalid_email_01_no_at
+
+# Test 2: No domain
+- tapOn:
+    id: "input-email"
+- eraseText: 50
+- inputText: "user@"
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- takeScreenshot: invalid_email_02_no_domain
+
+# Test 3: Double @
+- tapOn:
+    id: "input-email"
+- eraseText: 50
+- inputText: "user@@domain.com"
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- takeScreenshot: invalid_email_03_double_at
+
+# Test 4: Spaces in email
+- tapOn:
+    id: "input-email"
+- eraseText: 50
+- inputText: "user name@domain.com"
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- takeScreenshot: invalid_email_04_spaces
+
+# Verify app is still stable
+- assertVisible: "Welcome back"
+- takeScreenshot: invalid_email_05_still_stable

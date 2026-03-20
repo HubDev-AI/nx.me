@@ -1,0 +1,45 @@
+appId: host.exp.Exponent
+---
+# Test: Feed pull-to-refresh across all sort tabs
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: refresh_01_initial
+
+# Pull to refresh on Newest
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: refresh_02_after_pull
+
+# Switch to Trending and pull-refresh
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: refresh_03_trending_refreshed
+
+# Switch to Top and pull-refresh
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: refresh_04_top_refreshed
+
+# Back to Newest — app should be stable
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- assertVisible: "Sort by Newest"
+- takeScreenshot: refresh_05_stable

@@ -1,0 +1,44 @@
+appId: host.exp.Exponent
+---
+# Test: Rapid tab switching — stress test tab bar doesn't crash
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+
+# Rapidly switch tabs 3 full cycles
+# Cycle 1
+- tapOn:
+    point: "50%,96%"
+- tapOn:
+    point: "83%,96%"
+- tapOn:
+    point: "17%,96%"
+
+# Cycle 2
+- tapOn:
+    point: "83%,96%"
+- tapOn:
+    point: "50%,96%"
+- tapOn:
+    point: "17%,96%"
+
+# Cycle 3
+- tapOn:
+    point: "50%,96%"
+- tapOn:
+    point: "17%,96%"
+- tapOn:
+    point: "83%,96%"
+- tapOn:
+    point: "17%,96%"
+
+- waitForAnimationToEnd
+
+# Verify app is still stable on Home
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: rapid_tabs_01_stable_after_stress

@@ -7,18 +7,18 @@ appId: host.exp.Exponent
 
 # Navigate to Create tab
 - tapOn:
-    point: "50%,97%"
+    point: "50%,96%"
 - waitForAnimationToEnd
 - takeScreenshot: tabs_02_create_tab
 
 # Navigate to Profile tab
 - tapOn:
-    point: "75%,97%"
+    point: "83%,96%"
 - waitForAnimationToEnd
 - takeScreenshot: tabs_03_profile_tab
 
 # Navigate back to Home tab
 - tapOn:
-    point: "15%,97%"
+    point: "17%,96%"
 - waitForAnimationToEnd
 - takeScreenshot: tabs_04_home_tab

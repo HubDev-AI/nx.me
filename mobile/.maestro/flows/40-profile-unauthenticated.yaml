@@ -1,0 +1,23 @@
+appId: host.exp.Exponent
+---
+# Test: Profile screen when not authenticated — shows sign-in prompt
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Verify login screen
+- assertVisible: "Welcome back"
+- takeScreenshot: profile_unauth_01_on_login
+
+# The auth guard should prevent accessing profile tab without auth
+# But verify the login screen has all expected elements
+- assertVisible: "Email"
+- assertVisible: "Password"
+- assertVisible: "Log in"
+- assertVisible: "Continue with Google"
+- assertVisible: "Continue with Apple"
+- scrollUntilVisible:
+    element: "Sign up"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Sign up"
+- takeScreenshot: profile_unauth_02_all_login_elements

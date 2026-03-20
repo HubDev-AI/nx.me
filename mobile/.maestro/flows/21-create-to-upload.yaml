@@ -1,0 +1,25 @@
+appId: host.exp.Exponent
+---
+# Test: Create tab → Upload screen — verify both screens' UI
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Create tab (center)
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+
+# Verify Create screen
+- assertVisible: "Create your glow-up"
+- assertVisible: "Upload a photo and get AI-powered style suggestions"
+- takeScreenshot: create_upload_01_create_screen
+
+# Tap Upload Photo to go to upload screen
+- tapOn: "Upload a photo for glow-up"
+- waitForAnimationToEnd
+
+# Verify upload screen elements
+- assertVisible: "Take a photo with camera"
+- assertVisible: "Choose a photo from gallery"
+- assertVisible: "Analyze photo"
+- takeScreenshot: create_upload_02_upload_verified

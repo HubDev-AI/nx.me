@@ -1,0 +1,18 @@
+appId: host.exp.Exponent
+---
+# Test: Upload screen — verify photo picker UI elements
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Create → Upload
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- tapOn: "Upload a photo for glow-up"
+- waitForAnimationToEnd
+
+# Verify all upload screen elements
+- assertVisible: "Take a photo with camera"
+- assertVisible: "Choose a photo from gallery"
+- assertVisible: "Analyze photo"
+- takeScreenshot: upload_ui_01_all_elements

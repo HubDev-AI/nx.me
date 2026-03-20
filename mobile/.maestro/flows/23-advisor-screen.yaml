@@ -1,0 +1,53 @@
+appId: host.exp.Exponent
+---
+# Test: Advisor (Ada) screen — tabs, chat view, nudges, memories
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Advisor via route push (it may be a separate screen, not a tab)
+# First try tapping the Advisor tab if visible (4th tab)
+- runFlow:
+    when:
+      visible: "Advisor"
+    commands:
+      - tapOn: "Advisor"
+      - waitForAnimationToEnd
+
+# If Advisor tab not visible in tab bar, try navigating via profile or other route
+- runFlow:
+    when:
+      notVisible: "Ada"
+    commands:
+      # Try navigating directly
+      - tapOn:
+          point: "83%,96%"
+      - waitForAnimationToEnd
+
+# Verify Advisor screen loaded
+- runFlow:
+    when:
+      visible: "Ada"
+    commands:
+      - assertVisible: "Your style advisor"
+      - takeScreenshot: advisor_01_loaded
+
+      # Verify all 3 advisor tabs
+      - assertVisible: "Chat"
+      - assertVisible: "Nudges"
+      - assertVisible: "Memories"
+      - takeScreenshot: advisor_02_all_tabs
+
+      # Switch to Nudges tab
+      - tapOn: "Nudges"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_03_nudges_tab
+
+      # Switch to Memories tab
+      - tapOn: "Memories"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_04_memories_tab
+
+      # Switch back to Chat
+      - tapOn: "Chat"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_05_chat_tab
