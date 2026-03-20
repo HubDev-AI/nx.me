@@ -127,7 +127,48 @@ const YOUNG: DemoPool = {
   accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-teen-3.jpg', '/images/detail-accessories-teen-4.jpg', '/images/detail-accessories-teen-5.jpg'],
 };
 
-const POOLS = [MEN, WOMEN, YOUNG];
+// PRIMARY audience — young women. 20 dedicated pairs + own detail images + heroes.
+const YOUNG_WOMEN: DemoPool = {
+  heroes: [
+    '/images/hero-17.jpg', '/images/hero-18.jpg', '/images/hero-19.jpg',
+    '/images/hero-20.jpg', '/images/hero-21.jpg', '/images/hero-22.jpg',
+    '/images/hero-2.jpg', '/images/hero-4.jpg', '/images/hero-8.jpg',
+    '/images/hero-9.jpg', '/images/hero-12.jpg', '/images/hero-14.jpg',
+    '/images/hero-16.jpg',
+    '/images/after-53.jpg', '/images/after-54.jpg', '/images/before-55.jpg',
+    '/images/after-58.jpg', '/images/before-65.jpg', '/images/after-67.jpg',
+    '/images/before-72.jpg',
+  ],
+  pairs: [
+    { before: '/images/before-53.jpg', after: '/images/after-53.jpg' },
+    { before: '/images/before-54.jpg', after: '/images/after-54.jpg' },
+    { before: '/images/before-55.jpg', after: '/images/after-55.jpg' },
+    { before: '/images/before-56.jpg', after: '/images/after-56.jpg' },
+    { before: '/images/before-57.jpg', after: '/images/after-57.jpg' },
+    { before: '/images/before-58.jpg', after: '/images/after-58.jpg' },
+    { before: '/images/before-59.jpg', after: '/images/after-59.jpg' },
+    { before: '/images/before-60.jpg', after: '/images/after-60.jpg' },
+    { before: '/images/before-61.jpg', after: '/images/after-61.jpg' },
+    { before: '/images/before-62.jpg', after: '/images/after-62.jpg' },
+    { before: '/images/before-63.jpg', after: '/images/after-63.jpg' },
+    { before: '/images/before-64.jpg', after: '/images/after-64.jpg' },
+    { before: '/images/before-65.jpg', after: '/images/after-65.jpg' },
+    { before: '/images/before-66.jpg', after: '/images/after-66.jpg' },
+    { before: '/images/before-67.jpg', after: '/images/after-67.jpg' },
+    { before: '/images/before-68.jpg', after: '/images/after-68.jpg' },
+    { before: '/images/before-69.jpg', after: '/images/after-69.jpg' },
+    { before: '/images/before-70.jpg', after: '/images/after-70.jpg' },
+    { before: '/images/before-71.jpg', after: '/images/after-71.jpg' },
+    { before: '/images/before-72.jpg', after: '/images/after-72.jpg' },
+  ],
+  hair: ['/images/detail-hair-yw-1.jpg', '/images/detail-hair-yw-2.jpg', '/images/detail-hair-yw-3.jpg', '/images/detail-hair-yw-4.jpg', '/images/detail-hair-yw-5.jpg'],
+  clothing: ['/images/detail-clothing-yw-1.jpg', '/images/detail-clothing-yw-2.jpg', '/images/detail-clothing-yw-3.jpg', '/images/detail-clothing-yw-4.jpg', '/images/detail-clothing-yw-5.jpg'],
+  grooming: ['/images/detail-grooming-yw-1.jpg', '/images/detail-grooming-yw-2.jpg', '/images/detail-grooming-yw-3.jpg', '/images/detail-grooming-yw-4.jpg', '/images/detail-grooming-yw-5.jpg'],
+  accessories: ['/images/detail-accessories-yw-1.jpg', '/images/detail-accessories-yw-2.jpg', '/images/detail-accessories-yw-3.jpg', '/images/detail-accessories-yw-4.jpg', '/images/detail-accessories-yw-5.jpg'],
+};
+
+// Weighted pool selection: YOUNG_WOMEN appears 4x (primary audience)
+const POOLS = [YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, MEN, WOMEN, YOUNG];
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)] ?? arr[0] as T;
