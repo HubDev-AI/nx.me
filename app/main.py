@@ -98,6 +98,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         encoding="utf-8",
     )
 
+    # Pre-fetch ES256 JWKS key for JWT validation (Supabase CLI v2+ uses ES256)
+    from app.api.middleware.auth import prefetch_jwks_key
+    await prefetch_jwks_key()
+
     # Pre-load MediaPipe FaceMesh model (AC-2: health check gates on this)
     if settings.ADAPTER__FACE_ANALYSIS_ADAPTER == "mediapipe":
         from app.face_analysis.landmark_extractor import preload_model
@@ -170,9 +174,17 @@ def create_app() -> FastAPI:
         # still protects well-behaved clients.
         return await call_next(request)
 
-    # M-25: No CORSMiddleware — API consumed by mobile app (native HTTP, no CORS)
-    # and card-web (server-side rendering). If browser-direct calls needed later,
-    # add CORSMiddleware with explicit allow_origins (never "*").
+    # M-25: CORS for local dev — allows Expo web preview to call the API.
+    # Production should restrict origins to the actual domain.
+    from fastapi.middleware.cors import CORSMiddleware
+    if settings.APP_ENV == "development":
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["http://localhost:8087", "http://localhost:19006", "http://localhost:8081"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # ── Exception handlers ───────────────────────────────────────────────────
     app.add_exception_handler(ApiError, api_error_handler)

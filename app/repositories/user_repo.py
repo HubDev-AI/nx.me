@@ -23,6 +23,18 @@ class UserRepository:
     # Read — users table
     # ------------------------------------------------------------------
 
+    def get_profile_by_id(self, user_id: str) -> dict | None:
+        """Fetch core profile fields for the authenticated user, or None if not found."""
+        result = (
+            self._sb.table("users")
+            .select("id, username, display_name, email")
+            .eq("id", user_id)
+            .is_("deleted_at", "null")
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
     def get_by_username(self, username: str) -> dict | None:
         """Fetch a non-deleted user by username, or None if not found."""
         result = (
