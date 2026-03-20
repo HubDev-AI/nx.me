@@ -132,12 +132,11 @@ const YOUNG_WOMEN: DemoPool = {
   heroes: [
     '/images/hero-17.jpg', '/images/hero-18.jpg', '/images/hero-19.jpg',
     '/images/hero-20.jpg', '/images/hero-21.jpg', '/images/hero-22.jpg',
-    '/images/hero-2.jpg', '/images/hero-4.jpg', '/images/hero-8.jpg',
-    '/images/hero-9.jpg', '/images/hero-12.jpg', '/images/hero-14.jpg',
-    '/images/hero-16.jpg',
-    '/images/after-53.jpg', '/images/after-54.jpg', '/images/before-55.jpg',
-    '/images/after-58.jpg', '/images/before-65.jpg', '/images/after-67.jpg',
-    '/images/before-72.jpg',
+    '/images/hero-23.jpg', '/images/hero-24.jpg', '/images/hero-25.jpg',
+    '/images/hero-26.jpg', '/images/hero-27.jpg', '/images/hero-28.jpg',
+    '/images/hero-29.jpg', '/images/hero-30.jpg', '/images/hero-31.jpg',
+    '/images/hero-32.jpg', '/images/hero-33.jpg', '/images/hero-34.jpg',
+    '/images/hero-35.jpg', '/images/hero-36.jpg', '/images/hero-37.jpg',
   ],
   pairs: [
     { before: '/images/before-53.jpg', after: '/images/after-53.jpg' },
@@ -200,14 +199,15 @@ function buildTheme(): Theme {
   };
 }
 
+// Default is young women (primary audience) — shown during SSR
 const DEFAULT_THEME: Theme = {
-  before: '/images/before-1.jpg',
-  after: '/images/after-1.jpg',
-  hero: '/images/hero-1.jpg',
-  hair: '/images/detail-hair-men.jpg',
-  clothing: '/images/detail-clothing-men.jpg',
-  grooming: '/images/detail-grooming-men.jpg',
-  accessories: '/images/detail-accessories-men.jpg',
+  before: '/images/before-53.jpg',
+  after: '/images/after-53.jpg',
+  hero: '/images/hero-17.jpg',
+  hair: '/images/detail-hair-yw-1.jpg',
+  clothing: '/images/detail-clothing-yw-1.jpg',
+  grooming: '/images/detail-grooming-yw-1.jpg',
+  accessories: '/images/detail-accessories-yw-1.jpg',
   accent: '#F43F5E',
 };
 
@@ -215,6 +215,7 @@ export function useTheme(): Theme {
   const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
 
   useEffect(() => {
+    // Force new random theme on every page load/refresh
     const t = buildTheme();
     setTheme(t);
     document.documentElement.style.setProperty('--accent', t.accent);
