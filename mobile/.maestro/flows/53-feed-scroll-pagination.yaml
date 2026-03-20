@@ -1,0 +1,52 @@
+appId: host.exp.Exponent
+---
+# Test: Feed scrolling — scroll through posts and back, verify stability
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: scroll_01_top
+
+# Scroll down aggressively through posts
+- swipe:
+    start: "50%,80%"
+    end: "50%,20%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_02_down1
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,20%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_03_down2
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,20%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_04_down3
+
+# Scroll back up
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- waitForAnimationToEnd
+
+# Verify sort tabs visible at top
+- assertVisible: "Sort by Newest"
+- takeScreenshot: scroll_05_back_to_top

@@ -20,8 +20,8 @@ echo "=========================================="
 for flow in "$FLOWS_DIR"/[0-9]*.yaml; do
   name=$(basename "$flow" .yaml)
 
-  # Skip the reusable launcher
-  [[ "$name" == "00-app-launch" ]] && continue
+  # Skip all reusable flows (00-*)
+  [[ "$name" == 00-* ]] && continue
 
   TOTAL=$((TOTAL + 1))
   echo ""

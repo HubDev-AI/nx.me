@@ -1,0 +1,47 @@
+appId: host.exp.Exponent
+---
+# Test: Profile screen — scroll through all content to logout at bottom
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Profile
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: prof_scroll_01_top
+
+# Scroll down slowly to see all profile content
+- swipe:
+    start: "50%,80%"
+    end: "50%,40%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: prof_scroll_02_mid
+
+# Keep scrolling
+- swipe:
+    start: "50%,80%"
+    end: "50%,40%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: prof_scroll_03_more
+
+# Find and verify logout
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "Log out"
+- takeScreenshot: prof_scroll_04_logout_visible
+
+# Scroll back up to verify header
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 500
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: prof_scroll_05_back_to_top

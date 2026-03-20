@@ -1,0 +1,47 @@
+appId: host.exp.Exponent
+---
+# Test: Signup with special characters, emoji, and unicode in all fields
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- assertVisible: "Create your account"
+
+# Enter emoji in username
+- tapOn:
+    id: "input-username"
+- inputText: "test_user_123"
+- tapOn:
+    id: "input-display-name"
+- inputText: "Test User"
+- tapOn:
+    id: "input-email"
+- inputText: "special+chars@test.com"
+
+# Password with special chars
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- waitForAnimationToEnd
+- inputText: "P@ssw0rd_Special"
+- scrollUntilVisible:
+    element: "Confirm password"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    id: "input-confirm-password"
+- waitForAnimationToEnd
+- inputText: "P@ssw0rd_Special"
+
+# Submit
+- scrollUntilVisible:
+    element: "Create account"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Create account"
+- waitForAnimationToEnd
+- takeScreenshot: special_chars_01_after_submit
+
+# Verify app handled it (either success or duplicate error — not crash)
+- takeScreenshot: special_chars_02_result

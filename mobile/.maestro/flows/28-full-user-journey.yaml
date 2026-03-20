@@ -1,0 +1,53 @@
+appId: host.exp.Exponent
+---
+# Test: Full user journey — login → feed → create → profile → logout → re-login
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Step 1: Login
+- assertVisible: "Welcome back"
+- runFlow: 00-login.yaml
+- takeScreenshot: journey_01_logged_in
+
+# Step 2: Browse feed — switch all sort tabs
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- takeScreenshot: journey_02_trending
+
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: journey_03_top
+
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+
+# Step 3: Go to Create tab
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: journey_04_create
+
+# Step 4: Go to Profile
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: journey_05_profile
+
+# Step 5: Logout
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+
+# Step 6: Verify back on login
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: journey_06_logged_out
+
+# Step 7: Re-login to verify session cycle works
+- runFlow: 00-login.yaml
+- takeScreenshot: journey_07_re_logged_in

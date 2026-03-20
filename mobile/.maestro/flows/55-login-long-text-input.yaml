@@ -1,0 +1,32 @@
+appId: host.exp.Exponent
+---
+# Test: Login with extremely long email and password — verify no crash/overflow
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+- assertVisible: "Welcome back"
+
+# Enter very long email
+- tapOn:
+    id: "input-email"
+- inputText: "thisIsAnExtremelyLongEmailAddressThatNobodyShouldEverUseInRealLifeButWeNeedToTestIt@veryveryveryverylondomainname.com"
+- takeScreenshot: long_input_01_long_email
+
+# Enter very long password
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- waitForAnimationToEnd
+- inputText: "ThisIsAVeryVeryVeryLongPasswordThatExceedsTypicalLimits1234567890!@#$%"
+- takeScreenshot: long_input_02_long_password
+
+# Submit — should show error, not crash
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- takeScreenshot: long_input_03_after_submit
+
+# Verify app is stable
+- assertVisible: "Welcome back"

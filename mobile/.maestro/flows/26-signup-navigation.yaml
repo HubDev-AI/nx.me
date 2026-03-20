@@ -1,0 +1,42 @@
+appId: host.exp.Exponent
+---
+# Test: Login ↔ Signup navigation and signup form field validation
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# On login screen — tap Sign up link
+- assertVisible: "Welcome back"
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+
+# Verify signup screen loaded with all fields
+- assertVisible: "Create your account"
+- assertVisible: "Username"
+- assertVisible: "Display name"
+- assertVisible: "Email"
+- assertVisible: "Password"
+- assertVisible: "Confirm password"
+- assertVisible: "Create account"
+- takeScreenshot: signup_nav_01_form
+
+# Verify social login options on signup too
+- scrollUntilVisible:
+    element: "Continue with Google"
+    direction: DOWN
+    timeout: 5000
+- assertVisible: "Continue with Google"
+- assertVisible: "Continue with Apple"
+- takeScreenshot: signup_nav_02_social_buttons
+
+# Verify "Already have an account? Log in" link
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- takeScreenshot: signup_nav_03_login_link
+
+# Navigate back to login
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- assertVisible: "Welcome back"
+- takeScreenshot: signup_nav_04_back_to_login

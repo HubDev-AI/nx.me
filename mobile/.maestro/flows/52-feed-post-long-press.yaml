@@ -1,0 +1,36 @@
+appId: host.exp.Exponent
+---
+# Test: Long press on feed post — verify action sheet (Share, Block, Report)
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: long_press_01_feed
+
+# Long press on the image area of first card (~30% down from top)
+- longPressOn:
+    point: "50%,30%"
+- waitForAnimationToEnd
+- takeScreenshot: long_press_02_action_sheet
+
+# Verify action sheet options
+- runFlow:
+    when:
+      visible: "Share"
+    commands:
+      - assertVisible: "Report"
+      - takeScreenshot: long_press_03_options
+
+# Dismiss by tapping Cancel
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+
+- assertVisible: "Sort by Newest"
+- takeScreenshot: long_press_04_dismissed

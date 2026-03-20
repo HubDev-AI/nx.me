@@ -1,0 +1,71 @@
+appId: host.exp.Exponent
+---
+# Test: Full stress test — rapid actions across all tab screens, try to break the app
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+
+# Rapid sort tab spam
+- tapOn: "Sort by Trending"
+- tapOn: "Sort by Top"
+- tapOn: "Sort by Newest"
+- tapOn: "Sort by Trending"
+- tapOn: "Sort by Newest"
+
+# Rapid tab switches (no upload — it hides tab bar)
+- tapOn:
+    point: "50%,96%"
+- tapOn:
+    point: "83%,96%"
+- tapOn:
+    point: "17%,96%"
+- tapOn:
+    point: "50%,96%"
+- tapOn:
+    point: "17%,96%"
+- tapOn:
+    point: "83%,96%"
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+
+# Pull to refresh
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 300
+- waitForAnimationToEnd
+
+# Verify app survived
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: stress_01_survived
+
+# More sort tab spam
+- tapOn: "Sort by Top"
+- tapOn: "Sort by Trending"
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+
+# Navigate to profile and logout
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: stress_02_logout_works
+
+# Re-login to verify session not corrupted
+- runFlow: 00-login.yaml
+- takeScreenshot: stress_03_re_login_success

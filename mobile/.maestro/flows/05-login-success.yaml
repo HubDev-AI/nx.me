@@ -2,17 +2,18 @@ appId: host.exp.Exponent
 ---
 # Test: Successful login and landing on home feed
 - runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Should be on login screen
 - assertVisible: "Welcome back"
 
-# Login with the account we just created
-- tapOn:
-    id: "input-email"
-- inputText: "maestro@test.com"
-- tapOn: "Show password"
-- tapOn:
-    id: "input-password"
-- inputText: "Test1234!"
+# Login with test credentials
+- runFlow: 00-login.yaml
 
-- pressKey: Enter
-- waitForAnimationToEnd
-- takeScreenshot: login_success_01_after_submit
+# Verify we landed on the home feed with sort tabs
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 5000
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: login_success_01_on_feed

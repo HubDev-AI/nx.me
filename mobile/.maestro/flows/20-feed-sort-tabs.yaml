@@ -1,0 +1,36 @@
+appId: host.exp.Exponent
+---
+# Test: Feed sort tabs — switch between Newest, Trending, Top and verify each activates
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Verify default Newest tab is active
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: feed_sort_01_newest_default
+
+# Switch to Trending
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- takeScreenshot: feed_sort_02_trending_active
+
+# Switch to Top
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: feed_sort_03_top_active
+
+# Switch back to Newest
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: feed_sort_04_back_to_newest
+
+# Verify empty state text is shown (no posts in fresh DB)
+- runFlow:
+    when:
+      visible: "No posts yet"
+    commands:
+      - assertVisible: "Be the first to share your glow-up"
+      - takeScreenshot: feed_sort_05_empty_state

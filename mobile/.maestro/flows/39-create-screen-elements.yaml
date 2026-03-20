@@ -1,0 +1,26 @@
+appId: host.exp.Exponent
+---
+# Test: Create screen — all UI elements, title, subtitle, icon, CTA button
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Create tab
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+
+# Verify all Create screen elements
+- assertVisible: "Create your glow-up"
+- assertVisible: "Upload a photo and get AI-powered style suggestions"
+- assertVisible: "Upload a photo for glow-up"
+- takeScreenshot: create_elements_01_full_screen
+
+# Navigate to Home, then back to Create to verify tab state
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: create_elements_02_preserved_state

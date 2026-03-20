@@ -1,0 +1,78 @@
+appId: host.exp.Exponent
+---
+# Test: Signup individual field validation — username patterns, email format, password match
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- assertVisible: "Create your account"
+
+# Test: invalid username (special characters)
+- tapOn:
+    id: "input-username"
+- inputText: "user@name"
+- tapOn:
+    id: "input-display-name"
+- inputText: "Test User"
+- tapOn:
+    id: "input-email"
+- inputText: "test@example.com"
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- waitForAnimationToEnd
+- inputText: "ValidPass123"
+- scrollUntilVisible:
+    element: "Confirm password"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    id: "input-confirm-password"
+- waitForAnimationToEnd
+- inputText: "ValidPass123"
+- scrollUntilVisible:
+    element: "Create account"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Create account"
+- waitForAnimationToEnd
+- takeScreenshot: signup_field_01_invalid_username
+
+# Test: password mismatch
+- tapOn:
+    id: "input-username"
+- eraseText: 30
+- inputText: "validuser"
+- scrollUntilVisible:
+    element: "Confirm password"
+    direction: DOWN
+    timeout: 5000
+- tapOn:
+    id: "input-confirm-password"
+- eraseText: 30
+- inputText: "DifferentPass456"
+- scrollUntilVisible:
+    element: "Create account"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Create account"
+- waitForAnimationToEnd
+- takeScreenshot: signup_field_02_password_mismatch
+
+# Test: invalid email
+- scrollUntilVisible:
+    element: "Email"
+    direction: UP
+    timeout: 5000
+- tapOn:
+    id: "input-email"
+- eraseText: 30
+- inputText: "not-an-email"
+- scrollUntilVisible:
+    element: "Create account"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Create account"
+- waitForAnimationToEnd
+- takeScreenshot: signup_field_03_invalid_email

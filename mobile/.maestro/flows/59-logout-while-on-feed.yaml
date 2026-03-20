@@ -1,0 +1,37 @@
+appId: host.exp.Exponent
+---
+# Test: Logout from different screens — verify always lands on login
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+
+# Switch to Trending tab first (test logout from non-default state)
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+
+# Navigate to profile and logout
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+
+# Verify on login
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: logout_feed_01_from_trending
+
+# Login again
+- runFlow: 00-login.yaml
+
+# Verify we're back on feed (should be Newest, not Trending — fresh session)
+- assertVisible: "Sort by Newest"
+- takeScreenshot: logout_feed_02_fresh_session

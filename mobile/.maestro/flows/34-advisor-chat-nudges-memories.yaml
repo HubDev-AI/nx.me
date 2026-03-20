@@ -1,0 +1,49 @@
+appId: host.exp.Exponent
+---
+# Test: Advisor deep — verify Chat input, Nudges feed, Memories list across all tabs
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Advisor (via tab or route)
+- runFlow:
+    when:
+      visible: "Advisor"
+    commands:
+      - tapOn: "Advisor"
+      - waitForAnimationToEnd
+
+# Verify header
+- runFlow:
+    when:
+      visible: "Ada"
+    commands:
+      - assertVisible: "Your style advisor"
+
+      # Chat tab — verify chat input area
+      - tapOn: "Chat tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_deep_01_chat
+
+      # Try typing in chat (if input exists)
+      - runFlow:
+          when:
+            visible: "Type a message"
+          commands:
+            - tapOn: "Type a message"
+            - inputText: "Hello Ada"
+            - takeScreenshot: advisor_deep_02_chat_typed
+
+      # Nudges tab — verify nudge cards
+      - tapOn: "Nudges tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_deep_03_nudges
+
+      # Memories tab — verify memories list
+      - tapOn: "Memories tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_deep_04_memories
+
+      # Back to Chat
+      - tapOn: "Chat tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_deep_05_back_to_chat

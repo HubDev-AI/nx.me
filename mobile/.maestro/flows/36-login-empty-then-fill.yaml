@@ -1,0 +1,32 @@
+appId: host.exp.Exponent
+---
+# Test: Login — submit empty, then fill email only, then fill both — error flow
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+- assertVisible: "Welcome back"
+
+# Submit with both fields empty
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- assertVisible: "Email is required"
+- assertVisible: "Password is required"
+- takeScreenshot: empty_fill_01_both_empty
+
+# Fill email only, submit
+- tapOn:
+    id: "input-email"
+- inputText: "test@test.com"
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- assertVisible: "Password is required"
+- takeScreenshot: empty_fill_02_email_only
+
+# Fill password too (wrong one), submit
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- waitForAnimationToEnd
+- inputText: "wrongpass"
+- tapOn: "Log in"
+- waitForAnimationToEnd
+- takeScreenshot: empty_fill_03_wrong_pass

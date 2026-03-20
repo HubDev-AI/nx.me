@@ -1,0 +1,29 @@
+appId: host.exp.Exponent
+---
+# Reusable: Ensure user is on the login screen.
+# If already logged in, navigate to Profile → tap "Log out".
+# If already on login screen, do nothing.
+
+- runFlow:
+    when:
+      notVisible: "Welcome back"
+    commands:
+      # Navigate to Profile tab (rightmost of 3 visible tabs)
+      - tapOn:
+          point: "83%,96%"
+      - waitForAnimationToEnd
+      # Wait for profile tab content
+      - extendedWaitUntil:
+          visible: "Profile"
+          timeout: 5000
+      # Scroll down to find Log out if needed
+      - scrollUntilVisible:
+          element: "Log out"
+          direction: DOWN
+          timeout: 10000
+      - tapOn: "Log out"
+      - waitForAnimationToEnd
+      # Should now be on login screen
+      - extendedWaitUntil:
+          visible: "Welcome back"
+          timeout: 10000

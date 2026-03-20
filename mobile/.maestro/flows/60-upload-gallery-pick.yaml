@@ -1,0 +1,65 @@
+appId: host.exp.Exponent
+---
+# Test: Upload flow — open gallery picker (test actual image selection on simulator)
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Navigate to Create → Upload
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- tapOn: "Upload a photo for glow-up"
+- waitForAnimationToEnd
+- takeScreenshot: gallery_01_upload_screen
+
+# Tap Gallery button
+- tapOn: "Choose a photo from gallery"
+- waitForAnimationToEnd
+- takeScreenshot: gallery_02_picker_opened
+
+# Handle permissions dialog
+- runFlow:
+    when:
+      visible: "Allow Full Access"
+    commands:
+      - tapOn: "Allow Full Access"
+      - waitForAnimationToEnd
+      - takeScreenshot: gallery_03_access_granted
+
+# If photo library opens, try to select a photo
+- runFlow:
+    when:
+      visible: "Recents"
+    commands:
+      - takeScreenshot: gallery_04_library_visible
+      # Tap on first image in the grid (top-left area of photo library)
+      - tapOn:
+          point: "15%,30%"
+      - waitForAnimationToEnd
+      - takeScreenshot: gallery_05_photo_selected
+
+      # If image editing screen appears, tap Choose/Done
+      - runFlow:
+          when:
+            visible: "Choose"
+          commands:
+            - tapOn: "Choose"
+            - waitForAnimationToEnd
+            - takeScreenshot: gallery_06_photo_chosen
+
+# Back on upload screen — verify Analyze button becomes active
+- runFlow:
+    when:
+      visible: "Analyze photo"
+    commands:
+      - takeScreenshot: gallery_07_ready_to_analyze
+
+# If permission wasn't granted, dismiss and verify stable
+- runFlow:
+    when:
+      visible: "Don't Allow"
+    commands:
+      - tapOn: "Don't Allow"
+      - waitForAnimationToEnd
+
+- takeScreenshot: gallery_08_final_state

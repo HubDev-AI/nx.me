@@ -5,7 +5,7 @@ appId: host.exp.Exponent
 
 # Navigate to Profile tab
 - tapOn:
-    point: "75%,97%"
+    point: "83%,96%"
 - waitForAnimationToEnd
 - takeScreenshot: profile_01_loaded
 

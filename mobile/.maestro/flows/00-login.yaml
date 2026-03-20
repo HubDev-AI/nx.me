@@ -1,0 +1,40 @@
+appId: host.exp.Exponent
+---
+# Reusable: Login with test credentials.
+# Assumes user is on the login screen ("Welcome back" visible).
+# After this flow, the user lands on the Home feed with sort tabs visible.
+
+- tapOn:
+    id: "input-email"
+- inputText: "maestro@test.com"
+# Toggle password visibility so inputText works reliably on secure fields
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- waitForAnimationToEnd
+- inputText: "TestPass1234"
+# Scroll to ensure Log in button is visible, then tap
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+# Dismiss iOS Keychain "Save Password" dialog if it appears
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"
+      - waitForAnimationToEnd
+# Also dismiss if it reappears with different wording
+- runFlow:
+    when:
+      visible: "Save Password"
+    commands:
+      - tapOn: "Not Now"
+      - waitForAnimationToEnd
+# Wait for feed to fully load (sort tabs visible)
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 20000

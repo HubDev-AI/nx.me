@@ -1,0 +1,31 @@
+appId: host.exp.Exponent
+---
+# Test: Spam heart button rapidly — verify app doesn't crash
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: spam_01_initial
+
+# Rapidly tap the heart area of first card 6 times
+- tapOn:
+    point: "12%,42%"
+- tapOn:
+    point: "12%,42%"
+- tapOn:
+    point: "12%,42%"
+- tapOn:
+    point: "12%,42%"
+- tapOn:
+    point: "12%,42%"
+- tapOn:
+    point: "12%,42%"
+- waitForAnimationToEnd
+- takeScreenshot: spam_02_after_rapid_taps
+
+# Verify app is still stable
+- assertVisible: "Sort by Newest"
+- takeScreenshot: spam_03_still_stable

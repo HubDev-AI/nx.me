@@ -1,0 +1,55 @@
+appId: host.exp.Exponent
+---
+# Test: Deep tab navigation — Home → Create → Profile → Home → Create cycle
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Start on Home feed
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: deep_nav_01_home
+
+# Go to Create
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: deep_nav_02_create
+
+# Go to Profile
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: deep_nav_03_profile
+
+# Back to Home
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: deep_nav_04_home_again
+
+# Back to Create — ensure tab state is preserved
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: deep_nav_05_create_again
+
+# Back to Profile — ensure tab state preserved
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: deep_nav_06_profile_again
+
+# Back to Home one more time
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: deep_nav_07_home_final

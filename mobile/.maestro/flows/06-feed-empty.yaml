@@ -9,24 +9,24 @@ appId: host.exp.Exponent
 # Check sort tabs are visible
 - runFlow:
     when:
-      visible: "Newest"
+      visible: "Sort by Newest"
     commands:
-      - assertVisible: "Newest"
-      - assertVisible: "Trending"
+      - assertVisible: "Sort by Newest"
+      - assertVisible: "Sort by Trending"
 
 # Test sort tab switching
 - runFlow:
     when:
-      visible: "Trending"
+      visible: "Sort by Trending"
     commands:
-      - tapOn: "Trending"
+      - tapOn: "Sort by Trending"
       - waitForAnimationToEnd
       - takeScreenshot: feed_02_trending_tab
 
 - runFlow:
     when:
-      visible: "Newest"
+      visible: "Sort by Newest"
     commands:
-      - tapOn: "Newest"
+      - tapOn: "Sort by Newest"
       - waitForAnimationToEnd
       - takeScreenshot: feed_03_newest_tab

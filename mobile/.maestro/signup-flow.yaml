@@ -1,0 +1,78 @@
+appId: host.exp.Exponent
+---
+# Test: Full signup flow
+
+- clearState
+- launchApp
+- waitForAnimationToEnd
+
+# Open NXME from Expo Go home
+- tapOn: "NXME"
+- extendedWaitUntil:
+    visible: "NXME"
+    timeout: 30000
+- waitForAnimationToEnd
+
+# Dismiss overlays
+- runFlow:
+    when:
+      visible: "×"
+    commands:
+      - tapOn: "×"
+- tapOn:
+    point: "50%,10%"
+- waitForAnimationToEnd
+
+# Navigate to signup
+- runFlow:
+    when:
+      visible: "Sign up"
+    commands:
+      - tapOn: "Sign up"
+      - waitForAnimationToEnd
+
+# Fill text fields
+- tapOn:
+    id: "input-username"
+- inputText: "testuser1"
+
+- tapOn:
+    id: "input-display-name"
+- inputText: "Test User"
+
+- tapOn:
+    id: "input-email"
+- inputText: "test@test.com"
+
+# Toggle password visibility BEFORE typing
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- inputText: "Test1234!"
+
+# Toggle confirm password visibility
+- tapOn:
+    text: "Show password"
+    index: 0
+- tapOn:
+    id: "input-confirm-password"
+- inputText: "Test1234!"
+
+# Dismiss keyboard using "done" button
+- pressKey: Enter
+
+- takeScreenshot: signup_02_form_filled
+
+# Scroll down and submit
+- scrollUntilVisible:
+    element: "Create account"
+    direction: DOWN
+    timeout: 3000
+- tapOn: "Create account"
+
+# Wait for API response
+- extendedWaitUntil:
+    visible: "Check your email"
+    timeout: 15000
+
+- takeScreenshot: signup_03_verification_screen

@@ -1,19 +1,49 @@
 appId: host.exp.Exponent
 ---
-# Reusable: Launch app from Expo Go and dismiss overlays
+# Reusable: Launch app from Expo Go, dismiss all overlays, arrive at app content
 - clearState
 - launchApp
 - waitForAnimationToEnd
+
+# Tap on NXME project in Expo Go's dev server list
+- extendedWaitUntil:
+    visible: "NXME"
+    timeout: 15000
 - tapOn: "NXME"
+
+# Wait for app to start rendering
 - extendedWaitUntil:
     visible: "NXME"
     timeout: 30000
 - waitForAnimationToEnd
+
+# Dismiss Expo Go onboarding "Continue" button if shown
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+      - waitForAnimationToEnd
+
+# Dismiss Expo Go dev tools overlay by tapping the Go home > then re-opening
+# Or simply swipe down to dismiss the bottom sheet
+- runFlow:
+    when:
+      visible: "Reload"
+    commands:
+      # Swipe the overlay down to dismiss it
+      - swipe:
+          start: "50%,70%"
+          end: "50%,100%"
+      - waitForAnimationToEnd
+
+# Dismiss remaining × banner if present
 - runFlow:
     when:
       visible: "×"
     commands:
       - tapOn: "×"
-- tapOn:
-    point: "50%,10%"
+      - waitForAnimationToEnd
+
+# Final wait for actual app content to render
 - waitForAnimationToEnd

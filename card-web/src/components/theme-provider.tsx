@@ -44,9 +44,10 @@ const MEN: DemoPool = {
     { before: '/images/before-37.jpg', after: '/images/after-37.jpg' },
     { before: '/images/before-39.jpg', after: '/images/after-39.jpg' },
   ],
-  hair: ['/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg', '/images/detail-hair.jpg', '/images/detail-hair-men-3.jpg', '/images/detail-hair-men-4.jpg', '/images/detail-hair-men-5.jpg'],
-  clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg', '/images/detail-clothing-men-3.jpg', '/images/detail-clothing-men-4.jpg', '/images/detail-clothing-men-5.jpg'],
-  grooming: ['/images/detail-grooming-men.jpg', '/images/detail-grooming-men-2.jpg', '/images/detail-grooming.jpg', '/images/detail-grooming-men-3.jpg', '/images/detail-grooming-men-4.jpg', '/images/detail-grooming-men-5.jpg'],
+  // Verified: all MALE or gender-neutral product shots. Removed off-topic (cafe, arduino) and deduped.
+  hair: ['/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg', '/images/detail-hair.jpg', '/images/detail-hair-men-4.jpg', '/images/detail-hair-men-5.jpg'],
+  clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg', '/images/detail-clothing-men-3.jpg', '/images/detail-clothing-men-5.jpg'],
+  grooming: ['/images/detail-grooming-men.jpg', '/images/detail-grooming-men-2.jpg', '/images/detail-grooming.jpg'],
   accessories: ['/images/detail-accessories-men.jpg', '/images/detail-accessories-men-2.jpg', '/images/detail-accessories-men-3.jpg', '/images/detail-accessories-men-4.jpg', '/images/detail-accessories-men-5.jpg'],
 };
 
@@ -125,10 +126,11 @@ const YOUNG_F: DemoPool = {
     { before: '/images/before-51.jpg', after: '/images/after-51.jpg' },
     { before: '/images/before-52.jpg', after: '/images/after-52.jpg' },
   ],
-  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-3.jpg', '/images/detail-hair-women.jpg', '/images/detail-hair-yw-1.jpg', '/images/detail-hair-yw-2.jpg'],
-  clothing: ['/images/detail-clothing-teen-3.jpg', '/images/detail-clothing-teen-4.jpg', '/images/detail-clothing-women.jpg', '/images/detail-clothing-yw-1.jpg', '/images/detail-clothing-yw-2.jpg'],
-  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-3.jpg', '/images/detail-grooming-women.jpg', '/images/detail-grooming-yw-1.jpg'],
-  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-3.jpg', '/images/detail-accessories-women.jpg', '/images/detail-accessories-yw-1.jpg'],
+  // Verified: all FEMALE. Removed male barbershop/sweater/beard images from this pool.
+  hair: ['/images/detail-hair-teen-3.jpg', '/images/detail-hair-women-2.jpg', '/images/detail-hair-yw-1.jpg', '/images/detail-hair-yw-2.jpg'],
+  clothing: ['/images/detail-clothing-women.jpg', '/images/detail-clothing-yw-2.jpg', '/images/detail-clothing-yw-3.jpg', '/images/detail-clothing-yw-4.jpg', '/images/detail-clothing-yw-5.jpg'],
+  grooming: ['/images/detail-grooming-women-2.jpg', '/images/detail-grooming-women-3.jpg', '/images/detail-grooming-yw-1.jpg', '/images/detail-grooming-yw-2.jpg'],
+  accessories: ['/images/detail-accessories-women.jpg', '/images/detail-accessories-yw-1.jpg', '/images/detail-accessories-yw-4.jpg', '/images/detail-accessories-women-5.jpg'],
 };
 
 const YOUNG_WOMEN: DemoPool = {
@@ -153,7 +155,6 @@ const YOUNG_WOMEN: DemoPool = {
     { before: '/images/before-61.jpg', after: '/images/after-61.jpg' },
     { before: '/images/before-62.jpg', after: '/images/after-62.jpg' },
     { before: '/images/before-63.jpg', after: '/images/after-63.jpg' },
-    { before: '/images/before-64.jpg', after: '/images/after-64.jpg' },
     { before: '/images/before-65.jpg', after: '/images/after-65.jpg' },
     { before: '/images/before-66.jpg', after: '/images/after-66.jpg' },
     { before: '/images/before-67.jpg', after: '/images/after-67.jpg' },
@@ -163,7 +164,8 @@ const YOUNG_WOMEN: DemoPool = {
     { before: '/images/before-71.jpg', after: '/images/after-71.jpg' },
     { before: '/images/before-72.jpg', after: '/images/after-72.jpg' },
   ],
-  hair: ['/images/detail-hair-yw-1.jpg', '/images/detail-hair-yw-2.jpg', '/images/detail-hair-yw-3.jpg', '/images/detail-hair-yw-4.jpg', '/images/detail-hair-yw-5.jpg'],
+  // Verified: removed detail-hair-yw-5.jpg (MALE barbershop image).
+  hair: ['/images/detail-hair-yw-1.jpg', '/images/detail-hair-yw-2.jpg', '/images/detail-hair-yw-3.jpg', '/images/detail-hair-yw-4.jpg'],
   clothing: ['/images/detail-clothing-yw-1.jpg', '/images/detail-clothing-yw-2.jpg', '/images/detail-clothing-yw-3.jpg', '/images/detail-clothing-yw-4.jpg', '/images/detail-clothing-yw-5.jpg'],
   grooming: ['/images/detail-grooming-yw-1.jpg', '/images/detail-grooming-yw-2.jpg', '/images/detail-grooming-yw-3.jpg', '/images/detail-grooming-yw-4.jpg', '/images/detail-grooming-yw-5.jpg'],
   accessories: ['/images/detail-accessories-yw-1.jpg', '/images/detail-accessories-yw-2.jpg', '/images/detail-accessories-yw-3.jpg', '/images/detail-accessories-yw-4.jpg', '/images/detail-accessories-yw-5.jpg'],

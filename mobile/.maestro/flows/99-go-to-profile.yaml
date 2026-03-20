@@ -1,0 +1,6 @@
+appId: host.exp.Exponent
+---
+# Navigate to Profile tab (rightmost visible tab)
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
