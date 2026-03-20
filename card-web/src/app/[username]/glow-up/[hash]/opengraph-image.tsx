@@ -25,14 +25,11 @@ function sanitizeImageUrl(url: string): string {
   return isAllowedImageUrl(url) ? url : "";
 }
 
-/** Colors for OG image generation — mirrors design tokens but inline for Satori. */
 const OG = {
   BG: '#080808',
   TEXT_PRIMARY: '#F8F8F8',
   TEXT_SECONDARY: '#A0A0A0',
   ACCENT: '#F43F5E',
-  GLOW: '#FF8C42',
-  BORDER: '#2A2A2A',
   BEFORE_LABEL: '#94A3B8',
   AFTER_LABEL: '#FB7091',
   GLOW_RING: 'rgba(255, 140, 66, 0.40)',
@@ -46,22 +43,13 @@ export const contentType = 'image/png';
 export const revalidate = CARD_REVALIDATE_SECONDS;
 
 interface Props {
-  params: Promise<{ username: string }>;
+  params: Promise<{ username: string; hash: string }>;
 }
 
-/**
- * Dynamic OG image (1200×630) for the card page.
- *
- * Renders a before/after composite using Satori (Next.js ImageResponse).
- * Falls back gracefully when card data is unavailable.
- *
- * NOTE: Uses Edge runtime — keep imports minimal and avoid Node-only APIs.
- */
 export default async function OgImage({ params }: Props) {
-  const { username } = await params;
-  const card = await getCardData(username);
+  const { username, hash } = await params;
+  const card = await getCardData(username, hash);
 
-  // Fallback OG image when card not found
   if (!card) {
     return new ImageResponse(
       (
@@ -96,7 +84,6 @@ export default async function OgImage({ params }: Props) {
     );
   }
 
-  // Card found — render before/after side-by-side composite
   return new ImageResponse(
     (
       <div
@@ -110,7 +97,6 @@ export default async function OgImage({ params }: Props) {
           gap: 24,
         }}
       >
-        {/* Top: branding */}
         <div
           style={{
             display: 'flex',
@@ -133,7 +119,6 @@ export default async function OgImage({ params }: Props) {
           </div>
         </div>
 
-        {/* Middle: image pair */}
         <div
           style={{
             display: 'flex',
@@ -141,7 +126,6 @@ export default async function OgImage({ params }: Props) {
             gap: 24,
           }}
         >
-          {/* Before */}
           <div
             style={{
               flex: 1,
@@ -178,7 +162,6 @@ export default async function OgImage({ params }: Props) {
             </div>
           </div>
 
-          {/* After */}
           <div
             style={{
               flex: 1,
@@ -216,7 +199,6 @@ export default async function OgImage({ params }: Props) {
           </div>
         </div>
 
-        {/* Bottom: CTA strip */}
         <div
           style={{
             display: 'flex',

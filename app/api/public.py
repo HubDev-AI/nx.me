@@ -1,11 +1,13 @@
 """Public (no-auth) API — Story 6-1: Shareable Card.
 
 GET /api/public/cards/{username}
-  Returns the latest published post for the given username, with
-  recommendations from the associated analysis.
+  Returns the latest published post for the given username.
+
+GET /api/public/cards/{username}/{share_hash}
+  Returns a specific post identified by its share hash.
 
   HTTP 200 — card data
-  HTTP 404 — user exists but has no published posts
+  HTTP 404 — user exists but has no published posts / hash not found
   HTTP 410 — account deleted or post hard-deleted
 """
 from __future__ import annotations
@@ -42,6 +44,7 @@ class RecommendationItem(BaseModel):
 class CardResponse(BaseModel):
     username: str
     display_name: str
+    share_hash: str
     before_image_url: str
     after_image_url: str
     recommendations: list[RecommendationItem]
@@ -120,9 +123,72 @@ async def get_shareable_card(
     )
 
     # URLs are stable public CDN paths (no signing needed)
+    return _build_card_response(user, post, recommendations)
+
+
+@router.get("/public/cards/{username}/{share_hash}", response_model=CardResponse)
+async def get_shareable_card_by_hash(
+    username: str,
+    share_hash: str,
+    user_repo: UserRepository = Depends(get_user_repo),
+    post_repo: PostRepository = Depends(get_post_repo),
+    job_repo: JobRepository = Depends(get_job_repo),
+    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
+) -> CardResponse:
+    """Return a specific shareable card identified by its share hash.
+
+    URL format: /{username}/glow-up/{share_hash}
+    """
+    user = await run_sync(user_repo.get_by_username_for_card, username)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Account not found or has been deleted",
+        )
+
+    if user.get("deleted_at") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Account not found or has been deleted",
+        )
+
+    user_id: str = user["id"]
+
+    post = await run_sync(post_repo.get_by_share_hash, user_id, share_hash)
+
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Glow-up not found",
+        )
+
+    recommendations: list[dict] = []
+    glow_up_job_id: str | None = post.get("glow_up_job_id")
+    if glow_up_job_id:
+        job_data = await run_sync(job_repo.get_for_analysis, glow_up_job_id)
+        if job_data:
+            analysis_id: str | None = job_data.get("analysis_id")
+            if analysis_id:
+                recommendations = await run_sync(analysis_repo.get_recommendations, analysis_id)
+
+    logger.info(
+        "Shareable card served for %s/%s (post %s)",
+        username,
+        share_hash,
+        post["id"],
+    )
+
+    return _build_card_response(user, post, recommendations)
+
+
+def _build_card_response(
+    user: dict, post: dict, recommendations: list[dict],
+) -> CardResponse:
     return CardResponse(
         username=user["username"],
         display_name=user.get("display_name") or user["username"],
+        share_hash=post["share_hash"],
         before_image_url=post["before_image_url"],
         after_image_url=post["after_image_url"],
         recommendations=[

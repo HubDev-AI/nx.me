@@ -14,6 +14,7 @@ export interface Recommendation {
 export interface CardData {
   username: string;
   display_name: string;
+  share_hash: string;
   before_image_url: string;
   after_image_url: string;
   recommendations: Recommendation[];
@@ -29,8 +30,11 @@ export interface CardData {
  * never blocks or throws due to backend state, so the landing page and
  * server startup are always fast.
  */
-export async function getCardData(username: string): Promise<CardData | null> {
-  const url = `${API_BASE_URL}/api/public/cards/${encodeURIComponent(username)}`;
+export async function getCardData(username: string, shareHash?: string): Promise<CardData | null> {
+  const path = shareHash
+    ? `/api/public/cards/${encodeURIComponent(username)}/${encodeURIComponent(shareHash)}`
+    : `/api/public/cards/${encodeURIComponent(username)}`;
+  const url = `${API_BASE_URL}${path}`;
 
   let res: Response;
   try {
@@ -92,6 +96,7 @@ export function parseCardData(raw: unknown): CardData {
 
   assertField(obj, 'username', 'string');
   assertField(obj, 'display_name', 'string');
+  assertField(obj, 'share_hash', 'string');
   assertField(obj, 'before_image_url', 'string');
   assertField(obj, 'after_image_url', 'string');
   assertField(obj, 'reaction_count', 'number');
@@ -133,6 +138,7 @@ export function parseCardData(raw: unknown): CardData {
   return {
     username: obj['username'] as string,
     display_name: obj['display_name'] as string,
+    share_hash: obj['share_hash'] as string,
     before_image_url: obj['before_image_url'] as string,
     after_image_url: obj['after_image_url'] as string,
     recommendations,

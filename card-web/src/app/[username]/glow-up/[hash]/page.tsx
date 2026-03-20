@@ -15,14 +15,14 @@ import { getCardData } from '@/lib/api';
 export const revalidate = CARD_REVALIDATE_SECONDS;
 
 interface PageProps {
-  params: Promise<{ username: string }>;
+  params: Promise<{ username: string; hash: string }>;
 }
 
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const { username } = await params;
-  const card = await getCardData(username);
+  const { username, hash } = await params;
+  const card = await getCardData(username, hash);
 
   if (!card) {
     return {
@@ -32,7 +32,7 @@ export async function generateMetadata({
 
   const title = `${card.display_name}'s Glow-Up | ${SITE_NAME}`;
   const description = `See ${card.display_name}'s before & after glow-up transformation on NXME — ${card.recommendations.length} personalised style improvements.`;
-  const cardUrl = `${SITE_URL}/${card.username}`;
+  const cardUrl = `${SITE_URL}/${card.username}/glow-up/${card.share_hash}`;
 
   return {
     title,
@@ -45,7 +45,6 @@ export async function generateMetadata({
       description,
       url: cardUrl,
       type: 'website',
-      // images intentionally omitted — Next.js auto-wires opengraph-image.tsx
     },
     twitter: {
       card: 'summary_large_image',
@@ -56,18 +55,9 @@ export async function generateMetadata({
   };
 }
 
-/**
- * Card page — SSG with ISR.
- *
- * Fetches public card data from the backend and renders:
- * - Before/after image comparison
- * - Top 5 personalised recommendations
- * - App download CTA (platform-aware, resolved client-side)
- */
-export default async function CardPage({ params }: PageProps) {
-  const { username } = await params;
-  // Next.js automatically deduplicates this fetch with the one in generateMetadata
-  const card = await getCardData(username);
+export default async function GlowUpPage({ params }: PageProps) {
+  const { username, hash } = await params;
+  const card = await getCardData(username, hash);
 
   if (!card) {
     notFound();
@@ -83,7 +73,7 @@ export default async function CardPage({ params }: PageProps) {
       '@type': 'ImageObject',
       url: card.after_image_url,
     },
-    url: `${SITE_URL}/${card.username}`,
+    url: `${SITE_URL}/${card.username}/glow-up/${card.share_hash}`,
   };
 
   return (
