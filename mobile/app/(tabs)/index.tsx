@@ -27,7 +27,6 @@ import { useFeed } from "../../components/feed/useFeed";
 import type { FeedPost } from "../../components/feed/types";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
-
 /** Home / Feed tab — Story 5-4 */
 export default function HomeScreen() {
   const {

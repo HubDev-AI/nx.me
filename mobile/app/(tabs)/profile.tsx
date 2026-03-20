@@ -20,6 +20,10 @@ import {
 } from "../../constants/colors";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { getStoredJwt, clearAllTokens } from "../../lib/auth";
+import { HeroBackground } from "../../components/ui/HeroBackground";
+import { FloatingParticles } from "../../components/ui/FloatingParticles";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { useAuth } from "../../lib/auth-context";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
@@ -35,6 +39,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { setAuthenticated: setGlobalAuth } = useAuth();
+  const { theme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
 
@@ -120,6 +125,8 @@ export default function ProfileScreen() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
+        <HeroBackground />
+        <FloatingParticles />
         <Ionicons
           name="person-circle-outline"
           size={64}
@@ -211,6 +218,8 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <HeroBackground />
+      <FloatingParticles />
       {/* Single FlatList: profile header + glow-up grid — no nested ScrollView */}
       <GlowUpGrid
         items={glowUps}
@@ -248,13 +257,14 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   signInTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontFamily: FONTS.display,
+    fontSize: 24,
     color: TEXT_PRIMARY,
     marginTop: 16,
     marginBottom: 8,
   },
   signInSubtitle: {
+    fontFamily: FONTS.body,
     fontSize: 15,
     color: TEXT_SECONDARY,
     textAlign: "center",
@@ -262,7 +272,7 @@ const styles = StyleSheet.create({
   signInButton: {
     marginTop: 20,
     backgroundColor: CTA_PRIMARY,
-    borderRadius: 10,
+    borderRadius: 9999,
     paddingHorizontal: 32,
     paddingVertical: 12,
     minHeight: MIN_TOUCH_TARGET,
@@ -275,11 +285,13 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   loadingText: {
+    fontFamily: FONTS.body,
     fontSize: 14,
     color: TEXT_SECONDARY,
     marginTop: 12,
   },
   errorTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
     fontWeight: "700",
     color: TEXT_PRIMARY,

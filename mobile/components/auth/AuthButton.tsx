@@ -8,6 +8,7 @@ import {
 } from "react-native";
 
 import { CTA_PRIMARY, CTA_PRESSED } from "../../constants/colors";
+import { FONTS } from "../../hooks/useFonts";
 
 interface AuthButtonProps {
   title: string;
@@ -103,9 +104,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   text: {
+    fontFamily: FONTS.bodySemiBold,
     color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "700",
   },
   disabledWrapper: {
     opacity: 0.5,

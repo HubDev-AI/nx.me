@@ -3,8 +3,8 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
-import { View } from "react-native";
-import { StripeProvider } from "@stripe/stripe-react-native";
+import { View, Platform } from "react-native";
+import { StripeProvider } from "../lib/stripe-web-shim";
 
 import * as SecureStore from "expo-secure-store";
 
@@ -15,6 +15,8 @@ import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { BG_PAGE } from "../constants/colors";
 import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "../constants/config";
+import { ThemeProvider } from "../lib/theme-context";
+import { useAppFonts } from "../hooks/useFonts";
 
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
@@ -40,6 +42,7 @@ function AuthGuard() {
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [initialAuth, setInitialAuth] = useState(false);
+  const fontsLoaded = useAppFonts();
 
   // Cold start initialization
   useEffect(() => {
@@ -87,27 +90,37 @@ export default function RootLayout() {
   }, []);
 
   const onLayoutReady = useCallback(async () => {
-    if (isReady) {
+    if (isReady && fontsLoaded) {
       await SplashScreen.hideAsync();
     }
-  }, [isReady]);
+  }, [isReady, fontsLoaded]);
 
-  if (!isReady) {
+  if (!isReady || !fontsLoaded) {
     return null;
   }
 
+  const inner = (
+    <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
+      <StatusBar style="light" />
+      <AuthGuard />
+    </View>
+  );
+
   return (
-    <AuthProvider initialAuth={initialAuth}>
-      <StripeProvider
-        publishableKey={STRIPE_PUBLISHABLE_KEY}
-        urlScheme="https"
-        merchantIdentifier={APPLE_MERCHANT_ID}
-      >
-        <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
-          <StatusBar style="light" />
-          <AuthGuard />
-        </View>
-      </StripeProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider initialAuth={initialAuth}>
+        {StripeProvider ? (
+          <StripeProvider
+            publishableKey={STRIPE_PUBLISHABLE_KEY}
+            urlScheme="https"
+            merchantIdentifier={APPLE_MERCHANT_ID}
+          >
+            {inner}
+          </StripeProvider>
+        ) : (
+          inner
+        )}
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

@@ -25,18 +25,18 @@ export const COLORS = {
   },
   neutral: {
     dark: {
-      0: "#080808",     // page background
+      0: "#0a0a0a",     // page background — exact card-web value
       50: "#0F0F0F",
-      100: "#111111",   // card background
-      150: "#161616",   // input fill
-      200: "#1A1A1A",   // elevated surface
+      100: "#111111",   // card background — card-web surface.card
+      150: "#181818",   // input fill — card-web surface.elevated
+      200: "#1f1f1f",   // elevated surface — card-web surface.subtle
       300: "#222222",   // hover fill
-      400: "#2A2A2A",   // subtle border
-      500: "#3A3A3A",   // strong border
+      400: "#333333",   // subtle border — card-web divider color
+      500: "#444444",   // strong border — card-web content.disabled
       600: "#555555",   // disabled text
-      700: "#A0A0A0",   // secondary text
-      800: "#D4D4D4",
-      900: "#F8F8F8",   // primary text
+      700: "#888888",   // secondary text — exact card-web content.secondary
+      800: "#cccccc",   // card-web recommendation text
+      900: "#e8e8e8",   // primary text — exact card-web content.primary
     },
     light: {
       0: "#FFFFFF",     // card background

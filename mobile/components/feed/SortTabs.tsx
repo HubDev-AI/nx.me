@@ -10,6 +10,7 @@ import {
 } from "../../constants/colors";
 import { FEED_SORT } from "../../constants/config";
 import type { FeedSortValue } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
 
 const MIN_TOUCH_TARGET = 44;
 
@@ -86,24 +87,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     backgroundColor: BG_PAGE,
   },
   tab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 14,
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     minHeight: MIN_TOUCH_TARGET,
-    borderRadius: 20,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: 9999,
+    backgroundColor: "rgba(26, 26, 26, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.04)",
   },
   tabActive: {
-    backgroundColor: "rgba(244, 63, 94, 0.12)",
+    backgroundColor: "rgba(244, 63, 94, 0.10)",
+    borderColor: CTA_PRIMARY,
+    shadowColor: CTA_PRIMARY,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   tabLabel: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    fontWeight: "600",
     color: TEXT_SECONDARY,
   },
   tabLabelActive: {

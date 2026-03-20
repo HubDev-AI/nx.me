@@ -18,6 +18,7 @@ import {
   CTA_PRIMARY,
   ERROR_DARK,
 } from "../../constants/colors";
+import { FONTS } from "../../hooks/useFonts";
 
 interface AuthInputProps extends Omit<TextInputProps, "style"> {
   label: string;
@@ -60,8 +61,8 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
     const borderColor = error
       ? ERROR_DARK
       : isFocused
-        ? CTA_PRIMARY
-        : BORDER_DEFAULT;
+        ? "rgba(255, 255, 255, 0.25)"
+        : "rgba(255, 255, 255, 0.08)";
 
     return (
       <View style={styles.container}>
@@ -120,26 +121,34 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 11,
+    color: "#cccccc",
     marginBottom: 6,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    textShadowColor: "rgba(0, 0, 0, 0.6)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: INPUT_FILL,
+    backgroundColor: "rgba(8, 8, 8, 0.78)",
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     minHeight: INPUT_HEIGHT,
   },
   input: {
     flex: 1,
+    fontFamily: FONTS.body,
     fontSize: FONT_SIZE_BODY,
     color: TEXT_PRIMARY,
     paddingHorizontal: 16,
     paddingVertical: 12,
     minHeight: INPUT_HEIGHT,
+    // @ts-ignore — web-only: remove browser default blue focus outline
+    outlineStyle: "none",
   },
   eyeButton: {
     minWidth: MIN_TOUCH_TARGET,

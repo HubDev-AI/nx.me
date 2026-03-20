@@ -75,7 +75,8 @@
           "merchantIdentifier": "merchant.ai.nxme.app",
           "enableGooglePay": true
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "apiBaseUrl": "http://localhost:8001",

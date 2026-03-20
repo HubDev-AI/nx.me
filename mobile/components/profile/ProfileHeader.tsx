@@ -22,6 +22,7 @@ import {
   UNIVERSAL_LINK_ORIGIN,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
 import { formatCount } from "../../lib/format";
 import type { UserProfile } from "./types";
 
@@ -178,12 +179,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   displayName: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontFamily: FONTS.display,
+    fontSize: 26,
     color: TEXT_PRIMARY,
     marginBottom: 2,
   },
   username: {
+    fontFamily: FONTS.body,
     fontSize: 14,
     color: TEXT_SECONDARY,
     marginBottom: 16,
@@ -209,13 +211,16 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutral.dark[400],
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontFamily: FONTS.display,
+    fontSize: 20,
     color: TEXT_PRIMARY,
   },
   statLabel: {
-    fontSize: 12,
+    fontFamily: FONTS.body,
+    fontSize: 11,
     color: TEXT_SECONDARY,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
   },
   buttonsRow: {
     flexDirection: "row",

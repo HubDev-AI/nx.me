@@ -26,10 +26,11 @@ import {
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import { ReactionButton } from "./ReactionButton";
+import { FONTS } from "../../hooks/useFonts";
 import type { FeedPost } from "./types";
 
-const CARD_BORDER_RADIUS = 12;
-const IMAGE_HEIGHT = 200;
+const CARD_BORDER_RADIUS = 16;
+const IMAGE_HEIGHT = 220;
 const BEFORE_LABEL_HEIGHT = 22;
 const LONG_PRESS_DELAY_MS = 500;
 
@@ -228,11 +229,18 @@ export const FeedCard = React.memo(function FeedCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: BG_CARD,
-    borderRadius: CARD_BORDER_RADIUS,
+    backgroundColor: "rgba(17, 17, 17, 0.72)",
+    borderRadius: 16,
     marginHorizontal: 16,
     marginBottom: 16,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
+    shadowColor: "rgba(0, 0, 0, 0.4)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 6,
   },
   imageRow: {
     flexDirection: "row",
@@ -266,6 +274,7 @@ const styles = StyleSheet.create({
     backgroundColor: AFTER_OVERLAY_STRONG,
   },
   imageLabelText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 11,
     fontWeight: "700",
     color: "#F8F8F8",
@@ -276,6 +285,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   caption: {
+    fontFamily: FONTS.body,
     fontSize: 14,
     lineHeight: 20,
     color: TEXT_PRIMARY,
@@ -305,6 +315,7 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   timestamp: {
+    fontFamily: FONTS.body,
     fontSize: 12,
     color: TEXT_SECONDARY,
     marginLeft: "auto",

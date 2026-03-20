@@ -1,10 +1,8 @@
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BORDER_DEFAULT,
-  TEXT_SECONDARY,
-} from "../../constants/colors";
+import { TEXT_SECONDARY } from "../../constants/colors";
+import { FONTS } from "../../hooks/useFonts";
 
 interface SocialLoginButtonsProps {
   onGooglePress: () => void;
@@ -17,8 +15,7 @@ interface SocialLoginButtonsProps {
 const BUTTON_HEIGHT = 48;
 
 /**
- * Reusable social login button group with "or" divider.
- * Google button shown on all platforms; Apple button only on iOS.
+ * Social login buttons — frosted glass style to match the hero bg overlay.
  */
 export function SocialLoginButtons({
   onGooglePress,
@@ -29,6 +26,7 @@ export function SocialLoginButtons({
 }: SocialLoginButtonsProps) {
   return (
     <View style={styles.container}>
+      {/* Thin accent divider line instead of "or" text */}
       <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
         <Text style={styles.dividerText}>or</Text>
@@ -48,7 +46,7 @@ export function SocialLoginButtons({
         accessibilityRole="button"
         accessibilityState={{ disabled: disabled || googleDisabled }}
       >
-        <Ionicons name="logo-google" size={20} color="#4285F4" />
+        <Ionicons name="logo-google" size={18} color="#4285F4" />
         <Text style={styles.googleText}>Continue with Google</Text>
       </Pressable>
 
@@ -66,7 +64,7 @@ export function SocialLoginButtons({
           accessibilityRole="button"
           accessibilityState={{ disabled: disabled || appleDisabled }}
         >
-          <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
+          <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
           <Text style={styles.appleText}>Continue with Apple</Text>
         </Pressable>
       ) : null}
@@ -87,10 +85,11 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: BORDER_DEFAULT,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
   },
   dividerText: {
-    fontSize: 14,
+    fontFamily: FONTS.body,
+    fontSize: 13,
     color: TEXT_SECONDARY,
     marginHorizontal: 16,
   },
@@ -99,7 +98,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     minHeight: BUTTON_HEIGHT,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
     paddingHorizontal: 16,
     gap: 10,
@@ -111,21 +110,21 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   googleButton: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#DADCE0",
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   googleText: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 15,
     color: "#1F1F1F",
   },
   appleButton: {
-    backgroundColor: "#000000",
-    borderColor: "#000000",
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   appleText: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 15,
     color: "#FFFFFF",
   },
 });

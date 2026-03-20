@@ -52,6 +52,7 @@ import {
   COLORS,
 } from "../constants/colors";
 import { ANALYSIS_POLLING } from "../constants/config";
+import { FONTS } from "../hooks/useFonts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -439,6 +440,7 @@ const styles = StyleSheet.create({
     gap: SPACING,
   },
   trialText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 13,
     fontWeight: "600",
     color: TEXT_SECONDARY,
@@ -464,6 +466,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING,
   },
   errorTitle: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
     fontWeight: "700",
     color: ERROR_DARK,
@@ -482,11 +485,13 @@ const styles = StyleSheet.create({
     gap: SPACING * 1.5,
   },
   loadingTitle: {
+    fontFamily: FONTS.display,
     fontSize: 16,
     fontWeight: "600",
     color: TEXT_PRIMARY,
   },
   elapsedText: {
+    fontFamily: FONTS.display,
     fontSize: 24,
     fontWeight: "700",
     color: CTA_PRIMARY,
@@ -522,6 +527,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutral.dark[300],
   },
   analyzeText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 16,
     fontWeight: "700",
     color: "#FFFFFF",
@@ -545,6 +551,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.neutral.dark[300],
   },
   cancelText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 16,
     fontWeight: "600",
     color: TEXT_PRIMARY,
