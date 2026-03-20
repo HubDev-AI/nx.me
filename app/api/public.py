@@ -35,7 +35,7 @@ router = APIRouter(tags=["public"])
 class RecommendationItem(BaseModel):
     rank: int
     category: str
-    suggestion_text: str
+    suggestion: str
     rationale: str | None = None
 
 
@@ -125,7 +125,15 @@ async def get_shareable_card(
         display_name=user.get("display_name") or user["username"],
         before_image_url=post["before_image_url"],
         after_image_url=post["after_image_url"],
-        recommendations=recommendations,
+        recommendations=[
+            RecommendationItem(
+                rank=r["rank"],
+                category=r["category"],
+                suggestion=r["suggestion_text"],
+                rationale=r.get("rationale"),
+            )
+            for r in recommendations
+        ],
         reaction_count=post["reaction_count"],
         comment_count=post["comment_count"],
     )

@@ -253,7 +253,15 @@ async def get_user_history(
                 analysis_id=row["id"],
                 face_shape=row.get("face_shape"),
                 symmetry_score=row.get("symmetry_score"),
-                recommendations=row.get("recommendations") or [],
+                recommendations=[
+                    RecommendationItem(
+                        rank=r["rank"],
+                        category=r["category"],
+                        suggestion=r["suggestion_text"],
+                        rationale=r.get("rationale"),
+                    )
+                    for r in (row.get("recommendations") or [])
+                ],
                 before_image_url=before_url,
                 after_image_url=after_url,
                 created_at=row["created_at"],

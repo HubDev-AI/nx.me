@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -10,6 +11,7 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.fal.ai' },
       { protocol: 'https', hostname: '*.fal.run' },
       { protocol: 'https', hostname: 'fal.media' },
+      { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
   headers() {
@@ -28,7 +30,7 @@ const nextConfig = {
             value: [
               "default-src 'self'",
               // Supabase storage images + fal.ai/fal.run generated images + data URIs
-              "img-src 'self' https://*.supabase.co https://*.fal.ai https://*.fal.run https://fal.media data:",
+              "img-src 'self' https://*.supabase.co https://*.fal.ai https://*.fal.run https://fal.media https://images.unsplash.com data:",
               // Next.js injects inline styles at runtime
               "style-src 'self' 'unsafe-inline'",
               "font-src 'self'",

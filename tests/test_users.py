@@ -101,7 +101,7 @@ class TestUserModels:
             analysis_id="a-1",
             face_shape="oval",
             symmetry_score=0.87,
-            recommendations=[{"rank": 1, "category": "hairstyle", "suggestion_text": "Try bangs"}],
+            recommendations=[{"rank": 1, "category": "hairstyle", "suggestion": "Try bangs"}],
             before_image_url="https://example.com/before.jpg",
             after_image_url="https://example.com/after.jpg",
             created_at="2026-03-17T00:00:00+00:00",

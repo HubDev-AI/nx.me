@@ -8,7 +8,7 @@ import {
 } from '@/config/constants';
 import { getCardData } from '@/lib/api';
 
-const ALLOWED_IMAGE_HOSTS = ["supabase.co", "fal.ai", "fal.media", "fal.run"];
+const ALLOWED_IMAGE_HOSTS = ["supabase.co", "fal.ai", "fal.media", "fal.run", "images.unsplash.com"];
 
 function isAllowedImageUrl(url: string): boolean {
   try {
