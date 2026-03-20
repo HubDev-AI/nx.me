@@ -1,0 +1,58 @@
+appId: host.exp.Exponent
+---
+# Test: 3 full login/logout cycles to stress-test auth flow
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# ─── Cycle 1: Login ───
+- assertVisible: "Welcome back"
+- runFlow: 00-login.yaml
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- takeScreenshot: multi_cycle_01_login1_feed
+
+# ─── Cycle 1: Logout ───
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: multi_cycle_02_logout1
+
+# ─── Cycle 2: Login ───
+- runFlow: 00-login.yaml
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- takeScreenshot: multi_cycle_03_login2_feed
+
+# ─── Cycle 2: Logout ───
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: multi_cycle_04_logout2
+
+# ─── Cycle 3: Final Login ───
+- runFlow: 00-login.yaml
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- assertVisible: "Sort by Newest"
+- takeScreenshot: multi_cycle_05_login3_final

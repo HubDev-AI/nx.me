@@ -1,0 +1,48 @@
+appId: host.exp.Exponent
+---
+# Test: Switch between feed sort tabs — Newest, Trending, Top — verify each loads without crash
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Verify default Newest tab
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: sort_content_01_newest_default
+
+# Switch to Trending
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Trending"
+    timeout: 10000
+- takeScreenshot: sort_content_02_trending_loaded
+
+# Wait a moment for content to render
+- waitForAnimationToEnd
+
+# Switch to Top
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Top"
+    timeout: 10000
+- takeScreenshot: sort_content_03_top_loaded
+
+# Wait for content to render
+- waitForAnimationToEnd
+
+# Switch back to Newest
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: sort_content_04_back_to_newest
+
+# Final stability check — all three sort tabs should be visible
+- assertVisible: "Sort by Newest"
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: sort_content_05_all_tabs_stable

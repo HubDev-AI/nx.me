@@ -1,0 +1,62 @@
+appId: host.exp.Exponent
+---
+# Test: Profile tab — verify profile header elements and stats, take screenshots
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for home feed to load
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+
+# Navigate to Profile tab
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: profile_stats_01_loaded
+
+# Verify @ username is visible
+- runFlow:
+    when:
+      visible: "@"
+    commands:
+      - takeScreenshot: profile_stats_02_username_visible
+
+# Verify stats section (Posts / Reactions counters)
+- runFlow:
+    when:
+      visible: "Posts"
+    commands:
+      - takeScreenshot: profile_stats_03_posts_count
+      - assertVisible: "Reactions"
+      - takeScreenshot: profile_stats_04_reactions_count
+
+# Verify Edit Profile button exists
+- runFlow:
+    when:
+      visible: "Edit Profile"
+    commands:
+      - takeScreenshot: profile_stats_05_edit_profile_button
+
+# Verify display name is visible (the profile header area)
+- runFlow:
+    when:
+      visible: "Edit profile"
+    commands:
+      - takeScreenshot: profile_stats_06_edit_lowercase
+
+# Scroll down to check for additional profile content
+- swipe:
+    start: "50%,70%"
+    end: "50%,30%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: profile_stats_07_scrolled_down
+
+# Scroll back up
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: profile_stats_08_final

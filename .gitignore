@@ -38,3 +38,26 @@ htmlcov/
 tools/tiktok-autoresearch/results/*.tsv
 tools/tiktok-autoresearch/results/*.md
 !tools/tiktok-autoresearch/results/.gitkeep
+
+# Maestro test screenshots and results (generated, not source)
+mobile/.maestro/results/
+mobile/*.png
+
+# Autoresearch logs
+mobile/autoresearch-results.tsv
+card-web/autoresearch-results.tsv
+
+# Next.js build output
+.next/
+
+# Build artifacts and reports
+CODE_QUALITY_REPORT.md
+CODE_REVIEW_FINDINGS.md
+
+# Claude worktrees and manifests
+.claude/worktrees/
+.claude/gsd-file-manifest.json
+
+# Background shell
+.bg-shell/
+

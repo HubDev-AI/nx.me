@@ -1,0 +1,50 @@
+appId: host.exp.Exponent
+---
+# Test: Login keyboard flow — Enter advances from email to password, then submits
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+- assertVisible: "Welcome back"
+- takeScreenshot: kb_next_01_login_screen
+
+# Tap email input and type email
+- tapOn:
+    id: "input-email"
+- inputText: "maestro@test.com"
+- takeScreenshot: kb_next_02_email_filled
+
+# Press Enter — should jump to password field via returnKeyType="next"
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: kb_next_03_after_enter
+
+# Toggle password visibility so inputText works on secure fields
+- tapOn: "Show password"
+
+# Type password into the now-focused password field
+- inputText: "TestPass1234"
+- takeScreenshot: kb_next_04_password_filled
+
+# Press Enter — should submit via returnKeyType="done"
+- pressKey: Enter
+- waitForAnimationToEnd
+
+# Dismiss iOS Keychain "Save Password" dialog if it appears
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save Password"
+    commands:
+      - tapOn: "Not Now"
+      - waitForAnimationToEnd
+
+# Verify navigation to feed
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 20000
+- takeScreenshot: kb_next_05_feed_loaded

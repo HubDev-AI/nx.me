@@ -1,0 +1,39 @@
+appId: host.exp.Exponent
+---
+# Test: Login, verify each tab shows correct content — Home, Create, Profile
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# --- Verify Home tab ---
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: all_tabs_01_home_verified
+
+# --- Navigate to Create tab ---
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Create your glow-up"
+    timeout: 10000
+- takeScreenshot: all_tabs_02_create_verified
+
+# --- Navigate to Profile tab ---
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- takeScreenshot: all_tabs_03_profile_logout_visible
+
+# --- Navigate back to Home tab ---
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Sort by Newest"
+- takeScreenshot: all_tabs_04_back_to_home

@@ -1,0 +1,35 @@
+appId: host.exp.Exponent
+---
+# Test: Create tab — verify UI elements and upload button navigation
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for feed
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- takeScreenshot: create_verify_01_on_feed
+
+# Navigate to Create tab (center)
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: create_verify_02_create_tab
+
+# Verify Create screen elements
+- assertVisible: "Create your glow-up"
+- takeScreenshot: create_verify_03_title_visible
+
+- assertVisible: "Upload a photo for glow-up"
+- takeScreenshot: create_verify_04_upload_button_visible
+
+# Tap the upload button
+- tapOn: "Upload a photo for glow-up"
+- waitForAnimationToEnd
+- takeScreenshot: create_verify_05_upload_screen
+
+# Verify upload screen elements
+- assertVisible: "Take a photo with camera"
+- assertVisible: "Choose a photo from gallery"
+- assertVisible: "Analyze photo"
+- takeScreenshot: create_verify_06_all_elements_present

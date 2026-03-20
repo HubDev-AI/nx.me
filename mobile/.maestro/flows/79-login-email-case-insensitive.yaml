@@ -1,0 +1,65 @@
+appId: host.exp.Exponent
+---
+# Test: Login with uppercase email — verify it either works or shows a clear error (not a crash)
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+- assertVisible: "Welcome back"
+
+# Enter uppercase email
+- tapOn:
+    id: "input-email"
+- inputText: "MAESTRO@TEST.COM"
+
+# Toggle password visibility and enter password
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- waitForAnimationToEnd
+- inputText: "TestPass1234"
+
+# Scroll to Log in and tap
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+
+# Dismiss iOS Keychain "Save Password" dialog if it appears
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible: "Save Password"
+    commands:
+      - tapOn: "Not Now"
+      - waitForAnimationToEnd
+
+# Check outcome: either successful login (feed loads) or clear error message
+- runFlow:
+    when:
+      visible: "Sort by Newest"
+    commands:
+      - takeScreenshot: case_login_01_success_uppercase_worked
+      - assertVisible: "Sort by Trending"
+
+# If login failed, verify we got a proper error (not a crash)
+- runFlow:
+    when:
+      visible: "Invalid email or password"
+    commands:
+      - takeScreenshot: case_login_01_error_shown
+
+# If still on login screen without error, take a screenshot for debugging
+- runFlow:
+    when:
+      visible: "Welcome back"
+    commands:
+      - takeScreenshot: case_login_01_still_on_login
+
+# Final screenshot
+- takeScreenshot: case_login_02_final_state

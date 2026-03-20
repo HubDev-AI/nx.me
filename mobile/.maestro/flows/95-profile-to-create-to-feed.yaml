@@ -1,0 +1,52 @@
+appId: host.exp.Exponent
+---
+# Test: Rapid 3-tab cycle — Profile→Create→Home then reverse, verify stability
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: tab_cycle_01_home
+
+# Forward cycle: Home → Profile → Create → Home
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: tab_cycle_02_profile
+
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: tab_cycle_03_create
+
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: tab_cycle_04_back_home
+
+# Reverse cycle: Home → Create → Profile
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: tab_cycle_05_create_again
+
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: tab_cycle_06_profile_again
+
+# Return to Home and verify stable
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- assertVisible: "Sort by Newest"
+- takeScreenshot: tab_cycle_07_final_stable

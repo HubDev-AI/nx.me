@@ -1,0 +1,61 @@
+appId: host.exp.Exponent
+---
+# Test: Navigate to Advisor, tap Nudges tab, verify it loads (empty or with content)
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for home feed to load
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+
+# Navigate to Advisor (if available in the UI)
+- runFlow:
+    when:
+      visible: "Advisor"
+    commands:
+      - tapOn: "Advisor"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_nudges_01_advisor_opened
+
+# Verify advisor header loaded
+- runFlow:
+    when:
+      visible: "Ada"
+    commands:
+      - takeScreenshot: advisor_nudges_02_ada_visible
+
+      # Tap Nudges tab
+      - tapOn: "Nudges tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_nudges_03_nudges_tab_active
+
+      # Verify nudges loaded — could be empty or with content
+      - runFlow:
+          when:
+            visible: "No nudges"
+          commands:
+            - takeScreenshot: advisor_nudges_04_empty_state
+
+      # If nudges exist, scroll through them
+      - runFlow:
+          when:
+            notVisible: "No nudges"
+          commands:
+            - swipe:
+                start: "50%,70%"
+                end: "50%,30%"
+                duration: 300
+            - waitForAnimationToEnd
+            - takeScreenshot: advisor_nudges_04_nudge_content
+
+      - takeScreenshot: advisor_nudges_05_final
+
+# If Advisor is not available, verify we are still on a stable screen
+- runFlow:
+    when:
+      notVisible: "Advisor"
+    commands:
+      - assertVisible: "Sort by Newest"
+      - takeScreenshot: advisor_nudges_01_advisor_not_available

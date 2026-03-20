@@ -1,0 +1,35 @@
+appId: host.exp.Exponent
+---
+# Test: Login and immediately logout — fast auth cycle stress test
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Login
+- assertVisible: "Welcome back"
+- runFlow: 00-login.yaml
+
+# Verify feed loaded
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- takeScreenshot: fast_cycle_01_feed_loaded
+
+# IMMEDIATELY navigate to profile and logout — no browsing
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: fast_cycle_02_profile
+
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+
+# Verify back on login screen
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- assertVisible: "Welcome back"
+- takeScreenshot: fast_cycle_03_back_on_login

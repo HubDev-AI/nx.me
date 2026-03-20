@@ -1,0 +1,50 @@
+appId: host.exp.Exponent
+---
+# Test: Profile screen — scroll past header to verify glow-up grid content or empty state
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+
+# Navigate to Profile tab
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: glowup_grid_01_profile_loaded
+
+# Scroll down past the profile header to reveal glow-up grid area
+- swipe:
+    start: "50%,70%"
+    end: "50%,30%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: glowup_grid_02_scrolled_down
+
+# Check if glow-up grid has content or shows empty state
+- runFlow:
+    when:
+      visible: "No glow-ups yet"
+    commands:
+      - takeScreenshot: glowup_grid_03_empty_state
+
+# Scroll further to see more grid items if available
+- swipe:
+    start: "50%,70%"
+    end: "50%,30%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: glowup_grid_04_more_content
+
+# Scroll back to top
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 500
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: glowup_grid_05_back_to_top

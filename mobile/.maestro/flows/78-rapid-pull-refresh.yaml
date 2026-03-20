@@ -1,0 +1,73 @@
+appId: host.exp.Exponent
+---
+# Test: Pull-to-refresh 5 times rapidly on feed, verify app stays stable
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: rapid_refresh_01_initial
+
+# Pull-to-refresh #1
+- swipe:
+    start: "50%,35%"
+    end: "50%,75%"
+    duration: 400
+- waitForAnimationToEnd
+
+# Pull-to-refresh #2
+- swipe:
+    start: "50%,35%"
+    end: "50%,75%"
+    duration: 400
+- waitForAnimationToEnd
+
+# Pull-to-refresh #3
+- swipe:
+    start: "50%,35%"
+    end: "50%,75%"
+    duration: 400
+- waitForAnimationToEnd
+- takeScreenshot: rapid_refresh_02_after_3
+
+# Pull-to-refresh #4
+- swipe:
+    start: "50%,35%"
+    end: "50%,75%"
+    duration: 400
+- waitForAnimationToEnd
+
+# Pull-to-refresh #5
+- swipe:
+    start: "50%,35%"
+    end: "50%,75%"
+    duration: 400
+- waitForAnimationToEnd
+- takeScreenshot: rapid_refresh_03_after_5
+
+# Verify app is still stable — sort tabs visible, no crash
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: rapid_refresh_04_stable
+
+# Verify feed can still be scrolled (app is responsive)
+- swipe:
+    start: "50%,80%"
+    end: "50%,40%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: rapid_refresh_05_scroll_after_refresh
+
+# Scroll back up
+- swipe:
+    start: "50%,40%"
+    end: "50%,80%"
+    duration: 300
+- waitForAnimationToEnd
+- assertVisible: "Sort by Newest"
+- takeScreenshot: rapid_refresh_06_final

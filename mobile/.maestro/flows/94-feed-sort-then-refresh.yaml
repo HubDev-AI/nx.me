@@ -1,0 +1,67 @@
+appId: host.exp.Exponent
+---
+# Test: Switch feed sort tabs and pull-to-refresh on each — verify stability
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: sort_refresh_01_initial
+
+# Switch to Trending
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- takeScreenshot: sort_refresh_02_trending
+
+# Pull-to-refresh on Trending
+- swipe:
+    start: "50%,40%"
+    end: "50%,80%"
+    duration: 500
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Trending"
+    timeout: 10000
+- assertVisible: "Sort by Trending"
+- takeScreenshot: sort_refresh_03_trending_refreshed
+
+# Switch to Top
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: sort_refresh_04_top
+
+# Pull-to-refresh on Top
+- swipe:
+    start: "50%,40%"
+    end: "50%,80%"
+    duration: 500
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Top"
+    timeout: 10000
+- assertVisible: "Sort by Top"
+- takeScreenshot: sort_refresh_05_top_refreshed
+
+# Switch back to Newest
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: sort_refresh_06_newest
+
+# Pull-to-refresh on Newest
+- swipe:
+    start: "50%,40%"
+    end: "50%,80%"
+    duration: 500
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- assertVisible: "Sort by Newest"
+- takeScreenshot: sort_refresh_07_newest_refreshed
+
+# Final stability check — all three tabs still visible
+- assertVisible: "Sort by Newest"
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: sort_refresh_08_stable
