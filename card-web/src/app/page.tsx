@@ -1,17 +1,18 @@
-'use client';
-
 import Link from 'next/link';
 
 import { APP_STORE_URL, PLAY_STORE_URL, SITE_NAME } from '@/config/constants';
-import { useTheme } from '@/components/theme-provider';
+import { buildTheme } from '@/components/theme-provider';
 
 /**
  * Photography-driven editorial landing page.
  * Each refresh: different hero, before/after pair, and accent color.
  * Features aligned to generation-spec.md keyword categories.
  */
+/** Server-side dynamic — fresh random theme on every request */
+export const dynamic = 'force-dynamic';
+
 export default function HomePage() {
-  const t = useTheme();
+  const t = buildTheme();
 
   return (
     <main className="bg-[#0a0a0a] text-[#e8e8e8]" style={{ '--accent': t.accent } as React.CSSProperties}>

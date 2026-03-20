@@ -1,12 +1,4 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-
-/**
- * Pool-based theme system. Gender-audited pairs only.
- * Removed: pairs 16,32,38 (gender mismatch), pairs 18,21,23-27,33,36 (duplicates).
- * Every pair verified: same gender in both images.
- */
+/* Theme builder — works on both server and client */
 
 const ACCENTS = [
   '#F43F5E', '#14B8A6', '#D4A060', '#38BDF8', '#FB923C',
@@ -24,7 +16,10 @@ interface DemoPool {
   accessories: string[];
 }
 
-// Verified M+M pairs only, no duplicates
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)] ?? arr[0] as T;
+}
+
 const MEN: DemoPool = {
   heroes: [
     '/images/hero-1.jpg', '/images/hero-3.jpg', '/images/hero-7.jpg',
@@ -34,20 +29,20 @@ const MEN: DemoPool = {
     '/images/after-9.jpg', '/images/before-22.jpg', '/images/after-12.jpg',
   ],
   pairs: [
-    { before: '/images/before-1.jpg', after: '/images/after-1.jpg' },   // M+M verified
-    { before: '/images/before-2.jpg', after: '/images/after-2.jpg' },   // M+M verified
-    { before: '/images/before-3.jpg', after: '/images/after-3.jpg' },   // M+M verified
-    { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },   // M+M verified
-    { before: '/images/before-9.jpg', after: '/images/after-9.jpg' },   // M+M verified
-    { before: '/images/before-11.jpg', after: '/images/after-11.jpg' }, // M+M verified
-    { before: '/images/before-12.jpg', after: '/images/after-12.jpg' }, // M+M verified
-    { before: '/images/before-13.jpg', after: '/images/after-13.jpg' }, // M+M verified
-    { before: '/images/before-17.jpg', after: '/images/after-17.jpg' }, // M+M verified
-    { before: '/images/before-19.jpg', after: '/images/after-19.jpg' }, // M+M verified
-    { before: '/images/before-22.jpg', after: '/images/after-22.jpg' }, // M+M verified
-    { before: '/images/before-35.jpg', after: '/images/after-35.jpg' }, // M+M verified
-    { before: '/images/before-37.jpg', after: '/images/after-37.jpg' }, // M+M verified
-    { before: '/images/before-39.jpg', after: '/images/after-39.jpg' }, // M+M verified
+    { before: '/images/before-1.jpg', after: '/images/after-1.jpg' },
+    { before: '/images/before-2.jpg', after: '/images/after-2.jpg' },
+    { before: '/images/before-3.jpg', after: '/images/after-3.jpg' },
+    { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },
+    { before: '/images/before-9.jpg', after: '/images/after-9.jpg' },
+    { before: '/images/before-11.jpg', after: '/images/after-11.jpg' },
+    { before: '/images/before-12.jpg', after: '/images/after-12.jpg' },
+    { before: '/images/before-13.jpg', after: '/images/after-13.jpg' },
+    { before: '/images/before-17.jpg', after: '/images/after-17.jpg' },
+    { before: '/images/before-19.jpg', after: '/images/after-19.jpg' },
+    { before: '/images/before-22.jpg', after: '/images/after-22.jpg' },
+    { before: '/images/before-35.jpg', after: '/images/after-35.jpg' },
+    { before: '/images/before-37.jpg', after: '/images/after-37.jpg' },
+    { before: '/images/before-39.jpg', after: '/images/after-39.jpg' },
   ],
   hair: ['/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg', '/images/detail-hair.jpg', '/images/detail-hair-men-3.jpg', '/images/detail-hair-men-4.jpg', '/images/detail-hair-men-5.jpg'],
   clothing: ['/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg', '/images/detail-clothing-men-3.jpg', '/images/detail-clothing-men-4.jpg', '/images/detail-clothing-men-5.jpg'],
@@ -55,7 +50,6 @@ const MEN: DemoPool = {
   accessories: ['/images/detail-accessories-men.jpg', '/images/detail-accessories-men-2.jpg', '/images/detail-accessories-men-3.jpg', '/images/detail-accessories-men-4.jpg', '/images/detail-accessories-men-5.jpg'],
 };
 
-// Verified F+F pairs only, no duplicates
 const WOMEN: DemoPool = {
   heroes: [
     '/images/hero-2.jpg', '/images/hero-4.jpg', '/images/hero-8.jpg',
@@ -65,20 +59,20 @@ const WOMEN: DemoPool = {
     '/images/after-14.jpg', '/images/after-31.jpg', '/images/before-34.jpg',
   ],
   pairs: [
-    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },   // F+F verified
-    { before: '/images/before-6.jpg', after: '/images/after-6.jpg' },   // F+F verified
-    { before: '/images/before-7.jpg', after: '/images/after-7.jpg' },   // F+F verified
-    { before: '/images/before-8.jpg', after: '/images/after-8.jpg' },   // F+F verified
-    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' }, // F+F verified
-    { before: '/images/before-14.jpg', after: '/images/after-14.jpg' }, // F+F verified
-    { before: '/images/before-15.jpg', after: '/images/after-15.jpg' }, // F+F verified
-    { before: '/images/before-20.jpg', after: '/images/after-20.jpg' }, // F+F verified
-    { before: '/images/before-28.jpg', after: '/images/after-28.jpg' }, // F+F verified
-    { before: '/images/before-29.jpg', after: '/images/after-29.jpg' }, // F+F verified
-    { before: '/images/before-30.jpg', after: '/images/after-30.jpg' }, // F+F verified
-    { before: '/images/before-31.jpg', after: '/images/after-31.jpg' }, // F+F verified
-    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' }, // F+F verified
-    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' }, // F+F verified
+    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },
+    { before: '/images/before-6.jpg', after: '/images/after-6.jpg' },
+    { before: '/images/before-7.jpg', after: '/images/after-7.jpg' },
+    { before: '/images/before-8.jpg', after: '/images/after-8.jpg' },
+    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' },
+    { before: '/images/before-14.jpg', after: '/images/after-14.jpg' },
+    { before: '/images/before-15.jpg', after: '/images/after-15.jpg' },
+    { before: '/images/before-20.jpg', after: '/images/after-20.jpg' },
+    { before: '/images/before-28.jpg', after: '/images/after-28.jpg' },
+    { before: '/images/before-29.jpg', after: '/images/after-29.jpg' },
+    { before: '/images/before-30.jpg', after: '/images/after-30.jpg' },
+    { before: '/images/before-31.jpg', after: '/images/after-31.jpg' },
+    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' },
+    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' },
   ],
   hair: ['/images/detail-hair-women.jpg', '/images/detail-hair-women-2.jpg', '/images/detail-hair-women-3.jpg', '/images/detail-hair-women-4.jpg', '/images/detail-hair-women-5.jpg'],
   clothing: ['/images/detail-clothing-women.jpg', '/images/detail-clothing-women-2.jpg', '/images/detail-clothing-women-3.jpg', '/images/detail-clothing-women-4.jpg', '/images/detail-clothing-women-5.jpg'],
@@ -86,7 +80,6 @@ const WOMEN: DemoPool = {
   accessories: ['/images/detail-accessories-women.jpg', '/images/detail-accessories-women-2.jpg', '/images/detail-accessories-women-3.jpg', '/images/detail-accessories-women-4.jpg', '/images/detail-accessories-women-5.jpg'],
 };
 
-// 20 young/teen pairs + dedicated teen detail images and heroes
 const YOUNG: DemoPool = {
   heroes: [
     '/images/hero-13.jpg', '/images/hero-14.jpg', '/images/hero-15.jpg',
@@ -98,7 +91,6 @@ const YOUNG: DemoPool = {
     '/images/before-49.jpg', '/images/after-46.jpg',
   ],
   pairs: [
-    // Original young pairs
     { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },
     { before: '/images/before-13.jpg', after: '/images/after-13.jpg' },
     { before: '/images/before-35.jpg', after: '/images/after-35.jpg' },
@@ -107,7 +99,6 @@ const YOUNG: DemoPool = {
     { before: '/images/before-10.jpg', after: '/images/after-10.jpg' },
     { before: '/images/before-40.jpg', after: '/images/after-40.jpg' },
     { before: '/images/before-34.jpg', after: '/images/after-34.jpg' },
-    // New teen pairs 41-52
     { before: '/images/before-41.jpg', after: '/images/after-41.jpg' },
     { before: '/images/before-42.jpg', after: '/images/after-42.jpg' },
     { before: '/images/before-43.jpg', after: '/images/after-43.jpg' },
@@ -127,7 +118,6 @@ const YOUNG: DemoPool = {
   accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-teen-3.jpg', '/images/detail-accessories-teen-4.jpg', '/images/detail-accessories-teen-5.jpg'],
 };
 
-// PRIMARY audience — young women. 20 dedicated pairs + own detail images + heroes.
 const YOUNG_WOMEN: DemoPool = {
   heroes: [
     '/images/hero-17.jpg', '/images/hero-18.jpg', '/images/hero-19.jpg',
@@ -166,12 +156,8 @@ const YOUNG_WOMEN: DemoPool = {
   accessories: ['/images/detail-accessories-yw-1.jpg', '/images/detail-accessories-yw-2.jpg', '/images/detail-accessories-yw-3.jpg', '/images/detail-accessories-yw-4.jpg', '/images/detail-accessories-yw-5.jpg'],
 };
 
-// Weighted pool selection: YOUNG_WOMEN appears 4x (primary audience)
+// Weighted: YOUNG_WOMEN 4x (primary audience)
 const POOLS = [YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, MEN, WOMEN, YOUNG];
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)] ?? arr[0] as T;
-}
 
 export interface Theme {
   before: string;
@@ -184,7 +170,7 @@ export interface Theme {
   accent: string;
 }
 
-function buildTheme(): Theme {
+export function buildTheme(): Theme {
   const pool = pick(POOLS);
   const pair = pick(pool.pairs);
   return {
@@ -199,27 +185,4 @@ function buildTheme(): Theme {
   };
 }
 
-// Default is young women (primary audience) — shown during SSR
-const DEFAULT_THEME: Theme = {
-  before: '/images/before-53.jpg',
-  after: '/images/after-53.jpg',
-  hero: '/images/hero-17.jpg',
-  hair: '/images/detail-hair-yw-1.jpg',
-  clothing: '/images/detail-clothing-yw-1.jpg',
-  grooming: '/images/detail-grooming-yw-1.jpg',
-  accessories: '/images/detail-accessories-yw-1.jpg',
-  accent: '#F43F5E',
-};
-
-export function useTheme(): Theme {
-  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME);
-
-  useEffect(() => {
-    // Force new random theme on every page load/refresh
-    const t = buildTheme();
-    setTheme(t);
-    document.documentElement.style.setProperty('--accent', t.accent);
-  }, []);
-
-  return theme;
-}
+/* useTheme hook removed — randomization now happens server-side via buildTheme() */
