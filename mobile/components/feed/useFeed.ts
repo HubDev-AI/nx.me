@@ -93,7 +93,11 @@ export function useFeed(): UseFeedReturn {
 
     try {
       const response = await fetchFeed(cursorRef.current, activeSort);
-      setPosts((prev) => [...prev, ...response.posts]);
+      setPosts((prev) => {
+        const existingIds = new Set(prev.map((p) => p.post_id));
+        const newPosts = response.posts.filter((p) => !existingIds.has(p.post_id));
+        return [...prev, ...newPosts];
+      });
       cursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
