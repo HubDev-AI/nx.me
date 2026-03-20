@@ -1,5 +1,6 @@
 import {
   API_BASE_URL,
+  API_FETCH_TIMEOUT_MS,
   CARD_REVALIDATE_SECONDS,
   HTTP_GONE,
 } from '@/config/constants';
@@ -13,6 +14,7 @@ export interface Recommendation {
 export interface CardData {
   username: string;
   display_name: string;
+  share_hash: string;
   before_image_url: string;
   after_image_url: string;
   recommendations: Recommendation[];
@@ -23,30 +25,54 @@ export interface CardData {
 /**
  * Fetch public card data for a given username.
  *
- * Returns `null` when the card has been deleted (HTTP 410).
- * Throws for any other non-OK status so that Next.js error.tsx can handle it.
+ * Returns `null` for ANY failure — network errors, non-OK HTTP status,
+ * malformed responses, backend down, etc.  This guarantees the SSR render
+ * never blocks or throws due to backend state, so the landing page and
+ * server startup are always fast.
  */
-export async function getCardData(username: string): Promise<CardData | null> {
-  const url = `${API_BASE_URL}/api/public/cards/${encodeURIComponent(username)}`;
+export async function getCardData(username: string, shareHash?: string): Promise<CardData | null> {
+  const path = shareHash
+    ? `/api/public/cards/${encodeURIComponent(username)}/${encodeURIComponent(shareHash)}`
+    : `/api/public/cards/${encodeURIComponent(username)}`;
+  const url = `${API_BASE_URL}${path}`;
 
-  const res = await fetch(url, {
-    next: { revalidate: CARD_REVALIDATE_SECONDS },
-  });
-
-  if (res.status === HTTP_GONE) {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      next: { revalidate: CARD_REVALIDATE_SECONDS },
+      signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Network-level failures (ECONNREFUSED, timeout, DNS) — the backend is
+    // unreachable.  Return null so the page renders the not-found / error UI
+    // instead of hanging or crashing the SSR render.
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.warn(`[api] getCardData("${username}") fetch failed:`, err);
+    }
     return null;
   }
 
-  if (res.status === 404) {
+  if (res.status === HTTP_GONE || res.status === 404) {
     return null;
   }
 
   if (!res.ok) {
-    throw new Error("Unable to load this card. Please try again later.");
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[api] getCardData("${username}") returned HTTP ${res.status}`,
+    );
+    return null;
   }
 
-  const json: unknown = await res.json();
-  return parseCardData(json);
+  try {
+    const json: unknown = await res.json();
+    return parseCardData(json);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[api] getCardData("${username}") parse failed:`, err);
+    return null;
+  }
 }
 
 function assertField(
@@ -70,6 +96,7 @@ export function parseCardData(raw: unknown): CardData {
 
   assertField(obj, 'username', 'string');
   assertField(obj, 'display_name', 'string');
+  assertField(obj, 'share_hash', 'string');
   assertField(obj, 'before_image_url', 'string');
   assertField(obj, 'after_image_url', 'string');
   assertField(obj, 'reaction_count', 'number');
@@ -111,6 +138,7 @@ export function parseCardData(raw: unknown): CardData {
   return {
     username: obj['username'] as string,
     display_name: obj['display_name'] as string,
+    share_hash: obj['share_hash'] as string,
     before_image_url: obj['before_image_url'] as string,
     after_image_url: obj['after_image_url'] as string,
     recommendations,

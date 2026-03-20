@@ -89,6 +89,8 @@ class UserRepository:
             .maybe_single()
             .execute()
         )
+        if result is None:
+            return None
         return result.data or None
 
     # ------------------------------------------------------------------

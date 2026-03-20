@@ -38,7 +38,6 @@ class FeedRepository:
         query = (
             self._sb.table("v_feed_posts")
             .select(_POST_COLUMNS)
-            .eq("is_hidden", False)
             .order("created_at", desc=True)
             .limit(limit)
         )

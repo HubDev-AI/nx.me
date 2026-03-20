@@ -20,26 +20,24 @@ export function CardView({ card }: CardViewProps) {
     .slice(0, RECOMMENDATIONS_DISPLAY_COUNT);
 
   return (
-    <article className="w-full max-w-2xl mx-auto space-y-6">
+    <article className="w-full max-w-2xl mx-auto">
       {/* Identity header */}
-      <header className="text-center space-y-1">
-        <h1 className="text-2xl font-bold text-content-primary">
+      <header className="text-center mb-10">
+        <h1 className="font-display text-4xl sm:text-5xl tracking-[-0.02em] text-white leading-[0.95]">
           {card.display_name}
         </h1>
-        <p className="text-content-secondary text-sm">@{card.username}</p>
+        <p className="mt-2 text-sm text-[#555] tracking-wide">
+          @{card.username}
+        </p>
       </header>
 
       {/* Before / After comparison */}
       <section
         aria-label="Before and after comparison"
-        className="grid grid-cols-2 gap-3"
+        className="grid grid-cols-2 gap-3 sm:gap-4"
       >
-        <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-surface-elevated">
-          {/* Desaturating veil over before image */}
-          <div
-            className="absolute inset-0 z-10 rounded-2xl bg-before-900/[0.72]"
-            aria-hidden="true"
-          />
+        {/* Before image */}
+        <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-[#111]">
           <Image
             src={card.before_image_url}
             alt={`${card.display_name} before glow-up`}
@@ -48,17 +46,17 @@ export function CardView({ card }: CardViewProps) {
             sizes="(max-width: 640px) 47vw, 280px"
             priority
           />
-          <span className="absolute bottom-3 left-3 z-20 text-xs font-semibold text-before-300 uppercase tracking-wider">
+          <div
+            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent"
+            aria-hidden="true"
+          />
+          <span className="absolute bottom-3 left-3 z-10 text-[11px] font-medium text-[#888] uppercase tracking-widest">
             Before
           </span>
         </div>
 
-        <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-surface-elevated">
-          {/* Barely-there coral tint over after image */}
-          <div
-            className="absolute inset-0 z-10 rounded-2xl bg-after-500/[0.08]"
-            aria-hidden="true"
-          />
+        {/* After image */}
+        <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-[#111]">
           <Image
             src={card.after_image_url}
             alt={`${card.display_name} after glow-up`}
@@ -67,12 +65,11 @@ export function CardView({ card }: CardViewProps) {
             sizes="(max-width: 640px) 47vw, 280px"
             priority
           />
-          {/* Glow ring border */}
           <div
-            className="absolute inset-0 z-20 rounded-2xl ring-2 ring-glow-ring"
+            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent"
             aria-hidden="true"
           />
-          <span className="absolute bottom-3 left-3 z-30 text-xs font-semibold text-after-400 uppercase tracking-wider">
+          <span className="absolute bottom-3 left-3 z-10 text-[11px] font-medium uppercase tracking-widest" style={{ color: 'var(--accent)' }}>
             After
           </span>
         </div>
@@ -80,48 +77,57 @@ export function CardView({ card }: CardViewProps) {
 
       {/* Engagement counts */}
       <div
-        className="flex items-center justify-center gap-6 text-content-secondary text-sm"
+        className="flex items-center justify-center gap-6 mt-8 text-sm"
         aria-label="Engagement stats"
       >
-        <span>
-          <strong className="text-content-primary">{card.reaction_count}</strong>{' '}
-          reactions
+        <span className="flex items-center gap-1.5">
+          <strong className="text-white font-semibold">
+            {card.reaction_count}
+          </strong>
+          <span className="text-[#555]">reactions</span>
         </span>
-        <span aria-hidden="true" className="text-border-strong">
-          ·
-        </span>
-        <span>
-          <strong className="text-content-primary">{card.comment_count}</strong>{' '}
-          comments
+        <span className="text-[#333]" aria-hidden="true">/</span>
+        <span className="flex items-center gap-1.5">
+          <strong className="text-white font-semibold">
+            {card.comment_count}
+          </strong>
+          <span className="text-[#555]">comments</span>
         </span>
       </div>
 
       {/* Improvement recommendations */}
       {topRecommendations.length > 0 && (
-        <section aria-labelledby="recommendations-heading">
+        <section aria-labelledby="recommendations-heading" className="mt-12">
           <h2
             id="recommendations-heading"
-            className="text-sm font-semibold text-content-secondary uppercase tracking-wider mb-3"
+            className="text-xs tracking-[0.25em] uppercase text-[#555] mb-8"
           >
             Top improvements
           </h2>
-          <ol className="space-y-3">
-            {topRecommendations.map((rec) => (
+          <ol className="space-y-0">
+            {topRecommendations.map((rec, index) => (
               <li
                 key={rec.rank}
-                className="flex gap-3 p-4 rounded-xl bg-surface-card border border-border-default"
+                className={[
+                  'flex gap-4 py-5',
+                  index > 0 ? 'border-t border-white/[0.06]' : '',
+                ].join(' ')}
               >
                 <span
-                  className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-after-500 bg-surface-elevated"
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-[#0a0a0a]"
                   aria-label={`Rank ${rec.rank}`}
+                  style={{ backgroundColor: 'var(--accent)' }}
                 >
                   {rec.rank}
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-after-400 uppercase tracking-wide mb-0.5">
+                  <p
+                    className="text-[11px] font-semibold uppercase tracking-wider mb-1"
+                    style={{ color: 'var(--accent)' }}
+                  >
                     {rec.category}
                   </p>
-                  <p className="text-sm text-content-primary leading-relaxed">
+                  <p className="text-sm text-[#ccc] leading-relaxed">
                     {rec.suggestion}
                   </p>
                 </div>

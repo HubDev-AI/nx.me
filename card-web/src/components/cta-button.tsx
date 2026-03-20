@@ -22,8 +22,8 @@ interface CtaButtonProps {
  * Resolution order (all platforms):
  * 1. Attempt to open the installed app via Universal Link
  * 2. After APP_OPEN_TIMEOUT_MS with no app switch, redirect to the
- *    platform-appropriate store (iOS → App Store, Android → Play Store,
- *    Desktop → marketing/download page)
+ *    platform-appropriate store (iOS -> App Store, Android -> Play Store,
+ *    Desktop -> marketing/download page)
  *
  * The platform is resolved on the client after mount to avoid SSR/hydration
  * mismatch (navigator is not available server-side).
@@ -92,15 +92,8 @@ export function CtaButton({ username }: CtaButtonProps) {
       href={displayHref}
       onClick={mounted ? handleClick : undefined}
       aria-label="Get Your Free Glow-Up — open app or download"
-      className={[
-        'block w-full text-center py-4 px-6 rounded-2xl',
-        'text-base font-bold tracking-wide text-white',
-        'bg-after-500 hover:bg-after-600 active:bg-after-700',
-        'transition-colors duration-150',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-after-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
-        // Visible from the start with default href; JS swaps click handler on mount
-        'opacity-100',
-      ].join(' ')}
+      className="inline-flex items-center justify-center w-full gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-4 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+      style={{ backgroundColor: 'var(--accent)' }}
     >
       Get Your Free Glow-Up &rarr;
     </a>

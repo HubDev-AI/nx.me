@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Instrument_Serif } from 'next/font/google';
 
 import './globals.css';
 import { SITE_NAME, SITE_URL } from '@/config/constants';
@@ -7,6 +7,13 @@ import { SITE_NAME, SITE_URL } from '@/config/constants';
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ['latin'],
+  variable: '--font-display',
+  weight: '400',
+  style: ['normal', 'italic'],
 });
 
 export const metadata: Metadata = {
@@ -43,7 +50,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={`${inter.variable} ${instrumentSerif.variable}`}>
       <body>{children}</body>
     </html>
   );

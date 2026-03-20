@@ -32,7 +32,7 @@ class PostRepository:
             self._sb.table("posts")
             .select(
                 "id, before_image_url, after_image_url, "
-                "reaction_count, comment_count, glow_up_job_id"
+                "reaction_count, comment_count, glow_up_job_id, share_hash"
             )
             .eq("user_id", user_id)
             .eq("is_deleted", False)
@@ -42,6 +42,22 @@ class PostRepository:
         )
         data = result.data or []
         return data[0] if data else None
+
+    def get_by_share_hash(self, user_id: str, share_hash: str) -> dict | None:
+        """Fetch a non-deleted post by share_hash for the given user."""
+        result = (
+            self._sb.table("posts")
+            .select(
+                "id, before_image_url, after_image_url, "
+                "reaction_count, comment_count, glow_up_job_id, share_hash"
+            )
+            .eq("user_id", user_id)
+            .eq("share_hash", share_hash)
+            .eq("is_deleted", False)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
 
     def get_post_with_ownership(self, post_id: str) -> dict | None:
         """Fetch post id, user_id, is_deleted fields for ownership checks."""
