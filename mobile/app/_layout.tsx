@@ -6,7 +6,7 @@ import * as Linking from "expo-linking";
 import { View, Platform } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
 
-import { deleteItem } from "../lib/secure-storage";
+import { deleteItem, getItem } from "../lib/secure-storage";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
@@ -28,11 +28,21 @@ function AuthGuard() {
 
   useEffect(() => {
     const inAuthGroup = segments[0] === "(auth)";
+    const onOnboarding = segments[0] === "onboarding";
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (isAuthenticated && inAuthGroup) {
-      router.replace("/(tabs)");
+      // Coming from login/register — check if onboarding has been completed
+      getItem("nxme_onboarding_complete").then((value) => {
+        if (!value) {
+          router.replace("/onboarding");
+        } else {
+          router.replace("/(tabs)");
+        }
+      });
+    } else if (isAuthenticated && !inAuthGroup && !onOnboarding) {
+      // Already in main app — nothing to do
     }
   }, [isAuthenticated, segments]);
 

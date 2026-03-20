@@ -128,7 +128,9 @@ export const FeedCard = React.memo(function FeedCard({
     });
   }, []);
 
-  const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${post.post_id}`;
+  const shareMessage = post.caption
+    ? `${post.caption} — Check it out on NXME ${UNIVERSAL_LINK_ORIGIN}`
+    : `Check out this glow-up on NXME ${UNIVERSAL_LINK_ORIGIN}`;
   const blockLabel = post.display_name
     ? `Block ${post.display_name}`
     : "Block User";
@@ -138,7 +140,7 @@ export const FeedCard = React.memo(function FeedCard({
       label: "Share",
       icon: "share-outline",
       onPress: () => {
-        Share.share({ url: shareUrl, message: shareUrl });
+        Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
       },
     },
     {

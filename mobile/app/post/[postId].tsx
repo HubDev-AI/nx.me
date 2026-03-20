@@ -111,9 +111,11 @@ export default function PostDetailScreen() {
 
   const handleShare = useCallback(() => {
     hapticLight();
-    const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${postId}`;
-    Share.share({ url: shareUrl, message: shareUrl });
-  }, [postId]);
+    const shareMessage = caption
+      ? `${caption} — Check it out on NXME ${UNIVERSAL_LINK_ORIGIN}`
+      : `Check out this glow-up on NXME ${UNIVERSAL_LINK_ORIGIN}`;
+    Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+  }, [caption]);
 
   const handleUserPress = useCallback(() => {
     hapticLight();

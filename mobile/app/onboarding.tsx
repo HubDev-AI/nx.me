@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { AuthButton } from "../components/auth/AuthButton";
 import { apiFetch } from "../lib/api";
 import { registerForPushNotifications } from "../lib/notifications";
+import { setItem } from "../lib/secure-storage";
 import { THEME } from "../constants/theme";
 
 /** Semantic green for success states */
@@ -83,7 +84,8 @@ export default function OnboardingScreen() {
     };
   }, []);
 
-  const handleAnalyzeCTA = useCallback(() => {
+  const handleAnalyzeCTA = useCallback(async () => {
+    await setItem("nxme_onboarding_complete", "true");
     router.replace("/(tabs)/create");
   }, [router]);
 
