@@ -16,6 +16,7 @@ import {
   AFTER_OVERLAY_STRONG,
 } from "../../constants/colors";
 import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import { ReactionButton } from "../../components/feed/ReactionButton";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
 
@@ -44,6 +45,7 @@ export default function PostDetailScreen() {
 
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { theme } = useTheme();
 
   const [reactionCount, setReactionCount] = useState(Number(initialReactionCount) || 0);
   const [commentCount, setCommentCount] = useState(Number(initialCommentCount) || 0);
@@ -85,7 +87,7 @@ export default function PostDetailScreen() {
         {/* After image — full width */}
         <View style={styles.imageSection}>
           <View style={styles.labelRow}>
-            <View style={[styles.label, styles.afterLabel]}>
+            <View style={[styles.label, styles.afterLabel, { backgroundColor: theme.accent + "CC" }]}>
               <Text style={styles.labelText}>AFTER</Text>
             </View>
           </View>

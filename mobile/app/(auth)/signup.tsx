@@ -33,6 +33,7 @@ import { useAuth } from "../../lib/auth-context";
 
 // Futuristic UI components
 import { HeroBackground } from "../../components/ui/HeroBackground";
+import { BrandLabel } from "../../components/ui/BrandLabel";
 import { GlowButton } from "../../components/ui/GlowButton";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
@@ -321,7 +322,7 @@ export default function SignupScreen() {
           automaticallyAdjustKeyboardInsets
         >
           {/* Tiny brand label -- top-left like card-web fashion label */}
-          <Text style={styles.brandLabel}>N X M E</Text>
+          <BrandLabel />
 
           {/* Spacer pushes all content to the bottom half of the viewport */}
           <View style={styles.spacer} />

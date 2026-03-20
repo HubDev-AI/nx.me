@@ -23,6 +23,7 @@ import {
 } from "../../constants/colors";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
+import { BrandLabel } from "../../components/ui/BrandLabel";
 import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
@@ -158,25 +159,13 @@ function TabLayoutInner() {
         },
         headerTintColor: "#e8e8e8",
         headerShadowVisible: false,
+        headerTitle: () => <BrandLabel />,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Home",
-          headerTitle: () => (
-            <Text
-              style={{
-                fontFamily: FONTS.bodyMedium,
-                fontSize: 11,
-                letterSpacing: 4,
-                color: "rgba(255,255,255,0.7)",
-                textTransform: "uppercase",
-              }}
-            >
-              N X M E
-            </Text>
-          ),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               name={focused ? "home" : "home-outline"}

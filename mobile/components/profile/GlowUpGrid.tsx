@@ -13,12 +13,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import {
-  BG_CARD,
-  CTA_PRIMARY,
   TEXT_PRIMARY,
   COLORS,
 } from "../../constants/colors";
 import { PROFILE_CONFIG } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import type { GlowUpItem } from "./types";
 
 interface GlowUpGridProps {
@@ -47,6 +47,7 @@ export function GlowUpGrid({
   refreshing = false,
   onRefresh,
 }: GlowUpGridProps) {
+  const { theme } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
 
   const { itemSize, containerPadding } = useMemo(() => {
@@ -86,23 +87,21 @@ export function GlowUpGrid({
     if (!isLoadingMore) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="small" color={CTA_PRIMARY} />
+        <ActivityIndicator size="small" color={theme.accent} />
       </View>
     );
-  }, [isLoadingMore]);
+  }, [isLoadingMore, theme.accent]);
 
   const renderEmpty = useCallback(() => {
     if (items.length > 0) return null;
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons
-          name="images-outline"
-          size={48}
-          color={COLORS.neutral.dark[600]}
-        />
-        <Text style={styles.emptyText}>No glow-ups yet</Text>
+        <View style={[styles.emptyIconCircle, { backgroundColor: theme.accent + "1A" }]}>
+          <Ionicons name="sparkles" size={28} color={theme.accent} />
+        </View>
+        <Text style={styles.emptyText}>Your glow-ups will appear here</Text>
         <Text style={styles.emptyHint}>
-          Your before/after transformations will appear here
+          Create your first transformation to get started
         </Text>
       </View>
     );
@@ -131,8 +130,8 @@ export function GlowUpGrid({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={CTA_PRIMARY}
-            colors={[CTA_PRIMARY]}
+            tintColor={theme.accent}
+            colors={[theme.accent]}
           />
         ) : undefined
       }
@@ -184,16 +183,16 @@ function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
 const styles = StyleSheet.create({
   gridContent: {
     paddingTop: 8,
-    paddingBottom: 24,
+    paddingBottom: 80,
   },
   row: {
     gap: PROFILE_CONFIG.GRID_GAP,
     marginBottom: PROFILE_CONFIG.GRID_GAP,
   },
   cell: {
-    borderRadius: 4,
+    borderRadius: 12,
     overflow: "hidden",
-    backgroundColor: BG_CARD,
+    backgroundColor: "#111111",
   },
   cellPressed: {
     opacity: 0.8,
@@ -208,7 +207,7 @@ const styles = StyleSheet.create({
     left: 4,
     width: 28,
     height: 28,
-    borderRadius: 4,
+    borderRadius: 6,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.3)",
@@ -227,15 +226,25 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
     paddingHorizontal: 32,
   },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
   emptyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    fontSize: 20,
+    color: "#e8e8e8",
     marginTop: 12,
+    textAlign: "center",
   },
   emptyHint: {
+    fontFamily: FONTS.body,
     fontSize: 14,
-    color: COLORS.neutral.dark[600],
+    color: "#888888",
     textAlign: "center",
     marginTop: 4,
   },

@@ -6,6 +6,7 @@ import {
   Text,
   ActivityIndicator,
   StyleSheet,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -19,6 +20,7 @@ import {
   FEED_DIVIDER,
 } from "../../constants/colors";
 import { COMMENTS_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
 
 interface CommentInputProps {
   isAuthenticated: boolean;
@@ -140,10 +142,13 @@ const styles = StyleSheet.create({
     backgroundColor: INPUT_FILL,
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingVertical: 10,
     fontSize: 14,
     color: TEXT_PRIMARY,
+    fontFamily: FONTS.body,
+    textAlignVertical: "center",
+    // @ts-ignore — web-only: remove browser default blue focus outline
+    ...(Platform.OS === "web" ? { outlineStyle: "none" } : {}),
   },
   sendButton: {
     width: MIN_TOUCH_TARGET,
@@ -171,5 +176,6 @@ const styles = StyleSheet.create({
   guestText: {
     fontSize: 14,
     color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
   },
 });

@@ -1,27 +1,21 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
   Pressable,
   ActivityIndicator,
+  Platform,
+  ActionSheetIOS,
+  Alert,
   StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useNavigation } from "expo-router";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  ERROR_DARK,
-} from "../../constants/colors";
+import { BG_PAGE, TEXT_SECONDARY } from "../../constants/colors";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
-import { HeroBackground } from "../../components/ui/HeroBackground";
-import { FloatingParticles } from "../../components/ui/FloatingParticles";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { useAuth } from "../../lib/auth-context";
@@ -38,6 +32,7 @@ import type { UpdateProfilePayload } from "../../components/profile/types";
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const navigation = useNavigation();
   const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth } = useAuth();
   const { theme } = useTheme();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
@@ -98,6 +93,55 @@ export default function ProfileScreen() {
     [profile, updateProfile],
   );
 
+  /** 3-dot menu: shows action sheet with Edit Profile + Log Out */
+  const handleMoreMenu = useCallback(() => {
+    if (Platform.OS === "ios" && typeof ActionSheetIOS?.showActionSheetWithOptions === "function") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Edit Profile", "Log Out", "Cancel"],
+          cancelButtonIndex: 2,
+          destructiveButtonIndex: 1,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) {
+            handleEditProfile();
+          } else if (buttonIndex === 1) {
+            handleLogout();
+          }
+        },
+      );
+    } else {
+      Alert.alert("Options", undefined, [
+        { text: "Edit Profile", onPress: handleEditProfile },
+        {
+          text: "Log Out",
+          onPress: handleLogout,
+          style: "destructive",
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [handleEditProfile, handleLogout]);
+
+  // Set 3-dot menu in the navigation header
+  useLayoutEffect(() => {
+    if (isAuthenticated && profile) {
+      navigation.setOptions({
+        headerRight: () => (
+          <Pressable
+            onPress={handleMoreMenu}
+            style={{ padding: 8, marginRight: 12 }}
+            accessibilityLabel="More options"
+            accessibilityRole="button"
+            hitSlop={8}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color="#888888" />
+          </Pressable>
+        ),
+      });
+    }
+  }, [navigation, isAuthenticated, profile, handleMoreMenu]);
+
   // Not signed in
   if (!isAuthenticated) {
     return (
@@ -105,7 +149,7 @@ export default function ProfileScreen() {
         <Ionicons
           name="person-circle-outline"
           size={64}
-          color={TEXT_DISABLED}
+          color="#888888"
         />
         <Text style={styles.signInTitle}>Sign in to see your profile</Text>
         <Text style={styles.signInSubtitle}>
@@ -113,7 +157,7 @@ export default function ProfileScreen() {
         </Text>
         <Pressable
           onPress={() => router.push("/(auth)/login")}
-          style={styles.signInButton}
+          style={[styles.signInButton, { backgroundColor: theme.accent }]}
           accessibilityLabel="Sign in"
           accessibilityRole="button"
         >
@@ -130,7 +174,7 @@ export default function ProfileScreen() {
         <Ionicons
           name="person-circle-outline"
           size={64}
-          color={TEXT_DISABLED}
+          color="#888888"
         />
         <Text style={styles.signInTitle}>Complete your profile</Text>
         <Text style={styles.signInSubtitle}>
@@ -139,13 +183,13 @@ export default function ProfileScreen() {
         </Text>
         <Pressable
           onPress={handleLogout}
-          style={styles.logoutButton}
+          style={styles.fallbackLogoutButton}
           accessibilityLabel="Log out"
           accessibilityRole="button"
           testID="logout-button"
         >
-          <Ionicons name="log-out-outline" size={20} color={ERROR_DARK} />
-          <Text style={styles.logoutText}>Log out</Text>
+          <Ionicons name="log-out-outline" size={20} color="#888888" />
+          <Text style={styles.fallbackLogoutText}>Log out</Text>
         </Pressable>
       </View>
     );
@@ -155,7 +199,7 @@ export default function ProfileScreen() {
   if (isLoading && !profile) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={CTA_PRIMARY} />
+        <ActivityIndicator size="large" color={theme.accent} />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
@@ -168,14 +212,14 @@ export default function ProfileScreen() {
         <Ionicons
           name="alert-circle-outline"
           size={48}
-          color={ERROR_DARK}
+          color="#F87171"
         />
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorMessage}>{error}</Text>
         {authUsername ? (
           <Pressable
             onPress={() => loadProfile(authUsername)}
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Retry loading profile"
             accessibilityRole="button"
           >
@@ -184,13 +228,13 @@ export default function ProfileScreen() {
         ) : null}
         <Pressable
           onPress={handleLogout}
-          style={styles.logoutButton}
+          style={styles.fallbackLogoutButton}
           accessibilityLabel="Log out"
           accessibilityRole="button"
           testID="logout-button"
         >
-          <Ionicons name="log-out-outline" size={20} color={ERROR_DARK} />
-          <Text style={styles.logoutText}>Log out</Text>
+          <Ionicons name="log-out-outline" size={20} color="#888888" />
+          <Text style={styles.fallbackLogoutText}>Log out</Text>
         </Pressable>
       </View>
     );
@@ -205,31 +249,15 @@ export default function ProfileScreen() {
     />
   );
 
-  const profileHeaderWithLogout = (
-    <View>
-      {profileHeader}
-      <Pressable
-        onPress={handleLogout}
-        style={styles.logoutButton}
-        accessibilityLabel="Log out"
-        accessibilityRole="button"
-        testID="logout-button"
-      >
-        <Ionicons name="log-out-outline" size={20} color={ERROR_DARK} />
-        <Text style={styles.logoutText}>Log out</Text>
-      </Pressable>
-    </View>
-  );
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Single FlatList: profile header + glow-up grid — no nested ScrollView */}
+      {/* Single FlatList: profile header + glow-up grid -- no nested ScrollView */}
       <GlowUpGrid
         items={glowUps}
         isLoadingMore={isLoadingMore}
         hasMore={hasMoreGlowUps}
         onLoadMore={handleLoadMoreGlowUps}
-        ListHeaderComponent={profileHeaderWithLogout}
+        ListHeaderComponent={profileHeader}
         refreshing={isRefreshing}
         onRefresh={handleRefresh}
       />
@@ -258,23 +286,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
+    paddingBottom: 80,
   },
   signInTitle: {
     fontFamily: FONTS.display,
     fontSize: 24,
-    color: TEXT_PRIMARY,
+    color: "#e8e8e8",
     marginTop: 16,
     marginBottom: 8,
   },
   signInSubtitle: {
     fontFamily: FONTS.body,
     fontSize: 15,
-    color: TEXT_SECONDARY,
+    color: "#888888",
     textAlign: "center",
   },
   signInButton: {
     marginTop: 20,
-    backgroundColor: CTA_PRIMARY,
     borderRadius: 9999,
     paddingHorizontal: 32,
     paddingVertical: 12,
@@ -290,25 +318,24 @@ const styles = StyleSheet.create({
   loadingText: {
     fontFamily: FONTS.body,
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: "#888888",
     marginTop: 12,
   },
   errorTitle: {
     fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
+    color: "#e8e8e8",
     marginTop: 12,
     marginBottom: 4,
   },
   errorMessage: {
+    fontFamily: FONTS.body,
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: "#888888",
     textAlign: "center",
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: CTA_PRIMARY,
     borderRadius: 9999,
     paddingHorizontal: 24,
     paddingVertical: 12,
@@ -321,7 +348,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#0a0a0a",
   },
-  logoutButton: {
+
+  /* 3-dot menu -- absolutely positioned over the screen, never inside scroll content */
+  moreMenuButton: {
+    position: "absolute",
+    right: 16,
+    zIndex: 20,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9999,
+  },
+
+  /* Fallback logout for edge-case screens (no username, error state) */
+  fallbackLogoutButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -331,9 +372,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minHeight: MIN_TOUCH_TARGET,
   },
-  logoutText: {
+  fallbackLogoutText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    fontWeight: "600",
-    color: ERROR_DARK,
+    color: "#888888",
   },
 });

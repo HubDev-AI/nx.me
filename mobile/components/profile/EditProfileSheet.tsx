@@ -17,22 +17,20 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 
 import {
-  BG_ELEVATED,
   BG_PAGE,
   TEXT_PRIMARY,
   TEXT_SECONDARY,
   TEXT_DISABLED,
-  CTA_PRIMARY,
-  INPUT_FILL,
-  BORDER_DEFAULT,
-  COLORS,
   ERROR_DARK,
+  COLORS,
 } from "../../constants/colors";
 import {
   IMAGE_PICKER as IMAGE_PICKER_CONFIG,
   MIN_TOUCH_TARGET,
   PROFILE_CONFIG,
 } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import type { UserProfile, UpdateProfilePayload } from "./types";
 
 const AVATAR_SIZE = 80;
@@ -60,6 +58,7 @@ export function EditProfileSheet({
   onSave,
   onClose,
 }: EditProfileSheetProps) {
+  const { theme } = useTheme();
   const [displayName, setDisplayName] = useState(
     profile.display_name ?? "",
   );
@@ -251,6 +250,7 @@ export function EditProfileSheet({
               <Text
                 style={[
                   styles.saveText,
+                  { color: theme.accent },
                   (!isDisplayNameValid || isUpdating) &&
                     styles.saveTextDisabled,
                 ]}
@@ -278,12 +278,12 @@ export function EditProfileSheet({
                 <Ionicons
                   name="person"
                   size={36}
-                  color={TEXT_SECONDARY}
+                  color="#888888"
                 />
               </View>
             )}
-            <View style={styles.avatarBadge}>
-              <Ionicons name="camera" size={14} color="#FFFFFF" />
+            <View style={[styles.avatarBadge, { backgroundColor: theme.accent }]}>
+              <Ionicons name="camera" size={14} color="#0a0a0a" />
             </View>
           </Pressable>
           <Text style={styles.avatarHint}>Tap to change photo</Text>
@@ -295,7 +295,7 @@ export function EditProfileSheet({
               value={displayName}
               onChangeText={handleDisplayNameChange}
               style={styles.input}
-              placeholderTextColor={TEXT_DISABLED}
+              placeholderTextColor="#555555"
               placeholder="Your display name"
               maxLength={PROFILE_CONFIG.DISPLAY_NAME_MAX_LENGTH}
               autoCapitalize="words"
@@ -334,17 +334,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#000000",
   },
   sheet: {
-    backgroundColor: BG_PAGE,
+    backgroundColor: "#0a0a0a",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 40,
-    minHeight: 400,
+    paddingBottom: 16,
   },
   handleBar: {
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: COLORS.neutral.dark[500],
+    backgroundColor: "rgba(255,255,255,0.12)",
     alignSelf: "center",
     marginTop: 8,
     marginBottom: 8,
@@ -366,22 +365,22 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   headerTitle: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 17,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    color: "#e8e8e8",
   },
   cancelText: {
+    fontFamily: FONTS.body,
     fontSize: 16,
-    color: TEXT_SECONDARY,
+    color: "#888888",
   },
   saveText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 16,
-    fontWeight: "600",
-    color: CTA_PRIMARY,
     textAlign: "right",
   },
   saveTextDisabled: {
-    color: TEXT_DISABLED,
+    color: "#555555",
   },
   avatarPicker: {
     alignSelf: "center",
@@ -394,7 +393,9 @@ const styles = StyleSheet.create({
     borderRadius: AVATAR_SIZE / 2,
   },
   avatarPlaceholder: {
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: "#111111",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -405,15 +406,15 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: CTA_PRIMARY,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: BG_PAGE,
+    borderColor: "#0a0a0a",
   },
   avatarHint: {
+    fontFamily: FONTS.body,
     fontSize: 13,
-    color: TEXT_SECONDARY,
+    color: "#888888",
     textAlign: "center",
     marginTop: 8,
     marginBottom: 24,
@@ -423,27 +424,29 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   fieldLabel: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 13,
-    fontWeight: "600",
-    color: TEXT_SECONDARY,
+    color: "#888888",
     marginBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: INPUT_FILL,
-    borderRadius: 10,
+    fontFamily: FONTS.body,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
+    borderColor: "rgba(255,255,255,0.06)",
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
-    color: TEXT_PRIMARY,
+    color: "#e8e8e8",
     minHeight: MIN_TOUCH_TARGET,
   },
   charCount: {
+    fontFamily: FONTS.body,
     fontSize: 12,
-    color: TEXT_DISABLED,
+    color: "#555555",
     textAlign: "right",
     marginTop: 4,
   },
@@ -455,6 +458,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   errorText: {
+    fontFamily: FONTS.body,
     fontSize: 14,
     color: ERROR_DARK,
     flex: 1,

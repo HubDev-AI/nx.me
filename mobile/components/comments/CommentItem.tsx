@@ -9,6 +9,7 @@ import {
   TEXT_DISABLED,
 } from "../../constants/colors";
 import { COMMENTS_CONFIG } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
 import { formatTimeAgo } from "../../lib/format";
 import type { Comment } from "./types";
 
@@ -111,22 +112,26 @@ const styles = StyleSheet.create({
   displayName: {
     fontSize: 13,
     fontWeight: "700",
+    fontFamily: FONTS.bodyBold,
     color: TEXT_PRIMARY,
     flexShrink: 1,
   },
   timestamp: {
     fontSize: 12,
     color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
   },
   commentText: {
     fontSize: 14,
     lineHeight: 20,
     color: TEXT_PRIMARY,
+    fontFamily: FONTS.body,
   },
   deletedText: {
     fontSize: 14,
     fontStyle: "italic",
     color: TEXT_DISABLED,
+    fontFamily: FONTS.body,
     paddingVertical: 2,
   },
 });

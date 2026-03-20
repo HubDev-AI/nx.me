@@ -9,6 +9,8 @@
 - ONE auth hook (`useAuth`) used everywhere -- no ad-hoc auth state management
 
 ## Patterns That Work
+- Reanimated `FadeInDown`/`FadeOutUp` entering/exiting animations on conditionally rendered `Animated.View` -- much simpler and more reliable than `maxHeight` clipping for expandable sections (no content cutoff, no need to calculate expanded height)
+- Move overlay buttons (3-dot menu etc.) to `position: absolute` in the parent screen rather than inside `ListHeaderComponent` -- prevents z-index conflicts and overlap with header content
 - `tabBarIconStyle: { flex: 1 }` fixes vertical centering when `tabBarShowLabel: false` in React Navigation bottom tabs
 - Tracing through node_modules source to find root cause of style issues rather than applying workarounds
 - Custom animated tab bar via `tabBar` prop: render `<BottomTabBar {...props} />` inside an `Animated.View` -- preserves all existing styles including `position: absolute` pill
@@ -16,6 +18,8 @@
 - `Animated.createAnimatedComponent(FlatList<T>)` works for typed FlatLists; pass ref via `as any` cast since animated wrapper loses generic ref type
 
 ## Patterns That Don't Work
+- `maxHeight` + `overflow: 'hidden'` for collapsible sections -- clips content, requires hardcoded expanded height constant that easily drifts out of sync with actual content, looks terrible when height is wrong
+- Placing overlay buttons (3-dot menu) inside `ListHeaderComponent` with `position: absolute` -- causes overlap with other header elements because the absolute positioning is relative to the header wrapper, not the screen
 - `tabBarItemStyle: { justifyContent: 'center' }` -- only affects outer View, inner pressable has hardcoded flex-start
 - CSS injection / style hacks for React Navigation layout issues
 - Padding workarounds to compensate for misaligned flex layouts

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -6,28 +6,28 @@ import {
   Pressable,
   Share,
   Platform,
+  LayoutAnimation,
+  UIManager,
   StyleSheet,
 } from "react-native";
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-  COLORS,
-} from "../../constants/colors";
+import { TEXT_SECONDARY } from "../../constants/colors";
 import {
   UNIVERSAL_LINK_ORIGIN,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import { formatCount } from "../../lib/format";
 import type { UserProfile } from "./types";
 
-const AVATAR_SIZE = 80;
-const STAT_ICON_SIZE = 16;
+const AVATAR_SIZE = 40;
 
 interface ProfileHeaderProps {
   profile: UserProfile;
@@ -35,15 +35,28 @@ interface ProfileHeaderProps {
 }
 
 /**
- * Profile header: avatar, display name, username, stats row,
- * Edit Profile and Share buttons.
+ * Collapsible profile header.
+ *
+ * COLLAPSED (default): clean card-like row -- avatar, name + @username stacked,
+ * "View profile" tap target on the right. Entire row is tappable.
+ *
+ * EXPANDED: additional content slides down below the collapsed row --
+ * stats row, Edit Profile pill button. Uses Reanimated entering/exiting
+ * layout animations (FadeInDown / FadeOutUp) so content is never clipped.
  */
 export function ProfileHeader({
   profile,
   onEditProfile,
 }: ProfileHeaderProps) {
+  const { theme } = useTheme();
+  const [expanded, setExpanded] = useState(false);
   const displayName = profile.display_name ?? profile.username;
   const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/${profile.username}`;
+
+  const toggle = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpanded((prev) => !prev);
+  }, []);
 
   const handleShare = useCallback(() => {
     const sharePayload =
@@ -52,14 +65,26 @@ export function ProfileHeader({
         : { message: shareUrl };
 
     Share.share(sharePayload).catch(() => {
-      // User cancelled or share failed — no action needed
+      // User cancelled or share failed -- no action needed
     });
   }, [shareUrl]);
 
   return (
-    <View style={styles.container}>
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
+    <View style={styles.wrapper}>
+      {/* ---- Collapsed row -- always visible, tappable to toggle ---- */}
+      <Pressable
+        onPress={toggle}
+        style={({ pressed }) => [
+          styles.collapsedRow,
+          pressed && styles.collapsedRowPressed,
+        ]}
+        accessibilityLabel={
+          expanded ? "Hide profile details" : "View profile details"
+        }
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
+        {/* Avatar */}
         {profile.avatar_url ? (
           <Image
             source={{ uri: profile.avatar_url }}
@@ -68,90 +93,87 @@ export function ProfileHeader({
           />
         ) : (
           <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Ionicons
-              name="person"
-              size={36}
-              color={TEXT_SECONDARY}
-            />
+            <Ionicons name="person" size={18} color={TEXT_SECONDARY} />
           </View>
         )}
-      </View>
 
-      {/* Name + username */}
-      <Text
-        style={styles.displayName}
-        numberOfLines={1}
-        accessibilityRole="header"
-      >
-        {displayName}
-      </Text>
-      <Text style={styles.username} numberOfLines={1}>
-        @{profile.username}
-      </Text>
+        {/* Name + username stacked */}
+        <View style={styles.nameColumn}>
+          <Text
+            style={styles.displayName}
+            numberOfLines={1}
+            accessibilityRole="header"
+          >
+            {displayName}
+          </Text>
+          <Text style={styles.username} numberOfLines={1}>
+            @{profile.username}
+          </Text>
+        </View>
 
-      {/* Stats row */}
-      <View style={styles.statsRow}>
-        <StatItem
-          icon="image-outline"
-          value={profile.post_count}
-          label="Posts"
-        />
-        <View style={styles.statDivider} />
-        <StatItem
-          icon="heart-outline"
-          value={profile.total_reactions}
-          label="Reactions"
-        />
-      </View>
+        {/* "View profile" / "Hide" link */}
+        <Text style={styles.toggleLabel}>
+          {expanded ? "Hide" : "View profile"}
+        </Text>
+      </Pressable>
 
-      {/* Action buttons */}
-      <View style={styles.buttonsRow}>
-        <Pressable
-          onPress={onEditProfile}
-          style={({ pressed }) => [
-            styles.editButton,
-            pressed && styles.editButtonPressed,
-          ]}
-          accessibilityLabel="Edit Profile"
-          accessibilityRole="button"
-        >
-          <Ionicons name="create-outline" size={18} color={TEXT_PRIMARY} />
-          <Text style={styles.editButtonText}>Edit Profile</Text>
-        </Pressable>
+      {/* ---- Expanded content -- conditionally rendered with layout animation ---- */}
+      {expanded && (
+        <View style={styles.expandedContent}>
+          {/* Stats row */}
+          <View style={styles.statsRow}>
+            <StatItem value={profile.post_count} label="Posts" />
+            <View style={styles.statsDivider} />
+            <StatItem value={profile.total_reactions} label="Reactions" />
+          </View>
 
-        <Pressable
-          onPress={handleShare}
-          style={({ pressed }) => [
-            styles.shareButton,
-            pressed && styles.shareButtonPressed,
-          ]}
-          accessibilityLabel="Share profile"
-          accessibilityRole="button"
-        >
-          <Ionicons
-            name="share-outline"
-            size={18}
-            color={CTA_PRIMARY}
-          />
-        </Pressable>
-      </View>
+          {/* Action buttons */}
+          <View style={styles.buttonsRow}>
+            <Pressable
+              onPress={onEditProfile}
+              style={({ pressed }) => [
+                styles.editButton,
+                pressed && styles.editButtonPressed,
+              ]}
+              accessibilityLabel="Edit Profile"
+              accessibilityRole="button"
+            >
+              <Text style={styles.editButtonText}>Edit Profile</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleShare}
+              style={({ pressed }) => [
+                styles.shareButton,
+                pressed && styles.shareButtonPressed,
+              ]}
+              accessibilityLabel="Share profile"
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name="share-outline"
+                size={18}
+                color={theme.accent}
+              />
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 interface StatItemProps {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
   value: number;
   label: string;
 }
 
-function StatItem({ icon, value, label }: StatItemProps) {
+function StatItem({ value, label }: StatItemProps) {
   return (
     <View
       style={styles.statItem}
       accessibilityLabel={`${formatCount(value)} ${label}`}
     >
-      <Ionicons name={icon} size={STAT_ICON_SIZE} color={TEXT_SECONDARY} />
       <Text style={styles.statValue}>{formatCount(value)}</Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
@@ -159,73 +181,110 @@ function StatItem({ icon, value, label }: StatItemProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    paddingTop: 24,
-    paddingBottom: 16,
+  wrapper: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+    borderRadius: 16,
+    backgroundColor: "#111111",
     paddingHorizontal: 16,
   },
-  avatarContainer: {
-    marginBottom: 12,
+
+  /* ---- Collapsed row ---- */
+  collapsedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    gap: 12,
+    minHeight: 64,
   },
+  collapsedRowPressed: {
+    opacity: 0.7,
+  },
+
+  /* Avatar */
   avatar: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
   },
   avatarPlaceholder: {
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: "#111111",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
     alignItems: "center",
     justifyContent: "center",
   },
+
+  /* Name column */
+  nameColumn: {
+    flex: 1,
+    justifyContent: "center",
+    gap: 2,
+  },
   displayName: {
     fontFamily: FONTS.display,
-    fontSize: 26,
-    color: TEXT_PRIMARY,
-    marginBottom: 2,
+    fontSize: 18,
+    color: "#e8e8e8",
+    lineHeight: 22,
   },
   username: {
     fontFamily: FONTS.body,
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginBottom: 16,
+    fontSize: 13,
+    color: "#888888",
+    lineHeight: 16,
   },
+
+  /* Toggle label */
+  toggleLabel: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 13,
+    color: "#888888",
+    paddingLeft: 8,
+  },
+
+  /* ---- Expanded content ---- */
+  expandedContent: {
+    paddingBottom: 16,
+    paddingTop: 4,
+  },
+
+  /* Stats row */
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: BG_CARD,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    justifyContent: "center",
+    gap: 24,
     marginBottom: 16,
-    width: "100%",
+    paddingVertical: 8,
   },
   statItem: {
-    flex: 1,
     alignItems: "center",
-    gap: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: COLORS.neutral.dark[400],
+    gap: 2,
   },
   statValue: {
     fontFamily: FONTS.display,
-    fontSize: 20,
-    color: TEXT_PRIMARY,
+    fontSize: 22,
+    color: "#e8e8e8",
   },
   statLabel: {
     fontFamily: FONTS.body,
     fontSize: 11,
-    color: TEXT_SECONDARY,
+    color: "#888888",
     textTransform: "uppercase",
-    letterSpacing: 1.2,
+    letterSpacing: 1,
   },
+  statsDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  /* Action buttons */
   buttonsRow: {
     flexDirection: "row",
     gap: 8,
-    width: "100%",
   },
   editButton: {
     flex: 1,
@@ -234,28 +293,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
     minHeight: MIN_TOUCH_TARGET,
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 10,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
   editButtonPressed: {
-    backgroundColor: COLORS.neutral.dark[300],
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
   editButtonText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    color: "#e8e8e8",
   },
   shareButton: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 10,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
   },
   shareButtonPressed: {
-    backgroundColor: COLORS.neutral.dark[300],
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
 });

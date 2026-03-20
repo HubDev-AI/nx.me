@@ -1,166 +1,252 @@
-import { useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  Easing,
-  interpolate,
-  FadeInDown,
-} from "react-native-reanimated";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-} from "../../constants/colors";
-import { HeroBackground } from "../../components/ui/HeroBackground";
-import { FloatingParticles } from "../../components/ui/FloatingParticles";
-import { GlowButton } from "../../components/ui/GlowButton";
+import { BG_PAGE } from "../../constants/colors";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 
-/**
- * Create tab — navigates to the upload screen.
- * Futuristic version with pulsing icon, aurora bg, glow CTA.
- */
+/* ------------------------------------------------------------------ */
+/*  Feature definitions                                                */
+/* ------------------------------------------------------------------ */
+
+interface Feature {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  name: string;
+  description: string;
+  active: boolean;
+  route?: string;
+}
+
+const FEATURES: Feature[] = [
+  {
+    key: "glow-up",
+    icon: "sparkles",
+    name: "Glow Up",
+    description: "AI-powered style transformation",
+    active: true,
+    route: "/upload",
+  },
+  {
+    key: "style-check",
+    icon: "shirt-outline",
+    name: "Style Check",
+    description: "Get feedback on your outfit",
+    active: false,
+  },
+  {
+    key: "skin-care",
+    icon: "water-outline",
+    name: "Skin Care",
+    description: "Personalized skincare routine",
+    active: false,
+  },
+  {
+    key: "hair-style",
+    icon: "cut-outline",
+    name: "Hair Style",
+    description: "Find your perfect hairstyle",
+    active: false,
+  },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Screen                                                             */
+/* ------------------------------------------------------------------ */
+
 export default function CreateScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
-  const pulse = useSharedValue(0);
-  const float = useSharedValue(0);
-
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-      false,
-    );
-
-    float.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
-      ),
-      -1,
-      false,
-    );
-  }, []);
-
-  const iconCircleStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: 1 + pulse.value * 0.08 },
-      { translateY: interpolate(float.value, [0, 1], [0, -8]) },
-    ],
-    shadowOpacity: 0.3 + pulse.value * 0.5,
-    shadowRadius: 12 + pulse.value * 20,
-  }));
-
-  const handlePress = () => {
-    router.push("/upload");
+  const handleFeaturePress = (feature: Feature) => {
+    if (feature.active && feature.route) {
+      router.push(feature.route as any);
+    }
   };
 
   return (
     <View style={styles.container}>
-
-      {/* Sparkle icon with glow */}
-      <Animated.View
-        entering={FadeInDown.duration(600).delay(100)}
-        style={[
-          styles.iconCircle,
-          { shadowColor: theme.accent, backgroundColor: theme.accent },
-          iconCircleStyle,
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 24, paddingBottom: 80 },
         ]}
+        showsVerticalScrollIndicator={false}
       >
-        <Ionicons name="sparkles" size={36} color="#FFFFFF" />
-      </Animated.View>
+        {/* Header */}
+        <Animated.Text
+          entering={FadeInDown.duration(500).delay(80)}
+          style={styles.title}
+        >
+          Create
+        </Animated.Text>
+        <Animated.Text
+          entering={FadeInDown.duration(500).delay(160)}
+          style={styles.subtitle}
+        >
+          What would you like to do?
+        </Animated.Text>
 
-      <Animated.Text
-        entering={FadeInDown.duration(600).delay(200)}
-        style={styles.title}
-      >
-        Create your glow-up
-      </Animated.Text>
-      <Animated.Text
-        entering={FadeInDown.duration(600).delay(300)}
-        style={[styles.tagline, { color: theme.accent }]}
-      >
-        Transform your look
-      </Animated.Text>
-      <Animated.Text
-        entering={FadeInDown.duration(600).delay(400)}
-        style={styles.subtitle}
-      >
-        Upload a photo and get AI-powered style suggestions
-      </Animated.Text>
+        {/* 2-column grid */}
+        <View style={styles.grid}>
+          {FEATURES.map((feature, index) => {
+            const isActive = feature.active;
 
-      <Animated.View
-        entering={FadeInDown.duration(600).delay(500)}
-        style={styles.ctaWrapper}
-      >
-        <GlowButton
-          title="Upload Photo"
-          onPress={handlePress}
-          glowColor={theme.accent}
-          size="large"
-        />
-      </Animated.View>
+            return (
+              <Animated.View
+                key={feature.key}
+                entering={FadeInDown.duration(500).delay(240 + index * 80)}
+                style={styles.gridCell}
+              >
+                <Pressable
+                  onPress={() => handleFeaturePress(feature)}
+                  disabled={!isActive}
+                  style={({ pressed }) => [
+                    styles.box,
+                    isActive
+                      ? {
+                          borderColor: theme.accent,
+                          backgroundColor: theme.accent + "1A",
+                        }
+                      : styles.boxInactive,
+                    isActive && pressed && styles.boxPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isActive
+                      ? feature.name
+                      : `${feature.name} - coming soon`
+                  }
+                  accessibilityState={{ disabled: !isActive }}
+                >
+                  <Ionicons
+                    name={feature.icon}
+                    size={28}
+                    color={isActive ? theme.accent : "#555555"}
+                    style={styles.icon}
+                  />
+
+                  <Text
+                    style={[
+                      styles.featureName,
+                      !isActive && styles.featureNameInactive,
+                    ]}
+                  >
+                    {feature.name}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.featureDesc,
+                      !isActive && styles.featureDescInactive,
+                    ]}
+                  >
+                    {feature.description}
+                  </Text>
+
+                  {!isActive && (
+                    <Text style={styles.comingSoon}>COMING SOON</Text>
+                  )}
+                </Pressable>
+              </Animated.View>
+            );
+          })}
+        </View>
+      </ScrollView>
     </View>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Styles                                                             */
+/* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: BG_PAGE,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
   },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: CTA_PRIMARY,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 10,
+  scrollContent: {
+    paddingHorizontal: 20,
   },
+
+  /* Header */
   title: {
     fontFamily: FONTS.display,
-    fontSize: 36,
-    color: TEXT_PRIMARY,
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  tagline: {
-    fontFamily: FONTS.displayItalic,
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 12,
+    fontSize: 32,
+    color: "#e8e8e8",
+    marginBottom: 4,
   },
   subtitle: {
     fontFamily: FONTS.body,
-    fontSize: 16,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-    marginBottom: 32,
-    lineHeight: 22,
-    paddingHorizontal: 16,
+    fontSize: 15,
+    color: "#888888",
+    marginBottom: 24,
   },
-  ctaWrapper: {
-    width: "100%",
-    maxWidth: 280,
+
+  /* Grid */
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginHorizontal: -6,
+  },
+  gridCell: {
+    width: "50%",
+    paddingHorizontal: 6,
+    marginBottom: 12,
+  },
+
+  /* Box shared */
+  box: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    aspectRatio: 1,
+    justifyContent: "flex-start",
+  },
+  boxInactive: {
+    backgroundColor: "#111111",
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  boxPressed: {
+    opacity: 0.8,
+  },
+
+  /* Icon */
+  icon: {
+    marginBottom: 12,
+  },
+
+  /* Feature text */
+  featureName: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 15,
+    color: "#e8e8e8",
+    marginBottom: 4,
+  },
+  featureNameInactive: {
+    color: "#555555",
+  },
+  featureDesc: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: "#888888",
+    lineHeight: 16,
+  },
+  featureDescInactive: {
+    color: "#444444",
+  },
+
+  /* Coming soon label */
+  comingSoon: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 10,
+    color: "#555555",
+    letterSpacing: 1,
+    marginTop: "auto",
   },
 });

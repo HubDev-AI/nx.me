@@ -28,6 +28,7 @@ import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import { ReactionButton } from "./ReactionButton";
 import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import type { FeedPost } from "./types";
 
 const CARD_BORDER_RADIUS = 16;
@@ -59,6 +60,7 @@ export const FeedCard = React.memo(function FeedCard({
   onBlock,
   onCommentPress,
 }: FeedCardProps) {
+  const { theme } = useTheme();
   const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateAnim = useRef(new Animated.Value(20)).current;
@@ -185,6 +187,11 @@ export const FeedCard = React.memo(function FeedCard({
           accessibilityHint="Tap to view post. Long press for share, block, and report options"
         >
         <View style={styles.imageRow}>
+          {/* Glow-up icon — top-left of the card */}
+          <View style={[styles.featureIcon, { backgroundColor: theme.accent + "33" }]}>
+            <Ionicons name="sparkles" size={12} color={theme.accent} />
+          </View>
+
           <View style={styles.imageContainer}>
             <Image
               source={{ uri: post.before_image_url }}
@@ -204,10 +211,12 @@ export const FeedCard = React.memo(function FeedCard({
               resizeMode="cover"
               accessibilityLabel={`After photo by ${post.display_name ?? "user"}`}
             />
-            <View style={[styles.imageLabel, styles.afterLabel]}>
-              <Text style={[styles.imageLabelText, styles.afterLabelText]}>
-                After
-              </Text>
+            <View style={styles.afterLabelAnchor}>
+              <View style={[styles.afterLabelInner, { backgroundColor: theme.accent + "CC" }]}>
+                <Text style={[styles.imageLabelText, styles.afterLabelText]}>
+                  After
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -268,6 +277,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     height: IMAGE_HEIGHT,
   },
+  featureIcon: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
   imageContainer: {
     flex: 1,
     position: "relative",
@@ -284,16 +304,25 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 8,
     left: 8,
+    right: undefined,
     height: BEFORE_LABEL_HEIGHT,
     paddingHorizontal: 8,
     borderRadius: 4,
     backgroundColor: BEFORE_OVERLAY,
     justifyContent: "center",
+    flexShrink: 1,
   },
-  afterLabel: {
-    left: undefined,
-    right: 8,
-    backgroundColor: AFTER_OVERLAY_STRONG,
+  afterLabelAnchor: {
+    position: "absolute",
+    bottom: 8,
+    left: 8,
+    flexDirection: "row",
+  },
+  afterLabelInner: {
+    height: BEFORE_LABEL_HEIGHT,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    justifyContent: "center",
   },
   imageLabelText: {
     fontFamily: FONTS.bodyMedium,
