@@ -22,11 +22,13 @@ import hashlib
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel
+from supabase import Client
 
-from app.api.deps import get_client_ip, get_feed_repo, get_redis
+from app.api.deps import get_client_ip, get_feed_repo, get_redis, get_supabase
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.feed_repo import FeedRepository
+from app.services.public_url import build_avatar_url
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,9 @@ class FeedSort(StrEnum):
 class FeedPostResponse(BaseModel):
     post_id: str
     user_id: str
+    username: str | None
+    display_name: str | None
+    avatar_url: str | None
     caption: str | None
     before_image_url: str
     after_image_url: str
@@ -104,6 +109,7 @@ async def get_feed(
     cursor: str | None = Query(None, description="Cursor for pagination (ISO timestamp or composite)"),
     limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"),
     feed_repo: FeedRepository = Depends(get_feed_repo),
+    supabase: Client = Depends(get_supabase),
 ) -> FeedResponse:
     """Public feed endpoint — no auth required.
 
@@ -128,11 +134,21 @@ async def get_feed(
     if has_more:
         posts = posts[:limit]
 
+    # Build signed avatar URLs — batch unique storage keys to minimise calls
+    unique_avatar_keys: dict[str, str | None] = {}
+    for p in posts:
+        key = p.get("avatar_storage_key")
+        if key and key not in unique_avatar_keys:
+            unique_avatar_keys[key] = build_avatar_url(supabase, key)
+
     # URLs are now stable public CDN paths (no signing needed)
     feed_posts = [
         FeedPostResponse(
             post_id=p["id"],
             user_id=p["user_id"],
+            username=p.get("username"),
+            display_name=p.get("display_name"),
+            avatar_url=unique_avatar_keys.get(p.get("avatar_storage_key") or ""),
             caption=p.get("caption"),
             before_image_url=p["before_image_url"],
             after_image_url=p["after_image_url"],
