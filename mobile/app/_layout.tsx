@@ -13,7 +13,7 @@ import { getStoredJwt } from "../lib/auth";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
-import { BG_PAGE } from "../constants/colors";
+import { THEME } from "../constants/theme";
 import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
@@ -99,7 +99,7 @@ export default function RootLayout() {
   }
 
   const inner = (
-    <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
+    <View style={{ flex: 1, backgroundColor: THEME.colors.bg }} onLayout={onLayoutReady}>
       <StatusBar style="light" />
       <AuthGuard />
     </View>

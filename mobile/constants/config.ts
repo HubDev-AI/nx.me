@@ -22,6 +22,8 @@ export const SECURE_STORE_KEYS = {
   JWT: "nxme_jwt",
   REFRESH_TOKEN: "nxme_refresh_token",
   PUSH_TOKEN: "nxme_push_token",
+  /** Set to "1" after registration when email_verification_required is true */
+  PENDING_EMAIL_VERIFICATION: "nxme_pending_email_verification",
 } as const;
 
 /** OAuth Client IDs — sourced from env / Expo config extras */
@@ -44,8 +46,16 @@ export const AUTH_ENDPOINTS = {
   LOGIN: "/v1/auth/login",
   /** Social login uses the /login endpoint — backend accepts { provider, id_token, nonce? } */
   SOCIAL_LOGIN: "/v1/auth/login",
-  /** Refresh token endpoint — POST with { refresh_token } */
+  /**
+   * Refresh token endpoint — POST with { refresh_token }.
+   * NOTE: As of 2026-03-20, the backend does NOT expose a /v1/auth/refresh
+   * endpoint in its OpenAPI spec. The path is kept here for forward-compat;
+   * the refresh logic in lib/api.ts will gracefully fall back (clear tokens)
+   * when the server returns a non-200 response.
+   */
   REFRESH: "/v1/auth/refresh",
+  /** Server-side logout — POST with JWT in Authorization header */
+  LOGOUT: "/v1/auth/logout",
 } as const;
 
 /** Analysis API paths */
@@ -54,6 +64,13 @@ export const ANALYSIS_ENDPOINTS = {
   GENERATE: (id: string) => `/v1/analyses/${id}/generate`,
   JOB_STATUS: (id: string) => `/v1/jobs/${id}`,
   JOB_CANCEL: (id: string) => `/v1/jobs/${id}/cancel`,
+  /**
+   * Request a refund for a completed job.
+   * NOTE: As of 2026-03-20, the backend does NOT expose this endpoint in its
+   * OpenAPI spec. The UI handles the error gracefully (shows failure alert).
+   * Once the backend adds this endpoint, it will work without app changes.
+   */
+  JOB_REFUND: (id: string) => `/v1/jobs/${id}/refund`,
 } as const;
 
 /** Analysis polling configuration */
@@ -75,8 +92,9 @@ export const IMAGE_PICKER = {
 /** Feed API paths */
 export const FEED_ENDPOINTS = {
   FEED: "/v1/feed",
-  REACT: (postId: string) => `/v1/posts/${postId}/react`,
+  REACT: (postId: string) => `/v1/posts/${postId}/reactions`,
   COMMENTS: (postId: string) => `/v1/posts/${postId}/comments`,
+  DELETE_POST: (postId: string) => `/v1/posts/${postId}`,
 } as const;
 
 /** Comments configuration */

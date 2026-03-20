@@ -33,13 +33,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  TEXT_PRIMARY,
-  GLOW_AMBER,
-  BEFORE_OVERLAY,
-  AFTER_OVERLAY,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +69,7 @@ export default function BeforeAfterReveal({
   afterUrl,
   onRevealComplete,
 }: BeforeAfterRevealProps) {
+  const { theme } = useTheme();
   const [showAfter, setShowAfter] = useState(false);
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -163,7 +160,7 @@ export default function BeforeAfterReveal({
         {showAfter && (
           <Animated.View entering={afterEntering} style={styles.imageWrapper}>
             {/* Glow ring behind */}
-            <Animated.View style={[styles.glowRing, glowStyle]} />
+            <Animated.View style={[styles.glowRing, glowStyle, { borderColor: theme.accent }]} />
             <Pressable
               onPress={() => setLightboxUri(afterUrl)}
               accessibilityLabel="View after photo fullscreen"
@@ -175,7 +172,7 @@ export default function BeforeAfterReveal({
                 accessibilityLabel="After photo"
               />
               <View style={styles.afterOverlay} />
-              <View style={[styles.labelBadge, styles.labelBadgeAfter]}>
+              <View style={[styles.labelBadge, styles.labelBadgeAfter, { backgroundColor: theme.accent + "B3" }]}>
                 <Animated.Text style={[styles.labelText, styles.labelTextAfter]}>
                   After
                 </Animated.Text>
@@ -201,7 +198,7 @@ export default function BeforeAfterReveal({
             accessibilityRole="button"
             hitSlop={12}
           >
-            <Ionicons name="close" size={28} color={TEXT_PRIMARY} />
+            <Ionicons name="close" size={28} color={THEME.colors.textPrimary} />
           </Pressable>
           {lightboxUri && (
             <Image
@@ -224,11 +221,11 @@ export default function BeforeAfterReveal({
 const styles = StyleSheet.create({
   container: {
     alignItems: "center",
-    paddingVertical: 16,
+    paddingVertical: THEME.spacing.lg,
   },
   imagesRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: THEME.spacing.md,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -240,18 +237,18 @@ const styles = StyleSheet.create({
   image: {
     width: IMAGE_SIZE / 2 + 16,
     height: IMAGE_SIZE / 2 + 16,
-    borderRadius: 16,
-    backgroundColor: BG_CARD,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: THEME.colors.surface,
   },
   beforeOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: BEFORE_OVERLAY,
-    borderRadius: 16,
+    backgroundColor: "rgba(15,23,42,0.72)",
+    borderRadius: THEME.radius.lg,
   },
   afterOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: AFTER_OVERLAY,
-    borderRadius: 16,
+    backgroundColor: "rgba(244, 63, 94, 0.08)",
+    borderRadius: THEME.radius.lg,
   },
   glowRing: {
     position: "absolute",
@@ -259,10 +256,8 @@ const styles = StyleSheet.create({
     height: GLOW_SIZE / 2 + 24,
     borderRadius: (GLOW_SIZE / 2 + 24) / 2,
     borderWidth: 2,
-    borderColor: GLOW_AMBER,
     ...Platform.select({
       ios: {
-        shadowColor: GLOW_AMBER,
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.6,
         shadowRadius: 12,
@@ -274,25 +269,25 @@ const styles = StyleSheet.create({
   },
   labelBadge: {
     position: "absolute",
-    bottom: 8,
-    left: 8,
+    bottom: THEME.spacing.sm,
+    left: THEME.spacing.sm,
     backgroundColor: "rgba(0,0,0,0.6)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingHorizontal: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.xs,
+    borderRadius: THEME.radius.sm,
   },
   labelBadgeAfter: {
-    backgroundColor: "rgba(244,63,94,0.7)",
+    // backgroundColor applied inline with theme.accent
   },
   labelText: {
+    fontFamily: FONTS.bodyBold,
     fontSize: 11,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   labelTextAfter: {
-    color: "#FFFFFF",
+    color: THEME.colors.white,
   },
   // Lightbox
   lightboxBackdrop: {
@@ -304,10 +299,10 @@ const styles = StyleSheet.create({
   lightboxClose: {
     position: "absolute",
     top: 56,
-    right: 20,
+    right: THEME.spacing.xl,
     zIndex: 10,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 20,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
     width: 44,
     height: 44,
     alignItems: "center",
@@ -316,6 +311,6 @@ const styles = StyleSheet.create({
   lightboxImage: {
     width: SCREEN_WIDTH - 32,
     height: SCREEN_WIDTH - 32,
-    borderRadius: 12,
+    borderRadius: THEME.radius.md,
   },
 });

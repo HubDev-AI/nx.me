@@ -1,16 +1,18 @@
-import { useRef, useCallback } from "react";
-import { Pressable, Text, Animated, StyleSheet } from "react-native";
+import { useCallback } from "react";
+import { Pressable, Text, StyleSheet } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  CTA_PRIMARY,
-  TEXT_SECONDARY,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
 import { formatCount } from "../../lib/format";
+import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 
-const PRESS_SCALE = 0.9;
-const ANIMATION_DURATION_MS = 150;
 const MIN_TOUCH_TARGET = 44;
 
 interface ReactionButtonProps {
@@ -30,32 +32,34 @@ export function ReactionButton({
   onReact,
   disabled = false,
 }: ReactionButtonProps) {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const { theme } = useTheme();
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   const handlePressIn = useCallback(() => {
-    Animated.timing(scaleAnim, {
-      toValue: PRESS_SCALE,
-      duration: ANIMATION_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(0.96, THEME.animation.press);
+  }, []);
 
   const handlePressOut = useCallback(() => {
-    Animated.timing(scaleAnim, {
-      toValue: 1,
-      duration: ANIMATION_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim]);
+    scale.value = withSpring(1, THEME.animation.press);
+  }, []);
+
+  const handlePress = useCallback(() => {
+    hapticLight();
+    onReact();
+  }, [onReact]);
 
   const iconName = hasReacted ? "heart" : "heart-outline";
-  const iconColor = hasReacted ? CTA_PRIMARY : TEXT_SECONDARY;
-  const countColor = hasReacted ? CTA_PRIMARY : TEXT_SECONDARY;
+  const iconColor = hasReacted ? theme.accent : THEME.colors.textSecondary;
+  const countColor = hasReacted ? theme.accent : THEME.colors.textSecondary;
 
   return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+    <Animated.View style={animatedStyle}>
       <Pressable
-        onPress={onReact}
+        onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={disabled}
@@ -82,11 +86,11 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: THEME.spacing.xs,
     minHeight: MIN_TOUCH_TARGET,
     minWidth: MIN_TOUCH_TARGET,
-    paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingHorizontal: THEME.spacing.xs,
+    paddingVertical: THEME.spacing.sm,
   },
   count: {
     fontFamily: FONTS.bodyMedium,

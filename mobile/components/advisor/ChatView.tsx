@@ -20,19 +20,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_PAGE,
-  BG_CARD,
-  INPUT_FILL,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  CTA_PRESSED,
-  ERROR_DARK,
-  ERROR_BG,
-  BORDER_DEFAULT,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import {
   fetchMessages,
@@ -67,13 +57,13 @@ function ChatSkeleton() {
 const skeletonStyles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    gap: 12,
+    padding: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
   bubble: {
     height: 48,
-    borderRadius: 16,
-    backgroundColor: BG_CARD,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: THEME.colors.surface,
   },
   left: {
     alignSelf: "flex-start",
@@ -86,6 +76,7 @@ const skeletonStyles = StyleSheet.create({
 });
 
 export function ChatView() {
+  const { theme } = useTheme();
   // -------------------------------------------------------------------------
   // State
   // -------------------------------------------------------------------------
@@ -256,12 +247,12 @@ export function ChatView() {
     if (isLoadingMore) {
       return (
         <View style={styles.loadingMore}>
-          <ActivityIndicator size="small" color={TEXT_SECONDARY} />
+          <ActivityIndicator size="small" color={theme.accent} />
         </View>
       );
     }
     return null;
-  }, [isLoadingMore]);
+  }, [isLoadingMore, theme.accent]);
 
   const canSend = inputText.trim().length > 0 && !isSending;
 
@@ -272,16 +263,16 @@ export function ChatView() {
   if (error && messages.length === 0) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={TEXT_SECONDARY} />
+        <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
         <Text style={styles.errorTitle}>Could not load messages</Text>
         <Text style={styles.errorSubtitle}>{error}</Text>
         <Pressable
           onPress={loadMessages}
-          style={styles.retryButton}
+          style={[styles.retryButton, { backgroundColor: theme.accent }]}
           accessibilityLabel="Retry loading messages"
           accessibilityRole="button"
         >
-          <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+          <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
           <Text style={styles.retryText}>Try Again</Text>
         </Pressable>
       </View>
@@ -311,7 +302,7 @@ export function ChatView() {
         windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubble-ellipses-outline" size={48} color={TEXT_SECONDARY} />
+            <Ionicons name="chatbubble-ellipses-outline" size={48} color={THEME.colors.textSecondary} />
             <Text style={styles.emptyTitle}>Chat with Ada</Text>
             <Text style={styles.emptySubtitle}>
               Ask about styling, grooming, or anything she can help with
@@ -323,14 +314,14 @@ export function ChatView() {
       {/* Send error banner */}
       {error && messages.length > 0 && (
         <View style={styles.errorBanner} accessibilityRole="alert">
-          <Ionicons name="alert-circle" size={16} color={ERROR_DARK} />
+          <Ionicons name="alert-circle" size={16} color={THEME.colors.destructive} />
           <Text style={styles.errorBannerText}>{error}</Text>
           <Pressable
             onPress={() => setError(null)}
             hitSlop={8}
             accessibilityLabel="Dismiss error"
           >
-            <Ionicons name="close" size={16} color={TEXT_SECONDARY} />
+            <Ionicons name="close" size={16} color={THEME.colors.textSecondary} />
           </Pressable>
         </View>
       )}
@@ -342,7 +333,7 @@ export function ChatView() {
           value={inputText}
           onChangeText={setInputText}
           placeholder="Message Ada..."
-          placeholderTextColor={TEXT_DISABLED}
+          placeholderTextColor={THEME.colors.textDisabled}
           multiline
           maxLength={ADVISOR_CONFIG.MESSAGE_MAX_LENGTH}
           returnKeyType="default"
@@ -360,12 +351,12 @@ export function ChatView() {
           accessibilityRole="button"
         >
           {isSending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={THEME.colors.bg} />
           ) : (
             <Ionicons
               name="send"
               size={20}
-              color={canSend ? "#FFFFFF" : TEXT_DISABLED}
+              color={canSend ? THEME.colors.bg : THEME.colors.textDisabled}
             />
           )}
         </Pressable>
@@ -383,107 +374,112 @@ export function ChatView() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   listContent: {
     flexGrow: 1,
-    paddingVertical: 12,
+    paddingVertical: THEME.spacing.md,
   },
   loadingMore: {
-    paddingVertical: 12,
+    paddingVertical: THEME.spacing.md,
     alignItems: "center",
   },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingTop: 80,
-    gap: 8,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingTop: THEME.spacing.xxxl * 2.5,
+    gap: THEME.spacing.sm,
   },
   emptyTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginTop: THEME.spacing.md,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.displayItalic,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
   },
   errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 8,
-    backgroundColor: BG_PAGE,
+    paddingHorizontal: THEME.spacing.xxxl,
+    gap: THEME.spacing.sm,
+    backgroundColor: THEME.colors.bg,
   },
   errorTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginTop: THEME.spacing.md,
   },
   errorSubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
   },
   retryButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: CTA_PRIMARY,
+    gap: THEME.spacing.sm,
+    marginTop: THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.md - 2,
+    borderRadius: THEME.radius.pill,
     minHeight: MIN_TOUCH_TARGET,
   },
   retryText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    color: THEME.colors.bg,
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 4,
-    backgroundColor: ERROR_BG,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: THEME.spacing.sm,
+    marginHorizontal: THEME.spacing.lg,
+    marginBottom: THEME.spacing.xs,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
   },
   errorBannerText: {
     flex: 1,
-    fontSize: 13,
-    color: ERROR_DARK,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.destructive,
   },
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: BORDER_DEFAULT,
-    backgroundColor: BG_PAGE,
-    gap: 8,
+    borderTopColor: THEME.colors.glassBorder,
+    backgroundColor: THEME.colors.glass,
+    gap: THEME.spacing.sm,
   },
   textInput: {
     flex: 1,
-    backgroundColor: INPUT_FILL,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
-    fontSize: 15,
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.body,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.xl,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.md - 2,
+    paddingBottom: THEME.spacing.md - 2,
+    ...THEME.typography.body,
+    color: THEME.colors.textPrimary,
     maxHeight: 120,
     minHeight: MIN_TOUCH_TARGET,
   },
@@ -493,12 +489,12 @@ const styles = StyleSheet.create({
     borderRadius: MIN_TOUCH_TARGET / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: BORDER_DEFAULT,
+    backgroundColor: THEME.colors.border,
   },
   sendButtonActive: {
-    backgroundColor: CTA_PRIMARY,
+    backgroundColor: THEME.colors.textPrimary,
   },
   sendButtonPressed: {
-    backgroundColor: CTA_PRESSED,
+    opacity: 0.85,
   },
 });

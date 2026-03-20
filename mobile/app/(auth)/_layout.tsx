@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 
-import { BG_PAGE, COLORS } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 
 /**
  * Auth group layout -- no tab bar, clean auth flow with back navigation.
@@ -10,11 +10,11 @@ export default function AuthLayout() {
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: BG_PAGE },
-        headerTintColor: COLORS.neutral.dark[900],
+        headerStyle: { backgroundColor: THEME.colors.bg },
+        headerTintColor: THEME.colors.textPrimary,
         headerShadowVisible: false,
         headerTitle: "",
-        contentStyle: { backgroundColor: BG_PAGE },
+        contentStyle: { backgroundColor: THEME.colors.bg },
       }}
     />
   );

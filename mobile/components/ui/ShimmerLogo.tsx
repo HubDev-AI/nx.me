@@ -14,7 +14,7 @@ import Animated, {
   interpolate,
 } from "react-native-reanimated";
 
-import { TEXT_PRIMARY, CTA_PRIMARY } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
 
 interface ShimmerLogoProps {
@@ -24,7 +24,7 @@ interface ShimmerLogoProps {
   glowColor?: string;
 }
 
-export function ShimmerLogo({ size = 36, glowColor = CTA_PRIMARY }: ShimmerLogoProps) {
+export function ShimmerLogo({ size = 36, glowColor = THEME.colors.textPrimary }: ShimmerLogoProps) {
   const shimmer = useSharedValue(0);
   const glow = useSharedValue(0);
 
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   },
   logo: {
     fontFamily: FONTS.displayItalic,
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
     letterSpacing: 8,
   },
   shimmerOverlay: {

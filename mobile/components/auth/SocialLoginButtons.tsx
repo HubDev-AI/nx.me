@@ -1,7 +1,7 @@
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { TEXT_SECONDARY } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
 
 interface SocialLoginButtonsProps {
@@ -74,34 +74,34 @@ export function SocialLoginButtons({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 12,
-    marginTop: 8,
+    gap: THEME.spacing.md,
+    marginTop: THEME.spacing.sm,
   },
   dividerRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 8,
+    marginVertical: THEME.spacing.sm,
   },
   dividerLine: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
   },
   dividerText: {
     fontFamily: FONTS.body,
     fontSize: 13,
-    color: TEXT_SECONDARY,
-    marginHorizontal: 16,
+    color: THEME.colors.textMuted,
+    marginHorizontal: THEME.spacing.lg,
   },
   socialButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     minHeight: BUTTON_HEIGHT,
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
     borderWidth: 1,
-    paddingHorizontal: 16,
-    gap: 10,
+    paddingHorizontal: THEME.spacing.lg,
+    gap: THEME.spacing.sm + 2,
   },
   socialButtonPressed: {
     opacity: 0.8,
@@ -110,13 +110,13 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   googleButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: THEME.colors.glassBorder,
   },
   googleText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 15,
-    color: "#1F1F1F",
+    color: THEME.colors.textPrimary,
   },
   appleButton: {
     backgroundColor: "rgba(0, 0, 0, 0.85)",

@@ -6,22 +6,25 @@ import {
   Pressable,
   Share,
   Platform,
-  LayoutAnimation,
-  UIManager,
   StyleSheet,
 } from "react-native";
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  interpolateColor,
+  interpolate,
+  Easing,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import { TEXT_SECONDARY } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import {
   UNIVERSAL_LINK_ORIGIN,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
+import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { formatCount } from "../../lib/format";
@@ -53,9 +56,69 @@ export function ProfileHeader({
   const displayName = profile.display_name ?? profile.username;
   const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/${profile.username}`;
 
+  // Shared value for expand progress (0 = collapsed, 1 = expanded)
+  const expandProgress = useSharedValue(0);
+
+  // Separate shared value for chevron rotation (0 = collapsed, 180 = expanded)
+  const chevronRotation = useSharedValue(0);
+
+  // Shared value for border interpolation (0 = collapsed, 1 = expanded)
+  const borderProgress = useSharedValue(0);
+
+  // Press scale animations
+  const toggleScale = useSharedValue(1);
+  const editScale = useSharedValue(1);
+  const shareScale = useSharedValue(1);
+  const togglePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: toggleScale.value }],
+  }));
+  const editPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: editScale.value }],
+  }));
+  const sharePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: shareScale.value }],
+  }));
+
+  // Chevron rotation: 0deg collapsed -> 180deg expanded
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
+  // Wrapper border: smoothly interpolates between default and expanded border
+  const wrapperAnimatedStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(
+      borderProgress.value,
+      [0, 1],
+      [THEME.colors.border, THEME.colors.glassBorder],
+    ),
+  }));
+
+  // Expanded content: animate opacity and maxHeight together
+  const expandedAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: expandProgress.value,
+    maxHeight: interpolate(expandProgress.value, [0, 1], [0, 250]),
+    overflow: "hidden" as const,
+  }));
+
   const toggle = useCallback(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded((prev) => !prev);
+    hapticLight();
+    setExpanded((prev) => {
+      const next = !prev;
+      const duration = next ? 250 : 200;
+      chevronRotation.value = withTiming(next ? 180 : 0, {
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+      });
+      borderProgress.value = withTiming(next ? 1 : 0, {
+        duration,
+        easing: Easing.out(Easing.cubic),
+      });
+      expandProgress.value = withTiming(next ? 1 : 0, {
+        duration,
+        easing: Easing.out(Easing.cubic),
+      });
+      return next;
+    });
   }, []);
 
   const handleShare = useCallback(() => {
@@ -70,32 +133,34 @@ export function ProfileHeader({
   }, [shareUrl]);
 
   return (
-    <View style={styles.wrapper}>
+    <Animated.View style={[styles.wrapper, wrapperAnimatedStyle]}>
       {/* ---- Collapsed row -- always visible, tappable to toggle ---- */}
+      <Animated.View style={togglePressStyle}>
       <Pressable
         onPress={toggle}
-        style={({ pressed }) => [
-          styles.collapsedRow,
-          pressed && styles.collapsedRowPressed,
-        ]}
+        onPressIn={() => { toggleScale.value = withSpring(0.98, THEME.animation.press); }}
+        onPressOut={() => { toggleScale.value = withSpring(1, THEME.animation.press); }}
+        style={styles.collapsedRow}
         accessibilityLabel={
           expanded ? "Hide profile details" : "View profile details"
         }
         accessibilityRole="button"
         accessibilityState={{ expanded }}
       >
-        {/* Avatar */}
-        {profile.avatar_url ? (
-          <Image
-            source={{ uri: profile.avatar_url }}
-            style={styles.avatar}
-            accessibilityLabel={`${displayName} avatar`}
-          />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Ionicons name="person" size={18} color={TEXT_SECONDARY} />
-          </View>
-        )}
+        {/* Avatar with accent ring */}
+        <View style={[styles.avatarRing, { borderColor: theme.accent + "66" }]}>
+          {profile.avatar_url ? (
+            <Image
+              source={{ uri: profile.avatar_url }}
+              style={styles.avatar}
+              accessibilityLabel={`${displayName} avatar`}
+            />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Ionicons name="person" size={18} color={THEME.colors.textSecondary} />
+            </View>
+          )}
+        </View>
 
         {/* Name + username stacked */}
         <View style={styles.nameColumn}>
@@ -111,70 +176,86 @@ export function ProfileHeader({
           </Text>
         </View>
 
-        {/* "View profile" / "Hide" link */}
-        <Text style={styles.toggleLabel}>
-          {expanded ? "Hide" : "View profile"}
-        </Text>
+        {/* Chevron indicator — rotates 180deg when expanded */}
+        <Animated.View style={[styles.chevronWrapper, chevronStyle]}>
+          <Ionicons name="chevron-down" size={16} color={theme.accent} />
+        </Animated.View>
       </Pressable>
+      </Animated.View>
 
-      {/* ---- Expanded content -- conditionally rendered with layout animation ---- */}
-      {expanded && (
-        <View style={styles.expandedContent}>
+      {/* ---- Expanded content -- opacity + maxHeight animation ---- */}
+      <Animated.View style={[styles.expandedContent, expandedAnimatedStyle]}>
+          {/* Separator between collapsed row and expanded content */}
+          <View style={styles.expandSeparator} />
+
           {/* Stats row */}
           <View style={styles.statsRow}>
-            <StatItem value={profile.post_count} label="Posts" />
+            <StatItem value={profile.post_count} label="Posts" accent={theme.accent} />
             <View style={styles.statsDivider} />
-            <StatItem value={profile.total_reactions} label="Reactions" />
+            <StatItem value={profile.total_reactions} label="Reactions" accent={theme.accent} />
           </View>
 
           {/* Action buttons */}
           <View style={styles.buttonsRow}>
-            <Pressable
-              onPress={onEditProfile}
-              style={({ pressed }) => [
-                styles.editButton,
-                pressed && styles.editButtonPressed,
-              ]}
-              accessibilityLabel="Edit Profile"
-              accessibilityRole="button"
-            >
-              <Text style={styles.editButtonText}>Edit Profile</Text>
-            </Pressable>
+            <Animated.View style={[{ flex: 1 }, editPressStyle]}>
+              <Pressable
+                onPress={onEditProfile}
+                onPressIn={() => { editScale.value = withSpring(0.97, THEME.animation.press); }}
+                onPressOut={() => { editScale.value = withSpring(1, THEME.animation.press); }}
+                style={[
+                  styles.editButton,
+                  { borderColor: theme.accent + "4D" },
+                ]}
+                accessibilityLabel="Edit Profile"
+                accessibilityRole="button"
+              >
+                <Ionicons name="create-outline" size={16} color={theme.accent} />
+                <Text style={[styles.editButtonText, { color: theme.accent }]}>
+                  Edit Profile
+                </Text>
+              </Pressable>
+            </Animated.View>
 
-            <Pressable
-              onPress={handleShare}
-              style={({ pressed }) => [
-                styles.shareButton,
-                pressed && styles.shareButtonPressed,
-              ]}
-              accessibilityLabel="Share profile"
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name="share-outline"
-                size={18}
-                color={theme.accent}
-              />
-            </Pressable>
+            <Animated.View style={sharePressStyle}>
+              <Pressable
+                onPress={handleShare}
+                onPressIn={() => { shareScale.value = withSpring(0.97, THEME.animation.press); }}
+                onPressOut={() => { shareScale.value = withSpring(1, THEME.animation.press); }}
+                style={[
+                  styles.shareButton,
+                  { borderColor: theme.accent + "4D" },
+                ]}
+                accessibilityLabel="Share profile"
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name="share-outline"
+                  size={18}
+                  color={theme.accent}
+                />
+              </Pressable>
+            </Animated.View>
           </View>
-        </View>
-      )}
-    </View>
+        </Animated.View>
+    </Animated.View>
   );
 }
 
 interface StatItemProps {
   value: number;
   label: string;
+  accent: string;
 }
 
-function StatItem({ value, label }: StatItemProps) {
+function StatItem({ value, label, accent }: StatItemProps) {
   return (
     <View
       style={styles.statItem}
       accessibilityLabel={`${formatCount(value)} ${label}`}
     >
-      <Text style={styles.statValue}>{formatCount(value)}</Text>
+      <Text style={[styles.statValue, { color: accent }]}>
+        {formatCount(value)}
+      </Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
@@ -182,37 +263,43 @@ function StatItem({ value, label }: StatItemProps) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginHorizontal: 16,
-    marginTop: 8,
+    marginHorizontal: THEME.spacing.lg,
+    marginTop: THEME.spacing.sm,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
-    borderRadius: 16,
-    backgroundColor: "#111111",
-    paddingHorizontal: 16,
+    borderColor: THEME.colors.border,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: THEME.colors.glass,
+    paddingHorizontal: THEME.spacing.lg,
+    ...THEME.shadow.glass,
   },
 
   /* ---- Collapsed row ---- */
   collapsedRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    gap: 12,
+    paddingVertical: THEME.spacing.md,
+    gap: THEME.spacing.md,
     minHeight: 64,
   },
-  collapsedRowPressed: {
-    opacity: 0.7,
-  },
 
-  /* Avatar */
+  /* Avatar with accent ring */
+  avatarRing: {
+    width: AVATAR_SIZE + 4,
+    height: AVATAR_SIZE + 4,
+    borderRadius: (AVATAR_SIZE + 4) / 2,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   avatar: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
   },
   avatarPlaceholder: {
-    backgroundColor: "#111111",
+    backgroundColor: THEME.colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    borderColor: THEME.colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -221,33 +308,38 @@ const styles = StyleSheet.create({
   nameColumn: {
     flex: 1,
     justifyContent: "center",
-    gap: 2,
+    gap: THEME.spacing.xs / 2,
   },
   displayName: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
-    color: "#e8e8e8",
+    color: THEME.colors.textPrimary,
     lineHeight: 22,
   },
   username: {
     fontFamily: FONTS.body,
-    fontSize: 13,
-    color: "#888888",
-    lineHeight: 16,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
   },
 
-  /* Toggle label */
-  toggleLabel: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 13,
-    color: "#888888",
-    paddingLeft: 8,
+  /* Chevron toggle indicator */
+  chevronWrapper: {
+    paddingLeft: THEME.spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* Separator between collapsed row and expanded content */
+  expandSeparator: {
+    height: 1,
+    backgroundColor: THEME.colors.glassBorder,
+    marginBottom: THEME.spacing.md,
   },
 
   /* ---- Expanded content ---- */
   expandedContent: {
-    paddingBottom: 16,
-    paddingTop: 4,
+    paddingBottom: THEME.spacing.lg,
+    paddingTop: THEME.spacing.xs,
   },
 
   /* Stats row */
@@ -255,68 +347,61 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 24,
-    marginBottom: 16,
-    paddingVertical: 8,
+    gap: THEME.spacing.xxl,
+    marginBottom: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
   },
   statItem: {
     alignItems: "center",
-    gap: 2,
+    gap: THEME.spacing.xs,
   },
   statValue: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodyBold,
     fontSize: 22,
-    color: "#e8e8e8",
+    lineHeight: 28,
+    letterSpacing: 0,
+    color: THEME.colors.textPrimary,
   },
   statLabel: {
-    fontFamily: FONTS.body,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 11,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: THEME.typography.caption.letterSpacing,
   },
   statsDivider: {
     width: 1,
-    height: 28,
-    backgroundColor: "rgba(255,255,255,0.06)",
+    height: 32,
+    backgroundColor: THEME.colors.glassBorder,
   },
 
   /* Action buttons */
   buttonsRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   editButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: THEME.spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  editButtonPressed: {
-    backgroundColor: "rgba(255,255,255,0.04)",
+    paddingVertical: THEME.spacing.md - 2,
+    paddingHorizontal: THEME.spacing.lg,
   },
   editButtonText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    color: "#e8e8e8",
   },
   shareButton: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  shareButtonPressed: {
-    backgroundColor: "rgba(255,255,255,0.04)",
   },
 });

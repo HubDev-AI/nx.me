@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { View, Animated, StyleSheet } from "react-native";
 
-import { BG_ELEVATED } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 
 const AVATAR_SIZE = 32;
 const PULSE_DURATION_MS = 1000;
@@ -55,37 +55,37 @@ export function CommentSkeleton() {
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.md,
+    gap: THEME.spacing.md,
   },
   avatar: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   content: {
     flex: 1,
-    gap: 6,
+    gap: THEME.spacing.sm,
     paddingTop: 2,
   },
   nameLine: {
     width: 80,
     height: 12,
-    borderRadius: 4,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: THEME.spacing.xs,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   textLine: {
     width: "90%",
     height: 12,
-    borderRadius: 4,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: THEME.spacing.xs,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   textLineShort: {
     width: "60%",
     height: 12,
-    borderRadius: 4,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: THEME.spacing.xs,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
 });

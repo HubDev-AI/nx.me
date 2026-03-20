@@ -21,7 +21,8 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 
-import { CTA_PRIMARY, CTA_PRESSED } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 
 interface GlowButtonProps {
@@ -42,7 +43,7 @@ export function GlowButton({
   onPress,
   isLoading = false,
   disabled = false,
-  glowColor = CTA_PRIMARY,
+  glowColor = THEME.colors.textPrimary,
   size = "default",
 }: GlowButtonProps) {
   const glowPulse = useSharedValue(0);
@@ -72,12 +73,17 @@ export function GlowButton({
     }
   }, [isDisabled]);
 
+  const handlePress = useCallback(() => {
+    hapticLight();
+    onPress();
+  }, [onPress]);
+
   const handlePressIn = useCallback(() => {
-    pressScale.value = withSpring(0.96, { damping: 15, stiffness: 300 });
+    pressScale.value = withSpring(0.96, THEME.animation.press);
   }, []);
 
   const handlePressOut = useCallback(() => {
-    pressScale.value = withSpring(1, { damping: 15, stiffness: 300 });
+    pressScale.value = withSpring(1, THEME.animation.press);
   }, []);
 
   const glowStyle = useAnimatedStyle(() => ({
@@ -107,7 +113,7 @@ export function GlowButton({
       ]}
     >
       <Pressable
-        onPress={onPress}
+        onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         disabled={isDisabled}
@@ -124,14 +130,14 @@ export function GlowButton({
         <Animated.View
           style={[
             styles.innerGlow,
-            { backgroundColor: "#FFFFFF" },
+            { backgroundColor: THEME.colors.white },
             innerGlowStyle,
           ]}
           pointerEvents="none"
         />
 
         {isLoading ? (
-          <ActivityIndicator color="#FFFFFF" size="small" />
+          <ActivityIndicator color={THEME.colors.white} size="small" />
         ) : (
           <Animated.View style={textSpringStyle}>
             <Text style={[styles.text, size === "large" && styles.textLarge]}>
@@ -146,7 +152,7 @@ export function GlowButton({
 
 const styles = StyleSheet.create({
   wrapper: {
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
@@ -155,9 +161,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   button: {
-    backgroundColor: CTA_PRIMARY,
+    backgroundColor: THEME.colors.textPrimary,
     minHeight: 48,
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 13,
@@ -167,15 +173,15 @@ const styles = StyleSheet.create({
   buttonLarge: {
     minHeight: 56,
     paddingVertical: 16,
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
   },
   innerGlow: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
   },
   text: {
     fontFamily: FONTS.bodyMedium,
-    color: "#0a0a0a",
+    color: THEME.colors.bg,
     fontSize: 16,
     letterSpacing: 0.3,
   },

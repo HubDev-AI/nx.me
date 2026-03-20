@@ -135,9 +135,14 @@ export async function cancelJob(jobId: string): Promise<void> {
 
 /**
  * Request a refund for a completed job ("this doesn't look like me").
+ *
+ * NOTE: As of 2026-03-20, the backend does not expose /v1/jobs/{id}/refund
+ * in its OpenAPI spec. The call will fail gracefully and the UI shows an
+ * error alert. Once the backend ships this endpoint, it will work without
+ * app changes.
  */
 export async function requestRefund(jobId: string): Promise<void> {
-  await apiFetch(`/v1/jobs/${jobId}/refund`, { method: "POST" });
+  await apiFetch(ANALYSIS_ENDPOINTS.JOB_REFUND(jobId), { method: "POST" });
 }
 
 /**

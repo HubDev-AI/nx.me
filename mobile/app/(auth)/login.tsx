@@ -14,13 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  ERROR_DARK,
-  ERROR_BG,
-} from "../../constants/colors";
+// Error feedback colors from THEME
+import { THEME } from "../../constants/theme";
 import { AUTH_ENDPOINTS, AUTH_VALIDATION } from "../../constants/config";
 import { apiFetch, ApiError } from "../../lib/api";
 import { storeJwt, storeRefreshToken } from "../../lib/auth";
@@ -198,7 +193,7 @@ export default function LoginScreen() {
           {/* General error */}
           {errors.general ? (
             <View style={styles.generalError} accessibilityRole="alert">
-              <Ionicons name="alert-circle" size={18} color={ERROR_DARK} />
+              <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
               <Text style={styles.generalErrorText}>{errors.general}</Text>
             </View>
           ) : null}
@@ -276,7 +271,7 @@ export default function LoginScreen() {
                 <Text
                   style={[
                     styles.switchLink,
-                    { color: theme.accent, textDecorationColor: theme.accent + "4D" },
+                    { color: theme.accent, textDecorationColor: theme.accent + "80" },
                   ]}
                 >
                   Sign up
@@ -297,7 +292,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: THEME.spacing.xxl,
     justifyContent: "flex-end" as const,
   },
   /* ---- Tiny brand label -- top-left like card-web ---- */
@@ -311,7 +306,7 @@ const styles = StyleSheet.create({
   /* ---- Spacer pushes content to the bottom half ---- */
   spacer: {
     flex: 1,
-    minHeight: 200,
+    minHeight: 180,
   },
   /* ---- Hero headline -- Instrument Serif 48px, left-aligned ---- */
   heroTitle: {
@@ -320,23 +315,23 @@ const styles = StyleSheet.create({
     lineHeight: 52,
     color: "#ffffff",
     letterSpacing: -0.5,
-    textShadowColor: "rgba(0, 0, 0, 0.5)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 12,
   },
   heroAccent: {
     fontFamily: FONTS.displayItalic,
     fontSize: 48,
     lineHeight: 52,
     letterSpacing: -0.5,
-    marginBottom: 12,
+    marginBottom: THEME.spacing.md,
   },
   /* ---- Subtitle -- readable on any background ---- */
   subtitle: {
     fontFamily: FONTS.body,
     fontSize: 15,
     color: "#e8e8e8",
-    marginBottom: 24,
+    marginBottom: THEME.spacing.xxl,
     textShadowColor: "rgba(0, 0, 0, 0.7)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
@@ -345,36 +340,38 @@ const styles = StyleSheet.create({
   generalError: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: ERROR_BG,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
+    gap: THEME.spacing.sm,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderRadius: THEME.radius.md,
+    padding: THEME.spacing.md,
+    marginBottom: THEME.spacing.lg,
   },
   generalErrorText: {
     fontSize: 14,
-    color: ERROR_DARK,
+    color: THEME.colors.destructive,
     flex: 1,
   },
   /* ---- Form area ---- */
   form: {
-    marginBottom: 16,
+    marginBottom: THEME.spacing.lg,
   },
   inputCard: {
     backgroundColor: "rgba(8, 8, 8, 0.78)",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    borderRadius: THEME.radius.xl,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.md,
     paddingBottom: 0,
-    marginBottom: 12,
+    marginBottom: THEME.spacing.md,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: THEME.colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
   },
   /* ---- CTA wrapper ---- */
   ctaWrapper: {
-    marginTop: 8,
-    marginBottom: 4,
-    borderRadius: 9999,
+    marginTop: THEME.spacing.sm,
+    marginBottom: THEME.spacing.xs,
+    borderRadius: THEME.radius.pill,
     overflow: "hidden",
   },
   /* ---- Switch row -- login/signup toggle ---- */
@@ -382,7 +379,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 16,
+    marginTop: THEME.spacing.lg,
     minHeight: 44,
   },
   switchText: {

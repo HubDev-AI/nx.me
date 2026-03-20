@@ -73,6 +73,38 @@ export const THEME = {
       elevation: 4,
     }),
   },
+
+  typography: {
+    /** Body text: 1.5x line-height, slight positive letter-spacing */
+    body: { fontSize: 15, lineHeight: 23, letterSpacing: 0.15 },
+    /** Caption/secondary */
+    caption: { fontSize: 13, lineHeight: 18, letterSpacing: 0.3 },
+    /** Heading — tighter line-height, negative letter-spacing */
+    heading: { fontSize: 22, lineHeight: 28, letterSpacing: -0.3 },
+    /** Large heading */
+    headingLg: { fontSize: 28, lineHeight: 34, letterSpacing: -0.5 },
+  },
+
+  opacity: {
+    textPrimary: 0.87,
+    textSecondary: 0.55,
+    textTertiary: 0.33,
+    textDisabled: 0.20,
+    border: 0.08,
+    surface: 0.05,
+    icon: 0.15,
+  },
+
+  animation: {
+    press: { damping: 15, stiffness: 200 },
+    quick: { damping: 20, stiffness: 300 },
+    slow: { damping: 12, stiffness: 100 },
+    duration: {
+      fast: 200,
+      normal: 300,
+      slow: 500,
+    },
+  },
 } as const;
 
 // ─── Shared Styles ───────────────────────────────────────────────────────────

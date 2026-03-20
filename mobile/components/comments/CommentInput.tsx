@@ -8,17 +8,15 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_ELEVATED,
-  INPUT_FILL,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  FEED_DIVIDER,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
 import { COMMENTS_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 
@@ -39,7 +37,18 @@ export function CommentInput({
   onSubmit,
   onAuthPrompt,
 }: CommentInputProps) {
+  const { theme } = useTheme();
   const [text, setText] = useState("");
+
+  // Press scale animations
+  const sendScale = useSharedValue(1);
+  const guestScale = useSharedValue(1);
+  const sendPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: sendScale.value }],
+  }));
+  const guestPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: guestScale.value }],
+  }));
 
   const trimmedText = text.trim();
   const canSend = trimmedText.length > 0 && !isPosting;
@@ -67,7 +76,7 @@ export function CommentInput({
               value={text}
               onChangeText={setText}
               placeholder="Add a comment..."
-              placeholderTextColor={TEXT_DISABLED}
+              placeholderTextColor={THEME.colors.textDisabled}
               maxLength={COMMENTS_CONFIG.MAX_COMMENT_LENGTH}
               multiline
               returnKeyType="send"
@@ -77,43 +86,55 @@ export function CommentInput({
               accessibilityLabel="Comment input"
               accessibilityHint="Type your comment here"
             />
-            <Pressable
-              onPress={handleSend}
-              disabled={!canSend}
-              style={[
-                styles.sendButton,
-                canSend ? styles.sendButtonActive : styles.sendButtonDisabled,
-              ]}
-              accessibilityLabel="Send comment"
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !canSend }}
-            >
-              {isPosting ? (
-                <ActivityIndicator size="small" color={CTA_PRIMARY} />
-              ) : (
-                <Ionicons
-                  name="send"
-                  size={18}
-                  color={canSend ? CTA_PRIMARY : TEXT_DISABLED}
-                />
-              )}
-            </Pressable>
+            <Animated.View style={sendPressStyle}>
+              <Pressable
+                onPress={handleSend}
+                onPressIn={() => {
+                  if (canSend) sendScale.value = withSpring(0.92, THEME.animation.press);
+                }}
+                onPressOut={() => {
+                  sendScale.value = withSpring(1, THEME.animation.press);
+                }}
+                disabled={!canSend}
+                style={[
+                  styles.sendButton,
+                  canSend ? styles.sendButtonActive : styles.sendButtonDisabled,
+                ]}
+                accessibilityLabel="Send comment"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !canSend }}
+              >
+                {isPosting ? (
+                  <ActivityIndicator size="small" color={theme.accent} />
+                ) : (
+                  <Ionicons
+                    name="send"
+                    size={18}
+                    color={canSend ? theme.accent : THEME.colors.textDisabled}
+                  />
+                )}
+              </Pressable>
+            </Animated.View>
           </>
         ) : (
-          <Pressable
-            style={styles.guestInput}
-            onPress={handleFocus}
-            accessibilityLabel="Sign in to comment"
-            accessibilityRole="button"
-            accessibilityHint="Opens sign-in flow"
-          >
-            <Ionicons
-              name="chatbubble-outline"
-              size={16}
-              color={TEXT_DISABLED}
-            />
-            <Text style={styles.guestText}>Sign in to comment</Text>
-          </Pressable>
+          <Animated.View style={[{ flex: 1 }, guestPressStyle]}>
+            <Pressable
+              style={styles.guestInput}
+              onPress={handleFocus}
+              onPressIn={() => { guestScale.value = withSpring(0.98, THEME.animation.press); }}
+              onPressOut={() => { guestScale.value = withSpring(1, THEME.animation.press); }}
+              accessibilityLabel="Sign in to comment"
+              accessibilityRole="button"
+              accessibilityHint="Opens sign-in flow"
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={16}
+                color={THEME.colors.textDisabled}
+              />
+              <Text style={styles.guestText}>Sign in to comment</Text>
+            </Pressable>
+          </Animated.View>
         )}
       </View>
     </View>
@@ -122,43 +143,45 @@ export function CommentInput({
 
 const styles = StyleSheet.create({
   container: {
-    paddingBottom: 8,
+    paddingBottom: THEME.spacing.sm,
   },
   divider: {
     height: 1,
-    backgroundColor: FEED_DIVIDER,
+    backgroundColor: THEME.colors.glassBorder,
   },
   inputRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    gap: 8,
+    alignItems: "center",
+    paddingHorizontal: THEME.spacing.md,
+    paddingTop: THEME.spacing.sm,
+    gap: THEME.spacing.sm,
   },
   textInput: {
     flex: 1,
-    minHeight: MIN_TOUCH_TARGET,
+    minHeight: 40,
     maxHeight: 100,
-    backgroundColor: INPUT_FILL,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: 8,
     fontSize: 14,
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
     fontFamily: FONTS.body,
     textAlignVertical: "center",
     // @ts-ignore — web-only: remove browser default blue focus outline
     ...(Platform.OS === "web" ? { outlineStyle: "none" } : {}),
   },
   sendButton: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: THEME.radius.pill,
     alignItems: "center",
     justifyContent: "center",
   },
   sendButtonActive: {
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   sendButtonDisabled: {
     backgroundColor: "transparent",
@@ -167,15 +190,17 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: THEME.spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
-    backgroundColor: INPUT_FILL,
-    borderRadius: 20,
-    paddingHorizontal: 16,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.lg,
   },
   guestText: {
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
     fontFamily: FONTS.body,
   },
 });

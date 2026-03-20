@@ -1,8 +1,8 @@
 /**
  * PremiumCard — premium subscription option within the paywall.
  *
- * Single primary CTA: "Subscribe Now" with #E11D48 on white text
- * meeting WCAG AA contrast (4.70:1). Displays premium benefits.
+ * Glass card with accent border glow. "Subscribe Now" CTA uses the
+ * session accent color. Displays premium benefits list.
  */
 import { useRef, useCallback } from "react";
 import {
@@ -15,21 +15,13 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_ELEVATED,
-  BORDER_DEFAULT,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
-
-/** WCAG AA compliant CTA color: after[600] on white text = 4.70:1 contrast ratio */
-const CTA_SUBSCRIBE = COLORS.after[600];
-const CTA_SUBSCRIBE_PRESSED = COLORS.after[700];
 
 const PREMIUM_BENEFITS = [
   "Unlimited generations",
@@ -48,6 +40,7 @@ export function PremiumCard({
   isLoading,
   disabled,
 }: PremiumCardProps) {
+  const { theme } = useTheme();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const isDisabled = disabled || isLoading;
 
@@ -75,10 +68,14 @@ export function PremiumCard({
         isDisabled && styles.disabledWrapper,
       ]}
     >
-      <View style={styles.container}>
+      <View style={[
+        styles.container,
+        { borderColor: theme.accent + "40" },
+        THEME.shadow.glow(theme.accent),
+      ]}>
         {/* Header */}
         <View style={styles.header}>
-          <Ionicons name="star" size={20} color={CTA_SUBSCRIBE} />
+          <Ionicons name="star" size={20} color={theme.accent} />
           <Text style={styles.title}>Premium</Text>
         </View>
 
@@ -89,7 +86,7 @@ export function PremiumCard({
               <Ionicons
                 name="checkmark-circle"
                 size={18}
-                color={CTA_SUBSCRIBE}
+                color={theme.accent}
               />
               <Text style={styles.benefitText}>{benefit}</Text>
             </View>
@@ -104,6 +101,7 @@ export function PremiumCard({
           disabled={isDisabled}
           style={({ pressed }) => [
             styles.subscribeButton,
+            { backgroundColor: theme.accent },
             pressed && !isDisabled && styles.subscribeButtonPressed,
           ]}
           accessibilityLabel={
@@ -113,7 +111,7 @@ export function PremiumCard({
           accessibilityState={{ disabled: isDisabled, busy: isLoading }}
         >
           {isLoading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <ActivityIndicator color={THEME.colors.bg} size="small" />
           ) : (
             <Text style={styles.subscribeText}>Subscribe Now</Text>
           )}
@@ -129,50 +127,49 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   container: {
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 16,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
-    padding: 20,
-    gap: 16,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.xl,
+    gap: THEME.spacing.lg,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   title: {
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    color: THEME.colors.textPrimary,
     fontSize: 20,
-    fontWeight: "700",
   },
   benefits: {
-    gap: 10,
+    gap: THEME.spacing.md,
   },
   benefitRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: THEME.spacing.md,
   },
   benefitText: {
-    color: TEXT_SECONDARY,
-    fontSize: 15,
-    fontWeight: "500",
+    fontFamily: FONTS.bodyMedium,
+    color: THEME.colors.textSecondary,
+    ...THEME.typography.body,
   },
   subscribeButton: {
-    backgroundColor: CTA_SUBSCRIBE,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: THEME.radius.pill,
+    paddingVertical: THEME.spacing.lg - 2,
     alignItems: "center",
     justifyContent: "center",
     minHeight: MIN_TOUCH_TARGET,
   },
   subscribeButtonPressed: {
-    backgroundColor: CTA_SUBSCRIBE_PRESSED,
+    opacity: 0.85,
   },
   subscribeText: {
-    color: "#FFFFFF",
+    fontFamily: FONTS.bodySemiBold,
+    color: THEME.colors.bg,
     fontSize: 16,
-    fontWeight: "700",
   },
 });

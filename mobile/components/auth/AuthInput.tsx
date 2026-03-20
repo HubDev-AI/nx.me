@@ -9,15 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  INPUT_FILL,
-  BORDER_DEFAULT,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  ERROR_DARK,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
 
 interface AuthInputProps extends Omit<TextInputProps, "style"> {
@@ -59,10 +51,10 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
     }, []);
 
     const borderColor = error
-      ? ERROR_DARK
+      ? THEME.colors.destructive
       : isFocused
-        ? "rgba(255, 255, 255, 0.25)"
-        : "rgba(255, 255, 255, 0.08)";
+        ? THEME.colors.borderFocused
+        : THEME.colors.glassBorder;
 
     return (
       <View style={styles.container}>
@@ -73,8 +65,8 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
           <TextInput
             ref={ref}
             style={styles.input}
-            placeholderTextColor={TEXT_DISABLED}
-            selectionColor={CTA_PRIMARY}
+            placeholderTextColor={THEME.colors.textDisabled}
+            selectionColor={THEME.colors.textPrimary}
             secureTextEntry={isPassword && !isSecureVisible}
             onFocus={handleFocus}
             onBlur={handleBlur}
@@ -96,7 +88,7 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
               <Ionicons
                 name={isSecureVisible ? "eye-off-outline" : "eye-outline"}
                 size={20}
-                color={TEXT_SECONDARY}
+                color={THEME.colors.textSecondary}
               />
             </Pressable>
           )}
@@ -106,7 +98,7 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
             <Ionicons
               name="alert-circle-outline"
               size={14}
-              color={ERROR_DARK}
+              color={THEME.colors.destructive}
             />
             <Text style={styles.errorText}>{error}</Text>
           </View>
@@ -118,13 +110,13 @@ export const AuthInput = forwardRef<TextInput, AuthInputProps>(
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: THEME.spacing.lg,
   },
   label: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: 11,
-    color: "#cccccc",
-    marginBottom: 6,
+    color: THEME.colors.textSecondary,
+    marginBottom: THEME.spacing.sm,
     letterSpacing: 1,
     textTransform: "uppercase",
     textShadowColor: "rgba(0, 0, 0, 0.6)",
@@ -134,18 +126,18 @@ const styles = StyleSheet.create({
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(8, 8, 8, 0.78)",
+    backgroundColor: THEME.colors.glass,
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: THEME.radius.lg,
     minHeight: INPUT_HEIGHT,
   },
   input: {
     flex: 1,
     fontFamily: FONTS.body,
     fontSize: FONT_SIZE_BODY,
-    color: TEXT_PRIMARY,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    color: THEME.colors.textPrimary,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.md,
     minHeight: INPUT_HEIGHT,
     // @ts-ignore — web-only: remove browser default blue focus outline
     outlineStyle: "none",
@@ -155,16 +147,16 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
-    paddingRight: 12,
+    paddingRight: THEME.spacing.md,
   },
   errorRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
-    gap: 4,
+    marginTop: THEME.spacing.xs,
+    gap: THEME.spacing.xs,
   },
   errorText: {
     fontSize: 13,
-    color: ERROR_DARK,
+    color: THEME.colors.destructive,
   },
 });

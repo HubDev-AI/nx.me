@@ -17,13 +17,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_PAGE,
-  BG_CARD,
-  CTA_PRIMARY,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchNudges, markNudgeRead } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
@@ -49,36 +45,37 @@ function NudgeSkeleton() {
 
 const skeletonStyles = StyleSheet.create({
   container: {
-    padding: 16,
-    gap: 12,
+    padding: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
   card: {
     flexDirection: "row",
-    backgroundColor: BG_CARD,
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
+    backgroundColor: THEME.colors.surface,
+    borderRadius: THEME.radius.lg - 2,
+    padding: THEME.spacing.lg - 2,
+    gap: THEME.spacing.md,
   },
   icon: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   lines: {
     flex: 1,
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   line: {
     height: 12,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: THEME.radius.sm - 2,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
 });
 
 const Separator = () => <View style={styles.separator} />;
 
 export function NudgeFeed() {
+  const { theme } = useTheme();
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -198,10 +195,10 @@ export function NudgeFeed() {
     if (!isLoadingMore) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="small" color={CTA_PRIMARY} />
+        <ActivityIndicator size="small" color={theme.accent} />
       </View>
     );
-  }, [isLoadingMore]);
+  }, [isLoadingMore, theme.accent]);
 
   // -------------------------------------------------------------------------
   // States
@@ -213,16 +210,16 @@ export function NudgeFeed() {
   if (error && nudges.length === 0) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={TEXT_SECONDARY} />
+        <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
         <Text style={styles.errorTitle}>Could not load nudges</Text>
         <Text style={styles.errorSubtitle}>{error}</Text>
         <Pressable
           onPress={loadNudges}
-          style={styles.retryButton}
+          style={[styles.retryButton, { backgroundColor: theme.accent }]}
           accessibilityLabel="Retry loading nudges"
           accessibilityRole="button"
         >
-          <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+          <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
           <Text style={styles.retryButtonText}>Try Again</Text>
         </Pressable>
       </View>
@@ -238,7 +235,7 @@ export function NudgeFeed() {
         ListFooterComponent={renderFooter}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="sparkles-outline" size={48} color={TEXT_SECONDARY} />
+            <Ionicons name="sparkles-outline" size={48} color={THEME.colors.textSecondary} />
             <Text style={styles.emptyTitle}>No nudges yet</Text>
             <Text style={styles.emptySubtitle}>
               Ada will send you tips and check-ins as she gets to know you
@@ -251,9 +248,9 @@ export function NudgeFeed() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            colors={[CTA_PRIMARY]}
-            tintColor={CTA_PRIMARY}
-            progressBackgroundColor={BG_PAGE}
+            colors={[theme.accent]}
+            tintColor={theme.accent}
+            progressBackgroundColor={THEME.colors.bg}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -271,73 +268,74 @@ export function NudgeFeed() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   listContent: {
     flexGrow: 1,
-    padding: 16,
+    padding: THEME.spacing.lg,
   },
   separator: {
-    height: 10,
+    height: THEME.spacing.md - 2,
   },
   footer: {
-    paddingVertical: 20,
+    paddingVertical: THEME.spacing.xl,
     alignItems: "center",
   },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingTop: 80,
-    gap: 8,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingTop: THEME.spacing.xxxl * 2.5,
+    gap: THEME.spacing.sm,
   },
   emptyTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginTop: THEME.spacing.md,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.displayItalic,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
   },
   errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 8,
-    backgroundColor: BG_PAGE,
+    paddingHorizontal: THEME.spacing.xxxl,
+    gap: THEME.spacing.sm,
+    backgroundColor: THEME.colors.bg,
   },
   errorTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginTop: THEME.spacing.md,
   },
   errorSubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
   },
   retryButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: CTA_PRIMARY,
+    gap: THEME.spacing.sm,
+    marginTop: THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.md - 2,
+    borderRadius: THEME.radius.pill,
     minHeight: MIN_TOUCH_TARGET,
   },
   retryButtonText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    color: THEME.colors.bg,
   },
 });

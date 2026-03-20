@@ -3,22 +3,28 @@
  * Reuses ReactionButton and CommentsSheet components.
  */
 import { useState, useCallback } from "react";
-import { View, Text, Image, ScrollView, StyleSheet, Pressable } from "react-native";
+import { View, Text, Image, ScrollView, StyleSheet, Pressable, Share, Alert, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  BEFORE_OVERLAY,
-  AFTER_OVERLAY_STRONG,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FEED_ENDPOINTS, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
+import { apiFetch, ApiError } from "../../lib/api";
+import { hapticLight, hapticError } from "../../lib/haptics";
+import { blockUser } from "../../lib/block";
+import { reportPost } from "../../lib/report";
 import { ReactionButton } from "../../components/feed/ReactionButton";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
+import { DropdownMenu } from "../../components/ui/DropdownMenu";
+import type { ReactionResponse } from "../../components/feed/types";
 
 export default function PostDetailScreen() {
   const {
@@ -27,6 +33,9 @@ export default function PostDetailScreen() {
     afterImage,
     caption,
     displayName,
+    username,
+    avatarUrl,
+    userId,
     reactionCount: initialReactionCount,
     commentCount: initialCommentCount,
     timeAgo,
@@ -37,6 +46,9 @@ export default function PostDetailScreen() {
     afterImage: string;
     caption?: string;
     displayName?: string;
+    username?: string;
+    avatarUrl?: string;
+    userId?: string;
     reactionCount?: string;
     commentCount?: string;
     timeAgo?: string;
@@ -51,89 +63,324 @@ export default function PostDetailScreen() {
   const [commentCount, setCommentCount] = useState(Number(initialCommentCount) || 0);
   const [hasReacted, setHasReacted] = useState(initialHasReacted === "true");
   const [commentsVisible, setCommentsVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleReact = useCallback(() => {
-    if (hasReacted) return;
+  // Press scale animations
+  const backScale = useSharedValue(1);
+  const shareScale = useSharedValue(1);
+  const menuScale = useSharedValue(1);
+  const commentBtnScale = useSharedValue(1);
+  const backPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: backScale.value }],
+  }));
+  const sharePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: shareScale.value }],
+  }));
+  const menuPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: menuScale.value }],
+  }));
+  const commentBtnPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: commentBtnScale.value }],
+  }));
+
+  const handleReact = useCallback(async () => {
+    if (hasReacted || !postId) return;
+
+    // Optimistic update
     setHasReacted(true);
     setReactionCount((c) => c + 1);
-    // TODO: API call to react — same as useFeed.reactToPost
-  }, [hasReacted]);
+
+    try {
+      const response = await apiFetch<ReactionResponse>(
+        FEED_ENDPOINTS.REACT(postId),
+        { method: "POST" },
+      );
+      // Reconcile with server count
+      setReactionCount(response.reaction_count);
+    } catch {
+      // Rollback on failure
+      setHasReacted(false);
+      setReactionCount((c) => Math.max(0, c - 1));
+    }
+  }, [hasReacted, postId]);
 
   const handleCommentPosted = useCallback(() => {
     setCommentCount((c) => c + 1);
   }, []);
 
+  const handleShare = useCallback(() => {
+    hapticLight();
+    const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${postId}`;
+    Share.share({ url: shareUrl, message: shareUrl });
+  }, [postId]);
+
+  const handleUserPress = useCallback(() => {
+    hapticLight();
+    if (username) {
+      router.push({
+        pathname: "/card/[username]",
+        params: { username },
+      });
+    }
+  }, [router, username]);
+
+  const handleDeletePost = useCallback(() => {
+    if (!postId || isDeleting) return;
+
+    Alert.alert(
+      "Delete Post",
+      "This will permanently remove this post. This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              await apiFetch<void>(FEED_ENDPOINTS.DELETE_POST(postId), {
+                method: "DELETE",
+              });
+              hapticLight();
+              router.back();
+            } catch (err) {
+              hapticError();
+              const msg =
+                err instanceof ApiError && err.status === 403
+                  ? "You can only delete your own posts."
+                  : "Failed to delete post. Please try again.";
+              Alert.alert("Error", msg);
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [postId, isDeleting, router]);
+
+  const handleBlockUser = useCallback(() => {
+    if (!userId) return;
+    const name = displayName || "this user";
+
+    Alert.alert(
+      "Block User",
+      `Are you sure you want to block ${name}? You won't see their posts anymore.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Block",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await blockUser(userId);
+              hapticLight();
+              Alert.alert("Blocked", `${name} has been blocked.`);
+              router.back();
+            } catch {
+              hapticError();
+              Alert.alert("Error", "Failed to block user. Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  }, [userId, displayName, router]);
+
+  const handleReportPost = useCallback(() => {
+    if (!postId) return;
+
+    Alert.alert(
+      "Report Post",
+      "Are you sure you want to report this post? Our team will review it.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Report",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await reportPost(postId);
+              hapticLight();
+              Alert.alert("Reported", "Thank you. Our team will review this post.");
+            } catch {
+              hapticError();
+              Alert.alert("Error", "Failed to report post. Please try again.");
+            }
+          },
+        },
+      ],
+    );
+  }, [postId]);
+
+  const toggleMenu = useCallback(() => {
+    setMenuVisible((prev) => !prev);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setMenuVisible(false);
+  }, []);
+
+  const menuItems = [
+    ...(userId
+      ? [
+          {
+            label: "Block User",
+            icon: "ban-outline" as const,
+            onPress: handleBlockUser,
+          },
+        ]
+      : []),
+    {
+      label: "Report Post",
+      icon: "flag-outline" as const,
+      onPress: handleReportPost,
+      destructive: true,
+    },
+    {
+      label: isDeleting ? "Deleting..." : "Delete Post",
+      icon: "trash-outline" as const,
+      onPress: handleDeletePost,
+      destructive: true,
+    },
+  ];
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-      >
-        {/* Before image — full width */}
-        <View style={styles.imageSection}>
-          <View style={styles.labelRow}>
-            <View style={[styles.label, styles.beforeLabel]}>
-              <Text style={styles.labelText}>BEFORE</Text>
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Before image — full width */}
+          <View>
+            <View style={styles.beforeLabelWrap}>
+              <View style={styles.beforeLabel}>
+                <Text style={styles.labelText}>BEFORE</Text>
+              </View>
             </View>
+            <Image
+              source={{ uri: beforeImage }}
+              style={styles.fullImage}
+              resizeMode="cover"
+            />
           </View>
-          <Image
-            source={{ uri: beforeImage }}
-            style={styles.fullImage}
-            resizeMode="cover"
-          />
-        </View>
 
-        {/* After image — full width */}
-        <View style={styles.imageSection}>
-          <View style={styles.labelRow}>
-            <View style={[styles.label, styles.afterLabel, { backgroundColor: theme.accent + "CC" }]}>
-              <Text style={styles.labelText}>AFTER</Text>
+          {/* 2px gap between images */}
+          <View style={styles.imageGap} />
+
+          {/* After image — full width */}
+          <View>
+            <View style={styles.afterLabelWrap}>
+              <View style={[styles.afterLabel, { backgroundColor: theme.accent }]}>
+                <Text style={styles.labelText}>AFTER</Text>
+              </View>
             </View>
+            <Image
+              source={{ uri: afterImage }}
+              style={styles.fullImage}
+              resizeMode="cover"
+            />
           </View>
-          <Image
-            source={{ uri: afterImage }}
-            style={styles.fullImage}
-            resizeMode="cover"
-          />
-        </View>
 
-        {/* Caption */}
-        {caption ? (
-          <Text style={styles.caption}>{caption}</Text>
-        ) : null}
+          {/* Footer: actions row */}
+          <View style={styles.footer}>
+            <View style={styles.actionsRow}>
+              <View style={styles.actionsLeft}>
+                <ReactionButton
+                  reactionCount={reactionCount}
+                  hasReacted={hasReacted}
+                  onReact={handleReact}
+                />
 
-        {/* Actions — reusing shared components */}
-        <View style={styles.actionsRow}>
-          <ReactionButton
-            reactionCount={reactionCount}
-            hasReacted={hasReacted}
-            onReact={handleReact}
-          />
+                <Animated.View style={commentBtnPressStyle}>
+                  <Pressable
+                    onPress={() => setCommentsVisible(true)}
+                    onPressIn={() => { commentBtnScale.value = withSpring(0.96, THEME.animation.press); }}
+                    onPressOut={() => { commentBtnScale.value = withSpring(1, THEME.animation.press); }}
+                    style={styles.commentButton}
+                    accessibilityLabel={`${commentCount} comments, tap to view`}
+                    accessibilityRole="button"
+                  >
+                    <Ionicons name="chatbubble-outline" size={18} color={THEME.colors.textSecondary} />
+                    <Text style={styles.commentCountText}>{commentCount}</Text>
+                  </Pressable>
+                </Animated.View>
+              </View>
 
+              <Text style={styles.timeAgo}>{timeAgo || ""}</Text>
+            </View>
+
+            {/* Caption */}
+            {caption ? (
+              <Text style={styles.caption}>{caption}</Text>
+            ) : null}
+          </View>
+        </ScrollView>
+      </View>
+
+      {/* Floating header row — close left, share + menu right */}
+      <View style={[styles.headerRow, { paddingTop: insets.top + 12 }]}>
+        <Animated.View style={backPressStyle}>
           <Pressable
-            onPress={() => setCommentsVisible(true)}
-            style={styles.commentButton}
-            accessibilityLabel={`${commentCount} comments, tap to view`}
+            onPress={() => router.back()}
+            onPressIn={() => { backScale.value = withSpring(0.92, THEME.animation.press); }}
+            onPressOut={() => { backScale.value = withSpring(1, THEME.animation.press); }}
+            style={styles.headerBtn}
+            accessibilityLabel="Close"
             accessibilityRole="button"
           >
-            <Ionicons name="chatbubble-outline" size={18} color={TEXT_SECONDARY} />
-            <Text style={styles.commentCountText}>{commentCount}</Text>
+            <Ionicons name="close" size={16} color="#ffffff" />
           </Pressable>
+        </Animated.View>
 
-          <Text style={styles.timeAgo}>{timeAgo || ""}</Text>
+        <View style={styles.headerRight}>
+          <Animated.View style={sharePressStyle}>
+            <Pressable
+              onPress={handleShare}
+              onPressIn={() => { shareScale.value = withSpring(0.92, THEME.animation.press); }}
+              onPressOut={() => { shareScale.value = withSpring(1, THEME.animation.press); }}
+              style={styles.headerBtn}
+              accessibilityLabel="Share post"
+              accessibilityRole="button"
+            >
+              <Ionicons name="share-outline" size={16} color="#ffffff" />
+            </Pressable>
+          </Animated.View>
+
+          <Animated.View style={menuPressStyle}>
+            <Pressable
+              onPress={toggleMenu}
+              onPressIn={() => { menuScale.value = withSpring(0.92, THEME.animation.press); }}
+              onPressOut={() => { menuScale.value = withSpring(1, THEME.animation.press); }}
+              style={styles.headerBtn}
+              accessibilityLabel="More options"
+              accessibilityRole="button"
+            >
+              <Ionicons name="ellipsis-horizontal" size={16} color="#ffffff" />
+            </Pressable>
+          </Animated.View>
         </View>
-      </ScrollView>
+      </View>
 
-      {/* Floating back button — top-left circle */}
-      <Pressable
-        onPress={() => router.back()}
-        style={[styles.floatingBack, { top: insets.top + 12 }]}
-        accessibilityLabel="Go back"
-        accessibilityRole="button"
-      >
-        <Ionicons name="close" size={22} color="#e8e8e8" />
-      </Pressable>
+      {/* Post actions dropdown */}
+      <DropdownMenu
+        visible={menuVisible}
+        onClose={closeMenu}
+        items={menuItems}
+        anchorPosition={{ top: insets.top + 12 + 32 + 4, right: 20 }}
+      />
+
+      {/* Deleting overlay */}
+      {isDeleting && (
+        <View style={styles.deletingOverlay}>
+          <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
+          <Text style={styles.deletingText}>Deleting...</Text>
+        </View>
+      )}
 
       <CommentsSheet
         visible={commentsVisible}
@@ -146,83 +393,133 @@ export default function PostDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  floatingBack: {
-    position: "absolute",
-    right: 32,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(10, 10, 10, 0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
-  imageSection: {
-    marginBottom: 2,
+  scrollView: {
+    flex: 1,
   },
-  labelRow: {
+
+  // ─── Header (floating) ──────────────────────────────────────────────────
+  headerRow: {
     position: "absolute",
-    top: 12,
-    left: 16,
-    zIndex: 1,
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
   },
-  label: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
+  headerRight: {
+    flexDirection: "row",
+    gap: 10,
   },
-  beforeLabel: {
-    backgroundColor: BEFORE_OVERLAY,
+  headerBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  afterLabel: {
-    backgroundColor: AFTER_OVERLAY_STRONG,
-  },
-  labelText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 11,
-    color: "#ffffff",
-    letterSpacing: 1,
-  },
+
+  // ─── Images ─────────────────────────────────────────────────────────────
   fullImage: {
     width: "100%",
     aspectRatio: 3 / 4,
   },
-  caption: {
-    fontFamily: FONTS.body,
-    fontSize: 16,
-    lineHeight: 24,
-    color: TEXT_PRIMARY,
-    paddingHorizontal: 20,
-    paddingTop: 16,
+  imageGap: {
+    height: 2,
+    backgroundColor: THEME.colors.bg,
+  },
+  beforeLabelWrap: {
+    position: "absolute",
+    top: 10,
+    left: 12,
+    zIndex: 1,
+  },
+  beforeLabel: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: THEME.radius.sm,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  afterLabelWrap: {
+    position: "absolute",
+    top: 10,
+    left: 12,
+    zIndex: 1,
+  },
+  afterLabel: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: THEME.radius.sm,
+    // backgroundColor set dynamically via theme.accent in render
+  },
+  labelText: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 10,
+    color: "#ffffff",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+
+  // ─── Footer ─────────────────────────────────────────────────────────────
+  footer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    gap: 12,
+    justifyContent: "space-between",
+  },
+  actionsLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.md,
   },
   commentButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: THEME.spacing.xs,
     minHeight: 44,
-    paddingHorizontal: 4,
-    paddingVertical: 6,
+    paddingHorizontal: THEME.spacing.xs,
+    paddingVertical: THEME.spacing.sm,
   },
   commentCountText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
   },
   timeAgo: {
     fontFamily: FONTS.body,
     fontSize: 13,
-    color: TEXT_SECONDARY,
-    marginLeft: "auto",
+    color: THEME.colors.textSecondary,
+  },
+  caption: {
+    fontFamily: FONTS.body,
+    fontSize: 15,
+    lineHeight: 23,
+    color: THEME.colors.textPrimary,
+    marginTop: 8,
+  },
+
+  // ─── Deleting overlay ───────────────────────────────────────────────────
+  deletingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+    gap: THEME.spacing.md,
+  },
+  deletingText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 16,
+    color: THEME.colors.textPrimary,
   },
 });

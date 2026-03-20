@@ -10,11 +10,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useNavigation } from "expo-router";
 
-import { BG_PAGE, TEXT_SECONDARY } from "../../constants/colors";
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
-import { MIN_TOUCH_TARGET } from "../../constants/config";
+import { MIN_TOUCH_TARGET, AUTH_ENDPOINTS } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
+import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { useAuth } from "../../lib/auth-context";
@@ -22,7 +22,7 @@ import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
 import { useProfile } from "../../components/profile/useProfile";
-import { DropdownMenu } from "../../components/ui/DropdownMenu";
+import { RadialMenu } from "../../components/ui/RadialMenu";
 import type { UpdateProfilePayload } from "../../components/profile/types";
 
 /**
@@ -83,6 +83,12 @@ export default function ProfileScreen() {
   }, []);
 
   const handleLogout = useCallback(async () => {
+    // Best-effort server-side logout — always clear local tokens even on failure
+    try {
+      await apiFetch<void>(AUTH_ENDPOINTS.LOGOUT, { method: "POST" });
+    } catch {
+      // Network error or server unreachable — proceed with local logout
+    }
     await clearAllTokens();
     setGlobalAuth(false);
   }, [setGlobalAuth]);
@@ -105,8 +111,8 @@ export default function ProfileScreen() {
 
   const menuItems = [
     { label: "Edit Profile", icon: "create-outline", onPress: handleEditProfile },
-    { label: "Subscription", icon: "card-outline", onPress: () => {} },
-    { label: "Settings", icon: "settings-outline", onPress: () => {} },
+    { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
+    { label: "Settings", icon: "settings-outline", onPress: () => router.push("/settings") },
     { label: "Log Out", icon: "log-out-outline", onPress: handleLogout, destructive: true },
   ];
 
@@ -119,7 +125,7 @@ export default function ProfileScreen() {
       headerRight: () => (
         <Pressable
           onPress={() => toggleMenuRef.current?.()}
-          style={{ padding: 8, marginRight: 8 }}
+          style={{ padding: THEME.spacing.sm, marginRight: THEME.spacing.sm }}
           accessibilityLabel="More options"
           accessibilityRole="button"
           hitSlop={8}
@@ -137,7 +143,7 @@ export default function ProfileScreen() {
         <Ionicons
           name="person-circle-outline"
           size={64}
-          color={THEME.colors.textSecondary}
+          color={THEME.colors.textMuted}
         />
         <Text style={styles.signInTitle}>Sign in to see your profile</Text>
         <Text style={styles.signInSubtitle}>
@@ -162,7 +168,7 @@ export default function ProfileScreen() {
         <Ionicons
           name="person-circle-outline"
           size={64}
-          color={THEME.colors.textSecondary}
+          color={THEME.colors.textMuted}
         />
         <Text style={styles.signInTitle}>Complete your profile</Text>
         <Text style={styles.signInSubtitle}>
@@ -197,23 +203,25 @@ export default function ProfileScreen() {
   if (error && !profile) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <Ionicons
-          name="alert-circle-outline"
-          size={48}
-          color="#F87171"
-        />
-        <Text style={styles.errorTitle}>Something went wrong</Text>
-        <Text style={styles.errorMessage}>{error}</Text>
-        {authUsername ? (
-          <Pressable
-            onPress={() => loadProfile(authUsername)}
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
-            accessibilityLabel="Retry loading profile"
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </Pressable>
-        ) : null}
+        <View style={styles.errorCard}>
+          <Ionicons
+            name="alert-circle-outline"
+            size={48}
+            color={THEME.colors.destructive}
+          />
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
+          {authUsername ? (
+            <Pressable
+              onPress={() => loadProfile(authUsername)}
+              style={[styles.retryButton, { backgroundColor: theme.accent }]}
+              accessibilityLabel="Retry loading profile"
+              accessibilityRole="button"
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <Pressable
           onPress={handleLogout}
           style={styles.fallbackLogoutButton}
@@ -240,12 +248,12 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <PageBackground overlayOpacity={0.85} />
-      {/* Dropdown menu — button is in headerRight, dropdown renders here */}
-      <DropdownMenu
+      {/* Radial menu — button is in headerRight, menu renders here */}
+      <RadialMenu
         visible={menuVisible}
         onClose={closeMenu}
         items={menuItems}
-        anchorPosition={{ top: insets.top + 38, right: 16 }}
+        accentColor={theme.accent}
       />
 
       {/* Single FlatList: profile header + glow-up grid -- no nested ScrollView */}
@@ -275,34 +283,34 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    paddingBottom: 80,
+    padding: THEME.spacing.xxl,
+    paddingBottom: 90,
   },
   signInTitle: {
     fontFamily: FONTS.display,
     fontSize: 24,
     color: THEME.colors.textPrimary,
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: THEME.spacing.lg,
+    marginBottom: THEME.spacing.sm,
   },
   signInSubtitle: {
     fontFamily: FONTS.body,
-    fontSize: 15,
+    ...THEME.typography.body,
     color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   signInButton: {
-    marginTop: 20,
-    borderRadius: 9999,
-    paddingHorizontal: 32,
-    paddingVertical: 12,
+    marginTop: THEME.spacing.xl,
+    borderRadius: THEME.radius.pill,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingVertical: THEME.spacing.md,
     minHeight: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
@@ -314,28 +322,36 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontFamily: FONTS.body,
-    fontSize: 14,
+    ...THEME.typography.caption,
     color: THEME.colors.textSecondary,
-    marginTop: 12,
+    marginTop: THEME.spacing.md,
+  },
+  errorCard: {
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.xxl,
+    alignItems: "center",
   },
   errorTitle: {
     fontFamily: FONTS.display,
     fontSize: 18,
     color: THEME.colors.textPrimary,
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: THEME.spacing.md,
+    marginBottom: THEME.spacing.xs,
   },
   errorMessage: {
     fontFamily: FONTS.body,
-    fontSize: 14,
+    ...THEME.typography.caption,
     color: THEME.colors.textSecondary,
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: THEME.spacing.lg,
   },
   retryButton: {
-    borderRadius: 9999,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    borderRadius: THEME.radius.pill,
+    paddingHorizontal: THEME.spacing.xxl,
+    paddingVertical: THEME.spacing.md,
     minHeight: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
@@ -350,13 +366,13 @@ const styles = StyleSheet.create({
   moreMenuButton: {
     position: "absolute",
     top: 0,
-    right: 12,
+    right: THEME.spacing.md,
     zIndex: 20,
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 9999,
+    borderRadius: THEME.radius.pill,
   },
 
   /* Fallback logout for edge-case screens (no username, error state) */
@@ -364,10 +380,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    marginTop: 32,
-    marginBottom: 40,
-    paddingVertical: 14,
+    gap: THEME.spacing.sm,
+    marginTop: THEME.spacing.xxxl,
+    marginBottom: THEME.spacing.xxxl + THEME.spacing.sm,
+    paddingVertical: THEME.spacing.lg - 2,
     minHeight: MIN_TOUCH_TARGET,
   },
   fallbackLogoutText: {

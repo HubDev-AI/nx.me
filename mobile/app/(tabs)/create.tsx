@@ -1,10 +1,14 @@
 import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BG_PAGE } from "../../constants/colors";
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { useTheme } from "../../lib/theme-context";
@@ -56,6 +60,106 @@ const FEATURES: Feature[] = [
 ];
 
 /* ------------------------------------------------------------------ */
+/*  Feature card with spring press scale                               */
+/* ------------------------------------------------------------------ */
+
+function FeatureCard({
+  feature,
+  index,
+  onPress,
+  accent,
+}: {
+  feature: Feature;
+  index: number;
+  onPress: (f: Feature) => void;
+  accent: string;
+}) {
+  const isActive = feature.active;
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View
+      key={feature.key}
+      entering={FadeInDown.duration(THEME.animation.duration.normal).delay(240 + index * 50)}
+      style={styles.gridCell}
+    >
+      <Animated.View style={pressStyle}>
+        <Pressable
+          onPress={() => onPress(feature)}
+          onPressIn={() => {
+            if (isActive) scale.value = withSpring(0.97, THEME.animation.press);
+          }}
+          onPressOut={() => {
+            scale.value = withSpring(1, THEME.animation.press);
+          }}
+          disabled={!isActive}
+          style={[
+            styles.box,
+            isActive
+              ? [
+                  {
+                    borderColor: accent + "4D",
+                    backgroundColor: accent + "0F",
+                  },
+                  THEME.shadow.glow(accent),
+                ]
+              : styles.boxInactive,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isActive
+              ? feature.name
+              : `${feature.name} - coming soon`
+          }
+          accessibilityState={{ disabled: !isActive }}
+        >
+          {/* Icon wrapper with accent tint background for active */}
+          <View style={[
+            styles.iconWrapper,
+            isActive
+              ? { backgroundColor: accent + "1A" }
+              : { backgroundColor: THEME.colors.surfaceElevated },
+          ]}>
+            <Ionicons
+              name={feature.icon}
+              size={32}
+              color={isActive ? accent : THEME.colors.textMuted}
+            />
+          </View>
+
+          <Text
+            style={[
+              styles.featureName,
+              !isActive && styles.featureNameInactive,
+            ]}
+          >
+            {feature.name}
+          </Text>
+
+          <Text
+            style={[
+              styles.featureDesc,
+              !isActive && styles.featureDescInactive,
+            ]}
+          >
+            {feature.description}
+          </Text>
+
+          {!isActive && (
+            <View style={styles.comingSoonBadge}>
+              <Text style={styles.comingSoon}>COMING SOON</Text>
+            </View>
+          )}
+        </Pressable>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Screen                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -76,88 +180,41 @@ export default function CreateScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 24, paddingBottom: 80 },
+          { paddingTop: insets.top + THEME.spacing.xxl, paddingBottom: 90 },
         ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <Animated.Text
-          entering={FadeInDown.duration(500).delay(80)}
+          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(80)}
           style={styles.title}
         >
           Create
         </Animated.Text>
         <Animated.Text
-          entering={FadeInDown.duration(500).delay(160)}
+          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(160)}
           style={styles.subtitle}
         >
           What would you like to do?
         </Animated.Text>
 
+        {/* Divider below subtitle */}
+        <Animated.View
+          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(200)}
+          style={styles.subtitleDivider}
+        />
+
         {/* 2-column grid */}
         <View style={styles.grid}>
-          {FEATURES.map((feature, index) => {
-            const isActive = feature.active;
-
-            return (
-              <Animated.View
-                key={feature.key}
-                entering={FadeInDown.duration(500).delay(240 + index * 80)}
-                style={styles.gridCell}
-              >
-                <Pressable
-                  onPress={() => handleFeaturePress(feature)}
-                  disabled={!isActive}
-                  style={({ pressed }) => [
-                    styles.box,
-                    isActive
-                      ? {
-                          borderColor: theme.accent,
-                          backgroundColor: theme.accent + "1A",
-                        }
-                      : styles.boxInactive,
-                    isActive && pressed && styles.boxPressed,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isActive
-                      ? feature.name
-                      : `${feature.name} - coming soon`
-                  }
-                  accessibilityState={{ disabled: !isActive }}
-                >
-                  <Ionicons
-                    name={feature.icon}
-                    size={28}
-                    color={isActive ? theme.accent : THEME.colors.textMuted}
-                    style={styles.icon}
-                  />
-
-                  <Text
-                    style={[
-                      styles.featureName,
-                      !isActive && styles.featureNameInactive,
-                    ]}
-                  >
-                    {feature.name}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.featureDesc,
-                      !isActive && styles.featureDescInactive,
-                    ]}
-                  >
-                    {feature.description}
-                  </Text>
-
-                  {!isActive && (
-                    <Text style={styles.comingSoon}>COMING SOON</Text>
-                  )}
-                </Pressable>
-              </Animated.View>
-            );
-          })}
+          {FEATURES.map((feature, index) => (
+            <FeatureCard
+              key={feature.key}
+              feature={feature}
+              index={index}
+              onPress={handleFeaturePress}
+              accent={theme.accent}
+            />
+          ))}
         </View>
       </ScrollView>
     </View>
@@ -171,10 +228,10 @@ export default function CreateScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: THEME.spacing.xl,
   },
 
   /* Header */
@@ -182,13 +239,22 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.display,
     fontSize: 32,
     color: THEME.colors.textPrimary,
-    marginBottom: 4,
+    letterSpacing: THEME.typography.headingLg.letterSpacing,
+    marginBottom: THEME.spacing.xs,
   },
   subtitle: {
     fontFamily: FONTS.body,
     fontSize: 15,
     color: THEME.colors.textSecondary,
-    marginBottom: 24,
+    letterSpacing: THEME.typography.body.letterSpacing,
+    marginBottom: THEME.spacing.lg,
+  },
+
+  /* Subtitle divider */
+  subtitleDivider: {
+    height: 1,
+    backgroundColor: THEME.colors.glassBorder,
+    marginBottom: THEME.spacing.xl,
   },
 
   /* Grid */
@@ -200,7 +266,7 @@ const styles = StyleSheet.create({
   gridCell: {
     width: "50%",
     paddingHorizontal: 6,
-    marginBottom: 12,
+    marginBottom: THEME.spacing.md,
   },
 
   /* Box shared */
@@ -215,21 +281,24 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.surface,
     borderColor: THEME.colors.border,
   },
-  boxPressed: {
-    opacity: 0.8,
-  },
 
-  /* Icon */
-  icon: {
-    marginBottom: 12,
+  /* Icon wrapper — circular background behind icon */
+  iconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: THEME.radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: THEME.spacing.md,
   },
 
   /* Feature text */
   featureName: {
-    fontFamily: FONTS.bodyMedium,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
     color: THEME.colors.textPrimary,
-    marginBottom: 4,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginBottom: THEME.spacing.xs,
   },
   featureNameInactive: {
     color: THEME.colors.textMuted,
@@ -244,12 +313,19 @@ const styles = StyleSheet.create({
     color: THEME.colors.textDisabled,
   },
 
-  /* Coming soon label */
-  comingSoon: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 10,
-    color: THEME.colors.textMuted,
-    letterSpacing: 1,
+  /* Coming soon badge */
+  comingSoonBadge: {
     marginTop: "auto",
+    alignSelf: "flex-start",
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.sm,
+    paddingHorizontal: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.xs / 2,
+  },
+  comingSoon: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 9,
+    color: THEME.colors.textMuted,
+    letterSpacing: 1.2,
   },
 });

@@ -15,15 +15,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { BottomTabBar, type BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
-import {
-  TAB_INACTIVE_COLOR,
-  BG_PAGE,
-  TEXT_PRIMARY,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { BrandLabel } from "../../components/ui/BrandLabel";
+import { FeedCreditBadge } from "../../components/feed/FeedCreditBadge";
 import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
@@ -67,7 +63,21 @@ function TabIcon({ name, color, focused, accentColor }: TabIconProps) {
   }));
 
   return (
-    <View style={styles.iconContainer} accessible={false}>
+    <View
+      style={[
+        styles.iconContainer,
+        styles.iconPill,
+        focused && {
+          backgroundColor: accentColor + "26",
+          shadowColor: accentColor,
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+          elevation: 4,
+        },
+      ]}
+      accessible={false}
+    >
       <Ionicons name={name} size={24} color={color} />
     </View>
   );
@@ -122,6 +132,15 @@ function ScrollToTopPill() {
   );
 }
 
+/** Stable wrapper so FeedCreditBadge hooks don't cause re-render mismatch */
+function HeaderCreditBadge() {
+  return (
+    <View style={styles.headerRight}>
+      <FeedCreditBadge />
+    </View>
+  );
+}
+
 function TabLayoutInner() {
   const { theme } = useTheme();
 
@@ -131,16 +150,17 @@ function TabLayoutInner() {
       tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={{
         tabBarActiveTintColor: theme.accent,
-        tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
+        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.45)",
         tabBarStyle: {
           position: "absolute",
           bottom: Platform.OS === "ios" ? 24 : 16,
-          left: 20,
-          right: 20,
+          left: THEME.spacing.xl,
+          right: THEME.spacing.xl,
           height: 64,
           borderRadius: 32,
           backgroundColor: "rgba(17, 17, 17, 0.85)",
-          borderTopWidth: 0,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: "rgba(255, 255, 255, 0.1)",
           borderWidth: 1,
           borderColor: "rgba(255, 255, 255, 0.08)",
           shadowColor: "#000",
@@ -155,7 +175,7 @@ function TabLayoutInner() {
           flex: 1,
         },
         headerStyle: {
-          backgroundColor: "#0a0a0a",
+          backgroundColor: "rgba(10, 10, 10, 0.95)",
         },
         headerTintColor: "#e8e8e8",
         headerShadowVisible: false,
@@ -166,6 +186,7 @@ function TabLayoutInner() {
         name="index"
         options={{
           title: "Home",
+          headerRight: () => <HeaderCreditBadge />,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               name={focused ? "home" : "home-outline"}
@@ -234,10 +255,18 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  headerRight: {
+    marginRight: THEME.spacing.lg,
+  },
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
     width: 48,
+  },
+  iconPill: {
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: 6,
+    borderRadius: THEME.radius.lg,
   },
   glowDot: {
     width: 5,
@@ -257,15 +286,11 @@ const styles = StyleSheet.create({
   scrollToTopPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: THEME.spacing.xs,
     height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    paddingHorizontal: THEME.spacing.lg,
+    borderRadius: THEME.radius.xl,
+    ...THEME.shadow.glass,
   },
   scrollToTopText: {
     fontFamily: FONTS.bodySemiBold,

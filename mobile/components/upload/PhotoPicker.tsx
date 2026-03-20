@@ -11,17 +11,17 @@ import {
   Alert,
   StyleSheet,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  BORDER_DEFAULT,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import { IMAGE_PICKER } from "../../constants/config";
 
 // ---------------------------------------------------------------------------
@@ -74,7 +74,22 @@ export default function PhotoPicker({
   onPhotoClear,
   disabled = false,
 }: PhotoPickerProps) {
+  const { theme } = useTheme();
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+
+  // Press scale animations for option pills and change button
+  const cameraScale = useSharedValue(1);
+  const galleryScale = useSharedValue(1);
+  const changeScale = useSharedValue(1);
+  const cameraPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: cameraScale.value }],
+  }));
+  const galleryPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: galleryScale.value }],
+  }));
+  const changePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: changeScale.value }],
+  }));
 
   const handleAsset = useCallback(
     (result: ImagePicker.ImagePickerResult) => {
@@ -151,69 +166,107 @@ export default function PhotoPicker({
           style={styles.previewImage}
           accessibilityLabel="Selected photo preview"
         />
-        <Pressable
-          onPress={onPhotoClear}
-          style={styles.clearButton}
-          accessibilityLabel="Remove selected photo"
-          accessibilityRole="button"
-          hitSlop={8}
-        >
-          <Ionicons name="close-circle" size={28} color={TEXT_PRIMARY} />
-        </Pressable>
+        {/* Change photo overlay button */}
+        <Animated.View style={[styles.changeButtonWrapper, changePressStyle]}>
+          <Pressable
+            onPress={onPhotoClear}
+            onPressIn={() => { changeScale.value = withSpring(0.95, THEME.animation.press); }}
+            onPressOut={() => { changeScale.value = withSpring(1, THEME.animation.press); }}
+            style={styles.changeButton}
+            accessibilityLabel="Change selected photo"
+            accessibilityRole="button"
+            hitSlop={8}
+          >
+            <Ionicons name="camera-reverse-outline" size={16} color={THEME.colors.textPrimary} />
+            <Text style={styles.changeButtonText}>Change</Text>
+          </Pressable>
+        </Animated.View>
       </View>
     );
   }
 
-  // --- Render: no photo selected ---
+  // --- Render: no photo selected — large dashed border area ---
   return (
-    <View style={styles.pickerContainer}>
-      <Pressable
-        onPress={pickFromCamera}
-        style={({ pressed }) => [
-          styles.optionButton,
-          pressed && styles.optionButtonPressed,
-          disabled && styles.optionButtonDisabled,
-        ]}
-        disabled={disabled}
-        accessibilityLabel="Take a photo with camera"
-        accessibilityRole="button"
-      >
-        <Ionicons
-          name="camera-outline"
-          size={32}
-          color={disabled ? TEXT_DISABLED : CTA_PRIMARY}
-        />
-        <Text
-          style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
-        >
-          Camera
-        </Text>
-      </Pressable>
+    <View style={[
+      styles.pickerContainer,
+      { borderColor: theme.accent + "40" },
+    ]}>
+      {/* Central icon + text prompt */}
+      <Ionicons
+        name="camera-outline"
+        size={48}
+        color={disabled ? THEME.colors.textDisabled : theme.accent}
+        style={styles.centerIcon}
+      />
+      <Text style={[
+        styles.promptText,
+        disabled && styles.promptTextDisabled,
+      ]}>
+        Tap to select a photo
+      </Text>
 
-      <View style={styles.divider} />
+      {/* Camera / Gallery option pills */}
+      <View style={styles.optionRow}>
+        <Animated.View style={cameraPressStyle}>
+          <Pressable
+            onPress={pickFromCamera}
+            onPressIn={() => {
+              if (!disabled) cameraScale.value = withSpring(0.96, THEME.animation.press);
+            }}
+            onPressOut={() => {
+              cameraScale.value = withSpring(1, THEME.animation.press);
+            }}
+            style={[
+              styles.optionPill,
+              disabled && styles.optionPillDisabled,
+            ]}
+            disabled={disabled}
+            accessibilityLabel="Take a photo with camera"
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="camera-outline"
+              size={18}
+              color={disabled ? THEME.colors.textDisabled : theme.accent}
+            />
+            <Text
+              style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
+            >
+              Camera
+            </Text>
+          </Pressable>
+        </Animated.View>
 
-      <Pressable
-        onPress={pickFromGallery}
-        style={({ pressed }) => [
-          styles.optionButton,
-          pressed && styles.optionButtonPressed,
-          disabled && styles.optionButtonDisabled,
-        ]}
-        disabled={disabled}
-        accessibilityLabel="Choose a photo from gallery"
-        accessibilityRole="button"
-      >
-        <Ionicons
-          name="images-outline"
-          size={32}
-          color={disabled ? TEXT_DISABLED : CTA_PRIMARY}
-        />
-        <Text
-          style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
-        >
-          Gallery
-        </Text>
-      </Pressable>
+        <Animated.View style={galleryPressStyle}>
+          <Pressable
+            onPress={pickFromGallery}
+            onPressIn={() => {
+              if (!disabled) galleryScale.value = withSpring(0.96, THEME.animation.press);
+            }}
+            onPressOut={() => {
+              galleryScale.value = withSpring(1, THEME.animation.press);
+            }}
+            style={[
+              styles.optionPill,
+              disabled && styles.optionPillDisabled,
+            ]}
+            disabled={disabled}
+            accessibilityLabel="Choose a photo from gallery"
+            accessibilityRole="button"
+          >
+            <Ionicons
+              name="images-outline"
+              size={18}
+              color={disabled ? THEME.colors.textDisabled : theme.accent}
+            />
+            <Text
+              style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
+            >
+              Gallery
+            </Text>
+          </Pressable>
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -222,50 +275,62 @@ export default function PhotoPicker({
 // Styles
 // ---------------------------------------------------------------------------
 
-const SPACING = 8;
 const PREVIEW_SIZE = 280;
 
 const styles = StyleSheet.create({
+  /* ---- Empty state: dashed border area ---- */
   pickerContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: THEME.radius.lg,
+    borderWidth: 2,
+    borderStyle: "dashed",
+    paddingVertical: THEME.spacing.xxxl + 8,
+    paddingHorizontal: THEME.spacing.xxl,
+    minWidth: PREVIEW_SIZE,
+  },
+  centerIcon: {
+    marginBottom: THEME.spacing.md,
+  },
+  promptText: {
+    fontFamily: FONTS.body,
+    fontSize: 15,
+    color: THEME.colors.textSecondary,
+    marginBottom: THEME.spacing.xxl,
+  },
+  promptTextDisabled: {
+    color: THEME.colors.textDisabled,
+  },
+
+  /* Option pills — glass style, side by side */
+  optionRow: {
+    flexDirection: "row",
+    gap: THEME.spacing.md,
+  },
+  optionPill: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: BG_CARD,
-    borderRadius: 16,
+    gap: THEME.spacing.sm,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
-    borderStyle: "dashed",
-    padding: SPACING * 4,
-    gap: SPACING * 3,
+    borderColor: THEME.colors.glassBorder,
+    paddingVertical: THEME.spacing.sm + 2,
+    paddingHorizontal: THEME.spacing.lg,
   },
-  optionButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: SPACING * 2,
-    borderRadius: 12,
-    minWidth: 100,
-    minHeight: 88,
-  },
-  optionButtonPressed: {
-    backgroundColor: BG_ELEVATED,
-  },
-  optionButtonDisabled: {
+  optionPillDisabled: {
     opacity: 0.5,
   },
   optionLabel: {
-    marginTop: SPACING,
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
   },
   optionLabelDisabled: {
-    color: TEXT_DISABLED,
+    color: THEME.colors.textDisabled,
   },
-  divider: {
-    width: 1,
-    height: 56,
-    backgroundColor: BORDER_DEFAULT,
-  },
+
+  /* ---- Photo selected: preview with change overlay ---- */
   previewContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -273,15 +338,30 @@ const styles = StyleSheet.create({
   previewImage: {
     width: PREVIEW_SIZE,
     height: PREVIEW_SIZE,
-    borderRadius: 16,
-    backgroundColor: BG_CARD,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    backgroundColor: THEME.colors.surface,
   },
-  clearButton: {
+  changeButtonWrapper: {
     position: "absolute",
-    top: -8,
-    right: -8,
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 14,
-    padding: 2,
+    bottom: THEME.spacing.md,
+    right: THEME.spacing.md,
+  },
+  changeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.xs,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingVertical: THEME.spacing.xs + 2,
+    paddingHorizontal: THEME.spacing.md,
+  },
+  changeButtonText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 12,
+    color: THEME.colors.textPrimary,
   },
 });

@@ -1,12 +1,11 @@
 import { useEffect, useRef } from "react";
 import { View, Animated, StyleSheet } from "react-native";
 
-import { BG_CARD, BG_ELEVATED } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 
 const SHIMMER_DURATION_MS = 1200;
 const SKELETON_CARD_COUNT = 3;
 const IMAGE_HEIGHT = 180;
-const CARD_BORDER_RADIUS = 12;
 
 /** Single skeleton card matching FeedCard layout */
 function SkeletonCard() {
@@ -75,27 +74,29 @@ export function FeedSkeleton() {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingTop: THEME.spacing.sm,
   },
   card: {
-    backgroundColor: BG_CARD,
-    borderRadius: CARD_BORDER_RADIUS,
-    marginBottom: 16,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    marginBottom: THEME.spacing.xl,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   imagePlaceholder: {
     height: IMAGE_HEIGHT,
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   contentArea: {
-    padding: 12,
-    gap: 8,
+    padding: THEME.spacing.md,
+    gap: THEME.spacing.sm,
   },
   captionLine: {
     height: 14,
-    borderRadius: 4,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: THEME.radius.md,
+    backgroundColor: "rgba(255,255,255,0.08)",
     width: "100%",
   },
   captionLineShort: {
@@ -103,14 +104,14 @@ const styles = StyleSheet.create({
   },
   actionsRow: {
     flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
+    gap: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.md,
+    paddingBottom: THEME.spacing.md,
   },
   actionPill: {
     height: 32,
     width: 64,
-    borderRadius: 16,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
 });

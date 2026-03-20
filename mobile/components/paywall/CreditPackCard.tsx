@@ -8,20 +8,17 @@ import { useRef, useCallback } from "react";
 import { Pressable, Text, View, Animated, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  BORDER_DEFAULT,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-  CTA_PRESSED,
-  CREDIT_BADGE_ICON,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
 import type { CreditPackOption } from "../../lib/entitlement";
+
+/** Amber-gold accent for credit icon */
+const CREDIT_ICON = "#F59E0B";
 
 interface CreditPackCardProps {
   pack: CreditPackOption;
@@ -36,6 +33,7 @@ export function CreditPackCard({
   isLoading,
   disabled,
 }: CreditPackCardProps) {
+  const { theme } = useTheme();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const isDisabled = disabled || isLoading;
 
@@ -61,7 +59,6 @@ export function CreditPackCard({
 
   /** Derive a display label from the pack_id (e.g. "10_credits" -> "10 Credits") */
   const displayCredits = pack.credits;
-  const displayLabel = `${displayCredits} Credits`;
 
   return (
     <Animated.View
@@ -77,7 +74,7 @@ export function CreditPackCard({
         onPressOut={handlePressOut}
         disabled={isDisabled}
         style={styles.container}
-        accessibilityLabel={`Purchase ${displayLabel}`}
+        accessibilityLabel={`Purchase ${displayCredits} Credits`}
         accessibilityRole="button"
         accessibilityState={{ disabled: isDisabled, busy: isLoading }}
       >
@@ -85,7 +82,7 @@ export function CreditPackCard({
           <Ionicons
             name="diamond-outline"
             size={24}
-            color={CREDIT_BADGE_ICON}
+            color={CREDIT_ICON}
           />
           <Text style={styles.creditCount}>{displayCredits}</Text>
           <Text style={styles.label}>credits</Text>
@@ -94,6 +91,7 @@ export function CreditPackCard({
         <View
           style={[
             styles.buyButton,
+            { backgroundColor: theme.accent },
             isDisabled && styles.buyButtonDisabled,
           ]}
         >
@@ -113,44 +111,43 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: BG_CARD,
-    borderRadius: 12,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
     borderWidth: 1,
-    borderColor: BORDER_DEFAULT,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.lg - 2,
     minHeight: MIN_TOUCH_TARGET,
   },
   left: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: THEME.spacing.md,
   },
   creditCount: {
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.bodyBold,
+    color: THEME.colors.textPrimary,
     fontSize: 18,
-    fontWeight: "700",
   },
   label: {
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.bodyMedium,
+    color: THEME.colors.textSecondary,
     fontSize: 14,
-    fontWeight: "500",
   },
   buyButton: {
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    borderRadius: THEME.radius.pill,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
     alignItems: "center",
   },
   buyButtonDisabled: {
-    backgroundColor: CTA_PRESSED,
+    opacity: 0.6,
   },
   buyText: {
-    color: "#FFFFFF",
+    fontFamily: FONTS.bodyBold,
+    color: THEME.colors.bg,
     fontSize: 14,
-    fontWeight: "700",
   },
 });
