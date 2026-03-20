@@ -80,42 +80,55 @@ const WOMEN: DemoPool = {
   accessories: ['/images/detail-accessories-women.jpg', '/images/detail-accessories-women-2.jpg', '/images/detail-accessories-women-3.jpg', '/images/detail-accessories-women-4.jpg', '/images/detail-accessories-women-5.jpg'],
 };
 
-const YOUNG: DemoPool = {
+// YOUNG pool split by gender — buildTheme picks one sub-pool randomly
+const YOUNG_M: DemoPool = {
   heroes: [
-    '/images/hero-13.jpg', '/images/hero-14.jpg', '/images/hero-15.jpg',
-    '/images/hero-16.jpg', '/images/hero-3.jpg', '/images/hero-7.jpg',
-    '/images/hero-8.jpg', '/images/hero-11.jpg', '/images/hero-12.jpg',
-    '/images/after-41.jpg', '/images/after-42.jpg', '/images/before-46.jpg',
-    '/images/before-47.jpg', '/images/after-48.jpg', '/images/before-51.jpg',
-    '/images/after-43.jpg', '/images/before-42.jpg', '/images/after-51.jpg',
-    '/images/before-49.jpg', '/images/after-46.jpg',
+    '/images/hero-13.jpg', '/images/hero-15.jpg', '/images/hero-3.jpg',
+    '/images/hero-7.jpg', '/images/hero-11.jpg',
+    '/images/after-41.jpg', '/images/after-42.jpg', '/images/after-43.jpg',
+    '/images/before-4.jpg', '/images/before-42.jpg',
   ],
   pairs: [
     { before: '/images/before-4.jpg', after: '/images/after-4.jpg' },
     { before: '/images/before-13.jpg', after: '/images/after-13.jpg' },
     { before: '/images/before-35.jpg', after: '/images/after-35.jpg' },
     { before: '/images/before-39.jpg', after: '/images/after-39.jpg' },
-    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },
-    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' },
-    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' },
-    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' },
     { before: '/images/before-41.jpg', after: '/images/after-41.jpg' },
     { before: '/images/before-42.jpg', after: '/images/after-42.jpg' },
     { before: '/images/before-43.jpg', after: '/images/after-43.jpg' },
     { before: '/images/before-44.jpg', after: '/images/after-44.jpg' },
     { before: '/images/before-45.jpg', after: '/images/after-45.jpg' },
+    { before: '/images/before-50.jpg', after: '/images/after-50.jpg' },
+  ],
+  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-2.jpg', '/images/detail-hair-men.jpg', '/images/detail-hair-men-2.jpg'],
+  clothing: ['/images/detail-clothing-teen.jpg', '/images/detail-clothing-teen-2.jpg', '/images/detail-clothing-men.jpg', '/images/detail-clothing-men-2.jpg'],
+  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-2.jpg', '/images/detail-grooming-men.jpg'],
+  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-men.jpg'],
+};
+
+const YOUNG_F: DemoPool = {
+  heroes: [
+    '/images/hero-14.jpg', '/images/hero-16.jpg', '/images/hero-8.jpg',
+    '/images/hero-12.jpg',
+    '/images/before-46.jpg', '/images/before-47.jpg', '/images/before-51.jpg',
+    '/images/after-46.jpg', '/images/after-48.jpg', '/images/after-51.jpg',
+  ],
+  pairs: [
+    { before: '/images/before-5.jpg', after: '/images/after-5.jpg' },
+    { before: '/images/before-10.jpg', after: '/images/after-10.jpg' },
+    { before: '/images/before-40.jpg', after: '/images/after-40.jpg' },
+    { before: '/images/before-34.jpg', after: '/images/after-34.jpg' },
     { before: '/images/before-46.jpg', after: '/images/after-46.jpg' },
     { before: '/images/before-47.jpg', after: '/images/after-47.jpg' },
     { before: '/images/before-48.jpg', after: '/images/after-48.jpg' },
     { before: '/images/before-49.jpg', after: '/images/after-49.jpg' },
-    { before: '/images/before-50.jpg', after: '/images/after-50.jpg' },
     { before: '/images/before-51.jpg', after: '/images/after-51.jpg' },
     { before: '/images/before-52.jpg', after: '/images/after-52.jpg' },
   ],
-  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-2.jpg', '/images/detail-hair-teen-3.jpg', '/images/detail-hair-teen-4.jpg', '/images/detail-hair-teen-5.jpg'],
-  clothing: ['/images/detail-clothing-teen.jpg', '/images/detail-clothing-teen-2.jpg', '/images/detail-clothing-teen-3.jpg', '/images/detail-clothing-teen-4.jpg', '/images/detail-clothing-teen-5.jpg'],
-  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-2.jpg', '/images/detail-grooming-teen-3.jpg', '/images/detail-grooming-teen-4.jpg', '/images/detail-grooming-teen-5.jpg'],
-  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-2.jpg', '/images/detail-accessories-teen-3.jpg', '/images/detail-accessories-teen-4.jpg', '/images/detail-accessories-teen-5.jpg'],
+  hair: ['/images/detail-hair-teen.jpg', '/images/detail-hair-teen-3.jpg', '/images/detail-hair-women.jpg', '/images/detail-hair-yw-1.jpg', '/images/detail-hair-yw-2.jpg'],
+  clothing: ['/images/detail-clothing-teen-3.jpg', '/images/detail-clothing-teen-4.jpg', '/images/detail-clothing-women.jpg', '/images/detail-clothing-yw-1.jpg', '/images/detail-clothing-yw-2.jpg'],
+  grooming: ['/images/detail-grooming-teen.jpg', '/images/detail-grooming-teen-3.jpg', '/images/detail-grooming-women.jpg', '/images/detail-grooming-yw-1.jpg'],
+  accessories: ['/images/detail-accessories-teen.jpg', '/images/detail-accessories-teen-3.jpg', '/images/detail-accessories-women.jpg', '/images/detail-accessories-yw-1.jpg'],
 };
 
 const YOUNG_WOMEN: DemoPool = {
@@ -156,8 +169,8 @@ const YOUNG_WOMEN: DemoPool = {
   accessories: ['/images/detail-accessories-yw-1.jpg', '/images/detail-accessories-yw-2.jpg', '/images/detail-accessories-yw-3.jpg', '/images/detail-accessories-yw-4.jpg', '/images/detail-accessories-yw-5.jpg'],
 };
 
-// Weighted: YOUNG_WOMEN 4x (primary audience)
-const POOLS = [YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, MEN, WOMEN, YOUNG];
+// YOUNG_WOMEN 4x weighted (primary audience). YOUNG split into M/F — no mixing.
+const POOLS = [YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, YOUNG_WOMEN, MEN, WOMEN, YOUNG_M, YOUNG_F];
 
 export interface Theme {
   before: string;
