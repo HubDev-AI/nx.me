@@ -1,12 +1,9 @@
-import { useEffect, useLayoutEffect, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
   Pressable,
   ActivityIndicator,
-  Platform,
-  ActionSheetIOS,
-  Alert,
   StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,6 +20,7 @@ import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
 import { useProfile } from "../../components/profile/useProfile";
+import { DropdownMenu } from "../../components/ui/DropdownMenu";
 import type { UpdateProfilePayload } from "../../components/profile/types";
 
 /**
@@ -33,9 +31,11 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
+  const toggleMenuRef = useRef<() => void>();
   const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth } = useAuth();
   const { theme } = useTheme();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const {
     profile,
@@ -93,54 +93,40 @@ export default function ProfileScreen() {
     [profile, updateProfile],
   );
 
-  /** 3-dot menu: shows action sheet with Edit Profile + Log Out */
-  const handleMoreMenu = useCallback(() => {
-    if (Platform.OS === "ios" && typeof ActionSheetIOS?.showActionSheetWithOptions === "function") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Edit Profile", "Log Out", "Cancel"],
-          cancelButtonIndex: 2,
-          destructiveButtonIndex: 1,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) {
-            handleEditProfile();
-          } else if (buttonIndex === 1) {
-            handleLogout();
-          }
-        },
-      );
-    } else {
-      Alert.alert("Options", undefined, [
-        { text: "Edit Profile", onPress: handleEditProfile },
-        {
-          text: "Log Out",
-          onPress: handleLogout,
-          style: "destructive",
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
-  }, [handleEditProfile, handleLogout]);
+  const toggleMenu = useCallback(() => {
+    setMenuVisible((prev) => !prev);
+  }, []);
 
-  // Set 3-dot menu in the navigation header
+  const closeMenu = useCallback(() => {
+    setMenuVisible(false);
+  }, []);
+
+  const menuItems = [
+    { label: "Edit Profile", icon: "create-outline", onPress: handleEditProfile },
+    { label: "Subscription", icon: "card-outline", onPress: () => {} },
+    { label: "Settings", icon: "settings-outline", onPress: () => {} },
+    { label: "Log Out", icon: "log-out-outline", onPress: handleLogout, destructive: true },
+  ];
+
+  // Keep ref in sync so headerRight button can call it
+  toggleMenuRef.current = toggleMenu;
+
+  // Put 3-dot button in the actual navigation header
   useLayoutEffect(() => {
-    if (isAuthenticated && profile) {
-      navigation.setOptions({
-        headerRight: () => (
-          <Pressable
-            onPress={handleMoreMenu}
-            style={{ padding: 8, marginRight: 12 }}
-            accessibilityLabel="More options"
-            accessibilityRole="button"
-            hitSlop={8}
-          >
-            <Ionicons name="ellipsis-horizontal" size={20} color="#888888" />
-          </Pressable>
-        ),
-      });
-    }
-  }, [navigation, isAuthenticated, profile, handleMoreMenu]);
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => toggleMenuRef.current?.()}
+          style={{ padding: 8, marginRight: 8 }}
+          accessibilityLabel="More options"
+          accessibilityRole="button"
+          hitSlop={8}
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color="#888888" />
+        </Pressable>
+      ),
+    });
+  }, [navigation]);
 
   // Not signed in
   if (!isAuthenticated) {
@@ -251,6 +237,14 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Dropdown menu — button is in headerRight, dropdown renders here */}
+      <DropdownMenu
+        visible={menuVisible}
+        onClose={closeMenu}
+        items={menuItems}
+        anchorPosition={{ top: insets.top + 38, right: 16 }}
+      />
+
       {/* Single FlatList: profile header + glow-up grid -- no nested ScrollView */}
       <GlowUpGrid
         items={glowUps}
@@ -352,7 +346,8 @@ const styles = StyleSheet.create({
   /* 3-dot menu -- absolutely positioned over the screen, never inside scroll content */
   moreMenuButton: {
     position: "absolute",
-    right: 16,
+    top: 0,
+    right: 12,
     zIndex: 20,
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
