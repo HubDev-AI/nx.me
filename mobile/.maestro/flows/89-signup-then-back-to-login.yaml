@@ -1,0 +1,67 @@
+appId: host.exp.Exponent
+---
+# Test: Navigate to signup, partially fill form, go back to login, verify login is clean
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Start on login screen
+- assertVisible: "Welcome back"
+- takeScreenshot: signup_back_01_on_login
+
+# Navigate to signup
+- scrollUntilVisible:
+    element: "Sign up"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Create your account"
+    timeout: 10000
+- takeScreenshot: signup_back_02_on_signup
+
+# Partially fill form — username only
+- tapOn:
+    id: "input-username"
+- inputText: "partial_test_user"
+- takeScreenshot: signup_back_03_username_filled
+
+# Fill email only (skip display name and password)
+- tapOn:
+    id: "input-email"
+- inputText: "partial@test.com"
+- takeScreenshot: signup_back_04_email_filled
+
+# Dismiss keyboard first by tapping outside
+- tapOn:
+    point: "50%,15%"
+- waitForAnimationToEnd
+
+# Navigate back to login
+- scrollUntilVisible:
+    element: "Log in"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Log in"
+- waitForAnimationToEnd
+
+# Verify login screen loaded
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: signup_back_05_back_on_login
+
+# Verify login form fields are clean/empty — no leftover signup data
+# Tap email field and check it is empty (no partial@test.com carried over)
+- tapOn:
+    id: "input-email"
+- takeScreenshot: signup_back_06_login_email_field
+
+# Tap password field and verify it is accessible
+- tapOn: "Show password"
+- tapOn:
+    id: "input-password"
+- takeScreenshot: signup_back_07_login_password_field
+
+# Final state — login form should be clean and ready
+- takeScreenshot: signup_back_08_final

@@ -1,0 +1,80 @@
+appId: host.exp.Exponent
+---
+# Test: Full app walkthrough — Login → Feed tabs → Create → Upload → Home → Profile → Edit → Logout
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+# Step 1: Login
+- assertVisible: "Welcome back"
+- runFlow: 00-login.yaml
+- takeScreenshot: e2e_01_logged_in
+
+# Step 2: Switch all feed sort tabs
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- takeScreenshot: e2e_02_trending
+
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: e2e_03_top
+
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: e2e_04_newest
+
+# Step 3: Navigate to Create tab
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: e2e_05_create
+
+# Step 4: Verify Upload button is present (don't tap — upload has no tab bar)
+- assertVisible: "Upload a photo for glow-up"
+- takeScreenshot: e2e_06_create_with_upload
+
+# Step 5: Navigate to Home tab
+- tapOn:
+    point: "17%,96%"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- takeScreenshot: e2e_07_back_home
+
+# Step 6: Navigate to Profile
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: e2e_08_profile
+
+# Step 7: Open Edit Profile if available, then close it
+- runFlow:
+    when:
+      visible: "Edit Profile"
+    commands:
+      - tapOn: "Edit Profile"
+      - waitForAnimationToEnd
+      - takeScreenshot: e2e_09_edit_profile
+      # Close edit sheet
+      - runFlow:
+          when:
+            visible: "Cancel"
+          commands:
+            - tapOn: "Cancel"
+            - waitForAnimationToEnd
+            - takeScreenshot: e2e_10_edit_closed
+
+# Step 8: Scroll to Log out and tap it
+- scrollUntilVisible:
+    element: "Log out"
+    direction: DOWN
+    timeout: 15000
+- tapOn: "Log out"
+- waitForAnimationToEnd
+
+# Step 9: Verify back on login screen
+- extendedWaitUntil:
+    visible: "Welcome back"
+    timeout: 10000
+- takeScreenshot: e2e_11_logged_out

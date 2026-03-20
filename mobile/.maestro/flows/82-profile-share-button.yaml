@@ -1,0 +1,70 @@
+appId: host.exp.Exponent
+---
+# Test: Profile share button — tap share, handle share sheet, verify stability
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for feed
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+
+# Navigate to Profile tab
+- tapOn:
+    point: "83%,96%"
+- waitForAnimationToEnd
+- takeScreenshot: share_01_profile_loaded
+
+# Check for Share or Share profile button
+- runFlow:
+    when:
+      visible: "Share profile"
+    commands:
+      - tapOn: "Share profile"
+      - waitForAnimationToEnd
+      - takeScreenshot: share_02_share_tapped
+
+      # Wait for share sheet to appear, then dismiss it
+      # iOS share sheet can be dismissed by tapping Close or swiping down
+      - runFlow:
+          when:
+            visible: "Close"
+          commands:
+            - tapOn: "Close"
+            - waitForAnimationToEnd
+            - takeScreenshot: share_03_dismissed_via_close
+
+      # Fallback: swipe down to dismiss share sheet
+      - runFlow:
+          when:
+            notVisible: "Close"
+          commands:
+            - swipe:
+                start: "50%,50%"
+                end: "50%,90%"
+                duration: 300
+            - waitForAnimationToEnd
+            - takeScreenshot: share_03_dismissed_via_swipe
+
+      # Verify profile is still stable after dismissal
+      - takeScreenshot: share_04_profile_stable
+
+# Also check for just "Share" text
+- runFlow:
+    when:
+      visible: "Share"
+    commands:
+      - tapOn: "Share"
+      - waitForAnimationToEnd
+      - takeScreenshot: share_05_share_generic_tapped
+
+      # Dismiss share sheet
+      - swipe:
+          start: "50%,50%"
+          end: "50%,90%"
+          duration: 300
+      - waitForAnimationToEnd
+      - takeScreenshot: share_06_generic_dismissed
+
+# Final state
+- takeScreenshot: share_07_final

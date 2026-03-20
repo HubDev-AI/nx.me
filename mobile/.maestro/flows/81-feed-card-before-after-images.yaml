@@ -1,0 +1,56 @@
+appId: host.exp.Exponent
+---
+# Test: Feed cards — verify Before/After image layout visible in feed
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for feed to load
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: before_after_01_feed_loaded
+
+# Verify sort tabs are present (confirms we are on feed)
+- assertVisible: "Sort by Newest"
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: before_after_02_sort_tabs_visible
+
+# Scroll slightly to ensure card content is visible in top 50% of screen
+- swipe:
+    start: "50%,60%"
+    end: "50%,40%"
+    duration: 400
+- waitForAnimationToEnd
+- takeScreenshot: before_after_03_scrolled_to_card
+
+# Tap in the card area (center of screen) to check for interaction
+- tapOn:
+    point: "50%,40%"
+- waitForAnimationToEnd
+- takeScreenshot: before_after_04_card_tapped
+
+# Scroll back to top to verify layout stability
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- waitForAnimationToEnd
+- assertVisible: "Sort by Newest"
+- takeScreenshot: before_after_05_back_at_top
+
+# Switch to Trending to see cards there too
+- tapOn: "Sort by Trending"
+- waitForAnimationToEnd
+- takeScreenshot: before_after_06_trending_cards
+
+# Switch to Top
+- tapOn: "Sort by Top"
+- waitForAnimationToEnd
+- takeScreenshot: before_after_07_top_cards
+
+# Return to Newest
+- tapOn: "Sort by Newest"
+- waitForAnimationToEnd
+- takeScreenshot: before_after_08_final

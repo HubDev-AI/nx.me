@@ -1,0 +1,38 @@
+appId: host.exp.Exponent
+---
+# Test: Upload screen — verify Analyze button visible but disabled without photo
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+
+# Navigate to Create tab
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: analyze_disabled_01_create
+
+# Tap Upload
+- tapOn: "Upload a photo for glow-up"
+- waitForAnimationToEnd
+- takeScreenshot: analyze_disabled_02_upload_screen
+
+# Verify upload screen elements are present
+- assertVisible: "Take a photo with camera"
+- assertVisible: "Choose a photo from gallery"
+- assertVisible: "Analyze photo"
+- takeScreenshot: analyze_disabled_03_elements_visible
+
+# Tap the Analyze button — should do nothing since no photo is selected
+- tapOn: "Analyze photo"
+- waitForAnimationToEnd
+- takeScreenshot: analyze_disabled_04_after_tap
+
+# Verify we are still on the upload screen (button did nothing)
+- assertVisible: "Analyze photo"
+- assertVisible: "Take a photo with camera"
+- assertVisible: "Choose a photo from gallery"
+- takeScreenshot: analyze_disabled_05_still_on_upload

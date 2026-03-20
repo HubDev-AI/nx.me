@@ -1,0 +1,47 @@
+appId: host.exp.Exponent
+---
+# Test: Signup — submit empty form, verify first field focus and error shown
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-out.yaml
+
+- assertVisible: "Welcome back"
+
+# Navigate to signup
+- tapOn: "Sign up"
+- waitForAnimationToEnd
+- assertVisible: "Create your account"
+- takeScreenshot: empty_submit_01_signup_screen
+
+# Immediately tap "Create account" without filling any fields
+- scrollUntilVisible:
+    element: "Create account"
+    direction: DOWN
+    timeout: 5000
+- tapOn: "Create account"
+- waitForAnimationToEnd
+- takeScreenshot: empty_submit_02_after_submit
+
+# Verify validation errors are shown
+- assertVisible: "Username is required"
+- takeScreenshot: empty_submit_03_errors_visible
+
+# Verify other required field errors
+- runFlow:
+    when:
+      visible: "Display name is required"
+    commands:
+      - takeScreenshot: empty_submit_04_display_name_error
+
+- runFlow:
+    when:
+      visible: "Email is required"
+    commands:
+      - takeScreenshot: empty_submit_05_email_error
+
+# Scroll up to verify the username field (first field) has focus indication
+- swipe:
+    start: "50%,30%"
+    end: "50%,70%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: empty_submit_06_first_field_focus

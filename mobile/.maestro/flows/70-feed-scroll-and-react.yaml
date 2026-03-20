@@ -1,0 +1,65 @@
+appId: host.exp.Exponent
+---
+# Test: Scroll through feed posts, tap reaction on a card, scroll back up, verify sort tabs
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: scroll_react_01_feed_loaded
+
+# Scroll down 3 times through feed posts
+- swipe:
+    start: "50%,80%"
+    end: "50%,20%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_react_02_down1
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,20%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_react_03_down2
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,20%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_react_04_down3
+
+# Tap reaction area on a card (heart icon, bottom-left of visible card)
+- tapOn:
+    point: "12%,42%"
+- waitForAnimationToEnd
+- takeScreenshot: scroll_react_05_reaction_tapped
+
+# Scroll back up 3 times
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- waitForAnimationToEnd
+
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- waitForAnimationToEnd
+
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: scroll_react_06_scrolled_back_up
+
+# Verify sort tabs are visible at top
+- assertVisible: "Sort by Newest"
+- assertVisible: "Sort by Trending"
+- assertVisible: "Sort by Top"
+- takeScreenshot: scroll_react_07_tabs_verified

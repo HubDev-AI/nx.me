@@ -1,0 +1,93 @@
+appId: host.exp.Exponent
+---
+# Test: Aggressive feed scrolling — 6 swipes down, pull-to-refresh, scroll back up
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_01_top
+
+# Aggressive scroll down — 6 swipes
+- swipe:
+    start: "50%,80%"
+    end: "50%,15%"
+    duration: 250
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_02_down1
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,15%"
+    duration: 250
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_03_down2
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,15%"
+    duration: 250
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_04_down3
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,15%"
+    duration: 250
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_05_down4
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,15%"
+    duration: 250
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_06_down5
+
+- swipe:
+    start: "50%,80%"
+    end: "50%,15%"
+    duration: 250
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_07_down6
+
+# Pull-to-refresh from current position
+- swipe:
+    start: "50%,20%"
+    end: "50%,80%"
+    duration: 500
+- waitForAnimationToEnd
+- takeScreenshot: deep_scroll_08_pull_refresh
+
+# Scroll all the way back up (6 aggressive upward swipes)
+- swipe:
+    start: "50%,15%"
+    end: "50%,80%"
+    duration: 250
+- swipe:
+    start: "50%,15%"
+    end: "50%,80%"
+    duration: 250
+- swipe:
+    start: "50%,15%"
+    end: "50%,80%"
+    duration: 250
+- swipe:
+    start: "50%,15%"
+    end: "50%,80%"
+    duration: 250
+- swipe:
+    start: "50%,15%"
+    end: "50%,80%"
+    duration: 250
+- swipe:
+    start: "50%,15%"
+    end: "50%,80%"
+    duration: 250
+- waitForAnimationToEnd
+
+# Verify we can see the top of the feed again
+- assertVisible: "Sort by Newest"
+- takeScreenshot: deep_scroll_09_back_at_top

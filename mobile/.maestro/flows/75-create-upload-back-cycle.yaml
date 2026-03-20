@@ -1,0 +1,55 @@
+appId: host.exp.Exponent
+---
+# Test: Navigate to Create, tap Upload, verify Camera/Gallery, attempt back gesture, verify state
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for home feed to load
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+
+# Navigate to Create tab
+- tapOn:
+    point: "50%,96%"
+- waitForAnimationToEnd
+- assertVisible: "Create your glow-up"
+- takeScreenshot: upload_back_01_create_screen
+
+# Tap Upload button
+- tapOn: "Upload a photo for glow-up"
+- waitForAnimationToEnd
+- takeScreenshot: upload_back_02_upload_screen
+
+# Verify Camera and Gallery options
+- assertVisible: "Take a photo with camera"
+- assertVisible: "Choose a photo from gallery"
+- takeScreenshot: upload_back_03_options_verified
+
+# Verify Analyze button
+- assertVisible: "Analyze photo"
+- takeScreenshot: upload_back_04_analyze_visible
+
+# Attempt back gesture (swipe from left edge to right)
+- swipe:
+    start: "2%,50%"
+    end: "60%,50%"
+    duration: 300
+- waitForAnimationToEnd
+- takeScreenshot: upload_back_05_after_back_gesture
+
+# Check where we ended up — either back on Create or still on Upload
+# If back on Create, verify the create screen
+- runFlow:
+    when:
+      visible: "Create your glow-up"
+    commands:
+      - takeScreenshot: upload_back_06_back_to_create
+
+# If still on Upload, verify upload elements are intact
+- runFlow:
+    when:
+      visible: "Analyze photo"
+    commands:
+      - assertVisible: "Take a photo with camera"
+      - takeScreenshot: upload_back_06_still_on_upload

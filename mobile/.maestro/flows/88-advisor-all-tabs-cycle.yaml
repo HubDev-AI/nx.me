@@ -1,0 +1,66 @@
+appId: host.exp.Exponent
+---
+# Test: Advisor — rapid tab cycling Chat→Nudges→Memories x2, verify stability
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for feed
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+
+# Navigate to Advisor tab
+- runFlow:
+    when:
+      visible: "Advisor"
+    commands:
+      - tapOn: "Advisor"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_01_landed
+
+      # Verify header
+      - runFlow:
+          when:
+            visible: "Ada"
+          commands:
+            - assertVisible: "Your style advisor"
+
+      # ─── Round 1: Chat → Nudges → Memories ───
+      - tapOn: "Chat tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_02_chat1
+
+      - tapOn: "Nudges tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_03_nudges1
+
+      - tapOn: "Memories tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_04_memories1
+
+      # ─── Round 2: Chat → Nudges → Memories (rapid) ───
+      - tapOn: "Chat tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_05_chat2
+
+      - tapOn: "Nudges tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_06_nudges2
+
+      - tapOn: "Memories tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: advisor_cycle_07_memories2
+
+      # Verify still on Advisor and header intact
+      - runFlow:
+          when:
+            visible: "Ada"
+          commands:
+            - assertVisible: "Your style advisor"
+            - takeScreenshot: advisor_cycle_08_header_intact
+
+      # Final screenshot
+      - takeScreenshot: advisor_cycle_09_final
+
+# If no Advisor tab, capture state
+- takeScreenshot: advisor_cycle_final_no_tab

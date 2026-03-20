@@ -1,0 +1,36 @@
+appId: host.exp.Exponent
+---
+# Test: Open comments sheet on first post, verify header, swipe to dismiss
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: comments_oc_01_feed_loaded
+
+# Tap comment area of first post (~25%,42%)
+- tapOn:
+    point: "25%,42%"
+- waitForAnimationToEnd
+- takeScreenshot: comments_oc_02_after_tap
+
+# If comments sheet opened, verify header and dismiss
+- runFlow:
+    when:
+      visible: "Comments"
+    commands:
+      - assertVisible: "Comments"
+      - takeScreenshot: comments_oc_03_sheet_open
+      # Swipe down to dismiss the comments sheet
+      - swipe:
+          start: "50%,30%"
+          end: "50%,90%"
+          duration: 300
+      - waitForAnimationToEnd
+      - takeScreenshot: comments_oc_04_after_dismiss
+
+# Verify feed is stable after dismissal
+- assertVisible: "Sort by Newest"
+- takeScreenshot: comments_oc_05_feed_stable

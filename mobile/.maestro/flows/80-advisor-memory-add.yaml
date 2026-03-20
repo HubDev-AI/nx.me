@@ -1,0 +1,68 @@
+appId: host.exp.Exponent
+---
+# Test: Advisor Memories tab — attempt to add a memory/goal/note
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+# Wait for feed
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 15000
+- takeScreenshot: mem_add_01_on_feed
+
+# Navigate to Advisor tab if it exists
+- runFlow:
+    when:
+      visible: "Advisor"
+    commands:
+      - tapOn: "Advisor"
+      - waitForAnimationToEnd
+      - takeScreenshot: mem_add_02_advisor_landed
+
+      # Verify header
+      - runFlow:
+          when:
+            visible: "Ada"
+          commands:
+            - assertVisible: "Your style advisor"
+
+      # Tap Memories tab
+      - tapOn: "Memories tab"
+      - waitForAnimationToEnd
+      - takeScreenshot: mem_add_03_memories_tab
+
+      # Try to find and tap Add button
+      - runFlow:
+          when:
+            visible: "Add"
+          commands:
+            - tapOn: "Add"
+            - waitForAnimationToEnd
+            - takeScreenshot: mem_add_04_add_tapped
+
+      # Try to find memory input field
+      - runFlow:
+          when:
+            visible: "Add a goal or note"
+          commands:
+            - tapOn: "Add a goal or note"
+            - inputText: "I want to improve my streetwear style this spring"
+            - takeScreenshot: mem_add_05_typed_memory
+            # Try submitting via Enter or a Submit button
+            - runFlow:
+                when:
+                  visible: "Save"
+                commands:
+                  - tapOn: "Save"
+                  - waitForAnimationToEnd
+                  - takeScreenshot: mem_add_06_saved
+            # Fallback: press Enter to submit
+            - pressKey: Enter
+            - waitForAnimationToEnd
+            - takeScreenshot: mem_add_07_submitted
+
+      # Final state screenshot
+      - takeScreenshot: mem_add_08_final
+
+# If no Advisor tab, capture final state
+- takeScreenshot: mem_add_final_state

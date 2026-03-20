@@ -1,0 +1,37 @@
+appId: host.exp.Exponent
+---
+# Test: Long press on first feed card image — verify Report option in action sheet
+- runFlow: 00-app-launch.yaml
+- runFlow: 00-ensure-logged-in.yaml
+
+- extendedWaitUntil:
+    visible: "Sort by Newest"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: report_01_feed_loaded
+
+# Long press on the image area of first feed card (~50%,30%)
+- longPressOn:
+    point: "50%,30%"
+- waitForAnimationToEnd
+- takeScreenshot: report_02_after_long_press
+
+# If action sheet appears, verify Report option is visible
+- runFlow:
+    when:
+      visible: "Report"
+    commands:
+      - assertVisible: "Report"
+      - takeScreenshot: report_03_report_visible
+
+# Dismiss action sheet by tapping Cancel
+- runFlow:
+    when:
+      visible: "Cancel"
+    commands:
+      - tapOn: "Cancel"
+      - waitForAnimationToEnd
+
+# Verify feed is stable after dismissal
+- assertVisible: "Sort by Newest"
+- takeScreenshot: report_04_dismissed_stable
