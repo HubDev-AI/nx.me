@@ -1,37 +1,37 @@
 /**
- * GlassCard — semi-transparent card matching card-web's dark surface style.
+ * GlassCard — frosted glass card using global theme tokens.
+ * Use for any container that needs depth + translucency.
  */
 import { type ReactNode } from "react";
-import { StyleSheet, type ViewStyle } from "react-native";
+import { type ViewStyle } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
+import { THEME, sharedStyles } from "../../constants/theme";
 
 interface GlassCardProps {
   children: ReactNode;
   style?: ViewStyle;
   animate?: boolean;
+  /** Use lighter glass — for cards over background images */
+  light?: boolean;
 }
 
 export function GlassCard({
   children,
   style,
   animate = true,
+  light = false,
 }: GlassCardProps) {
   return (
     <Animated.View
       entering={animate ? FadeIn.duration(500) : undefined}
-      style={[styles.card, style]}
+      style={[
+        sharedStyles.glassCard,
+        light && { backgroundColor: THEME.colors.glassLight },
+        { padding: THEME.spacing.xl },
+        style,
+      ]}
     >
       {children}
     </Animated.View>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: "rgba(17, 17, 17, 0.85)",
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
-  },
-});

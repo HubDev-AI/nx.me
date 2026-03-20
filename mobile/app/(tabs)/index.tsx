@@ -19,6 +19,8 @@ import {
   TEXT_PRIMARY,
   TEXT_SECONDARY,
 } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { PageBackground } from "../../components/ui/PageBackground";
 import { FEED_CONFIG } from "../../constants/config";
 import { FeedCard } from "../../components/feed/FeedCard";
 import { FeedSkeleton } from "../../components/feed/FeedSkeleton";
@@ -186,7 +188,7 @@ export default function HomeScreen() {
             accessibilityLabel="Retry loading feed"
             accessibilityRole="button"
           >
-            <Ionicons name="refresh-outline" size={18} color="#0a0a0a" />
+            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
             <Text style={styles.retryText}>Try Again</Text>
           </Pressable>
         </View>
@@ -212,6 +214,7 @@ export default function HomeScreen() {
   if (isLoading && posts.length === 0) {
     return (
       <View style={styles.container}>
+        <PageBackground overlayOpacity={0.88} />
         {renderHeader()}
         <FeedSkeleton />
       </View>
@@ -220,6 +223,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      <PageBackground overlayOpacity={0.88} />
       <AnimatedFlatList
         ref={flatListRef as any}
         data={posts}
@@ -307,6 +311,6 @@ const styles = StyleSheet.create({
   retryText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 15,
-    color: "#0a0a0a",
+    color: THEME.colors.bg,
   },
 });

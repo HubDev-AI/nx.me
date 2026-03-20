@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useNavigation } from "expo-router";
 
 import { BG_PAGE, TEXT_SECONDARY } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { PageBackground } from "../../components/ui/PageBackground";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
 import { useTheme } from "../../lib/theme-context";
@@ -122,7 +124,7 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           hitSlop={8}
         >
-          <Ionicons name="ellipsis-horizontal" size={20} color="#888888" />
+          <Ionicons name="ellipsis-horizontal" size={20} color={THEME.colors.textSecondary} />
         </Pressable>
       ),
     });
@@ -135,7 +137,7 @@ export default function ProfileScreen() {
         <Ionicons
           name="person-circle-outline"
           size={64}
-          color="#888888"
+          color={THEME.colors.textSecondary}
         />
         <Text style={styles.signInTitle}>Sign in to see your profile</Text>
         <Text style={styles.signInSubtitle}>
@@ -160,7 +162,7 @@ export default function ProfileScreen() {
         <Ionicons
           name="person-circle-outline"
           size={64}
-          color="#888888"
+          color={THEME.colors.textSecondary}
         />
         <Text style={styles.signInTitle}>Complete your profile</Text>
         <Text style={styles.signInSubtitle}>
@@ -174,7 +176,7 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           testID="logout-button"
         >
-          <Ionicons name="log-out-outline" size={20} color="#888888" />
+          <Ionicons name="log-out-outline" size={20} color={THEME.colors.textSecondary} />
           <Text style={styles.fallbackLogoutText}>Log out</Text>
         </Pressable>
       </View>
@@ -219,7 +221,7 @@ export default function ProfileScreen() {
           accessibilityRole="button"
           testID="logout-button"
         >
-          <Ionicons name="log-out-outline" size={20} color="#888888" />
+          <Ionicons name="log-out-outline" size={20} color={THEME.colors.textSecondary} />
           <Text style={styles.fallbackLogoutText}>Log out</Text>
         </Pressable>
       </View>
@@ -237,6 +239,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <PageBackground overlayOpacity={0.85} />
       {/* Dropdown menu — button is in headerRight, dropdown renders here */}
       <DropdownMenu
         visible={menuVisible}
@@ -285,14 +288,14 @@ const styles = StyleSheet.create({
   signInTitle: {
     fontFamily: FONTS.display,
     fontSize: 24,
-    color: "#e8e8e8",
+    color: THEME.colors.textPrimary,
     marginTop: 16,
     marginBottom: 8,
   },
   signInSubtitle: {
     fontFamily: FONTS.body,
     fontSize: 15,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   signInButton: {
@@ -307,25 +310,25 @@ const styles = StyleSheet.create({
   signInButtonText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    color: "#0a0a0a",
+    color: THEME.colors.bg,
   },
   loadingText: {
     fontFamily: FONTS.body,
     fontSize: 14,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
     marginTop: 12,
   },
   errorTitle: {
     fontFamily: FONTS.display,
     fontSize: 18,
-    color: "#e8e8e8",
+    color: THEME.colors.textPrimary,
     marginTop: 12,
     marginBottom: 4,
   },
   errorMessage: {
     fontFamily: FONTS.body,
     fontSize: 14,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
     textAlign: "center",
     marginBottom: 16,
   },
@@ -340,7 +343,7 @@ const styles = StyleSheet.create({
   retryButtonText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    color: "#0a0a0a",
+    color: THEME.colors.bg,
   },
 
   /* 3-dot menu -- absolutely positioned over the screen, never inside scroll content */
@@ -370,6 +373,6 @@ const styles = StyleSheet.create({
   fallbackLogoutText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
   },
 });

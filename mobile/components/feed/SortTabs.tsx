@@ -6,6 +6,7 @@ import {
   TEXT_SECONDARY,
   BG_PAGE,
 } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { FEED_SORT } from "../../constants/config";
 import type { FeedSortValue } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
@@ -96,7 +97,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    backgroundColor: BG_PAGE,
+    backgroundColor: "transparent",
   },
   tab: {
     flexDirection: "row",
@@ -106,9 +107,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minHeight: MIN_TOUCH_TARGET,
     borderRadius: 9999,
-    backgroundColor: "rgba(26, 26, 26, 0.8)",
+    backgroundColor: THEME.colors.glass,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.04)",
+    borderColor: THEME.colors.glassBorder,
   },
   tabLabel: {
     fontFamily: FONTS.bodyMedium,

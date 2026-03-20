@@ -24,6 +24,7 @@ import {
   BEFORE_OVERLAY,
   AFTER_OVERLAY_STRONG,
 } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import { ReactionButton } from "./ReactionButton";
@@ -260,13 +261,13 @@ export const FeedCard = React.memo(function FeedCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "#111111",
-    borderRadius: 16,
-    marginHorizontal: 20,
-    marginBottom: 20,
+    backgroundColor: THEME.colors.surface,
+    borderRadius: THEME.radius.lg,
+    marginHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.xl,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
+    borderColor: THEME.colors.border,
     shadowColor: "rgba(0, 0, 0, 0.4)",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 1,

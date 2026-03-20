@@ -5,7 +5,6 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   CTA_PRIMARY,
   TEXT_SECONDARY,
-  BG_ELEVATED,
 } from "../../constants/colors";
 import { formatCount } from "../../lib/format";
 import { FONTS } from "../../hooks/useFonts";

@@ -5,6 +5,8 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BG_PAGE } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { PageBackground } from "../../components/ui/PageBackground";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 
@@ -70,6 +72,7 @@ export default function CreateScreen() {
 
   return (
     <View style={styles.container}>
+      <PageBackground overlayOpacity={0.85} />
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -126,7 +129,7 @@ export default function CreateScreen() {
                   <Ionicons
                     name={feature.icon}
                     size={28}
-                    color={isActive ? theme.accent : "#555555"}
+                    color={isActive ? theme.accent : THEME.colors.textMuted}
                     style={styles.icon}
                   />
 
@@ -178,13 +181,13 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: FONTS.display,
     fontSize: 32,
-    color: "#e8e8e8",
+    color: THEME.colors.textPrimary,
     marginBottom: 4,
   },
   subtitle: {
     fontFamily: FONTS.body,
     fontSize: 15,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
     marginBottom: 24,
   },
 
@@ -203,14 +206,14 @@ const styles = StyleSheet.create({
   /* Box shared */
   box: {
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: THEME.radius.lg,
+    padding: THEME.spacing.lg,
     aspectRatio: 1,
     justifyContent: "flex-start",
   },
   boxInactive: {
-    backgroundColor: "#111111",
-    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: THEME.colors.surface,
+    borderColor: THEME.colors.border,
   },
   boxPressed: {
     opacity: 0.8,
@@ -225,27 +228,27 @@ const styles = StyleSheet.create({
   featureName: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 15,
-    color: "#e8e8e8",
+    color: THEME.colors.textPrimary,
     marginBottom: 4,
   },
   featureNameInactive: {
-    color: "#555555",
+    color: THEME.colors.textMuted,
   },
   featureDesc: {
     fontFamily: FONTS.body,
     fontSize: 12,
-    color: "#888888",
+    color: THEME.colors.textSecondary,
     lineHeight: 16,
   },
   featureDescInactive: {
-    color: "#444444",
+    color: THEME.colors.textDisabled,
   },
 
   /* Coming soon label */
   comingSoon: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 10,
-    color: "#555555",
+    color: THEME.colors.textMuted,
     letterSpacing: 1,
     marginTop: "auto",
   },
