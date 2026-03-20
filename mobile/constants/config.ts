@@ -7,8 +7,11 @@ import Constants from "expo-constants";
 const extra = Constants.expoConfig?.extra ?? {};
 
 /** Base URL for the NXME backend API */
+import { Platform } from "react-native";
 export const API_BASE_URL: string =
-  (extra.apiBaseUrl as string) ?? "https://api.nxme.ai";
+  Platform.OS === "web" && __DEV__
+    ? "http://localhost:8001"
+    : (extra.apiBaseUrl as string) ?? "https://api.nxme.ai";
 
 /** Universal link origin — only HTTPS allowed, no custom URI schemes */
 export const UNIVERSAL_LINK_ORIGIN = "https://nxme.ai";

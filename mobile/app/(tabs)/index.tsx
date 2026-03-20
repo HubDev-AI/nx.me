@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import {
   View,
   FlatList,
@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import {
@@ -27,6 +28,11 @@ import { useFeed } from "../../components/feed/useFeed";
 import type { FeedPost } from "../../components/feed/types";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
+import { FONTS } from "../../hooks/useFonts";
+import { useTabBar } from "../../lib/tab-bar-context";
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<FeedPost>);
+
 /** Home / Feed tab — Story 5-4 */
 export default function HomeScreen() {
   const {
@@ -46,6 +52,17 @@ export default function HomeScreen() {
     incrementCommentCount,
     removePostsByUser,
   } = useFeed();
+
+  // Tab bar scroll integration
+  const { scrollHandler, registerScrollToTop } = useTabBar();
+  const flatListRef = useRef<FlatList<FeedPost>>(null);
+
+  useEffect(() => {
+    registerScrollToTop(() => {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    });
+    return () => registerScrollToTop(null);
+  }, [registerScrollToTop]);
 
   // Comments sheet state
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
@@ -169,7 +186,7 @@ export default function HomeScreen() {
             accessibilityLabel="Retry loading feed"
             accessibilityRole="button"
           >
-            <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+            <Ionicons name="refresh-outline" size={18} color="#0a0a0a" />
             <Text style={styles.retryText}>Try Again</Text>
           </Pressable>
         </View>
@@ -203,7 +220,8 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <FlatList
+      <AnimatedFlatList
+        ref={flatListRef as any}
         data={posts}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
@@ -212,6 +230,8 @@ export default function HomeScreen() {
         ListEmptyComponent={renderEmpty}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -246,7 +266,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flexGrow: 1,
-    paddingBottom: 16,
+    paddingBottom: 80,
   },
   footer: {
     paddingVertical: 20,
@@ -261,31 +281,32 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontFamily: FONTS.display,
+    fontSize: 22,
     color: TEXT_PRIMARY,
-    marginTop: 12,
+    marginTop: 16,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontFamily: FONTS.body,
+    fontSize: 15,
     color: TEXT_SECONDARY,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 22,
   },
   retryButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 9999,
     backgroundColor: CTA_PRIMARY,
     minHeight: 44,
   },
   retryText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 15,
+    color: "#0a0a0a",
   },
 });

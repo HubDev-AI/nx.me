@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View, StyleSheet, Platform } from "react-native";
+import { View, Text, StyleSheet, Platform, Pressable } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,14 +10,20 @@ import Animated, {
   withSequence,
   withTiming,
   Easing,
+  interpolate,
+  Extrapolation,
 } from "react-native-reanimated";
+import { BottomTabBar, type BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
 import {
   TAB_INACTIVE_COLOR,
   BG_PAGE,
+  TEXT_PRIMARY,
   COLORS,
 } from "../../constants/colors";
 import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
+import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -61,29 +67,67 @@ function TabIcon({ name, color, focused, accentColor }: TabIconProps) {
 
   return (
     <View style={styles.iconContainer} accessible={false}>
-      <Animated.View style={iconStyle}>
-        <Ionicons name={name} size={24} color={color} />
-      </Animated.View>
-      {/* Glow dot under active icon */}
-      <Animated.View
-        style={[
-          styles.glowDot,
-          {
-            backgroundColor: accentColor,
-            shadowColor: accentColor,
-          },
-          glowDotStyle,
-        ]}
-      />
+      <Ionicons name={name} size={24} color={color} />
     </View>
   );
 }
 
-export default function TabLayout() {
+/** Custom animated tab bar that slides down when the user scrolls */
+function AnimatedTabBar(props: BottomTabBarProps) {
+  const { tabBarTranslateY } = useTabBar();
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: tabBarTranslateY.value }],
+  }));
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <BottomTabBar {...props} />
+    </Animated.View>
+  );
+}
+
+/** Small floating pill that appears when the tab bar is hidden */
+function ScrollToTopPill() {
+  const { tabBarTranslateY, scrollToTop } = useTabBar();
+  const { theme } = useTheme();
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      tabBarTranslateY.value,
+      [50, 100],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity,
+      // Keep it non-interactive when invisible
+      pointerEvents: opacity > 0.1 ? "auto" : "none",
+    } as any;
+  });
+
+  return (
+    <Animated.View style={[styles.scrollToTopContainer, animatedStyle]}>
+      <Pressable
+        onPress={scrollToTop}
+        style={[styles.scrollToTopPill, { backgroundColor: theme.accent }]}
+        accessibilityLabel="Scroll to top"
+        accessibilityRole="button"
+      >
+        <Ionicons name="arrow-up" size={16} color="#0a0a0a" />
+        <Text style={styles.scrollToTopText}>Top</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function TabLayoutInner() {
   const { theme } = useTheme();
 
   return (
+    <>
     <Tabs
+      tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={{
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
@@ -106,10 +150,13 @@ export default function TabLayout() {
           paddingBottom: 0,
         },
         tabBarShowLabel: false,
-        headerStyle: {
-          backgroundColor: BG_PAGE,
+        tabBarIconStyle: {
+          flex: 1,
         },
-        headerTintColor: COLORS.neutral.dark[900],
+        headerStyle: {
+          backgroundColor: "#0a0a0a",
+        },
+        headerTintColor: "#e8e8e8",
         headerShadowVisible: false,
       }}
     >
@@ -117,6 +164,19 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
+          headerTitle: () => (
+            <Text
+              style={{
+                fontFamily: FONTS.bodyMedium,
+                fontSize: 11,
+                letterSpacing: 4,
+                color: "rgba(255,255,255,0.7)",
+                textTransform: "uppercase",
+              }}
+            >
+              N X M E
+            </Text>
+          ),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               name={focused ? "home" : "home-outline"}
@@ -171,6 +231,16 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    <ScrollToTopPill />
+    </>
+  );
+}
+
+export default function TabLayout() {
+  return (
+    <TabBarProvider>
+      <TabLayoutInner />
+    </TabBarProvider>
   );
 }
 
@@ -179,15 +249,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     width: 48,
-    height: 48,
   },
   glowDot: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    marginTop: 4,
+    marginTop: 3,
     shadowOffset: { width: 0, height: 0 },
     shadowRadius: 6,
     elevation: 4,
+  },
+  scrollToTopContainer: {
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 28 : 20,
+    alignSelf: "center",
+    zIndex: 100,
+  },
+  scrollToTopPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  scrollToTopText: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 13,
+    color: "#0a0a0a",
+    letterSpacing: 0.5,
   },
 });

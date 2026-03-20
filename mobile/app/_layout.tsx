@@ -6,7 +6,7 @@ import * as Linking from "expo-linking";
 import { View, Platform } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
 
-import * as SecureStore from "expo-secure-store";
+import { deleteItem } from "../lib/secure-storage";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
@@ -48,32 +48,31 @@ export default function RootLayout() {
   useEffect(() => {
     async function initialize() {
       let authed = false;
+
+      // 1. Check stored JWT first — this determines auth state
       try {
-        await getOrCreateGuestToken();
-
-        registerForPushNotifications().catch(() => {});
-
         const jwt = await getStoredJwt();
         if (jwt) {
-          try {
-            const parts = jwt.split(".");
-            if (!parts[1]) throw new Error("malformed JWT");
-            const payload = JSON.parse(atob(parts[1]));
-            if (payload.exp && payload.exp * 1000 < Date.now()) {
-              await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
-            } else {
-              authed = true;
-            }
-          } catch {
-            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
+          const parts = jwt.split(".");
+          if (!parts[1]) throw new Error("malformed JWT");
+          const payload = JSON.parse(atob(parts[1]));
+          if (payload.exp && payload.exp * 1000 < Date.now()) {
+            await deleteItem(SECURE_STORE_KEYS.JWT);
+          } else {
+            authed = true;
           }
         }
-      } catch (error) {
-        console.warn("App initialization failed");
-      } finally {
-        setInitialAuth(authed);
-        setIsReady(true);
+      } catch {
+        // Corrupted JWT — clear it, user will re-login
+        try { await deleteItem(SECURE_STORE_KEYS.JWT); } catch {}
       }
+
+      // 2. Non-critical init — never blocks auth
+      getOrCreateGuestToken().catch(() => {});
+      registerForPushNotifications().catch(() => {});
+
+      setInitialAuth(authed);
+      setIsReady(true);
     }
 
     initialize();

@@ -8,6 +8,7 @@ import {
   BG_ELEVATED,
 } from "../../constants/colors";
 import { formatCount } from "../../lib/format";
+import { FONTS } from "../../hooks/useFonts";
 
 const PRESS_SCALE = 0.9;
 const ANIMATION_DURATION_MS = 150;
@@ -82,15 +83,14 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     minHeight: MIN_TOUCH_TARGET,
     minWidth: MIN_TOUCH_TARGET,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: BG_ELEVATED,
   },
   count: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
     fontWeight: "600",
   },

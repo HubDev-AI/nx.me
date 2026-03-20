@@ -13,6 +13,7 @@ import {
   Share,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 
 import {
   BG_CARD,
@@ -58,6 +59,7 @@ export const FeedCard = React.memo(function FeedCard({
   onBlock,
   onCommentPress,
 }: FeedCardProps) {
+  const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateAnim = useRef(new Animated.Value(20)).current;
 
@@ -98,6 +100,23 @@ export const FeedCard = React.memo(function FeedCard({
   const handleComment = useCallback(() => {
     onCommentPress(post.post_id);
   }, [onCommentPress, post.post_id]);
+
+  const handlePostPress = useCallback(() => {
+    router.push({
+      pathname: "/post/[postId]",
+      params: {
+        postId: post.post_id,
+        beforeImage: post.before_image_url,
+        afterImage: post.after_image_url,
+        caption: post.caption ?? "",
+        displayName: post.display_name ?? "",
+        reactionCount: String(post.reaction_count),
+        commentCount: String(post.comment_count),
+        timeAgo: formatTimeAgo(post.created_at),
+        hasReacted: String(hasReacted),
+      },
+    });
+  }, [router, post]);
 
   const handleLongPress = useCallback(() => {
     const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${post.post_id}`;
@@ -155,14 +174,16 @@ export const FeedCard = React.memo(function FeedCard({
         },
       ]}
     >
-      <Pressable
-        onLongPress={handleLongPress}
-        delayLongPress={LONG_PRESS_DELAY_MS}
+      <View
         accessibilityLabel={`Post${post.caption ? `: ${post.caption}` : ""}, ${post.reaction_count} reactions, ${post.comment_count} comments, ${timeAgo}`}
-        accessibilityRole="button"
-        accessibilityHint="Long press for share, block, and report options"
       >
         {/* Before / After images side by side */}
+        <Pressable
+          onPress={handlePostPress}
+          onLongPress={handleLongPress}
+          delayLongPress={LONG_PRESS_DELAY_MS}
+          accessibilityHint="Tap to view post. Long press for share, block, and report options"
+        >
         <View style={styles.imageRow}>
           <View style={styles.imageContainer}>
             <Image
@@ -197,8 +218,9 @@ export const FeedCard = React.memo(function FeedCard({
             {post.caption}
           </Text>
         ) : null}
+        </Pressable>
 
-        {/* Actions row */}
+        {/* Actions row — outside the long-press Pressable to avoid button-in-button */}
         <View style={styles.actionsRow}>
           <ReactionButton
             reactionCount={post.reaction_count}
@@ -222,17 +244,17 @@ export const FeedCard = React.memo(function FeedCard({
 
           <Text style={styles.timestamp}>{timeAgo}</Text>
         </View>
-      </Pressable>
+      </View>
     </Animated.View>
   );
 });
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: "rgba(17, 17, 17, 0.72)",
+    backgroundColor: "#111111",
     borderRadius: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
+    marginHorizontal: 20,
+    marginBottom: 20,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.06)",
@@ -274,7 +296,7 @@ const styles = StyleSheet.create({
     backgroundColor: AFTER_OVERLAY_STRONG,
   },
   imageLabelText: {
-    fontFamily: FONTS.bodySemiBold,
+    fontFamily: FONTS.bodyMedium,
     fontSize: 11,
     fontWeight: "700",
     color: "#F8F8F8",
@@ -286,37 +308,36 @@ const styles = StyleSheet.create({
   },
   caption: {
     fontFamily: FONTS.body,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     color: TEXT_PRIMARY,
-    paddingHorizontal: 12,
-    paddingTop: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 12,
   },
   commentBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 5,
     minHeight: 44,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: BG_ELEVATED,
   },
   commentCount: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
     fontWeight: "600",
     color: TEXT_SECONDARY,
   },
   timestamp: {
     fontFamily: FONTS.body,
-    fontSize: 12,
+    fontSize: 13,
     color: TEXT_SECONDARY,
     marginLeft: "auto",
   },

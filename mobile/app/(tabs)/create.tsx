@@ -71,8 +71,6 @@ export default function CreateScreen() {
 
   return (
     <View style={styles.container}>
-      <HeroBackground />
-      <FloatingParticles />
 
       {/* Sparkle icon with glow */}
       <Animated.View

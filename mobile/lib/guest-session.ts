@@ -1,26 +1,34 @@
-import * as SecureStore from "expo-secure-store";
-import * as Crypto from "expo-crypto";
-
+import { Platform } from "react-native";
+import { getItem, setItem } from "./secure-storage";
 import { SECURE_STORE_KEYS } from "../constants/config";
 
 /**
- * Retrieve existing guest token from SecureStore, or create and persist a new one.
- * Uses cryptographically secure random bytes (32 bytes = 256 bits).
+ * Retrieve existing guest token or create a new one.
+ * Web: uses crypto.randomUUID() or Math.random fallback.
+ * Native: uses expo-crypto for secure random bytes.
  */
 export async function getOrCreateGuestToken(): Promise<string> {
-  const existing = await SecureStore.getItemAsync(
-    SECURE_STORE_KEYS.GUEST_TOKEN,
-  );
-  if (existing) {
-    return existing;
+  const existing = await getItem(SECURE_STORE_KEYS.GUEST_TOKEN);
+  if (existing) return existing;
+
+  let token: string;
+
+  if (Platform.OS === "web") {
+    // Web: use browser crypto API
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      token = crypto.randomUUID() + crypto.randomUUID();
+    } else {
+      token = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  } else {
+    // Native: use expo-crypto
+    const Crypto = require("expo-crypto");
+    const randomBytes = await Crypto.getRandomBytesAsync(32);
+    token = Array.from(randomBytes as Uint8Array)
+      .map((b: number) => b.toString(16).padStart(2, "0"))
+      .join("");
   }
 
-  // Generate 32 cryptographically secure random bytes
-  const randomBytes = await Crypto.getRandomBytesAsync(32);
-  const token = Array.from(randomBytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  await SecureStore.setItemAsync(SECURE_STORE_KEYS.GUEST_TOKEN, token);
+  await setItem(SECURE_STORE_KEYS.GUEST_TOKEN, token);
   return token;
 }

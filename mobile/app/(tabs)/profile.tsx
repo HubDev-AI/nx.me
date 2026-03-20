@@ -125,8 +125,6 @@ export default function ProfileScreen() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <HeroBackground />
-        <FloatingParticles />
         <Ionicons
           name="person-circle-outline"
           size={64}
@@ -218,8 +216,6 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <HeroBackground />
-      <FloatingParticles />
       {/* Single FlatList: profile header + glow-up grid — no nested ScrollView */}
       <GlowUpGrid
         items={glowUps}
@@ -280,9 +276,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   signInButtonText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    color: "#0a0a0a",
   },
   loadingText: {
     fontFamily: FONTS.body,
@@ -306,7 +302,7 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: CTA_PRIMARY,
-    borderRadius: 10,
+    borderRadius: 9999,
     paddingHorizontal: 24,
     paddingVertical: 12,
     minHeight: MIN_TOUCH_TARGET,
@@ -314,9 +310,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   retryButtonText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    color: "#0a0a0a",
   },
   logoutButton: {
     flexDirection: "row",
