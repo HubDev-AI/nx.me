@@ -36,9 +36,9 @@ body {
   font-family: var(--font-display), Georgia, 'Times New Roman', serif;
 }
 
-/* ── Accent color — one, used sparingly ── */
-.text-accent { color: #F43F5E; }
-.bg-accent { background-color: #F43F5E; }
+/* ── Accent color — driven by --accent CSS variable, fallback to rose ── */
+.text-accent { color: var(--accent, #F43F5E); }
+.bg-accent { background-color: var(--accent, #F43F5E); }
 
 /* ── Scroll-snap for immersive sections ── */
 @supports (scroll-snap-type: y mandatory) {

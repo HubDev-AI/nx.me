@@ -6,48 +6,51 @@ import { RECOMMENDATIONS_DISPLAY_COUNT } from '@/config/constants';
  */
 export default function CardLoading() {
   return (
-    <main className="relative min-h-screen bg-surface-page py-12 px-4 overflow-hidden">
-      {/* Ambient background — matches card page */}
-      <div
-        className="ambient-orb w-[500px] h-[500px] bg-after-500/[0.06] -top-60 left-1/2 -translate-x-1/2"
-        aria-hidden="true"
-      />
-
-      <div className="relative z-10 max-w-2xl mx-auto space-y-10 animate-pulse">
+    <main className="min-h-screen bg-[#0a0a0a] py-16 px-6 sm:px-12">
+      <div className="max-w-2xl mx-auto animate-pulse">
         {/* Header skeleton */}
-        <div className="text-center space-y-2">
-          <div className="h-8 w-44 bg-surface-elevated rounded-lg mx-auto" />
-          <div className="h-4 w-28 bg-surface-elevated/60 rounded mx-auto" />
+        <div className="text-center mb-10">
+          <div className="h-10 w-48 bg-[#181818] rounded-lg mx-auto" />
+          <div className="h-4 w-28 bg-[#141414] rounded mt-3 mx-auto" />
         </div>
 
         {/* Before/After image skeletons */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="aspect-[3/4] rounded-3xl bg-surface-elevated" />
-          <div className="aspect-[3/4] rounded-3xl bg-surface-elevated ring-1 ring-after-500/10" />
+        <div className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="aspect-[3/4] rounded-xl bg-[#181818]" />
+          <div className="aspect-[3/4] rounded-xl bg-[#181818]" />
         </div>
 
         {/* Counts skeleton */}
-        <div className="flex justify-center gap-6">
-          <div className="h-4 w-24 bg-surface-elevated/60 rounded" />
-          <div className="h-4 w-24 bg-surface-elevated/60 rounded" />
+        <div className="flex justify-center gap-6 mt-8">
+          <div className="h-4 w-24 bg-[#141414] rounded" />
+          <div className="h-4 w-24 bg-[#141414] rounded" />
         </div>
 
         {/* Recommendations skeleton */}
-        <div className="space-y-4">
-          <div className="h-4 w-36 bg-surface-elevated/60 rounded" />
-          <div className="space-y-3">
+        <div className="mt-12">
+          <div className="h-3 w-36 bg-[#141414] rounded mb-8" />
+          <div className="space-y-0">
             {Array.from({ length: RECOMMENDATIONS_DISPLAY_COUNT }).map((_, i) => (
               <div
                 key={i}
-                className="h-[72px] rounded-2xl glass-card"
-              />
+                className={[
+                  'flex gap-4 py-5',
+                  i > 0 ? 'border-t border-white/[0.06]' : '',
+                ].join(' ')}
+              >
+                <div className="shrink-0 w-7 h-7 rounded-full bg-[#181818]" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-16 bg-[#181818] rounded" />
+                  <div className="h-4 w-full bg-[#141414] rounded" />
+                </div>
+              </div>
             ))}
           </div>
         </div>
 
         {/* CTA skeleton */}
-        <div className="px-2">
-          <div className="h-14 rounded-2xl bg-surface-elevated" />
+        <div className="mt-12">
+          <div className="h-12 rounded-full bg-[#181818]" />
         </div>
       </div>
     </main>

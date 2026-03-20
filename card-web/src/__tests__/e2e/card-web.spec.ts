@@ -536,7 +536,7 @@ test.describe('J) Card rendering pipeline', () => {
 
     // Check for skeleton markers
     expect(html).toContain('animate-pulse');
-    expect(html).toContain('glass-card');
+    expect(html).toContain('rounded-full');
   });
 
   test('page includes correct CSS class tokens from design system', async ({ request }) => {
@@ -544,17 +544,16 @@ test.describe('J) Card rendering pipeline', () => {
     const html = await response.text();
 
     // Verify design system classes are used
-    expect(html).toContain('bg-surface-page');
-    expect(html).toContain('text-content-primary');
+    expect(html).toContain('bg-[#0a0a0a]');
     expect(html).toContain('font-display');
-    expect(html).toContain('glow-shadow-cta');
+    expect(html).toContain('rounded-full');
   });
 
-  test('ambient orb decorative elements are in the SSR output', async ({ request }) => {
+  test('editorial design elements are in the SSR output', async ({ request }) => {
     const response = await request.get('/nonexistent_orb_test');
     const html = await response.text();
 
-    expect(html).toContain('ambient-orb');
+    expect(html).toContain('bg-[#0a0a0a]');
     expect(html).toContain('aria-hidden');
   });
 });

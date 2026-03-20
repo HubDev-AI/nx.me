@@ -22,8 +22,8 @@ interface CtaButtonProps {
  * Resolution order (all platforms):
  * 1. Attempt to open the installed app via Universal Link
  * 2. After APP_OPEN_TIMEOUT_MS with no app switch, redirect to the
- *    platform-appropriate store (iOS → App Store, Android → Play Store,
- *    Desktop → marketing/download page)
+ *    platform-appropriate store (iOS -> App Store, Android -> Play Store,
+ *    Desktop -> marketing/download page)
  *
  * The platform is resolved on the client after mount to avoid SSR/hydration
  * mismatch (navigator is not available server-side).
@@ -92,22 +92,10 @@ export function CtaButton({ username }: CtaButtonProps) {
       href={displayHref}
       onClick={mounted ? handleClick : undefined}
       aria-label="Get Your Free Glow-Up — open app or download"
-      className={[
-        'group relative block w-full text-center py-4 px-6 rounded-2xl overflow-hidden',
-        'text-base font-bold font-display tracking-wide text-white',
-        'bg-gradient-to-r from-after-600 via-after-500 to-glow',
-        'glow-shadow-cta',
-        'transition-all duration-200',
-        'hover:scale-[1.01] hover:glow-shadow-cta active:scale-[0.99]',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-after-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
-      ].join(' ')}
+      className="inline-flex items-center justify-center w-full gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-4 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+      style={{ backgroundColor: 'var(--accent)' }}
     >
-      {/* Shimmer effect on hover */}
-      <span
-        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        aria-hidden="true"
-      />
-      <span className="relative">Get Your Free Glow-Up &rarr;</span>
+      Get Your Free Glow-Up &rarr;
     </a>
   );
 }

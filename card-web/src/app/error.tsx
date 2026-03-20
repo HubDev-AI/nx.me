@@ -21,15 +21,11 @@ export default function GlobalError({ error, reset }: ErrorProps) {
   }, [error]);
 
   return (
-    <main className="relative flex flex-col items-center justify-center min-h-screen px-6 text-center space-y-5 bg-surface-page overflow-hidden">
-      <div
-        className="ambient-orb w-[300px] h-[300px] bg-after-500/[0.05] top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2"
-        aria-hidden="true"
-      />
-      <div className="relative z-10 space-y-5">
-        <div className="w-14 h-14 rounded-full flex items-center justify-center bg-after-500/10 ring-1 ring-after-500/20 mx-auto">
+    <main className="flex flex-col items-center justify-center min-h-screen px-6 text-center bg-[#0a0a0a]">
+      <div className="space-y-6">
+        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-[#181818] mx-auto">
           <svg
-            className="w-6 h-6 text-after-400"
+            className="w-5 h-5 text-[#555]"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -42,24 +38,17 @@ export default function GlobalError({ error, reset }: ErrorProps) {
           </svg>
         </div>
         <div className="space-y-2">
-          <h1 className="text-xl font-bold font-display text-content-primary">
+          <h1 className="font-display text-2xl text-white">
             Something went wrong
           </h1>
-          <p className="text-content-secondary text-sm max-w-xs">
+          <p className="text-[#888] text-sm max-w-xs leading-relaxed">
             We couldn&apos;t load this card. Please try again.
           </p>
         </div>
         <button
           onClick={reset}
-          className={[
-            'px-6 py-3 rounded-xl',
-            'bg-gradient-to-r from-after-600 via-after-500 to-glow',
-            'text-white text-sm font-semibold font-display',
-            'glow-shadow-cta',
-            'transition-all duration-200',
-            'hover:scale-[1.02] active:scale-[0.98]',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-after-400 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page',
-          ].join(' ')}
+          className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+          style={{ backgroundColor: 'var(--accent, #F43F5E)' }}
         >
           Try again
         </button>

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { CardView } from '@/components/card-view';
 import { CtaButton } from '@/components/cta-button';
+import { buildTheme } from '@/components/theme-provider';
 import {
   CARD_REVALIDATE_SECONDS,
   SITE_NAME,
@@ -72,6 +73,8 @@ export default async function CardPage({ params }: PageProps) {
     notFound();
   }
 
+  const t = buildTheme();
+
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Person',
@@ -84,17 +87,10 @@ export default async function CardPage({ params }: PageProps) {
   };
 
   return (
-    <main className="relative min-h-screen bg-surface-page py-12 px-4 overflow-hidden">
-      {/* Ambient background effects */}
-      <div
-        className="ambient-orb w-[500px] h-[500px] bg-after-500/[0.06] -top-60 left-1/2 -translate-x-1/2"
-        aria-hidden="true"
-      />
-      <div
-        className="ambient-orb w-[300px] h-[300px] bg-glow/[0.04] bottom-20 -right-20"
-        aria-hidden="true"
-      />
-
+    <main
+      className="min-h-screen bg-[#0a0a0a] text-[#e8e8e8] py-16 px-6 sm:px-12"
+      style={{ '--accent': t.accent } as React.CSSProperties}
+    >
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -102,18 +98,16 @@ export default async function CardPage({ params }: PageProps) {
         }}
       />
 
-      <div className="relative z-10 max-w-2xl mx-auto space-y-10">
+      <div className="max-w-2xl mx-auto">
         <CardView card={card} />
 
-        <div className="px-2">
+        <div className="mt-12">
           <CtaButton username={card.username} />
         </div>
 
-        <footer className="text-center text-xs text-content-disabled pb-4">
+        <footer className="mt-16 section-rule pt-6 text-center text-xs text-[#444]">
           Powered by{' '}
-          <span className="text-gradient-brand font-semibold font-display">
-            {SITE_NAME}
-          </span>
+          <span className="font-display text-white/60">{SITE_NAME}</span>
         </footer>
       </div>
     </main>
