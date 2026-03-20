@@ -29,6 +29,7 @@ import { AuthInput } from "../../components/auth/AuthInput";
 import { AuthButton } from "../../components/auth/AuthButton";
 import { SocialLoginButtons } from "../../components/auth/SocialLoginButtons";
 import { useSocialAuth } from "../../hooks/useSocialAuth";
+import { useAuth } from "../../lib/auth-context";
 
 // Futuristic UI components
 import { HeroBackground } from "../../components/ui/HeroBackground";
@@ -55,6 +56,7 @@ interface FieldErrors {
 export default function SignupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { setUsername: setAuthUsername } = useAuth();
   const { card: rawCard } = useLocalSearchParams<{ card?: string }>();
   // Validate card param against username pattern before rendering (M-15)
   const card = rawCard && AUTH_VALIDATION.USERNAME_PATTERN.test(rawCard) ? rawCard : undefined;
@@ -165,6 +167,9 @@ export default function SignupScreen() {
           display_name: displayName.trim(),
         }),
       });
+
+      // Persist the username so login can resolve it later
+      setAuthUsername(username.trim());
 
       setScreenState("verification");
     } catch (err) {

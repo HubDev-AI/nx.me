@@ -19,7 +19,7 @@ import {
   ERROR_DARK,
 } from "../../constants/colors";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
-import { getStoredJwt, clearAllTokens } from "../../lib/auth";
+import { clearAllTokens } from "../../lib/auth";
 import { HeroBackground } from "../../components/ui/HeroBackground";
 import { FloatingParticles } from "../../components/ui/FloatingParticles";
 import { useTheme } from "../../lib/theme-context";
@@ -38,9 +38,8 @@ import type { UpdateProfilePayload } from "../../components/profile/types";
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { setAuthenticated: setGlobalAuth } = useAuth();
+  const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth } = useAuth();
   const { theme } = useTheme();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [editSheetVisible, setEditSheetVisible] = useState(false);
 
   const {
@@ -59,25 +58,12 @@ export default function ProfileScreen() {
     updateProfile,
   } = useProfile();
 
-  // Check auth state on mount
+  // Load profile when authenticated and username is known
   useEffect(() => {
-    let cancelled = false;
-    getStoredJwt().then((jwt) => {
-      if (!cancelled) {
-        setIsAuthenticated(jwt !== null);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Load profile when authenticated
-  useEffect(() => {
-    if (isAuthenticated && profile === null) {
-      loadProfile("me");
+    if (isAuthenticated && authUsername && profile === null) {
+      loadProfile(authUsername);
     }
-  }, [isAuthenticated, profile, loadProfile]);
+  }, [isAuthenticated, authUsername, profile, loadProfile]);
 
   const handleRefresh = useCallback(() => {
     if (profile) {
@@ -112,15 +98,6 @@ export default function ProfileScreen() {
     [profile, updateProfile],
   );
 
-  // Auth check loading
-  if (isAuthenticated === null) {
-    return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={CTA_PRIMARY} />
-      </View>
-    );
-  }
-
   // Not signed in
   if (!isAuthenticated) {
     return (
@@ -141,6 +118,34 @@ export default function ProfileScreen() {
           accessibilityRole="button"
         >
           <Text style={styles.signInButtonText}>Sign In</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // Authenticated but username not yet resolved
+  if (!authUsername) {
+    return (
+      <View style={[styles.centered, { paddingTop: insets.top }]}>
+        <Ionicons
+          name="person-circle-outline"
+          size={64}
+          color={TEXT_DISABLED}
+        />
+        <Text style={styles.signInTitle}>Complete your profile</Text>
+        <Text style={styles.signInSubtitle}>
+          We couldn't determine your username. Please log out and sign in again,
+          or register a new account.
+        </Text>
+        <Pressable
+          onPress={handleLogout}
+          style={styles.logoutButton}
+          accessibilityLabel="Log out"
+          accessibilityRole="button"
+          testID="logout-button"
+        >
+          <Ionicons name="log-out-outline" size={20} color={ERROR_DARK} />
+          <Text style={styles.logoutText}>Log out</Text>
         </Pressable>
       </View>
     );
@@ -167,14 +172,16 @@ export default function ProfileScreen() {
         />
         <Text style={styles.errorTitle}>Something went wrong</Text>
         <Text style={styles.errorMessage}>{error}</Text>
-        <Pressable
-          onPress={() => loadProfile("me")}
-          style={styles.retryButton}
-          accessibilityLabel="Retry loading profile"
-          accessibilityRole="button"
-        >
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </Pressable>
+        {authUsername ? (
+          <Pressable
+            onPress={() => loadProfile(authUsername)}
+            style={styles.retryButton}
+            accessibilityLabel="Retry loading profile"
+            accessibilityRole="button"
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={handleLogout}
           style={styles.logoutButton}

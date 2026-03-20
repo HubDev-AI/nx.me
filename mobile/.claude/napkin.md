@@ -6,6 +6,7 @@
 | 2026-03-20 | Investigation | `tabBarItemStyle` with `justifyContent: 'center'` does NOT fix vertical centering -- it applies to the outer wrapper View, not the inner pressable where `justifyContent: 'flex-start'` is hardcoded | Use `tabBarIconStyle: { flex: 1 }` to expand the icon wrapper to fill the tab item height; the absolute-positioned icon children already center themselves |
 
 ## User Preferences
+- ONE auth hook (`useAuth`) used everywhere -- no ad-hoc auth state management
 
 ## Patterns That Work
 - `tabBarIconStyle: { flex: 1 }` fixes vertical centering when `tabBarShowLabel: false` in React Navigation bottom tabs
@@ -20,6 +21,12 @@
 - Padding workarounds to compensate for misaligned flex layouts
 
 ## Domain Notes
+- Backend POST /v1/auth/email-login returns `{ user_id, access_token, refresh_token, expires_at }` -- NO username
+- Backend POST /v1/auth/register returns `{ message, email }` -- username is known from the request, not the response
+- No /v1/auth/me or /v1/users/me endpoint exists -- profile requires actual username in path
+- Username resolution strategy: persist during registration, read from secure storage on login, fallback to email-prefix guess verified against profile API
+- `nxme_username` key in secure storage is the canonical location for the current user's username
+- auth-context.tsx manages username in state + secure storage; clears on logout
 - React Navigation BottomTabItem (uikit variant, vertical layout) uses `justifyContent: 'flex-start'` on the inner pressable because it expects icon + label stacked vertically
 - When `showLabel: false`, the label renders null but the flex-start layout remains, pushing the icon to the top
 - The icon is rendered inside TabBarIcon which has a fixed-size wrapper (31x28 for uikit); children are absolute-positioned with `height: '100%'` and `justifyContent: 'center'`

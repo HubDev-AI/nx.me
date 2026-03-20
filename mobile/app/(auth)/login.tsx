@@ -45,7 +45,7 @@ interface FieldErrors {
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { setAuthenticated } = useAuth();
+  const { setAuthenticated, setUsername } = useAuth();
   const { theme } = useTheme();
 
   const [email, setEmail] = useState("");
@@ -96,6 +96,20 @@ export default function LoginScreen() {
     return Object.keys(fieldErrors).length === 0;
   }, [email, password]);
 
+  /**
+   * After storing the JWT, fetch the user's profile via GET /v1/auth/me.
+   */
+  const resolveUsername = useCallback(async () => {
+    try {
+      const me = await apiFetch<{ username: string }>("/v1/auth/me");
+      if (me?.username) {
+        setUsername(me.username);
+      }
+    } catch {
+      // /me failed — username stays null, profile screen will handle it
+    }
+  }, [setUsername]);
+
   const handleLogin = useCallback(async () => {
     if (!validate()) return;
 
@@ -115,6 +129,10 @@ export default function LoginScreen() {
       if (response.refresh_token) {
         await storeRefreshToken(response.refresh_token);
       }
+
+      // Resolve username before marking authenticated so profile can load immediately
+      await resolveUsername();
+
       setAuthenticated(true);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -131,7 +149,7 @@ export default function LoginScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [email, password, validate, router]);
+  }, [email, password, validate, resolveUsername, setAuthenticated]);
 
   const isAnyLoading = isLoading || isSocialLoading;
 
