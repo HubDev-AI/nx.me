@@ -46,7 +46,9 @@ class SubscriptionRepository:
             .maybe_single()
             .execute()
         )
-        return result.data["user_id"] if result.data else None
+        if not result or not result.data:
+            return None
+        return result.data["user_id"]
 
     # ------------------------------------------------------------------
     # subscriptions table — writes

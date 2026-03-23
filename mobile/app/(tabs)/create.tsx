@@ -1,99 +1,331 @@
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import Animated, {
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-  CTA_PRESSED,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { PageBackground } from "../../components/ui/PageBackground";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 
-/**
- * Create tab — navigates to the upload screen.
- * Shows a quick CTA; tapping the tab or the button routes to /upload.
- */
+/* ------------------------------------------------------------------ */
+/*  Feature definitions                                                */
+/* ------------------------------------------------------------------ */
+
+interface Feature {
+  key: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  name: string;
+  description: string;
+  active: boolean;
+  route?: string;
+}
+
+const FEATURES: Feature[] = [
+  {
+    key: "glow-up",
+    icon: "sparkles",
+    name: "Glow Up",
+    description: "AI-powered style transformation",
+    active: true,
+    route: "/upload",
+  },
+  {
+    key: "style-check",
+    icon: "shirt-outline",
+    name: "Style Check",
+    description: "Get feedback on your outfit",
+    active: false,
+  },
+  {
+    key: "skin-care",
+    icon: "water-outline",
+    name: "Skin Care",
+    description: "Personalized skincare routine",
+    active: false,
+  },
+  {
+    key: "hair-style",
+    icon: "cut-outline",
+    name: "Hair Style",
+    description: "Find your perfect hairstyle",
+    active: false,
+  },
+];
+
+/* ------------------------------------------------------------------ */
+/*  Feature card with spring press scale                               */
+/* ------------------------------------------------------------------ */
+
+function FeatureCard({
+  feature,
+  index,
+  onPress,
+  accent,
+}: {
+  feature: Feature;
+  index: number;
+  onPress: (f: Feature) => void;
+  accent: string;
+}) {
+  const isActive = feature.active;
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View
+      key={feature.key}
+      entering={FadeInDown.duration(THEME.animation.duration.normal).delay(240 + index * 50)}
+      style={styles.gridCell}
+    >
+      <Animated.View style={pressStyle}>
+        <Pressable
+          onPress={() => onPress(feature)}
+          onPressIn={() => {
+            if (isActive) scale.value = withSpring(0.97, THEME.animation.press);
+          }}
+          onPressOut={() => {
+            scale.value = withSpring(1, THEME.animation.press);
+          }}
+          disabled={!isActive}
+          style={[
+            styles.box,
+            isActive
+              ? [
+                  {
+                    borderColor: accent + "4D",
+                    backgroundColor: accent + "0F",
+                  },
+                  THEME.shadow.glow(accent),
+                ]
+              : styles.boxInactive,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isActive
+              ? feature.name
+              : `${feature.name} - coming soon`
+          }
+          accessibilityState={{ disabled: !isActive }}
+        >
+          {/* Icon wrapper with accent tint background for active */}
+          <View style={[
+            styles.iconWrapper,
+            isActive
+              ? { backgroundColor: accent + "1A" }
+              : { backgroundColor: THEME.colors.surfaceElevated },
+          ]}>
+            <Ionicons
+              name={feature.icon}
+              size={32}
+              color={isActive ? accent : THEME.colors.textMuted}
+            />
+          </View>
+
+          <Text
+            style={[
+              styles.featureName,
+              !isActive && styles.featureNameInactive,
+            ]}
+          >
+            {feature.name}
+          </Text>
+
+          <Text
+            style={[
+              styles.featureDesc,
+              !isActive && styles.featureDescInactive,
+            ]}
+          >
+            {feature.description}
+          </Text>
+
+          {!isActive && (
+            <View style={styles.comingSoonBadge}>
+              <Text style={styles.comingSoon}>COMING SOON</Text>
+            </View>
+          )}
+        </Pressable>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Screen                                                             */
+/* ------------------------------------------------------------------ */
+
 export default function CreateScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
-  const handlePress = () => {
-    router.push("/upload");
+  const handleFeaturePress = (feature: Feature) => {
+    if (feature.active && feature.route) {
+      router.push(feature.route as `/${string}`);
+    }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.iconCircle}>
-        <Ionicons name="sparkles" size={28} color="#FFFFFF" />
-      </View>
-      <Text style={styles.title}>Create your glow-up</Text>
-      <Text style={styles.subtitle}>
-        Upload a photo and get AI-powered style suggestions
-      </Text>
-      <Pressable
-        onPress={handlePress}
-        style={({ pressed }) => [
-          styles.ctaButton,
-          pressed && styles.ctaButtonPressed,
+      <PageBackground overlayOpacity={0.85} />
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + THEME.spacing.xxl, paddingBottom: 90 },
         ]}
-        accessibilityLabel="Upload a photo for glow-up"
-        accessibilityRole="button"
+        showsVerticalScrollIndicator={false}
       >
-        <Ionicons name="camera-outline" size={20} color="#FFFFFF" />
-        <Text style={styles.ctaText}>Upload Photo</Text>
-      </Pressable>
+        {/* Header */}
+        <Animated.Text
+          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(80)}
+          style={styles.title}
+        >
+          Create
+        </Animated.Text>
+        <Animated.Text
+          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(160)}
+          style={styles.subtitle}
+        >
+          What would you like to do?
+        </Animated.Text>
+
+        {/* Divider below subtitle */}
+        <Animated.View
+          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(200)}
+          style={styles.subtitleDivider}
+        />
+
+        {/* 2-column grid */}
+        <View style={styles.grid}>
+          {FEATURES.map((feature, index) => (
+            <FeatureCard
+              key={feature.key}
+              feature={feature}
+              index={index}
+              onPress={handleFeaturePress}
+              accent={theme.accent}
+            />
+          ))}
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Styles                                                             */
+/* ------------------------------------------------------------------ */
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
+    backgroundColor: THEME.colors.bg,
   },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: COLORS.after[500],
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
+  scrollContent: {
+    paddingHorizontal: THEME.spacing.xl,
   },
+
+  /* Header */
   title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginBottom: 8,
+    fontFamily: FONTS.display,
+    fontSize: 32,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.headingLg.letterSpacing,
+    marginBottom: THEME.spacing.xs,
   },
   subtitle: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 22,
+    fontFamily: FONTS.body,
+    fontSize: 15,
+    color: THEME.colors.textSecondary,
+    letterSpacing: THEME.typography.body.letterSpacing,
+    marginBottom: THEME.spacing.lg,
   },
-  ctaButton: {
+
+  /* Subtitle divider */
+  subtitleDivider: {
+    height: 1,
+    backgroundColor: THEME.colors.glassBorder,
+    marginBottom: THEME.spacing.xl,
+  },
+
+  /* Grid */
+  grid: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    marginHorizontal: -6,
+  },
+  gridCell: {
+    width: "50%",
+    paddingHorizontal: 6,
+    marginBottom: THEME.spacing.md,
+  },
+
+  /* Box shared */
+  box: {
+    borderWidth: 1,
+    borderRadius: THEME.radius.lg,
+    padding: THEME.spacing.lg,
+    aspectRatio: 1,
+    justifyContent: "flex-start",
+  },
+  boxInactive: {
+    backgroundColor: THEME.colors.surface,
+    borderColor: THEME.colors.border,
+  },
+
+  /* Icon wrapper — circular background behind icon */
+  iconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: THEME.radius.md,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    gap: 8,
-    minHeight: 48,
+    marginBottom: THEME.spacing.md,
   },
-  ctaButtonPressed: {
-    backgroundColor: CTA_PRESSED,
+
+  /* Feature text */
+  featureName: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 15,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginBottom: THEME.spacing.xs,
   },
-  ctaText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
+  featureNameInactive: {
+    color: THEME.colors.textMuted,
+  },
+  featureDesc: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    lineHeight: 16,
+  },
+  featureDescInactive: {
+    color: THEME.colors.textDisabled,
+  },
+
+  /* Coming soon badge */
+  comingSoonBadge: {
+    marginTop: "auto",
+    alignSelf: "flex-start",
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.sm,
+    paddingHorizontal: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.xs / 2,
+  },
+  comingSoon: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 9,
+    color: THEME.colors.textMuted,
+    letterSpacing: 1.2,
   },
 });

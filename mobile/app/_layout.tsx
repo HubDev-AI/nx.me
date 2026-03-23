@@ -3,18 +3,21 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
-import { View } from "react-native";
-import { StripeProvider } from "@stripe/stripe-react-native";
+import { View, Platform } from "react-native";
+import { StripeProvider } from "../lib/stripe-web-shim";
 
-import * as SecureStore from "expo-secure-store";
+import { deleteItem, getItem } from "../lib/secure-storage";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
-import { BG_PAGE } from "../constants/colors";
+import { THEME } from "../constants/theme";
 import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "../constants/config";
+import { ThemeProvider } from "../lib/theme-context";
+import { useAppFonts } from "../hooks/useFonts";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
@@ -26,11 +29,21 @@ function AuthGuard() {
 
   useEffect(() => {
     const inAuthGroup = segments[0] === "(auth)";
+    const onOnboarding = segments[0] === "onboarding";
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (isAuthenticated && inAuthGroup) {
-      router.replace("/(tabs)");
+      // Coming from login/register — check if onboarding has been completed
+      getItem("nxme_onboarding_complete").then((value) => {
+        if (!value) {
+          router.replace("/onboarding");
+        } else {
+          router.replace("/(tabs)");
+        }
+      });
+    } else if (isAuthenticated && !inAuthGroup && !onOnboarding) {
+      // Already in main app — nothing to do
     }
   }, [isAuthenticated, segments]);
 
@@ -40,37 +53,37 @@ function AuthGuard() {
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [initialAuth, setInitialAuth] = useState(false);
+  const fontsLoaded = useAppFonts();
 
   // Cold start initialization
   useEffect(() => {
     async function initialize() {
       let authed = false;
+
+      // 1. Check stored JWT first — this determines auth state
       try {
-        await getOrCreateGuestToken();
-
-        registerForPushNotifications().catch(() => {});
-
         const jwt = await getStoredJwt();
         if (jwt) {
-          try {
-            const parts = jwt.split(".");
-            if (!parts[1]) throw new Error("malformed JWT");
-            const payload = JSON.parse(atob(parts[1]));
-            if (payload.exp && payload.exp * 1000 < Date.now()) {
-              await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
-            } else {
-              authed = true;
-            }
-          } catch {
-            await SecureStore.deleteItemAsync(SECURE_STORE_KEYS.JWT);
+          const parts = jwt.split(".");
+          if (!parts[1]) throw new Error("malformed JWT");
+          const payload = JSON.parse(atob(parts[1]));
+          if (payload.exp && payload.exp * 1000 < Date.now()) {
+            await deleteItem(SECURE_STORE_KEYS.JWT);
+          } else {
+            authed = true;
           }
         }
-      } catch (error) {
-        console.warn("App initialization failed");
-      } finally {
-        setInitialAuth(authed);
-        setIsReady(true);
+      } catch {
+        // Corrupted JWT — clear it, user will re-login
+        try { await deleteItem(SECURE_STORE_KEYS.JWT); } catch {}
       }
+
+      // 2. Non-critical init — never blocks auth
+      getOrCreateGuestToken().catch((err) => { if (__DEV__) console.warn("Guest token init failed:", err); });
+      registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });
+
+      setInitialAuth(authed);
+      setIsReady(true);
     }
 
     initialize();
@@ -87,27 +100,39 @@ export default function RootLayout() {
   }, []);
 
   const onLayoutReady = useCallback(async () => {
-    if (isReady) {
+    if (isReady && fontsLoaded) {
       await SplashScreen.hideAsync();
     }
-  }, [isReady]);
+  }, [isReady, fontsLoaded]);
 
-  if (!isReady) {
+  if (!isReady || !fontsLoaded) {
     return null;
   }
 
+  const inner = (
+    <View style={{ flex: 1, backgroundColor: THEME.colors.bg }} onLayout={onLayoutReady}>
+      <StatusBar style="light" />
+      <AuthGuard />
+    </View>
+  );
+
   return (
-    <AuthProvider initialAuth={initialAuth}>
-      <StripeProvider
-        publishableKey={STRIPE_PUBLISHABLE_KEY}
-        urlScheme="https"
-        merchantIdentifier={APPLE_MERCHANT_ID}
-      >
-        <View style={{ flex: 1, backgroundColor: BG_PAGE }} onLayout={onLayoutReady}>
-          <StatusBar style="light" />
-          <AuthGuard />
-        </View>
-      </StripeProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider initialAuth={initialAuth}>
+          {StripeProvider ? (
+            <StripeProvider
+              publishableKey={STRIPE_PUBLISHABLE_KEY}
+              urlScheme="https"
+              merchantIdentifier={APPLE_MERCHANT_ID}
+            >
+              {inner}
+            </StripeProvider>
+          ) : (
+            inner
+          )}
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

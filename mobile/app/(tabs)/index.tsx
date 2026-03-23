@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useRef } from "react";
 import {
   View,
   FlatList,
@@ -10,26 +10,31 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_PAGE,
-  CTA_PRIMARY,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { PageBackground } from "../../components/ui/PageBackground";
 import { FEED_CONFIG } from "../../constants/config";
 import { FeedCard } from "../../components/feed/FeedCard";
 import { FeedSkeleton } from "../../components/feed/FeedSkeleton";
 import { SortTabs } from "../../components/feed/SortTabs";
+import { EmailVerifyBanner } from "../../components/feed/EmailVerifyBanner";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
 import { useFeed } from "../../components/feed/useFeed";
 import type { FeedPost } from "../../components/feed/types";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
+import { hapticLight } from "../../lib/haptics";
+import { FONTS } from "../../hooks/useFonts";
+import { useTabBar } from "../../lib/tab-bar-context";
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<FeedPost>);
 
 /** Home / Feed tab — Story 5-4 */
 export default function HomeScreen() {
+  const { theme } = useTheme();
   const {
     posts,
     isLoading,
@@ -47,6 +52,17 @@ export default function HomeScreen() {
     incrementCommentCount,
     removePostsByUser,
   } = useFeed();
+
+  // Tab bar scroll integration
+  const { scrollHandler, registerScrollToTop } = useTabBar();
+  const flatListRef = useRef<FlatList<FeedPost>>(null);
+
+  useEffect(() => {
+    registerScrollToTop(() => {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    });
+    return () => registerScrollToTop(null);
+  }, [registerScrollToTop]);
 
   // Comments sheet state
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
@@ -151,7 +167,7 @@ export default function HomeScreen() {
     if (!isLoadingMore) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="small" color={CTA_PRIMARY} />
+        <ActivityIndicator size="small" color={theme.accent} />
       </View>
     );
   }, [isLoadingMore]);
@@ -161,16 +177,16 @@ export default function HomeScreen() {
     if (error) {
       return (
         <View style={styles.emptyContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color={TEXT_SECONDARY} />
+          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
           <Text style={styles.emptyTitle}>Something went wrong</Text>
           <Text style={styles.emptySubtitle}>{error}</Text>
           <Pressable
             onPress={loadFeed}
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Retry loading feed"
             accessibilityRole="button"
           >
-            <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
             <Text style={styles.retryText}>Try Again</Text>
           </Pressable>
         </View>
@@ -178,7 +194,7 @@ export default function HomeScreen() {
     }
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons name="images-outline" size={48} color={TEXT_SECONDARY} />
+        <Ionicons name="images-outline" size={48} color={THEME.colors.textSecondary} />
         <Text style={styles.emptyTitle}>No posts yet</Text>
         <Text style={styles.emptySubtitle}>
           Be the first to share your glow-up
@@ -188,7 +204,12 @@ export default function HomeScreen() {
   }, [isLoading, error, loadFeed]);
 
   const renderHeader = useCallback(
-    () => <SortTabs activeSort={activeSort} onSortChange={changeSort} />,
+    () => (
+      <>
+        <EmailVerifyBanner />
+        <SortTabs activeSort={activeSort} onSortChange={changeSort} />
+      </>
+    ),
     [activeSort, changeSort],
   );
 
@@ -196,6 +217,7 @@ export default function HomeScreen() {
   if (isLoading && posts.length === 0) {
     return (
       <View style={styles.container}>
+        <PageBackground overlayOpacity={0.88} />
         {renderHeader()}
         <FeedSkeleton />
       </View>
@@ -204,7 +226,9 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      <FlatList
+      <PageBackground overlayOpacity={0.88} />
+      <AnimatedFlatList
+        ref={flatListRef as any}
         data={posts}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
@@ -213,13 +237,15 @@ export default function HomeScreen() {
         ListEmptyComponent={renderEmpty}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={refresh}
-            colors={[CTA_PRIMARY]}
-            tintColor={CTA_PRIMARY}
-            progressBackgroundColor={BG_PAGE}
+            onRefresh={() => { hapticLight(); refresh(); }}
+            colors={[theme.accent]}
+            tintColor={theme.accent}
+            progressBackgroundColor={THEME.colors.bg}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -243,50 +269,50 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   listContent: {
     flexGrow: 1,
-    paddingBottom: 16,
+    paddingBottom: 90,
   },
   footer: {
-    paddingVertical: 20,
+    paddingVertical: THEME.spacing.xl,
     alignItems: "center",
   },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
+    paddingHorizontal: THEME.spacing.xxxl,
     paddingTop: 80,
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    fontFamily: FONTS.display,
+    ...THEME.typography.heading,
+    color: THEME.colors.textPrimary,
+    marginTop: THEME.spacing.lg,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.displayItalic,
+    fontSize: 15,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 22,
   },
   retryButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: CTA_PRIMARY,
+    gap: THEME.spacing.sm,
+    marginTop: THEME.spacing.xl,
+    paddingHorizontal: THEME.spacing.xxl,
+    paddingVertical: THEME.spacing.md,
+    borderRadius: THEME.radius.pill,
     minHeight: 44,
   },
   retryText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 15,
+    color: THEME.colors.bg,
   },
 });

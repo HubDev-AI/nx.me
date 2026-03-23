@@ -7,13 +7,9 @@
 import { memo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 
-import {
-  ADA_BUBBLE_BG,
-  ADA_BUBBLE_BORDER,
-  USER_BUBBLE_BG,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import type { AdvisorMessage } from "../../lib/advisor";
 
 interface MessageBubbleProps {
@@ -29,6 +25,7 @@ function formatTime(isoDate: string): string {
 }
 
 function MessageBubbleInner({ message }: MessageBubbleProps) {
+  const { theme } = useTheme();
   const isAda = message.role === "assistant";
 
   return (
@@ -40,8 +37,13 @@ function MessageBubbleInner({ message }: MessageBubbleProps) {
           : `You said: ${message.content}`
       }
     >
-      <View style={[styles.bubble, isAda ? styles.adaBubble : styles.userBubble]}>
-        {isAda && <Text style={styles.senderLabel}>Ada</Text>}
+      <View style={[
+        styles.bubble,
+        isAda
+          ? styles.adaBubble
+          : [styles.userBubble, { backgroundColor: theme.accentMuted }],
+      ]}>
+        {isAda && <Text style={[styles.senderLabel, { color: theme.accent }]}>Ada</Text>}
         <Text style={styles.content}>{message.content}</Text>
         <Text style={styles.timestamp}>{formatTime(message.created_at)}</Text>
       </View>
@@ -53,8 +55,8 @@ export const MessageBubble = memo(MessageBubbleInner);
 
 const styles = StyleSheet.create({
   row: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.xs,
     maxWidth: "100%",
   },
   rowLeft: {
@@ -65,35 +67,33 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: "80%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: THEME.radius.lg,
+    paddingHorizontal: THEME.spacing.lg - 2,
+    paddingVertical: THEME.spacing.md - 2,
   },
   adaBubble: {
-    backgroundColor: ADA_BUBBLE_BG,
-    borderLeftWidth: 3,
-    borderLeftColor: ADA_BUBBLE_BORDER,
-    borderTopLeftRadius: 4,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   userBubble: {
-    backgroundColor: USER_BUBBLE_BG,
-    borderTopRightRadius: 4,
+    borderTopRightRadius: THEME.spacing.xs,
   },
   senderLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: ADA_BUBBLE_BORDER,
-    marginBottom: 2,
+    fontFamily: FONTS.displayItalic,
+    fontSize: 13,
+    marginBottom: THEME.spacing.xs / 2,
   },
   content: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textPrimary,
   },
   timestamp: {
+    fontFamily: FONTS.body,
     fontSize: 11,
-    color: TEXT_SECONDARY,
-    marginTop: 4,
+    color: THEME.colors.textMuted,
+    marginTop: THEME.spacing.xs,
     alignSelf: "flex-end",
   },
 });

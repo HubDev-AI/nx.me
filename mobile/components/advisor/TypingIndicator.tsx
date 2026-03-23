@@ -6,7 +6,8 @@
 import { useEffect, useRef, useState } from "react";
 import { View, Text, Animated, StyleSheet, AccessibilityInfo } from "react-native";
 
-import { ADA_BUBBLE_BG, ADA_BUBBLE_BORDER, TEXT_SECONDARY } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
 import { ADVISOR_CONFIG } from "../../constants/config";
 
 const DOT_COUNT = 3;
@@ -97,30 +98,30 @@ export function TypingIndicator() {
 const styles = StyleSheet.create({
   container: {
     alignSelf: "flex-start",
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.xs,
   },
   bubble: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: ADA_BUBBLE_BG,
-    borderLeftWidth: 3,
-    borderLeftColor: ADA_BUBBLE_BORDER,
-    borderRadius: 16,
-    borderTopLeftRadius: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    gap: THEME.spacing.sm,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    borderRadius: THEME.radius.lg,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.md,
   },
   dot: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: TEXT_SECONDARY,
+    backgroundColor: THEME.colors.textSecondary,
   },
   staticDots: {
+    fontFamily: FONTS.body,
     fontSize: 16,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
     letterSpacing: 2,
   },
 });

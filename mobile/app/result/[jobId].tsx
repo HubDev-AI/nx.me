@@ -28,22 +28,15 @@ import Animated, { FadeIn } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import BeforeAfterReveal from "../../components/result/BeforeAfterReveal";
-import SuggestionPills from "../../components/result/SuggestionPills";
 import {
   getJobStatus,
   requestRefund,
   type JobResult,
 } from "../../lib/analysis";
-import {
-  BG_PAGE,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  CTA_PRESSED,
-  ERROR_DARK,
-  CORAL_TINT,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { PageBackground } from "../../components/ui/PageBackground";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 
 // ---------------------------------------------------------------------------
@@ -53,6 +46,7 @@ import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 export default function ResultScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const router = useRouter();
+  const { theme } = useTheme();
 
   const [result, setResult] = useState<JobResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,10 +82,9 @@ export default function ResultScreen() {
 
   const handleRevealComplete = useCallback(() => {
     setRevealComplete(true);
-    // Stagger CTAs slightly after pills
-    const ctaDelay = (result?.suggestions?.length ?? 0) * 80 + 200;
-    setTimeout(() => setCtasVisible(true), ctaDelay);
-  }, [result?.suggestions?.length]);
+    // Show CTAs shortly after reveal completes
+    setTimeout(() => setCtasVisible(true), 200);
+  }, []);
 
   const handleRefund = useCallback(() => {
     if (!jobId) return;
@@ -159,13 +152,14 @@ export default function ResultScreen() {
         <Stack.Screen
           options={{
             title: "Result",
-            headerStyle: { backgroundColor: BG_PAGE },
-            headerTintColor: COLORS.neutral.dark[900],
+            headerStyle: { backgroundColor: THEME.colors.bg },
+            headerTintColor: THEME.colors.textPrimary,
             headerShadowVisible: false,
           }}
         />
         <View style={styles.centeredContainer}>
-          <ActivityIndicator size="large" color={CTA_PRIMARY} />
+          <PageBackground overlayOpacity={0.88} />
+          <ActivityIndicator size="large" color={theme.accent} />
           <Text style={styles.loadingText}>Loading results...</Text>
         </View>
       </>
@@ -182,19 +176,20 @@ export default function ResultScreen() {
         <Stack.Screen
           options={{
             title: "Result",
-            headerStyle: { backgroundColor: BG_PAGE },
-            headerTintColor: COLORS.neutral.dark[900],
+            headerStyle: { backgroundColor: THEME.colors.bg },
+            headerTintColor: THEME.colors.textPrimary,
             headerShadowVisible: false,
           }}
         />
         <View style={styles.centeredContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color={ERROR_DARK} />
+          <PageBackground overlayOpacity={0.88} />
+          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.destructive} />
           <Text style={styles.errorText}>
             {error ?? "No results available."}
           </Text>
           <Pressable
             onPress={handleNewGlowUp}
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Try again"
             accessibilityRole="button"
           >
@@ -215,25 +210,26 @@ export default function ResultScreen() {
         <Stack.Screen
           options={{
             title: "Result",
-            headerStyle: { backgroundColor: BG_PAGE },
-            headerTintColor: COLORS.neutral.dark[900],
+            headerStyle: { backgroundColor: THEME.colors.bg },
+            headerTintColor: THEME.colors.textPrimary,
             headerShadowVisible: false,
           }}
         />
         <View style={styles.centeredContainer}>
+          <PageBackground overlayOpacity={0.88} />
           <Ionicons
             name={result.status === "cancelled" ? "close-circle-outline" : "alert-circle-outline"}
             size={48}
-            color={result.status === "cancelled" ? TEXT_SECONDARY : ERROR_DARK}
+            color={result.status === "cancelled" ? THEME.colors.textSecondary : THEME.colors.destructive}
           />
           <Text style={styles.errorText}>
             {result.status === "cancelled"
               ? "Generation was cancelled."
-              : result.error_message ?? "Generation failed."}
+              : result.failure_reason ?? "Generation failed."}
           </Text>
           <Pressable
             onPress={handleNewGlowUp}
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Start a new glow-up"
             accessibilityRole="button"
           >
@@ -248,28 +244,29 @@ export default function ResultScreen() {
   // Render: Success — before/after reveal
   // ---------------------------------------------------------------------------
 
-  const hasBothImages = result.before_url && result.after_url;
+  const hasBothImages = result.before_image_url && result.after_image_url;
 
   return (
     <>
       <Stack.Screen
         options={{
           title: "Your Glow-Up",
-          headerStyle: { backgroundColor: BG_PAGE },
-          headerTintColor: COLORS.neutral.dark[900],
+          headerStyle: { backgroundColor: THEME.colors.bg },
+          headerTintColor: THEME.colors.textPrimary,
           headerShadowVisible: false,
         }}
       />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+        <PageBackground overlayOpacity={0.88} />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
         >
           {/* Before / After Reveal */}
-          {hasBothImages && result.before_url && result.after_url ? (
+          {hasBothImages && result.before_image_url && result.after_image_url ? (
             <BeforeAfterReveal
-              beforeUrl={result.before_url}
-              afterUrl={result.after_url}
+              beforeUrl={result.before_image_url}
+              afterUrl={result.after_image_url}
               onRevealComplete={handleRevealComplete}
             />
           ) : (
@@ -277,7 +274,7 @@ export default function ResultScreen() {
               <Ionicons
                 name="image-outline"
                 size={48}
-                color={TEXT_DISABLED}
+                color={THEME.colors.textDisabled}
               />
               <Text style={styles.missingText}>
                 Images are not available yet.
@@ -285,11 +282,12 @@ export default function ResultScreen() {
             </View>
           )}
 
-          {/* Suggestion Pills */}
-          <SuggestionPills
-            suggestions={result.suggestions ?? []}
-            visible={revealComplete}
-          />
+          {/* User Guidance */}
+          {result.user_guidance && revealComplete && (
+            <View style={styles.guidanceContainer}>
+              <Text style={styles.guidanceText}>{result.user_guidance}</Text>
+            </View>
+          )}
 
           {/* CTAs */}
           {ctasVisible && (
@@ -307,7 +305,7 @@ export default function ResultScreen() {
                 accessibilityLabel="Share your glow-up"
                 accessibilityRole="button"
               >
-                <Ionicons name="share-outline" size={20} color="#FFFFFF" />
+                <Ionicons name="share-outline" size={20} color={THEME.colors.bg} />
                 <Text style={styles.ctaPrimaryText}>Share</Text>
               </Pressable>
 
@@ -322,7 +320,7 @@ export default function ResultScreen() {
                   <Ionicons
                     name="flag-outline"
                     size={16}
-                    color={TEXT_SECONDARY}
+                    color={THEME.colors.textSecondary}
                   />
                   <Text style={styles.refundText}>
                     This doesn't look like me
@@ -333,7 +331,7 @@ export default function ResultScreen() {
                   <Ionicons
                     name="checkmark-circle-outline"
                     size={16}
-                    color={COLORS.after[400]}
+                    color={theme.accent}
                   />
                   <Text style={styles.refundConfirmedText}>
                     Refund requested
@@ -346,6 +344,7 @@ export default function ResultScreen() {
                 onPress={handleNewGlowUp}
                 style={({ pressed }) => [
                   styles.newGlowUpButton,
+                  { borderColor: theme.accent },
                   pressed && styles.newGlowUpButtonPressed,
                 ]}
                 accessibilityLabel="Start a new glow-up"
@@ -354,9 +353,9 @@ export default function ResultScreen() {
                 <Ionicons
                   name="sparkles-outline"
                   size={18}
-                  color={CTA_PRIMARY}
+                  color={theme.accent}
                 />
-                <Text style={styles.newGlowUpText}>New Glow-Up</Text>
+                <Text style={[styles.newGlowUpText, { color: theme.accent }]}>New Glow-Up</Text>
               </Pressable>
             </Animated.View>
           )}
@@ -370,129 +369,143 @@ export default function ResultScreen() {
 // Styles
 // ---------------------------------------------------------------------------
 
-const SPACING = 8;
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: SPACING * 6,
+    paddingBottom: THEME.spacing.xxxl + THEME.spacing.lg,
   },
   // Loading / Error states
   centeredContainer: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: SPACING * 4,
-    gap: SPACING * 2,
+    padding: THEME.spacing.xxxl,
+    gap: THEME.spacing.lg,
   },
   loadingText: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
   },
   errorText: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
   },
   retryButton: {
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: 12,
-    paddingHorizontal: SPACING * 4,
-    paddingVertical: 12,
-    marginTop: SPACING,
+    borderRadius: THEME.radius.pill,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingVertical: THEME.spacing.md,
+    marginTop: THEME.spacing.sm,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
   },
   retryText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    color: THEME.colors.bg,
+  },
+  // User guidance
+  guidanceContainer: {
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.lg,
+  },
+  guidanceText: {
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
+    textAlign: "center",
   },
   // Missing images
   missingImages: {
     alignItems: "center",
     justifyContent: "center",
-    padding: SPACING * 6,
-    gap: SPACING * 2,
+    padding: THEME.spacing.xxxl + THEME.spacing.lg,
+    gap: THEME.spacing.lg,
   },
   missingText: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
   },
   // CTAs
   ctaContainer: {
-    paddingHorizontal: SPACING * 2,
-    paddingTop: SPACING * 3,
-    gap: SPACING * 2,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.xxl,
+    gap: THEME.spacing.lg,
   },
   ctaPrimary: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: SPACING,
-    minHeight: SPACING * 6,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingVertical: THEME.spacing.lg - 2,
+    gap: THEME.spacing.sm,
+    minHeight: 48,
   },
   ctaPrimaryPressed: {
-    backgroundColor: CTA_PRESSED,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   ctaPrimaryText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    color: THEME.colors.textPrimary,
   },
   // Refund
   refundButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: SPACING * 1.5,
-    gap: SPACING,
+    paddingVertical: THEME.spacing.md,
+    gap: THEME.spacing.sm,
     minHeight: 44,
   },
   refundText: {
-    fontSize: 13,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textDecorationLine: "underline",
   },
   refundConfirmed: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: SPACING * 1.5,
-    gap: SPACING,
+    paddingVertical: THEME.spacing.md,
+    gap: THEME.spacing.sm,
   },
   refundConfirmedText: {
-    fontSize: 13,
-    color: COLORS.after[400],
-    fontWeight: "600",
+    fontFamily: FONTS.bodyMedium,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
   },
   // New glow-up
   newGlowUpButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: SPACING,
+    borderRadius: THEME.radius.pill,
+    paddingVertical: THEME.spacing.md,
+    gap: THEME.spacing.sm,
     minHeight: 44,
     borderWidth: 1,
-    borderColor: CTA_PRIMARY,
   },
   newGlowUpButtonPressed: {
-    backgroundColor: CORAL_TINT,
+    backgroundColor: THEME.colors.glass,
   },
   newGlowUpText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 15,
-    fontWeight: "600",
-    color: CTA_PRIMARY,
   },
 });

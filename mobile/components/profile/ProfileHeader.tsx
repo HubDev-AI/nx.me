@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -8,25 +8,29 @@ import {
   Platform,
   StyleSheet,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  interpolateColor,
+  interpolate,
+  Easing,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import {
   UNIVERSAL_LINK_ORIGIN,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
+import { hapticLight } from "../../lib/haptics";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import { formatCount } from "../../lib/format";
 import type { UserProfile } from "./types";
 
-const AVATAR_SIZE = 80;
-const STAT_ICON_SIZE = 16;
+const AVATAR_SIZE = 40;
 
 interface ProfileHeaderProps {
   profile: UserProfile;
@@ -34,15 +38,88 @@ interface ProfileHeaderProps {
 }
 
 /**
- * Profile header: avatar, display name, username, stats row,
- * Edit Profile and Share buttons.
+ * Collapsible profile header.
+ *
+ * COLLAPSED (default): clean card-like row -- avatar, name + @username stacked,
+ * "View profile" tap target on the right. Entire row is tappable.
+ *
+ * EXPANDED: additional content slides down below the collapsed row --
+ * stats row, Edit Profile pill button. Uses Reanimated entering/exiting
+ * layout animations (FadeInDown / FadeOutUp) so content is never clipped.
  */
 export function ProfileHeader({
   profile,
   onEditProfile,
 }: ProfileHeaderProps) {
+  const { theme } = useTheme();
+  const [expanded, setExpanded] = useState(false);
   const displayName = profile.display_name ?? profile.username;
   const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/${profile.username}`;
+
+  // Shared value for expand progress (0 = collapsed, 1 = expanded)
+  const expandProgress = useSharedValue(0);
+
+  // Separate shared value for chevron rotation (0 = collapsed, 180 = expanded)
+  const chevronRotation = useSharedValue(0);
+
+  // Shared value for border interpolation (0 = collapsed, 1 = expanded)
+  const borderProgress = useSharedValue(0);
+
+  // Press scale animations
+  const toggleScale = useSharedValue(1);
+  const editScale = useSharedValue(1);
+  const shareScale = useSharedValue(1);
+  const togglePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: toggleScale.value }],
+  }));
+  const editPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: editScale.value }],
+  }));
+  const sharePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: shareScale.value }],
+  }));
+
+  // Chevron rotation: 0deg collapsed -> 180deg expanded
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
+  }));
+
+  // Wrapper border: smoothly interpolates between default and expanded border
+  const wrapperAnimatedStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(
+      borderProgress.value,
+      [0, 1],
+      [THEME.colors.border, THEME.colors.glassBorder],
+    ),
+  }));
+
+  // Expanded content: animate opacity and maxHeight together
+  const expandedAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: expandProgress.value,
+    maxHeight: interpolate(expandProgress.value, [0, 1], [0, 250]),
+    overflow: "hidden" as const,
+  }));
+
+  const toggle = useCallback(() => {
+    hapticLight();
+    setExpanded((prev) => {
+      const next = !prev;
+      const duration = next ? 250 : 200;
+      chevronRotation.value = withTiming(next ? 180 : 0, {
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+      });
+      borderProgress.value = withTiming(next ? 1 : 0, {
+        duration,
+        easing: Easing.out(Easing.cubic),
+      });
+      expandProgress.value = withTiming(next ? 1 : 0, {
+        duration,
+        easing: Easing.out(Easing.cubic),
+      });
+      return next;
+    });
+  }, []);
 
   const handleShare = useCallback(() => {
     const sharePayload =
@@ -51,121 +128,168 @@ export function ProfileHeader({
         : { message: shareUrl };
 
     Share.share(sharePayload).catch(() => {
-      // User cancelled or share failed — no action needed
+      // User cancelled or share failed -- no action needed
     });
   }, [shareUrl]);
 
   return (
-    <View style={styles.container}>
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
-        {profile.avatar_url ? (
-          <Image
-            source={{ uri: profile.avatar_url }}
-            style={styles.avatar}
-            accessibilityLabel={`${displayName} avatar`}
-          />
-        ) : (
-          <View style={[styles.avatar, styles.avatarPlaceholder]}>
-            <Ionicons
-              name="person"
-              size={36}
-              color={TEXT_SECONDARY}
-            />
-          </View>
-        )}
-      </View>
-
-      {/* Name + username */}
-      <Text
-        style={styles.displayName}
-        numberOfLines={1}
-        accessibilityRole="header"
+    <Animated.View style={[styles.wrapper, wrapperAnimatedStyle]}>
+      {/* ---- Collapsed row -- always visible, tappable to toggle ---- */}
+      <Animated.View style={togglePressStyle}>
+      <Pressable
+        onPress={toggle}
+        onPressIn={() => { toggleScale.value = withSpring(0.98, THEME.animation.press); }}
+        onPressOut={() => { toggleScale.value = withSpring(1, THEME.animation.press); }}
+        style={styles.collapsedRow}
+        accessibilityLabel={
+          expanded ? "Hide profile details" : "View profile details"
+        }
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
       >
-        {displayName}
-      </Text>
-      <Text style={styles.username} numberOfLines={1}>
-        @{profile.username}
-      </Text>
+        {/* Avatar with accent ring */}
+        <View style={[styles.avatarRing, { borderColor: theme.accent + "66" }]}>
+          {profile.avatar_url ? (
+            <Image
+              source={{ uri: profile.avatar_url }}
+              style={styles.avatar}
+              accessibilityLabel={`${displayName} avatar`}
+            />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder]}>
+              <Ionicons name="person" size={18} color={THEME.colors.textSecondary} />
+            </View>
+          )}
+        </View>
 
-      {/* Stats row */}
-      <View style={styles.statsRow}>
-        <StatItem
-          icon="image-outline"
-          value={profile.post_count}
-          label="Posts"
-        />
-        <View style={styles.statDivider} />
-        <StatItem
-          icon="heart-outline"
-          value={profile.total_reactions}
-          label="Reactions"
-        />
-      </View>
+        {/* Name + username stacked */}
+        <View style={styles.nameColumn}>
+          <Text
+            style={styles.displayName}
+            numberOfLines={1}
+            accessibilityRole="header"
+          >
+            {displayName}
+          </Text>
+          <Text style={styles.username} numberOfLines={1}>
+            @{profile.username}
+          </Text>
+        </View>
 
-      {/* Action buttons */}
-      <View style={styles.buttonsRow}>
-        <Pressable
-          onPress={onEditProfile}
-          style={({ pressed }) => [
-            styles.editButton,
-            pressed && styles.editButtonPressed,
-          ]}
-          accessibilityLabel="Edit Profile"
-          accessibilityRole="button"
-        >
-          <Ionicons name="create-outline" size={18} color={TEXT_PRIMARY} />
-          <Text style={styles.editButtonText}>Edit Profile</Text>
-        </Pressable>
+        {/* Chevron indicator — rotates 180deg when expanded */}
+        <Animated.View style={[styles.chevronWrapper, chevronStyle]}>
+          <Ionicons name="chevron-down" size={16} color={theme.accent} />
+        </Animated.View>
+      </Pressable>
+      </Animated.View>
 
-        <Pressable
-          onPress={handleShare}
-          style={({ pressed }) => [
-            styles.shareButton,
-            pressed && styles.shareButtonPressed,
-          ]}
-          accessibilityLabel="Share profile"
-          accessibilityRole="button"
-        >
-          <Ionicons
-            name="share-outline"
-            size={18}
-            color={CTA_PRIMARY}
-          />
-        </Pressable>
-      </View>
-    </View>
+      {/* ---- Expanded content -- opacity + maxHeight animation ---- */}
+      <Animated.View style={[styles.expandedContent, expandedAnimatedStyle]}>
+          {/* Separator between collapsed row and expanded content */}
+          <View style={styles.expandSeparator} />
+
+          {/* Stats row */}
+          <View style={styles.statsRow}>
+            <StatItem value={profile.post_count} label="Posts" accent={theme.accent} />
+            <View style={styles.statsDivider} />
+            <StatItem value={profile.total_reactions} label="Reactions" accent={theme.accent} />
+          </View>
+
+          {/* Action buttons */}
+          <View style={styles.buttonsRow}>
+            <Animated.View style={[{ flex: 1 }, editPressStyle]}>
+              <Pressable
+                onPress={onEditProfile}
+                onPressIn={() => { editScale.value = withSpring(0.97, THEME.animation.press); }}
+                onPressOut={() => { editScale.value = withSpring(1, THEME.animation.press); }}
+                style={[
+                  styles.editButton,
+                  { borderColor: theme.accent + "4D" },
+                ]}
+                accessibilityLabel="Edit Profile"
+                accessibilityRole="button"
+              >
+                <Ionicons name="create-outline" size={16} color={theme.accent} />
+                <Text style={[styles.editButtonText, { color: theme.accent }]}>
+                  Edit Profile
+                </Text>
+              </Pressable>
+            </Animated.View>
+
+            <Animated.View style={sharePressStyle}>
+              <Pressable
+                onPress={handleShare}
+                onPressIn={() => { shareScale.value = withSpring(0.97, THEME.animation.press); }}
+                onPressOut={() => { shareScale.value = withSpring(1, THEME.animation.press); }}
+                style={[
+                  styles.shareButton,
+                  { borderColor: theme.accent + "4D" },
+                ]}
+                accessibilityLabel="Share profile"
+                accessibilityRole="button"
+              >
+                <Ionicons
+                  name="share-outline"
+                  size={18}
+                  color={theme.accent}
+                />
+              </Pressable>
+            </Animated.View>
+          </View>
+        </Animated.View>
+    </Animated.View>
   );
 }
 
 interface StatItemProps {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
   value: number;
   label: string;
+  accent: string;
 }
 
-function StatItem({ icon, value, label }: StatItemProps) {
+function StatItem({ value, label, accent }: StatItemProps) {
   return (
     <View
       style={styles.statItem}
       accessibilityLabel={`${formatCount(value)} ${label}`}
     >
-      <Ionicons name={icon} size={STAT_ICON_SIZE} color={TEXT_SECONDARY} />
-      <Text style={styles.statValue}>{formatCount(value)}</Text>
+      <Text style={[styles.statValue, { color: accent }]}>
+        {formatCount(value)}
+      </Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    paddingTop: 24,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+  wrapper: {
+    marginHorizontal: THEME.spacing.lg,
+    marginTop: THEME.spacing.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: THEME.colors.glass,
+    paddingHorizontal: THEME.spacing.lg,
+    ...THEME.shadow.glass,
   },
-  avatarContainer: {
-    marginBottom: 12,
+
+  /* ---- Collapsed row ---- */
+  collapsedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: THEME.spacing.md,
+    gap: THEME.spacing.md,
+    minHeight: 64,
+  },
+
+  /* Avatar with accent ring */
+  avatarRing: {
+    width: AVATAR_SIZE + 4,
+    height: AVATAR_SIZE + 4,
+    borderRadius: (AVATAR_SIZE + 4) / 2,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
   avatar: {
     width: AVATAR_SIZE,
@@ -173,84 +297,111 @@ const styles = StyleSheet.create({
     borderRadius: AVATAR_SIZE / 2,
   },
   avatarPlaceholder: {
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
+
+  /* Name column */
+  nameColumn: {
+    flex: 1,
+    justifyContent: "center",
+    gap: THEME.spacing.xs / 2,
+  },
   displayName: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginBottom: 2,
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 18,
+    color: THEME.colors.textPrimary,
+    lineHeight: 22,
   },
   username: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginBottom: 16,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
   },
+
+  /* Chevron toggle indicator */
+  chevronWrapper: {
+    paddingLeft: THEME.spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* Separator between collapsed row and expanded content */
+  expandSeparator: {
+    height: 1,
+    backgroundColor: THEME.colors.glassBorder,
+    marginBottom: THEME.spacing.md,
+  },
+
+  /* ---- Expanded content ---- */
+  expandedContent: {
+    paddingBottom: THEME.spacing.lg,
+    paddingTop: THEME.spacing.xs,
+  },
+
+  /* Stats row */
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: BG_CARD,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    width: "100%",
+    justifyContent: "center",
+    gap: THEME.spacing.xxl,
+    marginBottom: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
   },
   statItem: {
-    flex: 1,
     alignItems: "center",
-    gap: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: COLORS.neutral.dark[400],
+    gap: THEME.spacing.xs,
   },
   statValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.bodyBold,
+    fontSize: 22,
+    lineHeight: 28,
+    letterSpacing: 0,
+    color: THEME.colors.textPrimary,
   },
   statLabel: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 11,
+    color: THEME.colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: THEME.typography.caption.letterSpacing,
   },
+  statsDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: THEME.colors.glassBorder,
+  },
+
+  /* Action buttons */
   buttonsRow: {
     flexDirection: "row",
-    gap: 8,
-    width: "100%",
+    gap: THEME.spacing.sm,
   },
   editButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: THEME.spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  editButtonPressed: {
-    backgroundColor: COLORS.neutral.dark[300],
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    paddingVertical: THEME.spacing.md - 2,
+    paddingHorizontal: THEME.spacing.lg,
   },
   editButtonText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
   },
   shareButton: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 10,
-  },
-  shareButtonPressed: {
-    backgroundColor: COLORS.neutral.dark[300],
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
   },
 });

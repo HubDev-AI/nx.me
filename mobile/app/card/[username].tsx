@@ -24,17 +24,12 @@ import { Ionicons } from "@expo/vector-icons";
 
 import BeforeAfterReveal from "../../components/result/BeforeAfterReveal";
 import SuggestionPills from "../../components/result/SuggestionPills";
-import { CARD_ENDPOINTS } from "../../constants/config";
+import { PageBackground } from "../../components/ui/PageBackground";
+import { AUTH_VALIDATION, CARD_ENDPOINTS } from "../../constants/config";
 import { apiFetch } from "../../lib/api";
-import {
-  BG_PAGE,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-  ERROR_DARK,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,16 +45,11 @@ interface PublicCard {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const SPACING = 8;
-
-// ---------------------------------------------------------------------------
 // Username validation
 // ---------------------------------------------------------------------------
 
-const _USERNAME_RE = /^[a-zA-Z0-9_]{1,30}$/;
+/** Use the canonical username pattern from config (starts with letter, alphanumeric + underscores) */
+const _USERNAME_RE = AUTH_VALIDATION.USERNAME_PATTERN;
 
 // ---------------------------------------------------------------------------
 // API helper (no auth — public endpoint)
@@ -78,6 +68,7 @@ async function fetchPublicCard(username: string): Promise<PublicCard> {
 
 export default function CardDetailScreen() {
   const { username } = useLocalSearchParams<{ username: string }>();
+  const { theme } = useTheme();
 
   const [card, setCard] = useState<PublicCard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,8 +124,8 @@ export default function CardDetailScreen() {
 
   const screenOptions = {
     title: username ? `@${username}` : "Card",
-    headerStyle: { backgroundColor: BG_PAGE },
-    headerTintColor: COLORS.neutral.dark[900],
+    headerStyle: { backgroundColor: THEME.colors.bg },
+    headerTintColor: THEME.colors.textPrimary,
     headerShadowVisible: false,
   };
 
@@ -147,7 +138,8 @@ export default function CardDetailScreen() {
       <>
         <Stack.Screen options={screenOptions} />
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color={CTA_PRIMARY} />
+          <PageBackground overlayOpacity={0.88} />
+          <ActivityIndicator size="large" color={theme.accent} />
           <Text style={styles.loadingText}>Loading card...</Text>
         </View>
       </>
@@ -163,11 +155,12 @@ export default function CardDetailScreen() {
       <>
         <Stack.Screen options={screenOptions} />
         <View style={styles.centered}>
-          <Ionicons name="alert-circle-outline" size={48} color={ERROR_DARK} />
+          <PageBackground overlayOpacity={0.88} />
+          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.destructive} />
           <Text style={styles.errorText}>{error ?? "Card not available."}</Text>
           <Pressable
             onPress={handleRetry}
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Retry loading card"
             accessibilityRole="button"
           >
@@ -186,6 +179,7 @@ export default function CardDetailScreen() {
     <>
       <Stack.Screen options={screenOptions} />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+        <PageBackground overlayOpacity={0.88} />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -206,7 +200,7 @@ export default function CardDetailScreen() {
               <Ionicons
                 name="heart-outline"
                 size={16}
-                color={TEXT_SECONDARY}
+                color={THEME.colors.textSecondary}
                 style={styles.statIcon}
               />
               <Text style={styles.statText}>
@@ -217,7 +211,7 @@ export default function CardDetailScreen() {
               <Ionicons
                 name="chatbubble-outline"
                 size={16}
-                color={TEXT_SECONDARY}
+                color={THEME.colors.textSecondary}
                 style={styles.statIcon}
               />
               <Text style={styles.statText}>
@@ -244,75 +238,81 @@ export default function CardDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: SPACING * 6,
+    paddingBottom: THEME.spacing.xxxl + THEME.spacing.lg,
   },
   centered: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: SPACING * 4,
-    gap: SPACING * 2,
+    padding: THEME.spacing.xxxl,
+    gap: THEME.spacing.lg,
   },
   loadingText: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
   },
   errorText: {
-    fontSize: 16,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
     lineHeight: 22,
   },
   retryButton: {
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: 12,
-    paddingHorizontal: SPACING * 4,
-    paddingVertical: 12,
-    marginTop: SPACING,
+    borderRadius: THEME.radius.pill,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingVertical: THEME.spacing.md,
+    marginTop: THEME.spacing.sm,
+    minHeight: 48,
+    alignItems: "center",
+    justifyContent: "center",
   },
   retryText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    color: THEME.colors.bg,
   },
   usernameHeading: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    ...THEME.typography.heading,
+    color: THEME.colors.textPrimary,
     textAlign: "center",
-    paddingTop: SPACING * 3,
-    paddingHorizontal: SPACING * 2,
+    paddingTop: THEME.spacing.xxl,
+    paddingHorizontal: THEME.spacing.lg,
   },
   statsRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: SPACING * 4,
-    paddingHorizontal: SPACING * 2,
-    paddingTop: SPACING,
-    paddingBottom: SPACING * 2,
+    gap: THEME.spacing.xxxl,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.lg,
   },
   stat: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING / 2,
-    backgroundColor: BG_ELEVATED,
-    paddingHorizontal: SPACING * 2,
-    paddingVertical: SPACING,
-    borderRadius: 20,
+    gap: THEME.spacing.xs,
+    backgroundColor: THEME.colors.glass,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   statIcon: {
     marginRight: 2,
   },
   statText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.bodySemiBold,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
   },
 });

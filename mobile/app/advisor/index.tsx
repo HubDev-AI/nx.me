@@ -15,13 +15,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  CTA_PRIMARY,
-  BORDER_DEFAULT,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { PageBackground } from "../../components/ui/PageBackground";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { ChatView } from "../../components/advisor/ChatView";
 import { NudgeFeed } from "../../components/advisor/NudgeFeed";
@@ -60,6 +57,7 @@ const TABS: TabConfig[] = [
 export default function AdvisorScreen() {
   const [activeTab, setActiveTab] = useState<AdvisorTab>("chat");
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
 
   const handleTabChange = useCallback((tab: AdvisorTab) => {
     setActiveTab(tab);
@@ -67,6 +65,7 @@ export default function AdvisorScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <PageBackground overlayOpacity={0.88} />
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Ada</Text>
@@ -81,7 +80,7 @@ export default function AdvisorScreen() {
             <Pressable
               key={tab.key}
               onPress={() => handleTabChange(tab.key)}
-              style={[styles.tab, isActive && styles.tabActive]}
+              style={[styles.tab, isActive && { backgroundColor: theme.accentMuted }]}
               accessibilityLabel={`${tab.label} tab`}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
@@ -89,9 +88,9 @@ export default function AdvisorScreen() {
               <Ionicons
                 name={isActive ? tab.iconFocused : tab.icon}
                 size={20}
-                color={isActive ? CTA_PRIMARY : TEXT_SECONDARY}
+                color={isActive ? theme.accent : THEME.colors.textSecondary}
               />
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+              <Text style={[styles.tabLabel, isActive && { color: theme.accent, fontFamily: FONTS.bodySemiBold }]}>
                 {tab.label}
               </Text>
             </Pressable>
@@ -112,55 +111,49 @@ export default function AdvisorScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingTop: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.xs,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    ...THEME.typography.headingLg,
+    color: THEME.colors.textPrimary,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    marginTop: 2,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
+    marginTop: THEME.spacing.xs / 2,
   },
   tabBar: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 4,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.md,
+    paddingBottom: THEME.spacing.sm,
+    gap: THEME.spacing.xs,
   },
   tab: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.md - 2,
+    borderRadius: THEME.radius.sm,
     minHeight: MIN_TOUCH_TARGET,
   },
-  tabActive: {
-    backgroundColor: "rgba(244,63,94,0.08)",
-  },
   tabLabel: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
-    fontWeight: "500",
-    color: TEXT_SECONDARY,
-  },
-  tabLabelActive: {
-    color: CTA_PRIMARY,
-    fontWeight: "600",
+    color: THEME.colors.textSecondary,
   },
   content: {
     flex: 1,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: BORDER_DEFAULT,
+    borderTopColor: THEME.colors.border,
   },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   View,
   Image,
@@ -10,15 +10,17 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  CTA_PRIMARY,
-  TEXT_PRIMARY,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { PROFILE_CONFIG } from "../../constants/config";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 import type { GlowUpItem } from "./types";
 
 interface GlowUpGridProps {
@@ -47,10 +49,11 @@ export function GlowUpGrid({
   refreshing = false,
   onRefresh,
 }: GlowUpGridProps) {
+  const { theme } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
 
   const { itemSize, containerPadding } = useMemo(() => {
-    const padding = 16;
+    const padding = THEME.spacing.lg;
     const totalGap =
       PROFILE_CONFIG.GRID_GAP * (PROFILE_CONFIG.GRID_COLUMNS - 1);
     const availableWidth = screenWidth - padding * 2;
@@ -86,23 +89,21 @@ export function GlowUpGrid({
     if (!isLoadingMore) return null;
     return (
       <View style={styles.footer}>
-        <ActivityIndicator size="small" color={CTA_PRIMARY} />
+        <ActivityIndicator size="small" color={theme.accent} />
       </View>
     );
-  }, [isLoadingMore]);
+  }, [isLoadingMore, theme.accent]);
 
   const renderEmpty = useCallback(() => {
     if (items.length > 0) return null;
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons
-          name="images-outline"
-          size={48}
-          color={COLORS.neutral.dark[600]}
-        />
-        <Text style={styles.emptyText}>No glow-ups yet</Text>
+        <View style={[styles.emptyIconCircle, { backgroundColor: theme.accent + "1A" }]}>
+          <Ionicons name="sparkles" size={28} color={theme.accent} />
+        </View>
+        <Text style={styles.emptyText}>Your glow-ups will appear here</Text>
         <Text style={styles.emptyHint}>
-          Your before/after transformations will appear here
+          Create your first transformation to get started
         </Text>
       </View>
     );
@@ -131,8 +132,8 @@ export function GlowUpGrid({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={CTA_PRIMARY}
-            colors={[CTA_PRIMARY]}
+            tintColor={theme.accent}
+            colors={[theme.accent]}
           />
         ) : undefined
       }
@@ -146,57 +147,68 @@ interface GlowUpCellProps {
   onPress?: () => void;
 }
 
-function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.cell,
-        { width: size, height: size },
-        pressed && styles.cellPressed,
-      ]}
-      accessibilityLabel={`Glow-up transformation from ${new Date(item.created_at).toLocaleDateString()}`}
-      accessibilityRole="image"
-    >
-      {/* Show after image as thumbnail */}
-      {item.after_image_url ? (
-        <Image
-          source={{ uri: item.after_image_url }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-        />
-      ) : null}
+const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
-      {/* Before image overlay (small, bottom-left) */}
-      {item.before_image_url ? (
-        <View style={styles.beforeOverlay}>
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.97, THEME.animation.press);
+  }, []);
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, THEME.animation.press);
+  }, []);
+
+  return (
+    <Animated.View style={[{ width: size, height: size }, pressStyle]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[styles.cell, { width: size, height: size }]}
+        accessibilityLabel={`Glow-up transformation from ${new Date(item.created_at).toLocaleDateString()}`}
+        accessibilityRole="image"
+      >
+        {/* Show after image as thumbnail */}
+        {item.after_image_url ? (
           <Image
-            source={{ uri: item.before_image_url }}
-            style={styles.beforeThumbnail}
+            source={{ uri: item.after_image_url }}
+            style={styles.thumbnail}
             resizeMode="cover"
+            accessibilityLabel={`After photo from ${new Date(item.created_at).toLocaleDateString()}`}
           />
-        </View>
-      ) : null}
-    </Pressable>
+        ) : null}
+
+        {/* Before image overlay (small, bottom-left) */}
+        {item.before_image_url ? (
+          <View style={styles.beforeOverlay}>
+            <Image
+              source={{ uri: item.before_image_url }}
+              style={styles.beforeThumbnail}
+              resizeMode="cover"
+              accessibilityLabel={`Before photo from ${new Date(item.created_at).toLocaleDateString()}`}
+            />
+          </View>
+        ) : null}
+      </Pressable>
+    </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   gridContent: {
-    paddingTop: 8,
-    paddingBottom: 24,
+    paddingTop: THEME.spacing.sm,
+    paddingBottom: 90,
   },
   row: {
     gap: PROFILE_CONFIG.GRID_GAP,
     marginBottom: PROFILE_CONFIG.GRID_GAP,
   },
   cell: {
-    borderRadius: 4,
+    borderRadius: THEME.radius.md,
     overflow: "hidden",
-    backgroundColor: BG_CARD,
-  },
-  cellPressed: {
-    opacity: 0.8,
+    backgroundColor: THEME.colors.surface,
   },
   thumbnail: {
     width: "100%",
@@ -204,39 +216,49 @@ const styles = StyleSheet.create({
   },
   beforeOverlay: {
     position: "absolute",
-    bottom: 4,
-    left: 4,
+    bottom: THEME.spacing.xs,
+    left: THEME.spacing.xs,
     width: 28,
     height: 28,
-    borderRadius: 4,
+    borderRadius: THEME.radius.sm - 2,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
+    borderColor: THEME.colors.borderFocused,
   },
   beforeThumbnail: {
     width: "100%",
     height: "100%",
   },
   footer: {
-    paddingVertical: 16,
+    paddingVertical: THEME.spacing.lg,
     alignItems: "center",
   },
   emptyContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 48,
-    paddingHorizontal: 32,
+    paddingVertical: THEME.spacing.xxxl + THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xxxl,
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: THEME.spacing.xs,
   },
   emptyText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 18,
+    color: THEME.colors.textPrimary,
+    marginTop: THEME.spacing.md,
+    textAlign: "center",
   },
   emptyHint: {
+    fontFamily: FONTS.body,
     fontSize: 14,
-    color: COLORS.neutral.dark[600],
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    marginTop: 4,
+    marginTop: THEME.spacing.xs,
   },
 });

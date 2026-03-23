@@ -1,13 +1,26 @@
+import { useEffect } from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform, Pressable } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+  interpolate,
+  Extrapolation,
+} from "react-native-reanimated";
+import { BottomTabBar, type BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
-import {
-  TAB_ACTIVE_COLOR,
-  TAB_INACTIVE_COLOR,
-  BG_PAGE,
-  COLORS,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
+import { BrandLabel } from "../../components/ui/BrandLabel";
+import { FeedCreditBadge } from "../../components/feed/FeedCreditBadge";
+import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -15,51 +28,171 @@ interface TabIconProps {
   name: IoniconsName;
   color: string;
   focused: boolean;
+  accentColor: string;
 }
 
-/** Tab icon with 2px coral top strip when active */
-function TabIcon({ name, color, focused }: TabIconProps) {
+/** Floating tab icon with glow dot when active */
+function TabIcon({ name, color, focused, accentColor }: TabIconProps) {
+  const scale = useSharedValue(1);
+  const glowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (focused) {
+      scale.value = withSpring(1.15, { damping: 12, stiffness: 200 });
+      glowOpacity.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      );
+    } else {
+      scale.value = withSpring(1, { damping: 12, stiffness: 200 });
+      glowOpacity.value = withTiming(0, { duration: 200 });
+    }
+  }, [focused]);
+
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const glowDotStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+    shadowOpacity: glowOpacity.value * 0.8,
+  }));
+
   return (
-    <View style={styles.iconContainer} accessible={false}>
-      <View
-        style={[
-          styles.activeStrip,
-          { backgroundColor: focused ? TAB_ACTIVE_COLOR : "transparent" },
-        ]}
-      />
-      <Ionicons name={name} size={24} color={color} style={styles.icon} />
+    <View
+      style={[
+        styles.iconContainer,
+        styles.iconPill,
+        focused && {
+          backgroundColor: accentColor + "26",
+          shadowColor: accentColor,
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+          elevation: 4,
+        },
+      ]}
+      accessible={false}
+    >
+      <Ionicons name={name} size={24} color={color} />
     </View>
   );
 }
 
-export default function TabLayout() {
+/** Custom animated tab bar that slides down when the user scrolls */
+function AnimatedTabBar(props: BottomTabBarProps) {
+  const { tabBarTranslateY } = useTabBar();
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: tabBarTranslateY.value }],
+  }));
+
   return (
+    <Animated.View style={animatedStyle}>
+      <BottomTabBar {...props} />
+    </Animated.View>
+  );
+}
+
+/** Small floating pill that appears when the tab bar is hidden */
+function ScrollToTopPill() {
+  const { tabBarTranslateY, scrollToTop } = useTabBar();
+  const { theme } = useTheme();
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      tabBarTranslateY.value,
+      [50, 100],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return {
+      opacity,
+      // Keep it non-interactive when invisible
+      pointerEvents: opacity > 0.1 ? "auto" : "none",
+    } as any;
+  });
+
+  return (
+    <Animated.View style={[styles.scrollToTopContainer, animatedStyle]}>
+      <Pressable
+        onPress={scrollToTop}
+        style={[styles.scrollToTopPill, { backgroundColor: theme.accent }]}
+        accessibilityLabel="Scroll to top"
+        accessibilityRole="button"
+      >
+        <Ionicons name="arrow-up" size={16} color="#0a0a0a" />
+        <Text style={styles.scrollToTopText}>Top</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** Stable wrapper so FeedCreditBadge hooks don't cause re-render mismatch */
+function HeaderCreditBadge() {
+  return (
+    <View style={styles.headerRight}>
+      <FeedCreditBadge />
+    </View>
+  );
+}
+
+function TabLayoutInner() {
+  const { theme } = useTheme();
+
+  return (
+    <>
     <Tabs
+      tabBar={(props) => <AnimatedTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: TAB_ACTIVE_COLOR,
-        tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
+        tabBarActiveTintColor: theme.accent,
+        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.45)",
         tabBarStyle: {
-          backgroundColor: BG_PAGE,
-          borderTopColor: COLORS.neutral.dark[400],
+          position: "absolute",
+          bottom: Platform.OS === "ios" ? 24 : 16,
+          left: THEME.spacing.xl,
+          right: THEME.spacing.xl,
+          height: 64,
+          borderRadius: 32,
+          backgroundColor: "rgba(17, 17, 17, 0.85)",
           borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: "rgba(255, 255, 255, 0.1)",
+          borderWidth: 1,
+          borderColor: "rgba(255, 255, 255, 0.08)",
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.4,
+          shadowRadius: 24,
+          elevation: 12,
+          paddingBottom: 0,
         },
         tabBarShowLabel: false,
-        headerStyle: {
-          backgroundColor: BG_PAGE,
+        tabBarIconStyle: {
+          flex: 1,
         },
-        headerTintColor: COLORS.neutral.dark[900],
+        headerStyle: {
+          backgroundColor: "rgba(10, 10, 10, 0.95)",
+        },
+        headerTintColor: "#e8e8e8",
         headerShadowVisible: false,
+        headerTitle: () => <BrandLabel />,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Home",
+          headerRight: () => <HeaderCreditBadge />,
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
               name={focused ? "home" : "home-outline"}
               color={color}
               focused={focused}
+              accentColor={theme.accent}
             />
           ),
         }}
@@ -73,6 +206,7 @@ export default function TabLayout() {
               name={focused ? "add-circle" : "add-circle-outline"}
               color={color}
               focused={focused}
+              accentColor={theme.accent}
             />
           ),
         }}
@@ -86,6 +220,7 @@ export default function TabLayout() {
               name={focused ? "person" : "person-outline"}
               color={color}
               focused={focused}
+              accentColor={theme.accent}
             />
           ),
         }}
@@ -100,27 +235,67 @@ export default function TabLayout() {
               name={focused ? "sparkles" : "sparkles-outline"}
               color={color}
               focused={focused}
+              accentColor={theme.accent}
             />
           ),
         }}
       />
     </Tabs>
+    <ScrollToTopPill />
+    </>
+  );
+}
+
+export default function TabLayout() {
+  return (
+    <TabBarProvider>
+      <TabLayoutInner />
+    </TabBarProvider>
   );
 }
 
 const styles = StyleSheet.create({
+  headerRight: {
+    marginRight: THEME.spacing.lg,
+  },
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
     width: 48,
   },
-  activeStrip: {
-    width: 24,
-    height: 2,
-    borderRadius: 1,
-    marginBottom: 4,
+  iconPill: {
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: 6,
+    borderRadius: THEME.radius.lg,
   },
-  icon: {
-    marginBottom: -2,
+  glowDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginTop: 3,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  scrollToTopContainer: {
+    position: "absolute",
+    bottom: Platform.OS === "ios" ? 28 : 20,
+    alignSelf: "center",
+    zIndex: 100,
+  },
+  scrollToTopPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.xs,
+    height: 40,
+    paddingHorizontal: THEME.spacing.lg,
+    borderRadius: THEME.radius.xl,
+    ...THEME.shadow.glass,
+  },
+  scrollToTopText: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 13,
+    color: "#0a0a0a",
+    letterSpacing: 0.5,
   },
 });

@@ -24,6 +24,8 @@ router = APIRouter(tags=["blocks"])
 class BlockedUserResponse(BaseModel):
     id: str
     blocked_id: str
+    display_name: str | None = None
+    username: str | None = None
     created_at: str
 
 
@@ -121,6 +123,8 @@ def list_blocked_users(
             BlockedUserResponse(
                 id=r["id"],
                 blocked_id=r["blocked_id"],
+                display_name=(r.get("blocked_user") or {}).get("display_name"),
+                username=(r.get("blocked_user") or {}).get("username"),
                 created_at=r["created_at"],
             )
             for r in rows

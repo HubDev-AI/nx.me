@@ -7,15 +7,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { AuthButton } from "../components/auth/AuthButton";
 import { apiFetch } from "../lib/api";
 import { registerForPushNotifications } from "../lib/notifications";
-import {
-  BG_PAGE,
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  COLORS,
-  SUCCESS_DARK,
-} from "../constants/colors";
+import { setItem } from "../lib/secure-storage";
+import { THEME } from "../constants/theme";
+
+/** Semantic green for success states */
+const SUCCESS_GREEN = "#4ADE80";
+import { PageBackground } from "../components/ui/PageBackground";
+import { useTheme } from "../lib/theme-context";
+import { FONTS } from "../hooks/useFonts";
 
 /** Entitlement response shape from GET /v1/entitlement */
 interface EntitlementSnapshot {
@@ -50,6 +49,7 @@ const FEATURES = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
 
   const [trialRemaining, setTrialRemaining] = useState<number | null>(null);
   const [isLoadingEntitlement, setIsLoadingEntitlement] = useState(true);
@@ -84,7 +84,8 @@ export default function OnboardingScreen() {
     };
   }, []);
 
-  const handleAnalyzeCTA = useCallback(() => {
+  const handleAnalyzeCTA = useCallback(async () => {
+    await setItem("nxme_onboarding_complete", "true");
     router.replace("/(tabs)/create");
   }, [router]);
 
@@ -115,6 +116,7 @@ export default function OnboardingScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <PageBackground overlayOpacity={0.88} />
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
@@ -128,7 +130,7 @@ export default function OnboardingScreen() {
             <Ionicons
               name="sparkles"
               size={32}
-              color={COLORS.after[500]}
+              color={theme.accent}
             />
           </View>
           <Text style={styles.title}>Your Glow-Up Starts Here</Text>
@@ -138,7 +140,7 @@ export default function OnboardingScreen() {
         {/* Trial count badge */}
         {!isLoadingEntitlement && !entitlementError && trialRemaining !== null && trialRemaining > 0 && (
           <View style={styles.trialBadge}>
-            <Ionicons name="gift-outline" size={20} color={SUCCESS_DARK} />
+            <Ionicons name="gift-outline" size={20} color={SUCCESS_GREEN} />
             <Text style={styles.trialBadgeText}>
               {trialRemaining} free {trialRemaining === 1 ? "trial" : "trials"} included
             </Text>
@@ -153,7 +155,7 @@ export default function OnboardingScreen() {
                 <Ionicons
                   name={feature.icon}
                   size={24}
-                  color={COLORS.after[500]}
+                  color={theme.accent}
                 />
               </View>
               <View style={styles.featureTextContainer}>
@@ -173,7 +175,7 @@ export default function OnboardingScreen() {
               <Ionicons
                 name="notifications-outline"
                 size={24}
-                color={TEXT_PRIMARY}
+                color={THEME.colors.textPrimary}
               />
               <Text style={styles.pushTitle}>Stay in the Loop</Text>
             </View>
@@ -201,7 +203,7 @@ export default function OnboardingScreen() {
           <AuthButton
             title="Analyze My Style"
             onPress={handleAnalyzeCTA}
-            disabled={isLoadingEntitlement}
+            disabled={isLoadingEntitlement && !entitlementError}
           />
           <Text style={styles.ctaHint}>
             Upload a photo and let AI do the rest
@@ -215,7 +217,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   scrollContent: {
     paddingHorizontal: SPACING * 3,
@@ -229,38 +231,44 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: SPACING * 2,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    ...THEME.typography.headingLg,
+    color: THEME.colors.textPrimary,
     textAlign: "center",
     marginBottom: SPACING,
   },
   subtitle: {
+    fontFamily: FONTS.body,
     fontSize: 16,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
+    letterSpacing: THEME.typography.body.letterSpacing,
   },
   trialBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     paddingVertical: SPACING * 1.5,
     paddingHorizontal: SPACING * 2,
-    borderRadius: 12,
+    borderRadius: THEME.radius.md,
     gap: SPACING,
     marginBottom: SPACING * 4,
   },
   trialBadgeText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
-    fontWeight: "600",
-    color: SUCCESS_DARK,
+    color: SUCCESS_GREEN,
   },
   featureList: {
     gap: SPACING * 2,
@@ -269,8 +277,10 @@ const styles = StyleSheet.create({
   featureRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: BG_CARD,
-    borderRadius: 12,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     padding: SPACING * 2,
     minHeight: 44,
     gap: SPACING * 2,
@@ -278,8 +288,8 @@ const styles = StyleSheet.create({
   featureIconCircle: {
     width: 48,
     height: 48,
-    borderRadius: 24,
-    backgroundColor: BG_ELEVATED,
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.surfaceElevated,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -287,18 +297,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   featureTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    fontSize: 17,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
     marginBottom: 2,
   },
   featureDescription: {
+    fontFamily: FONTS.body,
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
   },
   pushCard: {
-    backgroundColor: BG_CARD,
-    borderRadius: 16,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     padding: SPACING * 3,
     marginBottom: SPACING * 4,
   },
@@ -309,13 +323,15 @@ const styles = StyleSheet.create({
     marginBottom: SPACING,
   },
   pushTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
   },
   pushDescription: {
+    fontFamily: FONTS.body,
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
     marginBottom: SPACING * 2,
     lineHeight: 20,
   },
@@ -327,16 +343,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   skipText: {
+    fontFamily: FONTS.displayItalic,
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   ctaContainer: {
     marginBottom: SPACING * 2,
   },
   ctaHint: {
-    fontSize: 13,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.displayItalic,
+    fontSize: 14,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
     marginTop: SPACING,
   },

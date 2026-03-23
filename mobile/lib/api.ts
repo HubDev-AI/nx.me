@@ -114,6 +114,11 @@ export async function apiFetch<T = unknown>(
         throw new ApiError(retryResponse.status, body, url);
       }
 
+      // 204 No Content — return undefined (callers should type T as void)
+      if (retryResponse.status === 204) {
+        return undefined as T;
+      }
+
       return retryResponse.json() as Promise<T>;
     }
 
@@ -123,6 +128,11 @@ export async function apiFetch<T = unknown>(
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new ApiError(response.status, body, url);
+  }
+
+  // 204 No Content — return undefined (callers should type T as void)
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;

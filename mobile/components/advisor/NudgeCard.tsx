@@ -7,14 +7,9 @@ import { memo, useCallback } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  NUDGE_UNREAD_DOT,
-  ADA_BUBBLE_BORDER,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import type { Nudge } from "../../lib/advisor";
@@ -38,6 +33,7 @@ function nudgeIcon(type: string): React.ComponentProps<typeof Ionicons>["name"] 
 }
 
 function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
+  const { theme } = useTheme();
   const handlePress = useCallback(() => {
     if (!nudge.is_read) {
       onMarkRead(nudge.id);
@@ -57,11 +53,11 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
       accessibilityHint={nudge.is_read ? undefined : "Tap to mark as read"}
     >
       {/* Icon */}
-      <View style={styles.iconContainer}>
+      <View style={[styles.iconContainer, { backgroundColor: theme.accentMuted }]}>
         <Ionicons
           name={nudgeIcon(nudge.type)}
           size={22}
-          color={nudge.is_read ? TEXT_SECONDARY : ADA_BUBBLE_BORDER}
+          color={nudge.is_read ? THEME.colors.textSecondary : theme.accent}
         />
       </View>
 
@@ -74,7 +70,7 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
           >
             {nudge.title}
           </Text>
-          {!nudge.is_read && <View style={styles.unreadDot} />}
+          {!nudge.is_read && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
         </View>
         <Text style={styles.body} numberOfLines={3}>
           {nudge.content}
@@ -90,14 +86,17 @@ export const NudgeCard = memo(NudgeCardInner);
 const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
-    backgroundColor: BG_CARD,
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg - 2,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.lg - 2,
+    gap: THEME.spacing.md,
     minHeight: MIN_TOUCH_TARGET,
   },
   unreadCard: {
-    backgroundColor: BG_ELEVATED,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderColor: THEME.colors.border,
   },
   pressed: {
     opacity: 0.8,
@@ -106,43 +105,45 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(244,63,94,0.08)",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: THEME.spacing.xs / 2,
   },
   content: {
     flex: 1,
-    gap: 4,
+    gap: THEME.spacing.xs,
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   title: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    ...THEME.typography.body,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    color: THEME.colors.textPrimary,
     flex: 1,
   },
   unreadTitle: {
-    fontWeight: "700",
+    fontFamily: FONTS.display,
   },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: NUDGE_UNREAD_DOT,
   },
   body: {
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
     fontSize: 14,
     lineHeight: 20,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
   },
   time: {
+    fontFamily: FONTS.body,
     fontSize: 12,
-    color: TEXT_SECONDARY,
-    marginTop: 2,
+    color: THEME.colors.textMuted,
+    marginTop: THEME.spacing.xs / 2,
   },
 });

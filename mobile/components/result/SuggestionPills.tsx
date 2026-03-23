@@ -11,11 +11,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  CTA_PRIMARY,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,6 +41,7 @@ export default function SuggestionPills({
   suggestions,
   visible,
 }: SuggestionPillsProps) {
+  const { theme } = useTheme();
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
@@ -82,7 +81,7 @@ export default function SuggestionPills({
             <Ionicons
               name="sparkles-outline"
               size={16}
-              color={CTA_PRIMARY}
+              color={theme.accent}
               style={styles.pillIcon}
             />
             <Text style={styles.pillText}>{suggestion}</Text>
@@ -97,36 +96,36 @@ export default function SuggestionPills({
 // Styles
 // ---------------------------------------------------------------------------
 
-const SPACING = 8;
-
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: SPACING * 2,
-    paddingTop: SPACING * 2,
-    gap: SPACING,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.lg,
+    gap: THEME.spacing.sm,
   },
   heading: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 16,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginBottom: SPACING / 2,
+    color: THEME.colors.textPrimary,
+    marginBottom: THEME.spacing.xs,
   },
   pill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 12,
-    paddingVertical: SPACING * 1.5,
-    paddingHorizontal: SPACING * 2,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingVertical: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.lg,
     minHeight: 44,
   },
   pillIcon: {
-    marginRight: SPACING,
+    marginRight: THEME.spacing.sm,
   },
   pillText: {
     flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textPrimary,
   },
 });

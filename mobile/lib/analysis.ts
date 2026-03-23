@@ -5,22 +5,26 @@ import { apiFetch } from "./api";
 import { ANALYSIS_ENDPOINTS, ANALYSIS_POLLING } from "../constants/config";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — kept in sync with backend OpenAPI spec (2026-03-23)
 // ---------------------------------------------------------------------------
 
+/** POST /v1/analyses response */
 export interface AnalysisCreateResponse {
-  id: string;
+  analysis_id: string;
+  face_shape: string;
+  symmetry_score: number;
+  recommendations: Suggestion[];
   status: string;
-  face_validation: FaceValidation | null;
 }
 
-export interface FaceValidation {
-  passed: boolean;
-  error_code: FaceErrorCode | null;
-  message: string | null;
+/** Individual recommendation item from the backend */
+export interface Suggestion {
+  rank: number;
+  category: string;
+  suggestion: string;
 }
 
-/** Backend face-validation error codes */
+/** Backend face-validation error codes (used client-side for upload-time checks) */
 export type FaceErrorCode =
   | "FACE_NOT_DETECTED"
   | "MULTIPLE_FACES"
@@ -29,8 +33,12 @@ export type FaceErrorCode =
   | "LOW_QUALITY"
   | "UNSUPPORTED_FORMAT";
 
+/** POST /v1/analyses/{id}/generate response */
 export interface GenerateResponse {
   job_id: string;
+  status: string;
+  estimated_wait_seconds: number;
+  queue_position: number;
 }
 
 export type JobStatus =
@@ -40,15 +48,19 @@ export type JobStatus =
   | "failed"
   | "cancelled";
 
+/** GET /v1/jobs/{id} response */
 export interface JobResult {
-  id: string;
+  job_id: string;
   status: JobStatus;
-  before_url: string | null;
-  after_url: string | null;
-  suggestions: string[];
-  error_code: string | null;
-  error_message: string | null;
-  created_at: string;
+  estimated_wait_seconds: number | null;
+  elapsed_seconds: number | null;
+  before_image_url: string | null;
+  after_image_url: string | null;
+  identity_preserved: boolean | null;
+  failure_reason: string | null;
+  credit_refunded: boolean | null;
+  retry_eligible: boolean | null;
+  user_guidance: string | null;
 }
 
 export interface EntitlementInfo {
@@ -135,9 +147,14 @@ export async function cancelJob(jobId: string): Promise<void> {
 
 /**
  * Request a refund for a completed job ("this doesn't look like me").
+ *
+ * NOTE: As of 2026-03-20, the backend does not expose /v1/jobs/{id}/refund
+ * in its OpenAPI spec. The call will fail gracefully and the UI shows an
+ * error alert. Once the backend ships this endpoint, it will work without
+ * app changes.
  */
 export async function requestRefund(jobId: string): Promise<void> {
-  await apiFetch(`/v1/jobs/${jobId}/refund`, { method: "POST" });
+  await apiFetch(ANALYSIS_ENDPOINTS.JOB_REFUND(jobId), { method: "POST" });
 }
 
 /**

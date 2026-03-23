@@ -32,15 +32,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_PAGE,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  ERROR_DARK,
-  ERROR_BG,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
 import { PAYWALL_ANIMATION, MIN_TOUCH_TARGET } from "../../constants/config";
 import {
   fetchEntitlement,
@@ -359,7 +352,7 @@ export function PaywallModal({
             accessibilityRole="button"
             style={styles.closeButton}
           >
-            <Ionicons name="close" size={24} color={TEXT_SECONDARY} />
+            <Ionicons name="close" size={24} color={THEME.colors.textSecondary} />
           </Pressable>
         </View>
 
@@ -385,7 +378,7 @@ export function PaywallModal({
           {/* Loading state */}
           {isFetching && (
             <View style={styles.centerState}>
-              <ActivityIndicator color={TEXT_SECONDARY} size="large" />
+              <ActivityIndicator color={THEME.colors.textSecondary} size="large" />
               <Text style={styles.stateText}>Loading pricing...</Text>
             </View>
           )}
@@ -393,7 +386,7 @@ export function PaywallModal({
           {/* Error state */}
           {fetchError && !isFetching && (
             <View style={styles.centerState}>
-              <Ionicons name="alert-circle" size={32} color={ERROR_DARK} />
+              <Ionicons name="alert-circle" size={32} color={THEME.colors.destructive} />
               <Text style={styles.errorText}>{fetchError}</Text>
               <Pressable
                 onPress={loadEntitlement}
@@ -409,7 +402,7 @@ export function PaywallModal({
           {/* Purchase error banner */}
           {purchaseError && (
             <View style={styles.errorBanner} accessibilityRole="alert">
-              <Ionicons name="alert-circle" size={18} color={ERROR_DARK} />
+              <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
               <Text style={styles.errorBannerText}>{purchaseError}</Text>
             </View>
           )}
@@ -487,31 +480,33 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     maxHeight: SCREEN_HEIGHT * 0.85,
-    backgroundColor: BG_PAGE,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
+    backgroundColor: THEME.colors.bg,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    borderTopWidth: 0.5,
+    borderTopColor: THEME.colors.glassBorder,
+    paddingTop: THEME.spacing.sm,
     paddingBottom: 40,
   },
   handleBar: {
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: TEXT_DISABLED,
+    backgroundColor: THEME.colors.textDisabled,
     alignSelf: "center",
-    marginBottom: 12,
+    marginBottom: THEME.spacing.md,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.md,
   },
   headerTitle: {
-    color: TEXT_PRIMARY,
-    fontSize: 22,
-    fontWeight: "700",
+    fontFamily: FONTS.display,
+    color: THEME.colors.textPrimary,
+    ...THEME.typography.heading,
   },
   closeButton: {
     width: MIN_TOUCH_TARGET,
@@ -522,92 +517,96 @@ const styles = StyleSheet.create({
   badgeRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    gap: 12,
+    paddingHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
   badgeHint: {
-    color: TEXT_SECONDARY,
-    fontSize: 14,
-    fontWeight: "500",
+    fontFamily: FONTS.bodyMedium,
+    color: THEME.colors.textSecondary,
+    ...THEME.typography.caption,
   },
   scrollContent: {
     flex: 1,
   },
   scrollContentContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingBottom: THEME.spacing.xl,
   },
   section: {
-    marginBottom: 24,
-    gap: 12,
+    marginBottom: THEME.spacing.xxl,
+    gap: THEME.spacing.md,
   },
   sectionTitle: {
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.bodySemiBold,
+    color: THEME.colors.textSecondary,
     fontSize: 13,
-    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   packList: {
-    gap: 10,
+    gap: THEME.spacing.md,
   },
   centerState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 40,
-    gap: 12,
+    paddingVertical: THEME.spacing.xxxl + THEME.spacing.sm,
+    gap: THEME.spacing.md,
   },
   stateText: {
-    color: TEXT_SECONDARY,
-    fontSize: 15,
+    fontFamily: FONTS.body,
+    color: THEME.colors.textSecondary,
+    ...THEME.typography.body,
     textAlign: "center",
   },
   errorText: {
-    color: ERROR_DARK,
-    fontSize: 15,
+    fontFamily: FONTS.body,
+    color: THEME.colors.destructive,
+    ...THEME.typography.body,
     textAlign: "center",
   },
   retryButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 8,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.md,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
   },
   retryText: {
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.bodySemiBold,
+    color: THEME.colors.textPrimary,
     fontSize: 14,
-    fontWeight: "600",
   },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: ERROR_BG,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
+    gap: THEME.spacing.sm,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderRadius: THEME.radius.md,
+    padding: THEME.spacing.md,
+    marginBottom: THEME.spacing.lg,
   },
   errorBannerText: {
-    color: ERROR_DARK,
+    fontFamily: FONTS.bodyMedium,
+    color: THEME.colors.destructive,
     fontSize: 14,
-    fontWeight: "500",
     flex: 1,
   },
   successBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: THEME.spacing.sm,
     backgroundColor: "rgba(74,222,128,0.1)",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 16,
+    borderRadius: THEME.radius.md,
+    padding: THEME.spacing.md,
+    marginBottom: THEME.spacing.lg,
   },
   successBannerText: {
+    fontFamily: FONTS.bodySemiBold,
     color: "#4ADE80",
     fontSize: 14,
-    fontWeight: "600",
   },
 });

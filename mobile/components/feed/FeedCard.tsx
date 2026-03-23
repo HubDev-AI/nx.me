@@ -1,37 +1,39 @@
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   View,
   Text,
   Image,
   Pressable,
-  Animated,
-  AccessibilityInfo,
-  ActionSheetIOS,
-  Platform,
-  Alert,
   StyleSheet,
   Share,
+  Dimensions,
 } from "react-native";
+import ReanimatedAnimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  interpolate,
+  FadeInDown,
+  FadeIn,
+  FadeOut,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 
-import {
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  FEED_DIVIDER,
-  BEFORE_OVERLAY,
-  AFTER_OVERLAY_STRONG,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
 import { FEED_CONFIG, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import { ReactionButton } from "./ReactionButton";
+import { DropdownMenu, type DropdownMenuItem } from "../ui/DropdownMenu";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
+import { hapticLight, hapticMedium } from "../../lib/haptics";
 import type { FeedPost } from "./types";
 
-const CARD_BORDER_RADIUS = 12;
-const IMAGE_HEIGHT = 200;
-const BEFORE_LABEL_HEIGHT = 22;
+const IMAGE_HEIGHT = 240;
 const LONG_PRESS_DELAY_MS = 500;
+const DOUBLE_TAP_DELAY_MS = 300;
+const HEART_OVERLAY_SIZE = 60;
 
 interface FeedCardProps {
   post: FeedPost;
@@ -44,9 +46,10 @@ interface FeedCardProps {
 }
 
 /**
- * Feed post card showing before/after images side-by-side,
+ * Feed post card showing user info, before/after images side-by-side,
  * caption, reaction button, comment count.
- * Long-press triggers share/report context menu.
+ * Long-press triggers a cross-platform dropdown menu.
+ * Double-tap on the image area triggers a like with heart overlay.
  */
 export const FeedCard = React.memo(function FeedCard({
   post,
@@ -57,38 +60,29 @@ export const FeedCard = React.memo(function FeedCard({
   onBlock,
   onCommentPress,
 }: FeedCardProps) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const translateAnim = useRef(new Animated.Value(20)).current;
+  const { theme } = useTheme();
+  const router = useRouter();
 
-  // Stagger entrance animation (respects reduced motion)
-  useEffect(() => {
-    let cancelled = false;
-    AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
-      if (cancelled) return;
-      if (reduceMotion) {
-        fadeAnim.setValue(1);
-        translateAnim.setValue(0);
-        return;
-      }
-      const delay = Math.min(index, FEED_CONFIG.MAX_STAGGER_ITEMS) * FEED_CONFIG.STAGGER_DELAY_MS;
-      const animation = Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          delay,
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateAnim, {
-          toValue: 0,
-          duration: 300,
-          delay,
-          useNativeDriver: true,
-        }),
-      ]);
-      animation.start();
-    });
-    return () => { cancelled = true; };
-  }, [fadeAnim, translateAnim, index]);
+  // Press scale + shadow animation (Reanimated — runs on UI thread)
+  const pressScale = useSharedValue(1);
+  const commentScale = useSharedValue(1);
+  const commentPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: commentScale.value }],
+  }));
+  const pressAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+    shadowRadius: interpolate(pressScale.value, [0.98, 1], [4, 8]),
+    shadowOffset: {
+      width: 0,
+      height: interpolate(pressScale.value, [0.98, 1], [1, 2]),
+    },
+  }));
+  const handleCardPressIn = useCallback(() => {
+    pressScale.value = withSpring(0.98, THEME.animation.press);
+  }, []);
+  const handleCardPressOut = useCallback(() => {
+    pressScale.value = withSpring(1, THEME.animation.press);
+  }, []);
 
   const handleReact = useCallback(() => {
     onReact(post.post_id);
@@ -98,81 +92,185 @@ export const FeedCard = React.memo(function FeedCard({
     onCommentPress(post.post_id);
   }, [onCommentPress, post.post_id]);
 
-  const handleLongPress = useCallback(() => {
-    const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/posts/${post.post_id}`;
-    const blockLabel = post.display_name
-      ? `Block ${post.display_name}`
-      : "Block User";
+  const handleCommentPressIn = useCallback(() => {
+    commentScale.value = withSpring(0.96, THEME.animation.press);
+  }, []);
+  const handleCommentPressOut = useCallback(() => {
+    commentScale.value = withSpring(1, THEME.animation.press);
+  }, []);
 
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Share", blockLabel, "Report", "Cancel"],
-          cancelButtonIndex: 3,
-          destructiveButtonIndex: 2,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 0) {
-            Share.share({ url: shareUrl });
-          } else if (buttonIndex === 1) {
-            onBlock(post.user_id, post.display_name ?? "this user");
-          } else if (buttonIndex === 2) {
-            onReport(post.post_id);
-          }
-        },
-      );
+  const handlePostPress = useCallback(() => {
+    router.push({
+      pathname: "/post/[postId]",
+      params: {
+        postId: post.post_id,
+        beforeImage: post.before_image_url,
+        afterImage: post.after_image_url,
+        caption: post.caption ?? "",
+        displayName: post.display_name ?? "",
+        username: post.username ?? "",
+        avatarUrl: post.avatar_url ?? "",
+        userId: post.user_id,
+        reactionCount: String(post.reaction_count),
+        commentCount: String(post.comment_count),
+        timeAgo: formatTimeAgo(post.created_at),
+        hasReacted: String(hasReacted),
+      },
+    });
+  }, [router, post, hasReacted]);
+
+  // ─── Long-press dropdown menu ────────────────────────────────────────────
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState({ top: 0, right: 0 });
+  const cardRef = useRef<View>(null);
+
+  const handleLongPress = useCallback(() => {
+    hapticLight();
+    // Measure card position to anchor the dropdown near the top-right
+    cardRef.current?.measureInWindow((x, y, width, _height) => {
+      const { width: screenWidth } = Dimensions.get("window");
+      setMenuAnchor({
+        top: y + THEME.spacing.sm,
+        right: Math.max(THEME.spacing.xl, screenWidth ? screenWidth - x - width + THEME.spacing.xl : THEME.spacing.xl),
+      });
+      setMenuVisible(true);
+    });
+  }, []);
+
+  const shareMessage = post.caption
+    ? `${post.caption} — Check it out on NXME ${UNIVERSAL_LINK_ORIGIN}`
+    : `Check out this glow-up on NXME ${UNIVERSAL_LINK_ORIGIN}`;
+  const blockLabel = post.display_name
+    ? `Block ${post.display_name}`
+    : "Block User";
+
+  const menuItems: DropdownMenuItem[] = [
+    {
+      label: "Share",
+      icon: "share-outline",
+      onPress: () => {
+        Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+      },
+    },
+    {
+      label: blockLabel,
+      icon: "ban-outline",
+      onPress: () => {
+        onBlock(post.user_id, post.display_name ?? "this user");
+      },
+    },
+    {
+      label: "Report",
+      icon: "flag-outline",
+      onPress: () => {
+        onReport(post.post_id);
+      },
+      destructive: true,
+    },
+  ];
+
+  // ─── Double-tap to like ──────────────────────────────────────────────────
+  const lastTapRef = useRef<number>(0);
+  const [showHeartOverlay, setShowHeartOverlay] = useState(false);
+
+  const handleImageTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY_MS) {
+      // Double-tap detected
+      lastTapRef.current = 0; // Reset to avoid triple-tap
+      hapticMedium();
+      onReact(post.post_id);
+      setShowHeartOverlay(true);
+      setTimeout(() => setShowHeartOverlay(false), 600);
     } else {
-      // Android: use Alert as ActionSheet alternative
-      Alert.alert("Options", undefined, [
-        {
-          text: "Share",
-          onPress: () => Share.share({ message: shareUrl }),
-        },
-        {
-          text: blockLabel,
-          onPress: () => onBlock(post.user_id, post.display_name ?? "this user"),
-        },
-        {
-          text: "Report",
-          style: "destructive",
-          onPress: () => onReport(post.post_id),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      lastTapRef.current = now;
+      // Single tap — navigate to post detail after a brief delay to
+      // distinguish from double-tap. If a second tap arrives within
+      // DOUBLE_TAP_DELAY_MS, the navigation won't fire.
+      setTimeout(() => {
+        if (Date.now() - lastTapRef.current >= DOUBLE_TAP_DELAY_MS && lastTapRef.current !== 0) {
+          lastTapRef.current = 0;
+          handlePostPress();
+        }
+      }, DOUBLE_TAP_DELAY_MS);
     }
-  }, [post.post_id, post.user_id, post.display_name, onReport, onBlock]);
+  }, [onReact, post.post_id, handlePostPress]);
+
+  // ─── Navigate to user profile ────────────────────────────────────────────
+  const handleUserPress = useCallback(() => {
+    hapticLight();
+    if (post.username) {
+      router.push({
+        pathname: "/card/[username]",
+        params: { username: post.username },
+      });
+    }
+  }, [router, post.username]);
 
   const timeAgo = formatTimeAgo(post.created_at);
+  const staggerDelay = Math.min(index, FEED_CONFIG.MAX_STAGGER_ITEMS) * 50;
+  const displayName = post.display_name || "User";
 
   return (
-    <Animated.View
-      style={[
-        styles.card,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: translateAnim }],
-        },
-      ]}
+    <ReanimatedAnimated.View
+      style={styles.card}
+      entering={FadeInDown.duration(THEME.animation.duration.normal).delay(staggerDelay).damping(18)}
     >
+      <ReanimatedAnimated.View style={pressAnimStyle}>
       <Pressable
-        onLongPress={handleLongPress}
-        delayLongPress={LONG_PRESS_DELAY_MS}
-        accessibilityLabel={`Post${post.caption ? `: ${post.caption}` : ""}, ${post.reaction_count} reactions, ${post.comment_count} comments, ${timeAgo}`}
-        accessibilityRole="button"
-        accessibilityHint="Long press for share, block, and report options"
+        onPressIn={handleCardPressIn}
+        onPressOut={handleCardPressOut}
+        accessibilityLabel={`Post by ${displayName}${post.caption ? `: ${post.caption}` : ""}, ${post.reaction_count} reactions, ${post.comment_count} comments, ${timeAgo}`}
       >
+        {/* User info row — avatar + display name + Before/After indicator */}
+        <View style={styles.headerRow}>
+          <Pressable
+            onPress={handleUserPress}
+            style={styles.userRow}
+            accessibilityLabel={`View ${displayName}'s profile`}
+            accessibilityRole="link"
+            disabled={!post.username}
+          >
+            <View style={[styles.sparkleIcon, { backgroundColor: theme.accent + "33" }]}>
+              <Ionicons name="sparkles" size={10} color={theme.accent} />
+            </View>
+            {post.avatar_url ? (
+              <Image
+                source={{ uri: post.avatar_url }}
+                style={styles.avatar}
+                accessibilityLabel={`${displayName}'s avatar`}
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                <Ionicons name="person" size={14} color={THEME.colors.textSecondary} />
+              </View>
+            )}
+            <Text style={styles.displayName} numberOfLines={1}>
+              {displayName}
+            </Text>
+          </Pressable>
+          <View style={styles.beforeAfterRow}>
+            <Text style={styles.beforeAfterLabel}>Before</Text>
+            <Ionicons name="arrow-forward" size={10} color={theme.accent} />
+            <Text style={[styles.beforeAfterLabel, { color: theme.accent }]}>After</Text>
+          </View>
+        </View>
+
         {/* Before / After images side by side */}
-        <View style={styles.imageRow}>
+        <Pressable
+          onPress={handleImageTap}
+          onLongPress={handleLongPress}
+          delayLongPress={LONG_PRESS_DELAY_MS}
+          accessibilityHint="Double-tap to like. Long press for share, block, and report options"
+        >
+        <View style={styles.imageRow} ref={cardRef}>
           <View style={styles.imageContainer}>
             <Image
               source={{ uri: post.before_image_url }}
               style={styles.image}
               resizeMode="cover"
-              accessibilityLabel={`Before photo by ${post.display_name ?? "user"}`}
+              accessibilityLabel={`Before photo by ${displayName}`}
             />
-            <View style={styles.imageLabel}>
-              <Text style={styles.imageLabelText}>Before</Text>
-            </View>
           </View>
           <View style={styles.imageDivider} />
           <View style={styles.imageContainer}>
@@ -180,14 +278,21 @@ export const FeedCard = React.memo(function FeedCard({
               source={{ uri: post.after_image_url }}
               style={styles.image}
               resizeMode="cover"
-              accessibilityLabel={`After photo by ${post.display_name ?? "user"}`}
+              accessibilityLabel={`After photo by ${displayName}`}
             />
-            <View style={[styles.imageLabel, styles.afterLabel]}>
-              <Text style={[styles.imageLabelText, styles.afterLabelText]}>
-                After
-              </Text>
-            </View>
           </View>
+
+          {/* Heart overlay — double-tap feedback */}
+          {showHeartOverlay ? (
+            <ReanimatedAnimated.View
+              entering={FadeIn.duration(150)}
+              exiting={FadeOut.duration(450)}
+              style={styles.heartOverlay}
+              pointerEvents="none"
+            >
+              <Ionicons name="heart" size={HEART_OVERLAY_SIZE} color={THEME.colors.white} />
+            </ReanimatedAnimated.View>
+          ) : null}
         </View>
 
         {/* Caption */}
@@ -196,8 +301,9 @@ export const FeedCard = React.memo(function FeedCard({
             {post.caption}
           </Text>
         ) : null}
+        </Pressable>
 
-        {/* Actions row */}
+        {/* Actions row — outside the long-press Pressable to avoid button-in-button */}
         <View style={styles.actionsRow}>
           <ReactionButton
             reactionCount={post.reaction_count}
@@ -205,38 +311,109 @@ export const FeedCard = React.memo(function FeedCard({
             onReact={handleReact}
           />
 
-          <Pressable
-            onPress={handleComment}
-            style={styles.commentBadge}
-            accessibilityLabel={`${post.comment_count} comments, tap to view`}
-            accessibilityRole="button"
-          >
-            <Ionicons
-              name="chatbubble-outline"
-              size={18}
-              color={TEXT_SECONDARY}
-            />
-            <Text style={styles.commentCount}>{post.comment_count}</Text>
-          </Pressable>
+          <ReanimatedAnimated.View style={commentPressStyle}>
+            <Pressable
+              onPress={handleComment}
+              onPressIn={handleCommentPressIn}
+              onPressOut={handleCommentPressOut}
+              style={styles.commentBadge}
+              accessibilityLabel={`${post.comment_count} comments, tap to view`}
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={20}
+                color={THEME.colors.textSecondary}
+              />
+              <Text style={styles.commentCount}>{post.comment_count}</Text>
+            </Pressable>
+          </ReanimatedAnimated.View>
 
           <Text style={styles.timestamp}>{timeAgo}</Text>
         </View>
       </Pressable>
-    </Animated.View>
+      </ReanimatedAnimated.View>
+
+      {/* Context menu — cross-platform dropdown */}
+      <DropdownMenu
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        items={menuItems}
+        anchorPosition={menuAnchor}
+      />
+    </ReanimatedAnimated.View>
   );
 });
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: BG_CARD,
-    borderRadius: CARD_BORDER_RADIUS,
-    marginHorizontal: 16,
-    marginBottom: 16,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    marginHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.xl,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.1)",
+    ...THEME.shadow.glass,
   },
+  // ─── Header row (user info + Before -> After) ─────────────────────────
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm + 2,
+  },
+  userRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.sm,
+    flexShrink: 1,
+  },
+  sparkleIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  avatarPlaceholder: {
+    backgroundColor: THEME.colors.surfaceElevated,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  displayName: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 14,
+    color: THEME.colors.textPrimary,
+    flexShrink: 1,
+  },
+  beforeAfterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.xs,
+    marginLeft: THEME.spacing.sm,
+  },
+  beforeAfterLabel: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 11,
+    fontWeight: "600",
+    color: THEME.colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  // ─── Image area ─────────────────────────────────────────────────────────
   imageRow: {
     flexDirection: "row",
     height: IMAGE_HEIGHT,
+    overflow: "hidden",
   },
   imageContainer: {
     flex: 1,
@@ -248,65 +425,48 @@ const styles = StyleSheet.create({
   },
   imageDivider: {
     width: 2,
-    backgroundColor: FEED_DIVIDER,
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
-  imageLabel: {
-    position: "absolute",
-    bottom: 8,
-    left: 8,
-    height: BEFORE_LABEL_HEIGHT,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    backgroundColor: BEFORE_OVERLAY,
+  // ─── Heart overlay ──────────────────────────────────────────────────────
+  heartOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
     justifyContent: "center",
+    zIndex: 10,
   },
-  afterLabel: {
-    left: undefined,
-    right: 8,
-    backgroundColor: AFTER_OVERLAY_STRONG,
-  },
-  imageLabelText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#F8F8F8",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  afterLabelText: {
-    color: "#FFFFFF",
-  },
+  // ─── Caption & actions ──────────────────────────────────────────────────
   caption: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: TEXT_PRIMARY,
-    paddingHorizontal: 12,
-    paddingTop: 10,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textPrimary,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.md,
   },
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm + 2,
+    gap: THEME.spacing.md,
   },
   commentBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: THEME.spacing.xs,
     minHeight: 44,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: BG_ELEVATED,
+    paddingHorizontal: THEME.spacing.xs,
+    paddingVertical: THEME.spacing.sm,
   },
   commentCount: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 14,
     fontWeight: "600",
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
   },
   timestamp: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     marginLeft: "auto",
   },
 });

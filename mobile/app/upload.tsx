@@ -21,7 +21,14 @@ import {
 } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import PhotoPicker, {
@@ -38,20 +45,11 @@ import {
   type EntitlementInfo,
 } from "../lib/analysis";
 import { ApiError } from "../lib/api";
-import {
-  BG_PAGE,
-  BG_CARD,
-  BG_ELEVATED,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  CTA_PRESSED,
-  ERROR_DARK,
-  ERROR_BG,
-  COLORS,
-} from "../constants/colors";
+import { THEME } from "../constants/theme";
+import { PageBackground } from "../components/ui/PageBackground";
+import { useTheme } from "../lib/theme-context";
 import { ANALYSIS_POLLING } from "../constants/config";
+import { FONTS } from "../hooks/useFonts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +68,17 @@ type UploadPhase =
 
 export default function UploadScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
+
+  // Press scale animations
+  const analyzeScale = useSharedValue(1);
+  const cancelScale = useSharedValue(1);
+  const analyzePressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: analyzeScale.value }],
+  }));
+  const cancelPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: cancelScale.value }],
+  }));
 
   // State
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
@@ -146,18 +155,12 @@ export default function UploadScreen() {
         photo.mimeType,
       );
 
-      // Step 2: Check face validation
-      if (analysis.face_validation && !analysis.face_validation.passed) {
-        setPhase("face_error");
-        setFaceErrorCode(
-          analysis.face_validation.error_code ?? "FACE_NOT_DETECTED",
-        );
-        return;
-      }
-
-      // Step 3: Start generation
+      // Step 2: Start generation
+      // NOTE: Face validation is now handled server-side during analysis.
+      // If the backend rejects the image, it returns a 422 which is caught
+      // by the ApiError handler below.
       setPhase("generating");
-      const { job_id } = await startGeneration(analysis.id);
+      const { job_id } = await startGeneration(analysis.analysis_id);
       setCurrentJobId(job_id);
 
       // Step 4: Poll for completion
@@ -180,7 +183,7 @@ export default function UploadScreen() {
       } else {
         setPhase("error");
         setErrorMessage(
-          finalResult.error_message ?? "Generation failed. Please try again.",
+          finalResult.failure_reason ?? "Generation failed. Please try again.",
         );
       }
     } catch (err) {
@@ -231,12 +234,13 @@ export default function UploadScreen() {
       <Stack.Screen
         options={{
           title: "Upload",
-          headerStyle: { backgroundColor: BG_PAGE },
-          headerTintColor: COLORS.neutral.dark[900],
+          headerStyle: { backgroundColor: THEME.colors.bg },
+          headerTintColor: THEME.colors.textPrimary,
           headerShadowVisible: false,
         }}
       />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+        <PageBackground overlayOpacity={0.88} />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -252,7 +256,7 @@ export default function UploadScreen() {
               <Ionicons
                 name="flash-outline"
                 size={16}
-                color={COLORS.after[400]}
+                color={theme.accent}
               />
               <Text style={styles.trialText}>
                 {entitlement.remaining_trials} / {entitlement.total_trials}{" "}
@@ -262,14 +266,17 @@ export default function UploadScreen() {
           )}
 
           {/* Photo picker */}
-          <View style={styles.pickerSection}>
+          <Animated.View
+            entering={FadeInDown.duration(THEME.animation.duration.normal).delay(50)}
+            style={styles.pickerSection}
+          >
             <PhotoPicker
               photo={photo}
               onPhotoSelected={setPhoto}
               onPhotoClear={handlePhotoClear}
               disabled={isLoading}
             />
-          </View>
+          </Animated.View>
 
           {/* Face validation error */}
           {phase === "face_error" && faceErrorCode && (
@@ -283,7 +290,7 @@ export default function UploadScreen() {
                 <Ionicons
                   name="alert-circle-outline"
                   size={20}
-                  color={ERROR_DARK}
+                  color={THEME.colors.destructive}
                 />
                 <Text style={styles.errorTitle}>Face Validation Failed</Text>
               </View>
@@ -305,7 +312,7 @@ export default function UploadScreen() {
                 <Ionicons
                   name="warning-outline"
                   size={20}
-                  color={ERROR_DARK}
+                  color={THEME.colors.destructive}
                 />
                 <Text style={styles.errorTitle}>Error</Text>
               </View>
@@ -325,12 +332,12 @@ export default function UploadScreen() {
               }
               accessibilityRole="progressbar"
             >
-              <ActivityIndicator size="large" color={CTA_PRIMARY} />
+              <ActivityIndicator size="large" color={theme.accent} />
               <Text style={styles.loadingTitle}>
                 {phase === "uploading" ? "Uploading..." : "Generating glow-up"}
               </Text>
               {phase === "generating" && (
-                <Text style={styles.elapsedText}>
+                <Text style={[styles.elapsedText, { color: theme.accent }]}>
                   {formatElapsed(elapsedSeconds)}
                 </Text>
               )}
@@ -344,52 +351,75 @@ export default function UploadScreen() {
           )}
         </ScrollView>
 
-        {/* Bottom action area */}
+        {/* Bottom action area — glass bar with glowing top border */}
         <View style={styles.bottomBar}>
+          {/* Subtle glowing top accent line */}
+          <View style={[
+            styles.bottomBarGlow,
+            { backgroundColor: theme.accent + "1A" },
+          ]} />
+          <View style={[
+            styles.bottomBarAccentLine,
+            { backgroundColor: theme.accent + "33" },
+          ]} />
+
           {phase === "generating" ? (
-            <Pressable
-              onPress={handleCancel}
-              style={({ pressed }) => [
-                styles.cancelButton,
-                pressed && styles.cancelButtonPressed,
-              ]}
-              accessibilityLabel="Cancel generation"
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name="close-circle-outline"
-                size={20}
-                color={TEXT_PRIMARY}
-              />
-              <Text style={styles.cancelText}>Cancel</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleAnalyze}
-              disabled={isAnalyzeDisabled}
-              style={({ pressed }) => [
-                styles.analyzeButton,
-                pressed && !isAnalyzeDisabled && styles.analyzeButtonPressed,
-                isAnalyzeDisabled && styles.analyzeButtonDisabled,
-              ]}
-              accessibilityLabel="Analyze photo"
-              accessibilityRole="button"
-              accessibilityState={{ disabled: isAnalyzeDisabled }}
-            >
-              <Ionicons
-                name="sparkles"
-                size={20}
-                color={isAnalyzeDisabled ? TEXT_DISABLED : "#FFFFFF"}
-              />
-              <Text
-                style={[
-                  styles.analyzeText,
-                  isAnalyzeDisabled && styles.analyzeTextDisabled,
-                ]}
+            <Animated.View style={cancelPressStyle}>
+              <Pressable
+                onPress={handleCancel}
+                onPressIn={() => { cancelScale.value = withSpring(0.97, THEME.animation.press); }}
+                onPressOut={() => { cancelScale.value = withSpring(1, THEME.animation.press); }}
+                style={styles.cancelButton}
+                accessibilityLabel="Cancel generation"
+                accessibilityRole="button"
               >
-                Analyze
-              </Text>
-            </Pressable>
+                <Ionicons
+                  name="close-circle-outline"
+                  size={20}
+                  color={THEME.colors.textPrimary}
+                />
+                <Text style={styles.cancelText}>Cancel</Text>
+              </Pressable>
+            </Animated.View>
+          ) : (
+            <Animated.View style={analyzePressStyle}>
+              <Pressable
+                onPress={handleAnalyze}
+                onPressIn={() => {
+                  if (!isAnalyzeDisabled) analyzeScale.value = withSpring(0.97, THEME.animation.press);
+                }}
+                onPressOut={() => {
+                  analyzeScale.value = withSpring(1, THEME.animation.press);
+                }}
+                disabled={isAnalyzeDisabled}
+                style={[
+                  styles.analyzeButton,
+                  isAnalyzeDisabled
+                    ? styles.analyzeButtonDisabled
+                    : [
+                        { backgroundColor: theme.accent },
+                        THEME.shadow.glow(theme.accent),
+                      ],
+                ]}
+                accessibilityLabel="Analyze photo"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: isAnalyzeDisabled }}
+              >
+                <Ionicons
+                  name="sparkles"
+                  size={20}
+                  color={isAnalyzeDisabled ? THEME.colors.textDisabled : THEME.colors.white}
+                />
+                <Text
+                  style={[
+                    styles.analyzeText,
+                    isAnalyzeDisabled && styles.analyzeTextDisabled,
+                  ]}
+                >
+                  Analyze
+                </Text>
+              </Pressable>
+            </Animated.View>
           )}
         </View>
       </SafeAreaView>
@@ -412,141 +442,155 @@ function formatElapsed(seconds: number): string {
 // Styles
 // ---------------------------------------------------------------------------
 
-const SPACING = 8;
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: BG_PAGE,
+    backgroundColor: THEME.colors.bg,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    padding: SPACING * 2,
-    paddingBottom: SPACING * 4,
+    padding: THEME.spacing.xl,
+    paddingBottom: THEME.spacing.xxxl,
   },
   // Trial badge
   trialBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "center",
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 20,
-    paddingHorizontal: SPACING * 2,
-    paddingVertical: SPACING,
-    marginBottom: SPACING * 2,
-    gap: SPACING,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
+    marginBottom: THEME.spacing.lg,
+    gap: THEME.spacing.sm,
   },
   trialText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 13,
-    fontWeight: "600",
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textSecondary,
   },
   // Photo picker section
   pickerSection: {
     alignItems: "center",
-    marginBottom: SPACING * 3,
+    marginBottom: THEME.spacing.xxl,
   },
   // Error card
   errorCard: {
-    backgroundColor: ERROR_BG,
-    borderRadius: 12,
-    padding: SPACING * 2,
-    marginBottom: SPACING * 2,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.md,
+    padding: THEME.spacing.lg,
+    marginBottom: THEME.spacing.lg,
     borderWidth: 1,
-    borderColor: "rgba(248, 113, 113, 0.2)",
+    borderColor: THEME.colors.glassBorder,
   },
   errorHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING,
-    marginBottom: SPACING,
+    gap: THEME.spacing.sm,
+    marginBottom: THEME.spacing.sm,
   },
   errorTitle: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
-    fontWeight: "700",
-    color: ERROR_DARK,
+    color: THEME.colors.destructive,
   },
   errorGuidance: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
   },
   // Loading card
   loadingCard: {
     alignItems: "center",
-    backgroundColor: BG_CARD,
-    borderRadius: 16,
-    padding: SPACING * 4,
-    gap: SPACING * 1.5,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.xxxl,
+    gap: THEME.spacing.md,
   },
   loadingTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    fontSize: 18,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
   },
   elapsedText: {
+    fontFamily: FONTS.display,
     fontSize: 24,
-    fontWeight: "700",
-    color: CTA_PRIMARY,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
     fontVariant: ["tabular-nums"],
   },
   hintText: {
-    fontSize: 13,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textMuted,
     textAlign: "center",
   },
   // Bottom bar
   bottomBar: {
-    paddingHorizontal: SPACING * 2,
-    paddingVertical: SPACING * 1.5,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.neutral.dark[400],
-    backgroundColor: BG_PAGE,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.md,
+    backgroundColor: THEME.colors.glass,
+    position: "relative",
+  },
+  bottomBarGlow: {
+    position: "absolute",
+    top: -4,
+    left: 0,
+    right: 0,
+    height: 4,
+  },
+  bottomBarAccentLine: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth * 2,
   },
   analyzeButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: SPACING,
-    minHeight: 48,
-  },
-  analyzeButtonPressed: {
-    backgroundColor: CTA_PRESSED,
+    borderRadius: THEME.radius.pill,
+    paddingVertical: THEME.spacing.lg,
+    gap: THEME.spacing.sm,
+    minHeight: 52,
   },
   analyzeButtonDisabled: {
-    backgroundColor: COLORS.neutral.dark[300],
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    borderRadius: THEME.radius.pill,
   },
   analyzeText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    color: THEME.colors.bg,
   },
   analyzeTextDisabled: {
-    color: TEXT_DISABLED,
+    color: THEME.colors.textDisabled,
   },
   cancelButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 12,
-    paddingVertical: 14,
-    gap: SPACING,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
+    paddingVertical: THEME.spacing.lg,
+    gap: THEME.spacing.sm,
     minHeight: 48,
     borderWidth: 1,
-    borderColor: COLORS.neutral.dark[400],
-  },
-  cancelButtonPressed: {
-    backgroundColor: COLORS.neutral.dark[300],
+    borderColor: THEME.colors.glassBorder,
   },
   cancelText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 16,
-    fontWeight: "600",
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
   },
 });

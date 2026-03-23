@@ -19,20 +19,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  BG_PAGE,
-  BG_CARD,
-  BG_ELEVATED,
-  INPUT_FILL,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  CTA_PRIMARY,
-  CTA_PRESSED,
-  ERROR_DARK,
-  BORDER_DEFAULT,
-  ADA_BUBBLE_BORDER,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { useTheme } from "../../lib/theme-context";
+import { FONTS } from "../../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
@@ -90,6 +79,7 @@ interface SwipeableRowProps {
 }
 
 function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
+  const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
 
   const panResponder = useRef(
@@ -148,7 +138,7 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
           accessibilityLabel={`Delete memory: ${memory.content}`}
           accessibilityRole="button"
         >
-          <Ionicons name="trash-outline" size={22} color="#FFFFFF" />
+          <Ionicons name="trash-outline" size={22} color={THEME.colors.white} />
         </Pressable>
       </View>
 
@@ -157,16 +147,16 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
         style={[rowStyles.card, { transform: [{ translateX }] }]}
         {...panResponder.panHandlers}
       >
-        <View style={rowStyles.iconContainer}>
+        <View style={[rowStyles.iconContainer, { backgroundColor: theme.accentMuted }]}>
           <Ionicons
             name={memoryTypeIcon(memory.type)}
             size={20}
-            color={ADA_BUBBLE_BORDER}
+            color={theme.accent}
           />
         </View>
         <View style={rowStyles.content}>
           <View style={rowStyles.header}>
-            <Text style={rowStyles.typeLabel}>
+            <Text style={[rowStyles.typeLabel, { color: theme.accent }]}>
               {memoryTypeLabel(memory.type)}
             </Text>
             <Text style={rowStyles.date}>{dateStr}</Text>
@@ -184,7 +174,7 @@ const rowStyles = StyleSheet.create({
   wrapper: {
     position: "relative",
     overflow: "hidden",
-    borderRadius: 14,
+    borderRadius: THEME.radius.lg - 2,
   },
   deleteContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -194,31 +184,32 @@ const rowStyles = StyleSheet.create({
   deleteButton: {
     width: DELETE_BUTTON_WIDTH,
     height: "100%",
-    backgroundColor: ERROR_DARK,
-    borderTopRightRadius: 14,
-    borderBottomRightRadius: 14,
+    backgroundColor: THEME.colors.destructive,
+    borderTopRightRadius: THEME.radius.lg - 2,
+    borderBottomRightRadius: THEME.radius.lg - 2,
     alignItems: "center",
     justifyContent: "center",
   },
   card: {
     flexDirection: "row",
-    backgroundColor: BG_CARD,
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg - 2,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.lg - 2,
+    gap: THEME.spacing.md,
   },
   iconContainer: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(244,63,94,0.08)",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
+    marginTop: THEME.spacing.xs / 2,
   },
   content: {
     flex: 1,
-    gap: 4,
+    gap: THEME.spacing.xs,
   },
   header: {
     flexDirection: "row",
@@ -226,20 +217,22 @@ const rowStyles = StyleSheet.create({
     alignItems: "center",
   },
   typeLabel: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 12,
-    fontWeight: "600",
-    color: ADA_BUBBLE_BORDER,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: THEME.typography.caption.letterSpacing,
   },
   date: {
+    fontFamily: FONTS.body,
     fontSize: 12,
-    color: TEXT_SECONDARY,
+    color: THEME.colors.textMuted,
   },
   body: {
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
     fontSize: 14,
     lineHeight: 20,
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
   },
 });
 
@@ -253,6 +246,7 @@ interface AddMemoryFormProps {
 }
 
 function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
+  const { theme } = useTheme();
   const [content, setContent] = useState("");
   const [selectedType, setSelectedType] = useState<MemoryType>("goal");
 
@@ -278,7 +272,7 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
             onPress={() => setSelectedType(t.value)}
             style={[
               formStyles.typeChip,
-              selectedType === t.value && formStyles.typeChipActive,
+              selectedType === t.value && [formStyles.typeChipActive, { backgroundColor: theme.accent }],
             ]}
             accessibilityLabel={`Memory type: ${t.label}`}
             accessibilityRole="button"
@@ -307,7 +301,7 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
               ? "e.g. Grow out my hair to shoulder length"
               : "e.g. I prefer minimal jewelry"
           }
-          placeholderTextColor={TEXT_DISABLED}
+          placeholderTextColor={THEME.colors.textDisabled}
           multiline
           maxLength={500}
           accessibilityLabel="Memory content"
@@ -324,12 +318,12 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
           accessibilityRole="button"
         >
           {isAdding ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={THEME.colors.bg} />
           ) : (
             <Ionicons
               name="add"
               size={24}
-              color={content.trim() ? "#FFFFFF" : TEXT_DISABLED}
+              color={content.trim() ? THEME.colors.bg : THEME.colors.textDisabled}
             />
           )}
         </Pressable>
@@ -340,48 +334,49 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
 
 const formStyles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 10,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingBottom: THEME.spacing.md,
+    gap: THEME.spacing.md - 2,
   },
   typeRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   typeChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: BG_ELEVATED,
+    paddingHorizontal: THEME.spacing.lg - 2,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.radius.lg,
+    backgroundColor: THEME.colors.surfaceElevated,
     minHeight: 44,
     justifyContent: "center",
   },
   typeChipActive: {
-    backgroundColor: CTA_PRIMARY,
+    // backgroundColor applied dynamically via inline style
   },
   typeChipText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.bodyMedium,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
   },
   typeChipTextActive: {
-    color: "#FFFFFF",
-    fontWeight: "600",
+    color: THEME.colors.bg,
+    fontFamily: FONTS.bodySemiBold,
   },
   inputRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: THEME.spacing.sm,
     alignItems: "flex-end",
   },
   input: {
     flex: 1,
-    backgroundColor: INPUT_FILL,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 10,
+    fontFamily: FONTS.body,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.lg - 2,
+    paddingHorizontal: THEME.spacing.lg - 2,
+    paddingTop: THEME.spacing.md - 2,
+    paddingBottom: THEME.spacing.md - 2,
     fontSize: 14,
-    color: TEXT_PRIMARY,
+    color: THEME.colors.textPrimary,
     maxHeight: 80,
     minHeight: MIN_TOUCH_TARGET,
   },
@@ -391,13 +386,13 @@ const formStyles = StyleSheet.create({
     borderRadius: MIN_TOUCH_TARGET / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: BORDER_DEFAULT,
+    backgroundColor: THEME.colors.border,
   },
   addButtonActive: {
-    backgroundColor: CTA_PRIMARY,
+    backgroundColor: THEME.colors.textPrimary,
   },
   addButtonPressed: {
-    backgroundColor: CTA_PRESSED,
+    opacity: 0.85,
   },
 });
 
@@ -424,30 +419,30 @@ function MemorySkeleton() {
 
 const memSkeletonStyles = StyleSheet.create({
   container: {
-    padding: 16,
-    gap: 12,
+    padding: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
   card: {
     flexDirection: "row",
-    backgroundColor: BG_CARD,
-    borderRadius: 14,
-    padding: 14,
-    gap: 12,
+    backgroundColor: THEME.colors.surface,
+    borderRadius: THEME.radius.lg - 2,
+    padding: THEME.spacing.lg - 2,
+    gap: THEME.spacing.md,
   },
   icon: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: THEME.colors.surfaceElevated,
   },
   lines: {
     flex: 1,
-    gap: 8,
+    gap: THEME.spacing.sm,
   },
   line: {
     height: 12,
-    borderRadius: 6,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: THEME.radius.sm - 2,
+    backgroundColor: THEME.colors.surfaceElevated,
   },
 });
 
@@ -571,7 +566,7 @@ export function MemoryList() {
       <View style={styles.container}>
         <AddMemoryForm onAdd={handleAdd} isAdding={isAdding} />
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color={TEXT_SECONDARY} />
+          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
           <Text style={styles.errorTitle}>Could not load memories</Text>
           <Text style={styles.errorSubtitle}>{error}</Text>
           <Pressable
@@ -580,7 +575,7 @@ export function MemoryList() {
             accessibilityLabel="Retry loading memories"
             accessibilityRole="button"
           >
-            <Ionicons name="refresh-outline" size={18} color="#FFFFFF" />
+            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
             <Text style={styles.retryButtonText}>Try Again</Text>
           </Pressable>
         </View>
@@ -597,7 +592,7 @@ export function MemoryList() {
         renderItem={renderItem}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="bookmark-outline" size={48} color={TEXT_SECONDARY} />
+            <Ionicons name="bookmark-outline" size={48} color={THEME.colors.textSecondary} />
             <Text style={styles.emptyTitle}>No memories yet</Text>
             <Text style={styles.emptySubtitle}>
               Add goals or notes so Ada can personalise her advice
@@ -615,70 +610,72 @@ export function MemoryList() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: BG_PAGE,
-    paddingTop: 12,
+    backgroundColor: THEME.colors.bg,
+    paddingTop: THEME.spacing.md,
   },
   listContent: {
     flexGrow: 1,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingBottom: THEME.spacing.lg,
   },
   separator: {
-    height: 10,
+    height: THEME.spacing.md - 2,
   },
   emptyContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    paddingTop: 60,
-    gap: 8,
+    paddingHorizontal: THEME.spacing.xxxl,
+    paddingTop: THEME.spacing.xxxl * 2,
+    gap: THEME.spacing.sm,
   },
   emptyTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginTop: THEME.spacing.md,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.displayItalic,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
   },
   errorContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 32,
-    gap: 8,
+    paddingHorizontal: THEME.spacing.xxxl,
+    gap: THEME.spacing.sm,
   },
   errorTitle: {
+    fontFamily: FONTS.display,
     fontSize: 18,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-    marginTop: 12,
+    color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
+    marginTop: THEME.spacing.md,
   },
   errorSubtitle: {
-    fontSize: 14,
-    color: TEXT_SECONDARY,
+    fontFamily: FONTS.body,
+    ...THEME.typography.caption,
+    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
   },
   retryButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: CTA_PRIMARY,
+    gap: THEME.spacing.sm,
+    marginTop: THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.md - 2,
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.textPrimary,
     minHeight: MIN_TOUCH_TARGET,
   },
   retryButtonText: {
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    color: THEME.colors.bg,
   },
 });

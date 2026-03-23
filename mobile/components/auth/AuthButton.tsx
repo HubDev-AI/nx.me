@@ -7,7 +7,9 @@ import {
   Animated,
 } from "react-native";
 
-import { CTA_PRIMARY, CTA_PRESSED } from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
 
 interface AuthButtonProps {
   title: string;
@@ -27,6 +29,7 @@ export function AuthButton({
   isLoading = false,
   disabled = false,
 }: AuthButtonProps) {
+  const { theme } = useTheme();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(1)).current;
 
@@ -76,14 +79,15 @@ export function AuthButton({
         disabled={isDisabled}
         style={({ pressed }) => [
           styles.button,
-          pressed && !isDisabled && { backgroundColor: CTA_PRESSED },
+          { backgroundColor: theme.accent },
+          pressed && !isDisabled && styles.buttonPressed,
         ]}
         accessibilityLabel={isLoading ? `${title}, loading` : title}
         accessibilityRole="button"
         accessibilityState={{ disabled: isDisabled, busy: isLoading }}
       >
         {isLoading ? (
-          <ActivityIndicator color="#FFFFFF" size="small" />
+          <ActivityIndicator color={THEME.colors.bg} size="small" />
         ) : (
           <Text style={styles.text}>{title}</Text>
         )}
@@ -94,18 +98,20 @@ export function AuthButton({
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: CTA_PRIMARY,
     minHeight: BUTTON_HEIGHT,
-    borderRadius: 12,
+    borderRadius: THEME.radius.pill,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.xxl,
+  },
+  buttonPressed: {
+    opacity: 0.85,
   },
   text: {
-    color: "#FFFFFF",
+    fontFamily: FONTS.bodySemiBold,
+    color: THEME.colors.bg,
     fontSize: 16,
-    fontWeight: "700",
   },
   disabledWrapper: {
     opacity: 0.5,

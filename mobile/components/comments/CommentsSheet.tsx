@@ -23,15 +23,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
-import {
-  BG_PAGE,
-  TEXT_PRIMARY,
-  TEXT_SECONDARY,
-  TEXT_DISABLED,
-  ERROR_DARK,
-  ERROR_BG,
-  BG_ELEVATED,
-} from "../../constants/colors";
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
 import { COMMENTS_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { useComments } from "./useComments";
 import { CommentItem } from "./CommentItem";
@@ -205,7 +198,9 @@ export function CommentsSheet({
   // Render helpers
   // ---------------------------------------------------------------------------
   const renderItem = useCallback(
-    ({ item }: { item: Comment }) => <CommentItem comment={item} />,
+    ({ item, index }: { item: Comment; index: number }) => (
+      <CommentItem comment={item} index={index} />
+    ),
     [],
   );
 
@@ -219,7 +214,7 @@ export function CommentsSheet({
     if (error) {
       return (
         <View style={styles.emptyState}>
-          <Ionicons name="alert-circle" size={28} color={ERROR_DARK} />
+          <Ionicons name="alert-circle" size={28} color={THEME.colors.destructive} />
           <Text style={styles.errorText}>{error}</Text>
           <Pressable
             onPress={() => loadComments(postId)}
@@ -237,7 +232,7 @@ export function CommentsSheet({
         <Ionicons
           name="chatbubble-outline"
           size={28}
-          color={TEXT_DISABLED}
+          color={THEME.colors.textDisabled}
         />
         <Text style={styles.emptyText}>No comments yet</Text>
         <Text style={styles.emptyHint}>Be the first to comment</Text>
@@ -271,6 +266,15 @@ export function CommentsSheet({
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={0}
       >
+        {/* Dismiss area above the sheet — KeyboardAvoidingView sits over the
+            backdrop Animated.View in the z-order, so taps in this region would
+            be swallowed without this extra Pressable. */}
+        <Pressable
+          style={styles.dismissArea}
+          onPress={handleClose}
+          accessibilityLabel="Close comments"
+          accessibilityRole="button"
+        />
         <Animated.View
           style={[
             styles.sheet,
@@ -296,14 +300,14 @@ export function CommentsSheet({
               accessibilityRole="button"
               style={styles.closeButton}
             >
-              <Ionicons name="close" size={24} color={TEXT_SECONDARY} />
+              <Ionicons name="close" size={24} color={THEME.colors.textSecondary} />
             </Pressable>
           </View>
 
           {/* Post error toast */}
           {postError ? (
             <View style={styles.errorBanner} accessibilityRole="alert">
-              <Ionicons name="alert-circle" size={16} color={ERROR_DARK} />
+              <Ionicons name="alert-circle" size={16} color={THEME.colors.destructive} />
               <Text style={styles.errorBannerText}>{postError}</Text>
             </View>
           ) : null}
@@ -349,33 +353,39 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
   },
+  dismissArea: {
+    flex: 1,
+  },
   sheet: {
     maxHeight: SCREEN_HEIGHT * 0.75,
-    backgroundColor: BG_PAGE,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
-    paddingBottom: 16,
+    backgroundColor: THEME.colors.glass,
+    borderTopLeftRadius: THEME.radius.xl,
+    borderTopRightRadius: THEME.radius.xl,
+    borderTopWidth: 0.5,
+    borderTopColor: THEME.colors.glassBorder,
+    paddingTop: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.lg,
   },
   handleBar: {
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: TEXT_DISABLED,
+    backgroundColor: THEME.colors.borderFocused,
     alignSelf: "center",
-    marginBottom: 8,
+    marginBottom: THEME.spacing.sm,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    marginBottom: 4,
+    paddingHorizontal: THEME.spacing.lg,
+    marginBottom: THEME.spacing.xs,
   },
   headerTitle: {
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.display,
+    color: THEME.colors.textPrimary,
     fontSize: 18,
-    fontWeight: "700",
+    letterSpacing: THEME.typography.heading.letterSpacing,
   },
   closeButton: {
     width: MIN_TOUCH_TARGET,
@@ -386,52 +396,55 @@ const styles = StyleSheet.create({
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginHorizontal: 16,
-    marginBottom: 8,
-    backgroundColor: ERROR_BG,
-    borderRadius: 8,
-    padding: 10,
+    gap: THEME.spacing.sm,
+    marginHorizontal: THEME.spacing.lg,
+    marginBottom: THEME.spacing.sm,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderRadius: THEME.radius.sm,
+    padding: THEME.spacing.md,
   },
   errorBannerText: {
-    color: ERROR_DARK,
+    fontFamily: FONTS.bodyMedium,
+    color: THEME.colors.destructive,
     fontSize: 13,
-    fontWeight: "500",
     flex: 1,
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 40,
-    gap: 8,
+    paddingVertical: THEME.spacing.xxxl + THEME.spacing.sm,
+    gap: THEME.spacing.sm,
   },
   emptyText: {
-    color: TEXT_SECONDARY,
-    fontSize: 15,
-    fontWeight: "600",
+    fontFamily: FONTS.display,
+    color: THEME.colors.textPrimary,
+    fontSize: 18,
+    letterSpacing: THEME.typography.heading.letterSpacing,
   },
   emptyHint: {
-    color: TEXT_DISABLED,
-    fontSize: 13,
+    fontFamily: FONTS.displayItalic,
+    color: THEME.colors.textSecondary,
+    ...THEME.typography.caption,
   },
   errorText: {
-    color: ERROR_DARK,
+    fontFamily: FONTS.body,
+    color: THEME.colors.destructive,
     fontSize: 14,
     textAlign: "center",
   },
   retryButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: BG_ELEVATED,
-    borderRadius: 8,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.sm,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
-    marginTop: 4,
+    marginTop: THEME.spacing.xs,
   },
   retryText: {
-    color: TEXT_PRIMARY,
+    fontFamily: FONTS.bodySemiBold,
+    color: THEME.colors.textPrimary,
     fontSize: 14,
-    fontWeight: "600",
   },
   emptyListContent: {
     flexGrow: 1,

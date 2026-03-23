@@ -42,7 +42,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_by_id(self, job_id: str) -> dict | None:
         """Fetch a single job by ID. Returns None if not found."""
