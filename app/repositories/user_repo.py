@@ -33,7 +33,9 @@ class UserRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_by_username(self, username: str) -> dict | None:
         """Fetch a non-deleted user by username, or None if not found."""
@@ -45,7 +47,9 @@ class UserRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def check_username_availability(self, username: str) -> dict | None:
         """Return the row (including deleted_at / username_reserved_until) if username exists, else None."""
@@ -66,7 +70,7 @@ class UserRepository:
             .maybe_single()
             .execute()
         )
-        if not result.data:
+        if not result or not result.data:
             return None
         if exclude_user_id and result.data["id"] == exclude_user_id:
             return None
@@ -101,9 +105,9 @@ class UserRepository:
             .maybe_single()
             .execute()
         )
-        if result is None:
+        if not result or not result.data:
             return None
-        return result.data or None
+        return result.data
 
     # ------------------------------------------------------------------
     # Write — users table
