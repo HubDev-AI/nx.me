@@ -18,7 +18,16 @@ import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import Constants from "expo-constants";
+import type ExpoConstants from "expo-constants";
+
+// Safely resolve expo-constants — if unavailable (bare workflow edge case),
+// we fall back to a static version string instead of crashing the screen.
+let Constants: typeof ExpoConstants | undefined;
+try {
+  Constants = require("expo-constants") as typeof ExpoConstants;
+} catch {
+  // expo-constants not available
+}
 
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
@@ -55,7 +64,7 @@ export default function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const appVersion = Constants.expoConfig?.version ?? "1.0.0";
+  const appVersion = Constants?.expoConfig?.version ?? "1.0.0";
 
   // -------------------------------------------------------------------------
   // Fetch /v1/auth/me

@@ -28,7 +28,6 @@ import Animated, { FadeIn } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import BeforeAfterReveal from "../../components/result/BeforeAfterReveal";
-import SuggestionPills from "../../components/result/SuggestionPills";
 import {
   getJobStatus,
   requestRefund,
@@ -83,10 +82,9 @@ export default function ResultScreen() {
 
   const handleRevealComplete = useCallback(() => {
     setRevealComplete(true);
-    // Stagger CTAs slightly after pills
-    const ctaDelay = (result?.suggestions?.length ?? 0) * 80 + 200;
-    setTimeout(() => setCtasVisible(true), ctaDelay);
-  }, [result?.suggestions?.length]);
+    // Show CTAs shortly after reveal completes
+    setTimeout(() => setCtasVisible(true), 200);
+  }, []);
 
   const handleRefund = useCallback(() => {
     if (!jobId) return;
@@ -227,7 +225,7 @@ export default function ResultScreen() {
           <Text style={styles.errorText}>
             {result.status === "cancelled"
               ? "Generation was cancelled."
-              : result.error_message ?? "Generation failed."}
+              : result.failure_reason ?? "Generation failed."}
           </Text>
           <Pressable
             onPress={handleNewGlowUp}
@@ -246,7 +244,7 @@ export default function ResultScreen() {
   // Render: Success — before/after reveal
   // ---------------------------------------------------------------------------
 
-  const hasBothImages = result.before_url && result.after_url;
+  const hasBothImages = result.before_image_url && result.after_image_url;
 
   return (
     <>
@@ -265,10 +263,10 @@ export default function ResultScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           {/* Before / After Reveal */}
-          {hasBothImages && result.before_url && result.after_url ? (
+          {hasBothImages && result.before_image_url && result.after_image_url ? (
             <BeforeAfterReveal
-              beforeUrl={result.before_url}
-              afterUrl={result.after_url}
+              beforeUrl={result.before_image_url}
+              afterUrl={result.after_image_url}
               onRevealComplete={handleRevealComplete}
             />
           ) : (
@@ -284,11 +282,12 @@ export default function ResultScreen() {
             </View>
           )}
 
-          {/* Suggestion Pills */}
-          <SuggestionPills
-            suggestions={result.suggestions ?? []}
-            visible={revealComplete}
-          />
+          {/* User Guidance */}
+          {result.user_guidance && revealComplete && (
+            <View style={styles.guidanceContainer}>
+              <Text style={styles.guidanceText}>{result.user_guidance}</Text>
+            </View>
+          )}
 
           {/* CTAs */}
           {ctasVisible && (
@@ -414,6 +413,17 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
     color: THEME.colors.bg,
+  },
+  // User guidance
+  guidanceContainer: {
+    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.lg,
+  },
+  guidanceText: {
+    fontFamily: FONTS.body,
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
+    textAlign: "center",
   },
   // Missing images
   missingImages: {

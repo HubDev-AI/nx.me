@@ -302,10 +302,10 @@ export function ChatView() {
         windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubble-ellipses-outline" size={48} color={THEME.colors.textSecondary} />
-            <Text style={styles.emptyTitle}>Chat with Ada</Text>
+            <Ionicons name="sparkles" size={48} color={theme.accent} />
+            <Text style={styles.emptyTitle}>Start a conversation</Text>
             <Text style={styles.emptySubtitle}>
-              Ask about styling, grooming, or anything she can help with
+              Ask Ada for style advice
             </Text>
           </View>
         }

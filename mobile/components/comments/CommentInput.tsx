@@ -86,6 +86,11 @@ export function CommentInput({
               accessibilityLabel="Comment input"
               accessibilityHint="Type your comment here"
             />
+            {text.length > 0 && (
+              <Text style={styles.charCount}>
+                {text.length}/{COMMENTS_CONFIG.MAX_COMMENT_LENGTH}
+              </Text>
+            )}
             <Animated.View style={sendPressStyle}>
               <Pressable
                 onPress={handleSend}
@@ -170,8 +175,12 @@ const styles = StyleSheet.create({
     color: THEME.colors.textPrimary,
     fontFamily: FONTS.body,
     textAlignVertical: "center",
-    // @ts-ignore — web-only: remove browser default blue focus outline
-    ...(Platform.OS === "web" ? { outlineStyle: "none" } : {}),
+    ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}),
+  },
+  charCount: {
+    fontSize: 11,
+    fontFamily: FONTS.body,
+    color: THEME.colors.textMuted,
   },
   sendButton: {
     width: 40,

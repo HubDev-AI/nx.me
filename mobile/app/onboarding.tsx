@@ -203,7 +203,7 @@ export default function OnboardingScreen() {
           <AuthButton
             title="Analyze My Style"
             onPress={handleAnalyzeCTA}
-            disabled={isLoadingEntitlement}
+            disabled={isLoadingEntitlement && !entitlementError}
           />
           <Text style={styles.ctaHint}>
             Upload a photo and let AI do the rest

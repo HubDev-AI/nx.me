@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   Share,
+  Dimensions,
 } from "react-native";
 import ReanimatedAnimated, {
   useSharedValue,
@@ -91,6 +92,13 @@ export const FeedCard = React.memo(function FeedCard({
     onCommentPress(post.post_id);
   }, [onCommentPress, post.post_id]);
 
+  const handleCommentPressIn = useCallback(() => {
+    commentScale.value = withSpring(0.96, THEME.animation.press);
+  }, []);
+  const handleCommentPressOut = useCallback(() => {
+    commentScale.value = withSpring(1, THEME.animation.press);
+  }, []);
+
   const handlePostPress = useCallback(() => {
     router.push({
       pathname: "/post/[postId]",
@@ -120,9 +128,10 @@ export const FeedCard = React.memo(function FeedCard({
     hapticLight();
     // Measure card position to anchor the dropdown near the top-right
     cardRef.current?.measureInWindow((x, y, width, _height) => {
+      const { width: screenWidth } = Dimensions.get("window");
       setMenuAnchor({
         top: y + THEME.spacing.sm,
-        right: Math.max(THEME.spacing.xl, (global as any).innerWidth ? (global as any).innerWidth - x - width + THEME.spacing.xl : THEME.spacing.xl),
+        right: Math.max(THEME.spacing.xl, screenWidth ? screenWidth - x - width + THEME.spacing.xl : THEME.spacing.xl),
       });
       setMenuVisible(true);
     });
@@ -305,8 +314,8 @@ export const FeedCard = React.memo(function FeedCard({
           <ReanimatedAnimated.View style={commentPressStyle}>
             <Pressable
               onPress={handleComment}
-              onPressIn={() => { commentScale.value = withSpring(0.96, THEME.animation.press); }}
-              onPressOut={() => { commentScale.value = withSpring(1, THEME.animation.press); }}
+              onPressIn={handleCommentPressIn}
+              onPressOut={handleCommentPressOut}
               style={styles.commentBadge}
               accessibilityLabel={`${post.comment_count} comments, tap to view`}
               accessibilityRole="button"

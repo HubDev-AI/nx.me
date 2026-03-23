@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import React, { useCallback } from "react";
 import { Pressable, Text, StyleSheet } from "react-native";
 import Animated, {
   useSharedValue,
@@ -26,7 +26,7 @@ interface ReactionButtonProps {
  * Heart reaction button with optimistic UI.
  * Scales on press, toggles fill when reacted, shows count.
  */
-export function ReactionButton({
+export const ReactionButton = React.memo(function ReactionButton({
   reactionCount,
   hasReacted,
   onReact,
@@ -80,7 +80,7 @@ export function ReactionButton({
       </Pressable>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

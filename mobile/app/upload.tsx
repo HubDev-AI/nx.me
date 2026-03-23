@@ -155,18 +155,12 @@ export default function UploadScreen() {
         photo.mimeType,
       );
 
-      // Step 2: Check face validation
-      if (analysis.face_validation && !analysis.face_validation.passed) {
-        setPhase("face_error");
-        setFaceErrorCode(
-          analysis.face_validation.error_code ?? "FACE_NOT_DETECTED",
-        );
-        return;
-      }
-
-      // Step 3: Start generation
+      // Step 2: Start generation
+      // NOTE: Face validation is now handled server-side during analysis.
+      // If the backend rejects the image, it returns a 422 which is caught
+      // by the ApiError handler below.
       setPhase("generating");
-      const { job_id } = await startGeneration(analysis.id);
+      const { job_id } = await startGeneration(analysis.analysis_id);
       setCurrentJobId(job_id);
 
       // Step 4: Poll for completion
@@ -189,7 +183,7 @@ export default function UploadScreen() {
       } else {
         setPhase("error");
         setErrorMessage(
-          finalResult.error_message ?? "Generation failed. Please try again.",
+          finalResult.failure_reason ?? "Generation failed. Please try again.",
         );
       }
     } catch (err) {

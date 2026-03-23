@@ -268,6 +268,7 @@ export default function PostDetailScreen() {
               source={{ uri: beforeImage }}
               style={styles.fullImage}
               resizeMode="cover"
+              accessibilityLabel={`Before photo by ${displayName ?? "user"}`}
             />
           </View>
 
@@ -285,6 +286,7 @@ export default function PostDetailScreen() {
               source={{ uri: afterImage }}
               style={styles.fullImage}
               resizeMode="cover"
+              accessibilityLabel={`After photo by ${displayName ?? "user"}`}
             />
           </View>
 

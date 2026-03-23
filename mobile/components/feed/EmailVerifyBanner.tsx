@@ -65,7 +65,7 @@ export function EmailVerifyBanner() {
 
   const handleDismiss = useCallback(() => {
     setShowBanner(false);
-    deleteItem(SECURE_STORE_KEYS.PENDING_EMAIL_VERIFICATION).catch(() => {});
+    deleteItem(SECURE_STORE_KEYS.PENDING_EMAIL_VERIFICATION).catch((err) => { if (__DEV__) console.warn("Failed to clear email verification flag:", err); });
   }, []);
 
   const handleOpenEmail = useCallback(async () => {

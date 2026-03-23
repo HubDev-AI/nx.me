@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   View,
   Image,
@@ -147,18 +147,25 @@ interface GlowUpCellProps {
   onPress?: () => void;
 }
 
-function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
+const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.97, THEME.animation.press);
+  }, []);
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, THEME.animation.press);
+  }, []);
+
   return (
     <Animated.View style={[{ width: size, height: size }, pressStyle]}>
       <Pressable
         onPress={onPress}
-        onPressIn={() => { scale.value = withSpring(0.97, THEME.animation.press); }}
-        onPressOut={() => { scale.value = withSpring(1, THEME.animation.press); }}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
         style={[styles.cell, { width: size, height: size }]}
         accessibilityLabel={`Glow-up transformation from ${new Date(item.created_at).toLocaleDateString()}`}
         accessibilityRole="image"
@@ -169,6 +176,7 @@ function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
             source={{ uri: item.after_image_url }}
             style={styles.thumbnail}
             resizeMode="cover"
+            accessibilityLabel={`After photo from ${new Date(item.created_at).toLocaleDateString()}`}
           />
         ) : null}
 
@@ -179,13 +187,14 @@ function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
               source={{ uri: item.before_image_url }}
               style={styles.beforeThumbnail}
               resizeMode="cover"
+              accessibilityLabel={`Before photo from ${new Date(item.created_at).toLocaleDateString()}`}
             />
           </View>
         ) : null}
       </Pressable>
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   gridContent: {

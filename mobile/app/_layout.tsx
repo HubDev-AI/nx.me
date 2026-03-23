@@ -17,6 +17,7 @@ import { THEME } from "../constants/theme";
 import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
+import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
@@ -78,8 +79,8 @@ export default function RootLayout() {
       }
 
       // 2. Non-critical init — never blocks auth
-      getOrCreateGuestToken().catch(() => {});
-      registerForPushNotifications().catch(() => {});
+      getOrCreateGuestToken().catch((err) => { if (__DEV__) console.warn("Guest token init failed:", err); });
+      registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });
 
       setInitialAuth(authed);
       setIsReady(true);
@@ -116,20 +117,22 @@ export default function RootLayout() {
   );
 
   return (
-    <ThemeProvider>
-      <AuthProvider initialAuth={initialAuth}>
-        {StripeProvider ? (
-          <StripeProvider
-            publishableKey={STRIPE_PUBLISHABLE_KEY}
-            urlScheme="https"
-            merchantIdentifier={APPLE_MERCHANT_ID}
-          >
-            {inner}
-          </StripeProvider>
-        ) : (
-          inner
-        )}
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider initialAuth={initialAuth}>
+          {StripeProvider ? (
+            <StripeProvider
+              publishableKey={STRIPE_PUBLISHABLE_KEY}
+              urlScheme="https"
+              merchantIdentifier={APPLE_MERCHANT_ID}
+            >
+              {inner}
+            </StripeProvider>
+          ) : (
+            inner
+          )}
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

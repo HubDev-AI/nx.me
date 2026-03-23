@@ -5,6 +5,7 @@ import {
   TextInput,
   StyleSheet,
   Pressable,
+  Platform,
   type TextInputProps,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -139,8 +140,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.md,
     minHeight: INPUT_HEIGHT,
-    // @ts-ignore — web-only: remove browser default blue focus outline
-    outlineStyle: "none",
+    ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}),
   },
   eyeButton: {
     minWidth: MIN_TOUCH_TARGET,

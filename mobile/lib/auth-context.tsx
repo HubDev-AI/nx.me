@@ -31,23 +31,23 @@ export function AuthProvider({
   useEffect(() => {
     getItem(USERNAME_KEY).then((u) => {
       if (u) setUsernameState(u);
-    }).catch(() => {});
+    }).catch((err) => { if (__DEV__) console.warn("Failed to load stored username:", err); });
   }, []);
 
   const setAuthenticated = useCallback((value: boolean) => {
     setIsAuthenticated(value);
     if (!value) {
       setUsernameState(null);
-      deleteItem(USERNAME_KEY).catch(() => {});
+      deleteItem(USERNAME_KEY).catch((err) => { if (__DEV__) console.warn("Failed to clear stored username:", err); });
     }
   }, []);
 
   const setUsername = useCallback((value: string | null) => {
     setUsernameState(value);
     if (value) {
-      setItem(USERNAME_KEY, value).catch(() => {});
+      setItem(USERNAME_KEY, value).catch((err) => { if (__DEV__) console.warn("Failed to persist username:", err); });
     } else {
-      deleteItem(USERNAME_KEY).catch(() => {});
+      deleteItem(USERNAME_KEY).catch((err) => { if (__DEV__) console.warn("Failed to clear stored username:", err); });
     }
   }, []);
 

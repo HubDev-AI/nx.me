@@ -20,7 +20,7 @@ import { FONTS } from "../../hooks/useFonts";
 
 export interface DropdownMenuItem {
   label: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   destructive?: boolean;
 }
@@ -168,7 +168,7 @@ function MenuItemRow({
           item.destructive && styles.iconWrapperDestructive,
         ]}>
           <Ionicons
-            name={item.icon as any}
+            name={item.icon}
             size={18}
             color={item.destructive ? THEME.colors.destructive : THEME.colors.textPrimary}
           />

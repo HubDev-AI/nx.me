@@ -37,7 +37,7 @@ import { hapticLight, hapticMedium } from "../../lib/haptics";
 
 export interface RadialMenuItem {
   label: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   destructive?: boolean;
 }
@@ -411,7 +411,7 @@ function RadialMenuItemView({
                 : undefined,
             ]}
           >
-            <Ionicons name={item.icon as any} size={22} color={iconColor} />
+            <Ionicons name={item.icon} size={22} color={iconColor} />
           </View>
 
           {/* Label — right side */}

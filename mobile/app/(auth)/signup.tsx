@@ -167,7 +167,7 @@ export default function SignupScreen() {
       setAuthUsername(username.trim());
 
       // Mark email verification as pending so the feed shows a reminder banner
-      setItem(SECURE_STORE_KEYS.PENDING_EMAIL_VERIFICATION, "1").catch(() => {});
+      setItem(SECURE_STORE_KEYS.PENDING_EMAIL_VERIFICATION, "1").catch((err) => { if (__DEV__) console.warn("Failed to persist email verification flag:", err); });
 
       setScreenState("verification");
     } catch (err) {

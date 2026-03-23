@@ -25,7 +25,7 @@ import { Ionicons } from "@expo/vector-icons";
 import BeforeAfterReveal from "../../components/result/BeforeAfterReveal";
 import SuggestionPills from "../../components/result/SuggestionPills";
 import { PageBackground } from "../../components/ui/PageBackground";
-import { CARD_ENDPOINTS } from "../../constants/config";
+import { AUTH_VALIDATION, CARD_ENDPOINTS } from "../../constants/config";
 import { apiFetch } from "../../lib/api";
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
@@ -48,7 +48,8 @@ interface PublicCard {
 // Username validation
 // ---------------------------------------------------------------------------
 
-const _USERNAME_RE = /^[a-zA-Z0-9_]{1,30}$/;
+/** Use the canonical username pattern from config (starts with letter, alphanumeric + underscores) */
+const _USERNAME_RE = AUTH_VALIDATION.USERNAME_PATTERN;
 
 // ---------------------------------------------------------------------------
 // API helper (no auth — public endpoint)

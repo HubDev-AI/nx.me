@@ -170,7 +170,7 @@ export default function CreateScreen() {
 
   const handleFeaturePress = (feature: Feature) => {
     if (feature.active && feature.route) {
-      router.push(feature.route as any);
+      router.push(feature.route as `/${string}`);
     }
   };
 

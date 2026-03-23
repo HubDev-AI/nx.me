@@ -51,6 +51,10 @@ interface BlockedListResponse {
     id: string;
     blocked_id: string;
     created_at: string;
+    /** Backend now resolves display_name for blocked users */
+    display_name?: string;
+    /** Backend now resolves username for blocked users */
+    username?: string;
   }>;
   next_cursor: string | null;
   has_more: boolean;
@@ -77,24 +81,13 @@ export default function BlockedUsersScreen() {
     setError(null);
     try {
       const data = await apiFetch<BlockedListResponse>("/v1/users/blocked");
-      // blocked_id is the user ID; try to resolve profiles for nicer display
-      const enriched: BlockedUser[] = await Promise.all(
-        data.users.map(async (entry) => {
-          try {
-            // The profile endpoint uses username, but we only have blocked_id.
-            // We'll show the ID as fallback and try to resolve later.
-            // For now, keep it simple with the data we have.
-            return {
-              ...entry,
-              display_name: undefined,
-              username: undefined,
-              avatar_url: null,
-            };
-          } catch {
-            return { ...entry };
-          }
-        }),
-      );
+      // Backend now returns display_name and username directly
+      const enriched: BlockedUser[] = data.users.map((entry) => ({
+        ...entry,
+        display_name: entry.display_name,
+        username: entry.username,
+        avatar_url: null,
+      }));
       setBlockedUsers(enriched);
     } catch (err) {
       setError(
