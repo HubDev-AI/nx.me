@@ -64,11 +64,18 @@ class BlockRepository:
         limit: int = 50,
         cursor: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Paginated list of blocked users."""
+        """Paginated list of blocked users with display names.
+
+        Joins the users table via the blocked_id FK to include
+        display_name and username for each blocked user.
+        """
         fetch_limit = limit + 1
         query = (
             self._sb.table("blocked_users")
-            .select("id, blocked_id, created_at")
+            .select(
+                "id, blocked_id, created_at, "
+                "blocked_user:users!blocked_users_blocked_id_fkey(display_name, username)"
+            )
             .eq("blocker_id", user_id)
             .order("created_at", desc=True)
             .limit(fetch_limit)

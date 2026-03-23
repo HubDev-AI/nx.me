@@ -143,6 +143,12 @@ async def get_advisor_messages(
     except ValueError as exc:
         # A-7: Malformed cursor returns 400
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Failed to fetch advisor messages for user %s: %s", user_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={"error": {"code": "ADVISOR_ERROR", "message": "Failed to load conversation history"}},
+        ) from exc
 
     return ConversationHistoryPageResponse(
         conversation_id=result["conversation_id"],

@@ -76,7 +76,7 @@ class AdvisorRepository:
             .select("id, role, content, created_at")
             .eq("conversation_id", conversation_id)
             .is_("summarized_at", "null")
-            .order("created_at", asc=True)
+            .order("created_at", desc=False)
             .execute()
         )
         return result.data or []
@@ -97,8 +97,8 @@ class AdvisorRepository:
             .select("id, role, content, created_at")
             .eq("conversation_id", conversation_id)
             .is_("summarized_at", "null")
-            .order("created_at", asc=True)
-            .order("id", asc=True)
+            .order("created_at", desc=False)
+            .order("id", desc=False)
             .limit(fetch_limit)
         )
         if cursor:

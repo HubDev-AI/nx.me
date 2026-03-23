@@ -291,6 +291,45 @@ async def verify_email(
 
 
 # ---------------------------------------------------------------------------
+# Current User Profile — GET /auth/me
+# ---------------------------------------------------------------------------
+
+
+class MeResponse(BaseModel):
+    user_id: str
+    username: str
+    display_name: str
+    email: str
+
+
+@router.get("/me", response_model=MeResponse)
+async def get_me(
+    claims: UserClaims = Depends(get_current_user),
+    user_repo: UserRepository = Depends(get_user_repo),
+) -> MeResponse:
+    """Return the authenticated user's profile.
+
+    Requires a valid Bearer JWT. Extracts user_id from the token's ``sub``
+    claim and queries the users table for the core profile fields.
+    """
+    user_id: str = claims["sub"]
+
+    row = await run_sync(user_repo.get_profile_by_id, user_id)
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User profile not found.",
+        )
+
+    return MeResponse(
+        user_id=row["id"],
+        username=row["username"],
+        display_name=row["display_name"],
+        email=row["email"],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

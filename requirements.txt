@@ -11,8 +11,9 @@ supabase==2.15.1
 # Redis
 redis==5.2.1
 
-# JWT validation
+# JWT validation (cryptography required for ES256 — local Supabase CLI v2+)
 PyJWT==2.10.1
+cryptography>=44.0,<46
 
 # HTTP client (used by supabase)
 httpx==0.28.1

@@ -18,7 +18,13 @@
       "bundleIdentifier": "ai.nxme.app",
       "associatedDomains": [
         "applinks:nxme.ai"
-      ]
+      ],
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true,
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "package": "ai.nxme.app",
@@ -79,7 +85,7 @@
       "expo-font"
     ],
     "extra": {
-      "apiBaseUrl": "http://localhost:8001",
+      "apiBaseUrl": "http://192.168.2.203:8001",
       "stripePublishableKey": "",
       "googleClientId": "",
       "googleWebClientId": "",
