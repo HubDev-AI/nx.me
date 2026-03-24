@@ -1,22 +1,16 @@
-import { useEffect } from "react";
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { View, Text, StyleSheet, Platform, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
-  withSpring,
-  withRepeat,
-  withSequence,
-  withTiming,
-  Easing,
   interpolate,
   Extrapolation,
 } from "react-native-reanimated";
-import { BottomTabBar, type BottomTabBarProps } from "@react-navigation/bottom-tabs";
+import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
 import { THEME } from "../../constants/theme";
-import { BG_PAGE, TEXT_PRIMARY, TAB_BAR_BG, TAB_BAR_BORDER, TAB_BAR_GLOW, SCROLL_TOP_BG } from "../../constants/colors";
+import { BG_PAGE, TEXT_PRIMARY, TAB_BAR_BG, TAB_BAR_BORDER, SCROLL_TOP_BG } from "../../constants/colors";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { BrandLabel } from "../../components/ui/BrandLabel";
@@ -37,40 +31,10 @@ interface TabIconProps {
 
 /** Floating tab icon with glow dot when active */
 function TabIcon({ name, color, focused, accentColor }: TabIconProps) {
-  const scale = useSharedValue(1);
-  const glowOpacity = useSharedValue(0);
-
-  useEffect(() => {
-    if (focused) {
-      scale.value = withSpring(1.15, { damping: 12, stiffness: 200 });
-      glowOpacity.value = withRepeat(
-        withSequence(
-          withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.sin) }),
-        ),
-        -1,
-        false,
-      );
-    } else {
-      scale.value = withSpring(1, { damping: 12, stiffness: 200 });
-      glowOpacity.value = withTiming(0, { duration: 200 });
-    }
-  }, [focused]);
-
-  const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const glowDotStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-    shadowOpacity: glowOpacity.value * 0.8,
-  }));
-
   return (
     <View
       style={[
         styles.iconContainer,
-        styles.iconPill,
         focused && {
           backgroundColor: accentColor + "26",
           shadowColor: accentColor,
@@ -87,17 +51,67 @@ function TabIcon({ name, color, focused, accentColor }: TabIconProps) {
   );
 }
 
-/** Custom animated tab bar that slides down when the user scrolls */
-function AnimatedTabBar(props: BottomTabBarProps) {
+/**
+ * Fully custom tab bar — replaces BottomTabBar entirely.
+ * BottomTabBar adds internal safe-area padding we cannot override,
+ * so we render a simple row of Pressables instead.
+ */
+function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { tabBarTranslateY } = useTabBar();
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarBottom = Math.max(insets.bottom, 16) + 8;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: tabBarTranslateY.value }],
   }));
 
   return (
-    <Animated.View style={animatedStyle}>
-      <BottomTabBar {...props} />
+    <Animated.View style={[styles.tabBar, { bottom: tabBarBottom }, animatedStyle]}>
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const isFocused = state.index === index;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: "tabPress",
+            target: route.key,
+            canPreventDefault: true,
+          });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name, route.params);
+          }
+        };
+
+        const onLongPress = () => {
+          navigation.emit({ type: "tabLongPress", target: route.key });
+        };
+
+        const color = isFocused
+          ? theme.accent
+          : "rgba(255, 255, 255, 0.45)";
+
+        // Render the icon using the tabBarIcon option
+        const icon = options.tabBarIcon?.({
+          focused: isFocused,
+          color,
+          size: 24,
+        });
+
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel ?? options.title}
+            onPress={onPress}
+            onLongPress={onLongPress}
+            style={styles.tabButton}
+          >
+            {icon}
+          </Pressable>
+        );
+      })}
     </Animated.View>
   );
 }
@@ -106,6 +120,7 @@ function AnimatedTabBar(props: BottomTabBarProps) {
 function ScrollToTopPill() {
   const { tabBarTranslateY, scrollToTop } = useTabBar();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const animatedStyle = useAnimatedStyle(() => {
     const opacity = interpolate(
@@ -116,13 +131,12 @@ function ScrollToTopPill() {
     );
     return {
       opacity,
-      // Keep it non-interactive when invisible
       pointerEvents: opacity > 0.1 ? "auto" : "none",
     } as any;
   });
 
   return (
-    <Animated.View style={[styles.scrollToTopContainer, animatedStyle]}>
+    <Animated.View style={[styles.scrollToTopContainer, { bottom: Math.max(insets.bottom, 16) + 12 }, animatedStyle]}>
       <Pressable
         onPress={scrollToTop}
         style={[styles.scrollToTopPill, { backgroundColor: theme.accent }]}
@@ -161,33 +175,11 @@ function TabLayoutInner() {
   return (
     <>
     <Tabs
-      tabBar={(props) => <AnimatedTabBar {...props} />}
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: "rgba(255, 255, 255, 0.45)",
-        tabBarStyle: {
-          position: "absolute",
-          bottom: Platform.OS === "ios" ? 24 : 16,
-          left: THEME.spacing.xl,
-          right: THEME.spacing.xl,
-          height: 64,
-          borderRadius: 32,
-          backgroundColor: TAB_BAR_BG,
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: TAB_BAR_GLOW,
-          borderWidth: 1,
-          borderColor: TAB_BAR_BORDER,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.4,
-          shadowRadius: 24,
-          elevation: 12,
-          paddingBottom: 0,
-        },
         tabBarShowLabel: false,
-        tabBarIconStyle: {
-          flex: 1,
-        },
         headerStyle: {
           backgroundColor: SCROLL_TOP_BG,
         },
@@ -226,12 +218,13 @@ function TabLayoutInner() {
         }}
       />
       <Tabs.Screen
-        name="profile"
+        name="advisor"
         options={{
-          title: "Profile",
+          title: "Advisor",
+          href: "/advisor",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
-              name={focused ? "person" : "person-outline"}
+              name={focused ? "sparkles" : "sparkles-outline"}
               color={color}
               focused={focused}
               accentColor={theme.accent}
@@ -240,13 +233,12 @@ function TabLayoutInner() {
         }}
       />
       <Tabs.Screen
-        name="advisor"
+        name="profile"
         options={{
-          title: "Advisor",
-          href: "/advisor",
+          title: "Profile",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon
-              name={focused ? "sparkles" : "sparkles-outline"}
+              name={focused ? "person" : "person-outline"}
               color={color}
               focused={focused}
               accentColor={theme.accent}
@@ -272,28 +264,39 @@ const styles = StyleSheet.create({
   headerRight: {
     marginRight: THEME.spacing.lg,
   },
+  tabBar: {
+    position: "absolute",
+    left: THEME.spacing.xxl,
+    right: THEME.spacing.xxl,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: TAB_BAR_BG,
+    borderWidth: 1,
+    borderColor: TAB_BAR_BORDER,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-evenly",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    height: "100%",
+  },
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
     width: 48,
-  },
-  iconPill: {
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: 6,
+    height: 40,
     borderRadius: THEME.radius.lg,
-  },
-  glowDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    marginTop: 3,
-    shadowOffset: { width: 0, height: 0 },
-    shadowRadius: 6,
-    elevation: 4,
   },
   scrollToTopContainer: {
     position: "absolute",
-    bottom: Platform.OS === "ios" ? 28 : 20,
     alignSelf: "center",
     zIndex: 100,
   },

@@ -3,7 +3,7 @@
 # These keys are well-known defaults that ship with every local Supabase instance.
 set -euo pipefail
 
-ENV_FILE="${1:-.env}"
+ENV_FILE="${1:-app/.env}"
 
 if [[ -f "$ENV_FILE" ]]; then
   echo ".env already exists — skipping generation."
@@ -42,6 +42,20 @@ AWS_REGION=us-east-1
 STRIPE_API_KEY=
 STRIPE_WEBHOOK_SECRET=
 ANTHROPIC_API_KEY=
+
+# ── Google OAuth (used by Supabase GoTrue config.toml env() refs) ────────────
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+GOOGLE_IOS_CLIENT_ID=
+
+# ── Auth Provider Flags ──────────────────────────────────────────────────────
+AUTH_PROVIDER_GOOGLE_ENABLED=true
+AUTH_PROVIDER_APPLE_ENABLED=false
+AUTH_PROVIDER_EMAIL_ENABLED=false
+AUTH_PROVIDER_TIKTOK_ENABLED=false
+
+LOGIN_IP_LIMIT=100
+REGISTRATION_IP_LIMIT=100
 EOF
 
 echo ".env generated with local Supabase defaults."
