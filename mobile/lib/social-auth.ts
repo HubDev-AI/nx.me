@@ -1,20 +1,18 @@
 /**
  * Native social authentication helpers.
  *
- * Uses platform-native SDKs to obtain id_tokens that the backend can verify
- * via Supabase's `sign_in_with_id_token`.
- *
  * - Google: @react-native-google-signin/google-signin (returns idToken directly)
  * - Apple:  expo-apple-authentication (returns identityToken JWT directly)
+ * - TikTok: expo-web-browser OAuth2 PKCE flow (returns authorization code)
  *
- * Both providers return an id_token without requiring a redirect URI or
- * server-side authorization code exchange.
+ * Google & Apple return id_tokens verified by Supabase GoTrue.
+ * TikTok returns an authorization code exchanged server-side.
  */
 import { Platform } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 
-import { GOOGLE_WEB_CLIENT_ID } from "../constants/config";
+import { GOOGLE_WEB_CLIENT_ID, UNIVERSAL_LINK_ORIGIN } from "../constants/config";
 
 // Lazy-load Google Sign-In to avoid crashing in Expo Go where
 // the native module (RNGoogleSignin) is not available.
@@ -37,11 +35,19 @@ function getGoogleSignin() {
   return { GoogleSignin: _GoogleSignin!, statusCodes: _statusCodes! };
 }
 
-/** Result shape returned by both social sign-in helpers. */
+/** Result shape returned by Google & Apple sign-in helpers. */
 export interface SocialAuthResult {
   idToken: string;
   /** Raw nonce sent to the provider (required by Apple for Supabase verification). */
   nonce?: string;
+}
+
+/** Result shape returned by TikTok native SDK sign-in. */
+export interface TikTokAuthResult {
+  /** Authorization code to exchange server-side for an access token. */
+  authCode: string;
+  /** PKCE code verifier (Android only — needed for server-side token exchange). */
+  codeVerifier?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,9 +113,6 @@ export async function signInWithGoogle(): Promise<SocialAuthResult | null> {
  * Apple Sign-In is only available on iOS. On other platforms this function
  * throws immediately.
  *
- * A cryptographic nonce is generated and passed to Apple so that Supabase can
- * verify the id_token was issued for this specific authentication request.
- *
  * Returns `null` if the user cancels. Throws on unexpected errors.
  */
 export async function signInWithApple(): Promise<SocialAuthResult | null> {
@@ -118,8 +121,6 @@ export async function signInWithApple(): Promise<SocialAuthResult | null> {
   }
 
   // Generate a cryptographic nonce for replay protection.
-  // Supabase expects the raw (unhashed) nonce so it can hash and compare
-  // against the nonce claim inside the id_token from Apple.
   const rawNonce = Array.from(Crypto.getRandomBytes(32))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -150,4 +151,54 @@ export async function signInWithApple(): Promise<SocialAuthResult | null> {
     }
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------------
+// TikTok Sign-In (native SDK via react-native-tiktok)
+// ---------------------------------------------------------------------------
+
+/**
+ * Trigger TikTok native login via the TikTok app (or webview fallback).
+ *
+ * Uses react-native-tiktok which wraps the official TikTok OpenSDK.
+ * The SDK handles redirect URI / deep link plumbing natively.
+ * Requires a dev build — not available in Expo Go or on web.
+ *
+ * Returns `null` if the user cancels. Throws on errors.
+ */
+export async function signInWithTikTok(): Promise<TikTokAuthResult | null> {
+  if (Platform.OS === "web") {
+    throw new Error("TikTok login is not supported on web. Use a mobile device.");
+  }
+
+  let authorize: typeof import("react-native-tiktok").authorize;
+  let Scopes: typeof import("react-native-tiktok").Scopes;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require("react-native-tiktok");
+    authorize = mod.authorize;
+    Scopes = mod.Scopes;
+  } catch {
+    throw new Error(
+      "TikTok SDK is not available. Use a development build (npx expo run:ios/android).",
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    try {
+      authorize({
+        redirectURI: `${UNIVERSAL_LINK_ORIGIN}/auth/callback`,
+        scopes: [Scopes.user.info.basic],
+        callback: (authCode: string, codeVerifier?: string) => {
+          if (!authCode) {
+            resolve(null);
+            return;
+          }
+          resolve({ authCode, codeVerifier });
+        },
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
 }

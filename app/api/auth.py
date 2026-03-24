@@ -1,20 +1,26 @@
 """Auth API — registration, email verification, login, logout & account deletion.
 
 Story 2-1:
-  POST /auth/register      — create account
+  POST /auth/register      — create account (gated by AUTH_PROVIDER_EMAIL_ENABLED)
   POST /auth/verify-email  — trigger trial grant after email confirmed
 
 Story 2-2:
-  POST /auth/login         — social login via id_token (Google / Apple)
-  POST /auth/email-login   — email + password login
+  POST /auth/login         — social login via id_token (Google / Apple, gated)
+  POST /auth/email-login   — email + password login (gated by AUTH_PROVIDER_EMAIL_ENABLED)
+  POST /auth/tiktok-login  — TikTok OAuth code exchange (gated by AUTH_PROVIDER_TIKTOK_ENABLED)
+  POST /auth/refresh       — exchange refresh_token for new session
   POST /auth/logout        — server-side session invalidation
   DELETE /auth/account     — soft delete + 180-day username reservation
+  GET  /auth/providers     — list enabled auth providers (for mobile UI)
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal, NoReturn
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -45,8 +51,57 @@ router = APIRouter(tags=["auth"])
 # Minimum age for account creation (AC-U7)
 _MIN_AGE_YEARS = 13
 
-# Social providers accepted by the login endpoint
+# Social providers accepted by the /auth/login endpoint (id_token flow).
+# TikTok uses a separate endpoint (/auth/tiktok-login) because it doesn't
+# support id_token verification via Supabase GoTrue.
 _ACCEPTED_PROVIDERS = frozenset({"google", "apple"})
+
+
+def _get_enabled_providers() -> list[str]:
+    """Return the list of auth providers currently enabled via config flags."""
+    providers: list[str] = []
+    if settings.AUTH_PROVIDER_TIKTOK_ENABLED:
+        providers.append("tiktok")
+    if settings.AUTH_PROVIDER_GOOGLE_ENABLED:
+        providers.append("google")
+    if settings.AUTH_PROVIDER_APPLE_ENABLED:
+        providers.append("apple")
+    if settings.AUTH_PROVIDER_EMAIL_ENABLED:
+        providers.append("email")
+    return providers
+
+
+def _derive_tiktok_password(open_id: str) -> str:
+    """Derive a deterministic password for TikTok users.
+
+    Used to create Supabase auth accounts for TikTok users who don't have
+    a real password.  The HMAC is keyed with SECRET_KEY so passwords are
+    unique per deployment and can never be guessed from the open_id alone.
+    """
+    return hmac.new(
+        settings.SECRET_KEY.encode(),
+        f"tiktok:{open_id}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# GET /auth/providers — enabled auth providers (for mobile UI)
+# ---------------------------------------------------------------------------
+
+
+class ProvidersResponse(BaseModel):
+    providers: list[str]
+
+
+@router.get("/providers", response_model=ProvidersResponse)
+async def get_providers() -> ProvidersResponse:
+    """Return the list of currently enabled auth providers.
+
+    The mobile app calls this on startup to decide which login buttons
+    to render.  No authentication required.
+    """
+    return ProvidersResponse(providers=_get_enabled_providers())
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +128,9 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     user_id: str
     username: str
-    email_verification_required: bool
+    access_token: str
+    refresh_token: str
+    expires_at: int
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +160,13 @@ async def register(
     AC-1: User row created with tier = default, trial_analyses_remaining = 0
           (trial credited only after email verification via TrialGrantor.grant)
     """
+    # --- Provider gate: reject if email auth is disabled ---------------------
+    if not settings.AUTH_PROVIDER_EMAIL_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email registration is not enabled.",
+        )
+
     # --- Rate limiting (Story 2-2 AC-4): per-IP limit ≥4/hour → 429 ------
     client_ip = get_client_ip(request)
     if not client_ip:
@@ -177,9 +241,11 @@ async def register(
     default_tier_id: str = str(default_tier.id)
 
     # --- Create Supabase auth user ----------------------------------------
+    logger.info("Creating auth user for %s / %s", body.email, body.username)
     try:
         auth_response = await run_sync(user_repo.auth_create_user, str(body.email), body.password)
     except Exception as exc:
+        logger.error("auth_create_user raised %s: %s", type(exc).__name__, exc)
         _handle_supabase_auth_error(exc)
 
     if not auth_response.user:
@@ -197,8 +263,8 @@ async def register(
         "display_name": body.display_name,
         "email": str(body.email),
         "tier_id": default_tier_id,
-        "trial_analyses_remaining": 0,  # granted after email verification
-        "email_verified": False,
+        "trial_analyses_remaining": 0,
+        "email_verified": True,  # auto-confirmed via admin API
         "guest_session_token": body.guest_session_token,
     }
     if is_minor is not None:
@@ -218,12 +284,48 @@ async def register(
             detail="Account creation failed.",
         ) from exc
 
-    logger.info("Registered user %s", user_id)
+    # --- Grant trial credits immediately (idempotent) --------------------
+    try:
+        from uuid import UUID
+        grantor = TrialGrantor(supabase)
+        await run_sync(grantor.grant, UUID(user_id))
+    except Exception as exc:
+        # Non-fatal: user is created, they just won't have trial credits yet
+        logger.warning("Trial grant failed during registration for %s: %s", user_id, exc)
+
+    # --- Auto-login: sign in to get session tokens -----------------------
+    # IMPORTANT: use a SEPARATE Supabase client for sign_in_with_password.
+    # sign_in_with_password mutates the client's internal auth session,
+    # which would corrupt the shared service-role client for all future requests.
+    from app.db.client import get_supabase_service
+    login_client = get_supabase_service()
+    try:
+        session_response = await run_sync(
+            login_client.auth.sign_in_with_password,
+            {"email": str(body.email), "password": body.password},
+        )
+    except Exception as exc:
+        logger.error("Auto-login after registration failed for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account created but login failed. Please log in manually.",
+        ) from exc
+
+    if not session_response.session:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account created but login failed. Please log in manually.",
+        )
+
+    session = session_response.session
+    logger.info("Registered and auto-logged in user %s", user_id)
 
     return RegisterResponse(
         user_id=user_id,
         username=body.username,
-        email_verification_required=True,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        expires_at=int(session.expires_at) if session.expires_at else 0,
     )
 
 
@@ -357,6 +459,13 @@ def _handle_supabase_auth_error(exc: Exception) -> NoReturn:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Password does not meet requirements.",
         )
+    # "User not allowed" can mean duplicate email OR password policy violation.
+    # Supabase GoTrue uses this for multiple rejection reasons.
+    if "not allowed" in msg:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists.",
+        )
     logger.error("Supabase auth.admin.create_user failed: %s", exc)
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -394,6 +503,12 @@ class LoginResponse(BaseModel):
     expires_at: int  # Unix timestamp
 
 
+class RefreshRequest(BaseModel):
+    """Refresh an expired session using a refresh_token."""
+
+    refresh_token: str = Field(min_length=1, strip_whitespace=True)
+
+
 @router.post("/login", response_model=LoginResponse)
 async def social_login(
     request: Request,
@@ -413,6 +528,17 @@ async def social_login(
 
     CS-1 AC-4: Per-IP rate limit on login (same window as registration).
     """
+    # --- Provider gate: reject if this specific provider is disabled ------
+    _provider_flag = {
+        "google": settings.AUTH_PROVIDER_GOOGLE_ENABLED,
+        "apple": settings.AUTH_PROVIDER_APPLE_ENABLED,
+    }
+    if not _provider_flag.get(body.provider, False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The '{body.provider}' login method is not enabled.",
+        )
+
     # Per-IP rate limit (CS-1 T-3)
     client_ip = get_client_ip(request)
     if not client_ip:
@@ -441,7 +567,7 @@ async def social_login(
         credentials["nonce"] = body.nonce
 
     try:
-        auth_response = supabase.auth.sign_in_with_id_token(credentials)
+        auth_response = await run_sync(supabase.auth.sign_in_with_id_token, credentials)
     except Exception as exc:
         logger.warning("sign_in_with_id_token failed for provider %s: %s", body.provider, exc)
         if _is_invalid_token_error(exc):
@@ -566,6 +692,13 @@ async def email_login(
     Calls Supabase auth.sign_in_with_password and returns the session tokens.
     Applies the same per-IP rate limiting as social login (CS-1 AC-4).
     """
+    # --- Provider gate: reject if email auth is disabled ---------------------
+    if not settings.AUTH_PROVIDER_EMAIL_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email login is not enabled.",
+        )
+
     # Per-IP rate limit (same as social login)
     client_ip = get_client_ip(request)
     if not client_ip:
@@ -610,6 +743,328 @@ async def email_login(
     user_id = str(auth_response.user.id)
 
     logger.info("Email login successful for user %s", user_id)
+    return LoginResponse(
+        user_id=user_id,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        expires_at=int(session.expires_at) if session.expires_at else 0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# TikTok Login — POST /auth/tiktok-login
+# ---------------------------------------------------------------------------
+
+
+class TikTokLoginRequest(BaseModel):
+    """TikTok authorization code from the native SDK (react-native-tiktok).
+
+    The mobile app uses the TikTok native SDK which handles the OAuth flow
+    natively and returns an auth_code (+ code_verifier on Android).
+    The backend exchanges this code for an access_token via TikTok's API.
+    """
+
+    auth_code: str = Field(min_length=1)
+    code_verifier: str | None = None  # Provided by Android SDK for PKCE
+
+
+@router.post("/tiktok-login", response_model=LoginResponse)
+async def tiktok_login(
+    request: Request,
+    body: TikTokLoginRequest,
+    supabase: Client = Depends(get_supabase),
+    r: aioredis.Redis = Depends(get_redis),
+    user_repo: UserRepository = Depends(get_user_repo),
+    tier_repo=Depends(get_tier_repo),
+) -> LoginResponse:
+    """Authenticate via TikTok OAuth2 authorization code.
+
+    Flow:
+    1. Exchange the authorization code for an access_token via TikTok API.
+    2. Fetch the user's TikTok profile (open_id, display_name).
+    3. Find or create a Supabase auth user linked to this TikTok identity.
+    4. Return session tokens.
+
+    TikTok doesn't produce an id_token that Supabase GoTrue can verify
+    directly, so we use a deterministic-password approach: each TikTok
+    user gets a Supabase auth account with a synthetic email and an
+    HMAC-derived password.  This gives us real Supabase sessions with
+    working token refresh.
+    """
+    # --- Provider gate ---
+    if not settings.AUTH_PROVIDER_TIKTOK_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="TikTok login is not enabled.",
+        )
+
+    # --- Credential gate ---
+    if not settings.TIKTOK_CLIENT_KEY or not settings.TIKTOK_CLIENT_SECRET:
+        logger.error("TikTok login attempted but TIKTOK_CLIENT_KEY/SECRET not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="TikTok login is not configured.",
+        )
+
+    # --- Per-IP rate limit (same window as other login methods) ---
+    client_ip = get_client_ip(request)
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
+    login_allowed, login_ttl = await check_login_rate_limit(client_ip, r)
+    if not login_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this IP. Try again later.",
+            headers={"Retry-After": str(login_ttl)},
+        )
+
+    # --- Step 1+2: Exchange code + fetch user profile (single httpx client) ---
+    from app.services.tiktok_auth import TikTokAuthError, authenticate
+
+    try:
+        open_id, tiktok_user = await authenticate(
+            code=body.auth_code,
+            code_verifier=body.code_verifier,
+        )
+    except TikTokAuthError as exc:
+        logger.warning("TikTok authentication failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="TikTok authentication failed. Please try again.",
+        ) from exc
+
+    # --- Step 3: Find or create Supabase user ---
+    synthetic_email = f"tiktok_{open_id}@{settings.TIKTOK_SYNTHETIC_EMAIL_DOMAIN}"
+    derived_password = _derive_tiktok_password(open_id)
+
+    # Check if user already exists by tiktok_open_id
+    existing_user = await run_sync(user_repo.find_by_tiktok_open_id, open_id)
+
+    from app.db.client import get_supabase_service
+
+    if existing_user:
+        # --- Existing user: sign in with derived password ---
+        login_client = get_supabase_service()
+        try:
+            session_response = await run_sync(
+                login_client.auth.sign_in_with_password,
+                {"email": synthetic_email, "password": derived_password},
+            )
+        except Exception as exc:
+            logger.error("TikTok sign-in failed for existing user %s: %s", existing_user["id"], exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Authentication service error.",
+            )
+
+        if not session_response.session:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Authentication service error.",
+            )
+
+        session = session_response.session
+        logger.info("TikTok login successful for existing user %s", existing_user["id"])
+        return LoginResponse(
+            user_id=existing_user["id"],
+            access_token=session.access_token,
+            refresh_token=session.refresh_token,
+            expires_at=int(session.expires_at) if session.expires_at else 0,
+        )
+
+    # --- New user: create Supabase auth account + users row ---
+    try:
+        default_tier = await tier_repo.get_default()
+    except ValueError:
+        logger.error("No active default tier found — cannot create TikTok user")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Service configuration error.",
+        )
+    default_tier_id = str(default_tier.id)
+
+    # Create auth user with synthetic email and derived password
+    try:
+        auth_response = await run_sync(
+            user_repo.auth_create_user,
+            synthetic_email,
+            derived_password,
+        )
+    except Exception as exc:
+        logger.error("Failed to create Supabase auth user for TikTok %s: %s", open_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account creation failed.",
+        )
+
+    if not auth_response.user:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account creation failed.",
+        )
+
+    user_id = str(auth_response.user.id)
+
+    # Generate a unique username from TikTok display_name
+    raw_username = tiktok_user.display_name or f"user_{open_id[:8]}"
+    auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
+
+    base_username = auto_username
+    max_retries = 3
+    for attempt in range(max_retries):
+        existing = await run_sync(user_repo.check_username_taken, auto_username, user_id)
+        if existing:
+            suffix = f"_{uuid4().hex[:6]}"
+            if len(base_username) + len(suffix) > 30:
+                base_username = base_username[:30 - len(suffix)]
+            auto_username = f"{base_username}{suffix}"
+
+        try:
+            await run_sync(
+                user_repo.insert,
+                {
+                    "id": user_id,
+                    "email": synthetic_email,
+                    "username": auto_username,
+                    "display_name": tiktok_user.display_name or auto_username,
+                    "email_verified": True,
+                    "trial_analyses_remaining": 0,
+                    "tier_id": default_tier_id,
+                    "tiktok_open_id": open_id,
+                },
+            )
+            break
+        except Exception as exc:
+            exc_msg = str(exc).lower()
+            # tiktok_open_id collision → concurrent first-login race.
+            # Roll back this auth user and fall through to the existing-user sign-in path.
+            if "tiktok_open_id" in exc_msg or ("unique" in exc_msg and "tiktok" in exc_msg):
+                try:
+                    await run_sync(user_repo.auth_delete_user, user_id)
+                except Exception:
+                    logger.exception("Failed to roll back auth user %s after tiktok_open_id race", user_id)
+                logger.info("tiktok_open_id race detected for %s, falling back to sign-in", open_id)
+                # Re-fetch the user that won the race and sign them in
+                race_winner = await run_sync(user_repo.find_by_tiktok_open_id, open_id)
+                if race_winner:
+                    login_client = get_supabase_service()
+                    session_response = await run_sync(
+                        login_client.auth.sign_in_with_password,
+                        {"email": synthetic_email, "password": derived_password},
+                    )
+                    if session_response.session:
+                        return LoginResponse(
+                            user_id=race_winner["id"],
+                            access_token=session_response.session.access_token,
+                            refresh_token=session_response.session.refresh_token,
+                            expires_at=int(session_response.session.expires_at) if session_response.session.expires_at else 0,
+                        )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Account creation failed. Please try again.",
+                )
+            # Username collision → retry with new suffix
+            if "unique" in exc_msg and attempt < max_retries - 1:
+                suffix = f"_{uuid4().hex[:6]}"
+                if len(base_username) + len(suffix) > 30:
+                    base_username = base_username[:30 - len(suffix)]
+                auto_username = f"{base_username}{suffix}"
+                continue
+            # Roll back auth user
+            try:
+                await run_sync(user_repo.auth_delete_user, user_id)
+            except Exception:
+                logger.exception("Failed to roll back auth user %s", user_id)
+            logger.error("users INSERT failed for TikTok user %s: %s", user_id, exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Account creation failed.",
+            ) from exc
+
+    # Grant trial credits (non-fatal)
+    try:
+        from uuid import UUID
+        grantor = TrialGrantor(supabase)
+        await run_sync(grantor.grant, UUID(user_id))
+    except Exception as exc:
+        logger.warning("Trial grant failed for TikTok user %s: %s", user_id, exc)
+
+    # Sign in to get session tokens
+    login_client = get_supabase_service()
+    try:
+        session_response = await run_sync(
+            login_client.auth.sign_in_with_password,
+            {"email": synthetic_email, "password": derived_password},
+        )
+    except Exception as exc:
+        logger.error("Auto-login after TikTok registration failed for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account created but login failed. Please try again.",
+        ) from exc
+
+    if not session_response.session:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account created but login failed. Please try again.",
+        )
+
+    session = session_response.session
+    logger.info("TikTok registration + login successful for user %s (open_id=%s)", user_id, open_id)
+
+    return LoginResponse(
+        user_id=user_id,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        expires_at=int(session.expires_at) if session.expires_at else 0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Token Refresh — POST /auth/refresh
+# ---------------------------------------------------------------------------
+
+
+@router.post("/refresh", response_model=LoginResponse)
+async def refresh_token(
+    body: RefreshRequest,
+    supabase: Client = Depends(get_supabase),
+) -> LoginResponse:
+    """Exchange a refresh_token for a new session (access + refresh tokens).
+
+    No auth dependency is required — the caller is refreshing precisely
+    because their access token has expired.  The refresh_token itself is
+    validated by Supabase GoTrue.
+    """
+    try:
+        auth_response = await run_sync(
+            supabase.auth.refresh_session, body.refresh_token
+        )
+    except Exception as exc:
+        logger.warning("refresh_session failed: %s", exc)
+        if _is_invalid_token_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token is invalid or expired.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Authentication service error.",
+        )
+
+    if not auth_response.session or not auth_response.user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session refresh failed.",
+        )
+
+    session = auth_response.session
+    user_id = str(auth_response.user.id)
+
+    logger.info("Token refreshed for user %s", user_id)
     return LoginResponse(
         user_id=user_id,
         access_token=session.access_token,

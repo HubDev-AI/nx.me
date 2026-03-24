@@ -3,18 +3,20 @@
 Story 6-3:
   GET  /users/{username}/profile  — public, no auth required
   GET  /users/{username}/history  — private, owner only
-  PATCH /users/{username}         — update display_name and/or avatar, owner only
+  PATCH /users/{username}         — update display_name, avatar, and/or username, owner only
 """
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from app.api.deps import get_analysis_repo, get_current_user, get_image_repo, get_job_repo, get_user_repo
+import redis.asyncio as aioredis
+from pydantic import BaseModel, Field
+
+from app.api.deps import get_analysis_repo, get_client_ip, get_current_user, get_image_repo, get_job_repo, get_redis, get_user_repo
 from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
 from app.config import settings
@@ -31,10 +33,22 @@ router = APIRouter(tags=["users"])
 _DEFAULT_HISTORY_PAGE_SIZE = 20
 _MAX_HISTORY_PAGE_SIZE = 100
 
+_USERNAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+_USERNAME_MIN_LENGTH = 3
+_USERNAME_MAX_LENGTH = 30
+_USERNAME_CHANGE_COOLDOWN_HOURS = 24
+_USERNAME_CHECK_RATE_LIMIT = 30          # max requests per window
+_USERNAME_CHECK_RATE_WINDOW_SECONDS = 60  # 1 minute
+
 
 # ---------------------------------------------------------------------------
 # Response / Request models
 # ---------------------------------------------------------------------------
+
+
+class UsernameAvailabilityResponse(BaseModel):
+    available: bool
+    reason: str | None = None
 
 
 class ProfileResponse(BaseModel):
@@ -65,12 +79,19 @@ class HistoryResponse(BaseModel):
 class UpdateProfileRequest(BaseModel):
     display_name: str | None = None
     avatar_storage_key: str | None = None
+    new_username: str | None = Field(
+        default=None,
+        min_length=_USERNAME_MIN_LENGTH,
+        max_length=_USERNAME_MAX_LENGTH,
+        pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$",
+    )
 
 
 class UpdateProfileResponse(BaseModel):
     username: str
     display_name: str
     avatar_url: str | None
+    username_change_cooldown_remaining_seconds: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +108,41 @@ def _lookup_user(user_repo: UserRepository, username: str) -> dict:
             detail="User not found",
         )
     return data
+
+
+# ---------------------------------------------------------------------------
+# GET /users/check-username  (public, no auth)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/users/check-username", response_model=UsernameAvailabilityResponse)
+async def check_username(
+    request: Request,
+    username: str = Query(min_length=_USERNAME_MIN_LENGTH, max_length=_USERNAME_MAX_LENGTH),
+    user_repo: UserRepository = Depends(get_user_repo),
+    r: aioredis.Redis = Depends(get_redis),
+) -> UsernameAvailabilityResponse:
+    """Check if a username is available (case-insensitive).
+
+    No auth required. Per-IP rate limited to prevent username enumeration.
+    """
+    # Per-IP rate limit to prevent enumeration
+    client_ip = get_client_ip(request) or "unknown"
+    rate_key = f"username_check:{client_ip}"
+    current = await r.incr(rate_key)
+    if current == 1:
+        await r.expire(rate_key, _USERNAME_CHECK_RATE_WINDOW_SECONDS)
+    if current > _USERNAME_CHECK_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please slow down.",
+        )
+
+    if not _USERNAME_PATTERN.match(username):
+        return UsernameAvailabilityResponse(available=False, reason="invalid")
+
+    result = await run_sync(user_repo.check_username_available_ci, username)
+    return UsernameAvailabilityResponse(**result)
 
 
 # ---------------------------------------------------------------------------
@@ -292,11 +348,10 @@ async def update_user_profile(
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> UpdateProfileResponse:
-    """Update the authenticated user's display_name and/or avatar.
+    """Update the authenticated user's profile (display_name, avatar, username).
 
-    Owner only — returns 403 if the token does not belong to the requested user.
-    Username cannot be changed via this endpoint; any username field in the body
-    is silently ignored per AC.
+    Owner only — returns 404 if the token does not belong to the requested user.
+    Username changes are subject to a 24-hour cooldown enforced via username_changed_at.
     """
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
@@ -326,8 +381,57 @@ async def update_user_profile(
         await run_sync(user_repo.update_profile, user_id, updates)
         logger.info("Profile updated for user %s: fields=%s", user_id, list(updates.keys()))
 
-    # Re-fetch to return the current state
-    refreshed = await run_sync(_lookup_user, user_repo, username)
+    # --- Username change (with cooldown) ---
+    username_changed = False
+    if body.new_username is not None and body.new_username != user["username"]:
+        # Enforce cooldown
+        username_changed_at_str = user.get("username_changed_at")
+        if username_changed_at_str:
+            last_change = datetime.fromisoformat(username_changed_at_str)
+            if last_change.tzinfo is None:
+                last_change = last_change.replace(tzinfo=timezone.utc)
+            cooldown_end = last_change + timedelta(hours=_USERNAME_CHANGE_COOLDOWN_HOURS)
+            now = datetime.now(tz=timezone.utc)
+            if now < cooldown_end:
+                remaining = int((cooldown_end - now).total_seconds())
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Username can only be changed once every 24 hours.",
+                    headers={"Retry-After": str(remaining)},
+                )
+
+        # Check availability (case-insensitive)
+        availability = await run_sync(
+            user_repo.check_username_available_ci,
+            body.new_username,
+            user_id,
+        )
+        if not availability["available"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Username is {availability.get('reason', 'unavailable')}.",
+            )
+
+        # Apply username change atomically
+        try:
+            await run_sync(user_repo.update_username, user_id, body.new_username)
+            username_changed = True
+        except Exception as exc:
+            if "unique" in str(exc).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username is taken.",
+                ) from exc
+            raise
+
+    # Re-fetch by ID (not username) — the old username from the URL path
+    # may no longer exist after a rename.
+    refreshed = await run_sync(user_repo.get_profile_by_id, user_id)
+    if not refreshed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
     refreshed_avatar_key = refreshed.get("avatar_storage_key")
     avatar_url = (
         await run_sync(image_repo.build_avatar_signed_url, refreshed_avatar_key, settings.SIGNED_URL_EXPIRY_SECONDS)
@@ -335,8 +439,21 @@ async def update_user_profile(
         else None
     )
 
+    # Compute cooldown remaining for response
+    cooldown_remaining: int | None = None
+    changed_at_str = refreshed.get("username_changed_at") if refreshed else None
+    if changed_at_str:
+        last = datetime.fromisoformat(changed_at_str)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        end = last + timedelta(hours=_USERNAME_CHANGE_COOLDOWN_HOURS)
+        remaining_secs = int((end - datetime.now(tz=timezone.utc)).total_seconds())
+        if remaining_secs > 0:
+            cooldown_remaining = remaining_secs
+
     return UpdateProfileResponse(
         username=refreshed["username"],
         display_name=refreshed["display_name"],
         avatar_url=avatar_url,
+        username_change_cooldown_remaining_seconds=cooldown_remaining,
     )

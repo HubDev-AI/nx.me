@@ -27,7 +27,7 @@ class UserRepository:
         """Fetch core profile fields for the authenticated user, or None if not found."""
         result = (
             self._sb.table("users")
-            .select("id, username, display_name, email")
+            .select("id, username, display_name, email, avatar_storage_key, username_changed_at")
             .eq("id", user_id)
             .is_("deleted_at", "null")
             .maybe_single()
@@ -41,7 +41,7 @@ class UserRepository:
         """Fetch a non-deleted user by username, or None if not found."""
         result = (
             self._sb.table("users")
-            .select("id, username, display_name, avatar_storage_key, created_at")
+            .select("id, username, display_name, avatar_storage_key, created_at, username_changed_at")
             .eq("username", username)
             .is_("deleted_at", "null")
             .maybe_single()
@@ -75,6 +75,40 @@ class UserRepository:
         if exclude_user_id and result.data["id"] == exclude_user_id:
             return None
         return result.data
+
+    def check_username_available_ci(self, username: str, exclude_user_id: str | None = None) -> dict:
+        """Check if a username is available (case-insensitive).
+
+        Returns { available: bool, reason?: str }.
+        Checks: active users, reserved usernames (deleted accounts within reservation window).
+        """
+        from datetime import timezone
+
+        result = (
+            self._sb.table("users")
+            .select("id, deleted_at, username_reserved_until")
+            .ilike("username", username)
+            .execute()
+        )
+
+        if not result.data:
+            return {"available": True}
+
+        for row in result.data:
+            if row.get("deleted_at") is None:
+                if exclude_user_id and row["id"] == exclude_user_id:
+                    continue
+                return {"available": False, "reason": "taken"}
+
+            reserved_until_str = row.get("username_reserved_until")
+            if reserved_until_str:
+                reserved_until = datetime.fromisoformat(reserved_until_str)
+                if reserved_until.tzinfo is None:
+                    reserved_until = reserved_until.replace(tzinfo=timezone.utc)
+                if reserved_until > datetime.now(tz=timezone.utc):
+                    return {"available": False, "reason": "reserved"}
+
+        return {"available": True}
 
     def get_trial_analyses_remaining(self, user_id: str) -> int:
         """Return trial_analyses_remaining for the given user (0 if not found)."""
@@ -133,6 +167,17 @@ class UserRepository:
         """Apply arbitrary field updates to a user row."""
         self._sb.table("users").update(updates).eq("id", user_id).execute()
 
+    def update_username(self, user_id: str, new_username: str) -> None:
+        """Update username and set username_changed_at atomically."""
+        from datetime import timezone
+
+        self._sb.table("users").update(
+            {
+                "username": new_username,
+                "username_changed_at": datetime.now(tz=timezone.utc).isoformat(),
+            }
+        ).eq("id", user_id).execute()
+
     def soft_delete(self, user_id: str, now_utc: datetime, reserved_until: datetime) -> list[dict]:
         """Soft-delete a user row; returns the updated rows (empty if already deleted).
 
@@ -175,12 +220,17 @@ class UserRepository:
     # ------------------------------------------------------------------
 
     def auth_create_user(self, email: str, password: str) -> object:
-        """Create a Supabase auth user. Returns the auth API response."""
+        """Create a Supabase auth user with auto-confirmed email.
+
+        Using email_confirm=True so the user can sign in immediately
+        after registration without needing to click a magic link
+        (which doesn't work for mobile apps).
+        """
         return self._sb.auth.admin.create_user(
             {
                 "email": email,
                 "password": password,
-                "email_confirm": False,
+                "email_confirm": True,
             }
         )
 
@@ -195,3 +245,21 @@ class UserRepository:
     def auth_sign_out(self, token: str) -> None:
         """Invalidate a session token server-side."""
         self._sb.auth.admin.sign_out(token)
+
+    # ------------------------------------------------------------------
+    # TikTok identity lookup
+    # ------------------------------------------------------------------
+
+    def find_by_tiktok_open_id(self, open_id: str) -> dict | None:
+        """Find a non-deleted user by their TikTok open_id, or None."""
+        result = (
+            self._sb.table("users")
+            .select("id, username, display_name, email")
+            .eq("tiktok_open_id", open_id)
+            .is_("deleted_at", "null")
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data

@@ -1,130 +1,158 @@
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text, StyleSheet } from "react-native";
+import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
+import { SOCIAL_GOOGLE_TEXT } from "../../constants/colors";
+import { PressableScale } from "../ui/PressableScale";
+import type { AuthProvider } from "../../constants/config";
 
 interface SocialLoginButtonsProps {
+  enabledProviders: AuthProvider[];
   onGooglePress: () => void;
   onApplePress: () => void;
-  googleDisabled?: boolean;
-  appleDisabled?: boolean;
+  onTikTokPress: () => void;
   disabled?: boolean;
 }
 
-const BUTTON_HEIGHT = 48;
+const BUTTON_HEIGHT = 54;
 
 /**
- * Social login buttons — frosted glass style to match the hero bg overlay.
+ * Config-driven social login buttons.
+ * Only renders buttons for providers in the enabledProviders list.
  */
 export function SocialLoginButtons({
+  enabledProviders,
   onGooglePress,
   onApplePress,
-  googleDisabled = false,
-  appleDisabled = false,
+  onTikTokPress,
   disabled = false,
 }: SocialLoginButtonsProps) {
+  const showTikTok = enabledProviders.includes("tiktok");
+  const showGoogle = enabledProviders.includes("google");
+  const showApple = enabledProviders.includes("apple");
+
+  if (!showTikTok && !showGoogle && !showApple) {
+    return null;
+  }
+
   return (
     <View style={styles.container}>
-      {/* Thin accent divider line instead of "or" text */}
-      <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or</Text>
-        <View style={styles.dividerLine} />
-      </View>
+      {/* TikTok — dark bg with TikTok brand colors */}
+      {showTikTok && (
+        <PressableScale
+          onPress={onTikTokPress}
+          disabled={disabled}
+          accessibilityLabel="Continue with TikTok"
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          style={disabled ? styles.disabledWrapper : undefined}
+        >
+          <View style={styles.tiktokButton}>
+            <TikTokIcon />
+            <Text style={styles.tiktokText}>Continue with TikTok</Text>
+          </View>
+        </PressableScale>
+      )}
 
-      <Pressable
-        onPress={onGooglePress}
-        disabled={disabled || googleDisabled}
-        style={({ pressed }) => [
-          styles.socialButton,
-          styles.googleButton,
-          pressed && styles.socialButtonPressed,
-          (disabled || googleDisabled) && styles.socialButtonDisabled,
-        ]}
-        accessibilityLabel="Continue with Google"
-        accessibilityRole="button"
-        accessibilityState={{ disabled: disabled || googleDisabled }}
-      >
-        <Ionicons name="logo-google" size={18} color="#4285F4" />
-        <Text style={styles.googleText}>Continue with Google</Text>
-      </Pressable>
+      {/* Google — white bg, dark text for brand compliance */}
+      {showGoogle && (
+        <PressableScale
+          onPress={onGooglePress}
+          disabled={disabled}
+          accessibilityLabel="Continue with Google"
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          style={disabled ? styles.disabledWrapper : undefined}
+        >
+          <View style={styles.googleButton}>
+            <Ionicons name="logo-google" size={20} color="#4285F4" />
+            <Text style={styles.googleText}>Continue with Google</Text>
+          </View>
+        </PressableScale>
+      )}
 
-      {Platform.OS === "ios" ? (
-        <Pressable
+      {/* Apple — always dark */}
+      {showApple && (
+        <PressableScale
           onPress={onApplePress}
-          disabled={disabled || appleDisabled}
-          style={({ pressed }) => [
-            styles.socialButton,
-            styles.appleButton,
-            pressed && styles.socialButtonPressed,
-            (disabled || appleDisabled) && styles.socialButtonDisabled,
-          ]}
+          disabled={disabled}
           accessibilityLabel="Continue with Apple"
           accessibilityRole="button"
-          accessibilityState={{ disabled: disabled || appleDisabled }}
+          accessibilityState={{ disabled }}
+          style={disabled ? styles.disabledWrapper : undefined}
         >
-          <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
-          <Text style={styles.appleText}>Continue with Apple</Text>
-        </Pressable>
-      ) : null}
+          <View style={styles.appleButton}>
+            <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
+            <Text style={styles.appleText}>Continue with Apple</Text>
+          </View>
+        </PressableScale>
+      )}
     </View>
   );
+}
+
+/** TikTok brand icon via FontAwesome6. */
+function TikTokIcon() {
+  return <FontAwesome6 name="tiktok" size={18} color="#FFFFFF" />;
 }
 
 const styles = StyleSheet.create({
   container: {
     gap: THEME.spacing.md,
-    marginTop: THEME.spacing.sm,
   },
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: THEME.spacing.sm,
+  disabledWrapper: {
+    opacity: 0.5,
   },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-  },
-  dividerText: {
-    fontFamily: FONTS.body,
-    fontSize: 13,
-    color: THEME.colors.textMuted,
-    marginHorizontal: THEME.spacing.lg,
-  },
-  socialButton: {
+  tiktokButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     minHeight: BUTTON_HEIGHT,
     borderRadius: THEME.radius.pill,
     borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "#000000",
     paddingHorizontal: THEME.spacing.lg,
     gap: THEME.spacing.sm + 2,
   },
-  socialButtonPressed: {
-    opacity: 0.8,
-  },
-  socialButtonDisabled: {
-    opacity: 0.5,
+  tiktokText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 16,
+    color: "#FFFFFF",
   },
   googleButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderColor: THEME.colors.glassBorder,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: BUTTON_HEIGHT,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingHorizontal: THEME.spacing.lg,
+    gap: THEME.spacing.sm + 2,
   },
   googleText: {
     fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
-    color: THEME.colors.textPrimary,
+    fontSize: 16,
+    color: SOCIAL_GOOGLE_TEXT,
   },
   appleButton: {
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    borderColor: "rgba(255, 255, 255, 0.12)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: BUTTON_HEIGHT,
+    borderRadius: THEME.radius.pill,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    paddingHorizontal: THEME.spacing.lg,
+    gap: THEME.spacing.sm + 2,
   },
   appleText: {
     fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
+    fontSize: 16,
     color: "#FFFFFF",
   },
 });

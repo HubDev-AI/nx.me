@@ -1,19 +1,18 @@
 /**
- * Shared hook for social login (Google / Apple) used by both login and signup screens.
+ * Shared hook for social login (Google / Apple / TikTok) used by the auth screen.
  *
  * Handles:
  * - Calling the native social SDK
- * - Sending the id_token to the backend
+ * - Sending the id_token (Google/Apple) or auth code (TikTok) to the backend
  * - Storing the JWT + refresh token
- * - Navigating to the main tabs on success
+ * - Setting authenticated state
  */
 import { useState, useCallback } from "react";
-import { useRouter } from "expo-router";
 
 import { apiFetch, ApiError } from "../lib/api";
 import { storeJwt, storeRefreshToken } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
-import { signInWithGoogle, signInWithApple } from "../lib/social-auth";
+import { signInWithGoogle, signInWithApple, signInWithTikTok } from "../lib/social-auth";
 import { AUTH_ENDPOINTS } from "../constants/config";
 import type { LoginResponse } from "../components/auth/types";
 
@@ -22,16 +21,19 @@ interface UseSocialAuthReturn {
   socialError: string | null;
   handleGoogleLogin: () => Promise<void>;
   handleAppleLogin: () => Promise<void>;
+  handleTikTokLogin: () => Promise<void>;
   clearSocialError: () => void;
 }
 
 export function useSocialAuth(): UseSocialAuthReturn {
-  const router = useRouter();
   const { setAuthenticated } = useAuth();
   const [isSocialLoading, setIsSocialLoading] = useState(false);
   const [socialError, setSocialError] = useState<string | null>(null);
 
-  const handleSocialLogin = useCallback(
+  /**
+   * Generic handler for Google/Apple — sends id_token to POST /auth/login.
+   */
+  const handleIdTokenLogin = useCallback(
     async (provider: "google" | "apple", idToken: string, nonce?: string) => {
       setIsSocialLoading(true);
       setSocialError(null);
@@ -57,7 +59,11 @@ export function useSocialAuth(): UseSocialAuthReturn {
         setAuthenticated(true);
       } catch (err) {
         if (err instanceof ApiError) {
-          setSocialError("Social login failed. Please try again.");
+          if (err.status === 403) {
+            setSocialError("This login method is not currently available.");
+          } else {
+            setSocialError("Social login failed. Please try again.");
+          }
         } else {
           setSocialError("Unable to connect. Check your internet connection.");
         }
@@ -65,30 +71,78 @@ export function useSocialAuth(): UseSocialAuthReturn {
         setIsSocialLoading(false);
       }
     },
-    [router],
+    [setAuthenticated],
   );
 
   const handleGoogleLogin = useCallback(async () => {
     try {
       const result = await signInWithGoogle();
       if (result) {
-        await handleSocialLogin("google", result.idToken);
+        await handleIdTokenLogin("google", result.idToken);
       }
     } catch {
       setSocialError("Google sign-in failed. Please try again.");
     }
-  }, [handleSocialLogin]);
+  }, [handleIdTokenLogin]);
 
   const handleAppleLogin = useCallback(async () => {
     try {
       const result = await signInWithApple();
       if (result) {
-        await handleSocialLogin("apple", result.idToken, result.nonce);
+        await handleIdTokenLogin("apple", result.idToken, result.nonce);
       }
     } catch {
       setSocialError("Apple sign-in failed. Please try again.");
     }
-  }, [handleSocialLogin]);
+  }, [handleIdTokenLogin]);
+
+  /**
+   * TikTok uses the native SDK (expo-tiktok-opensdk) which returns an
+   * authCode directly. The backend exchanges it for an access token
+   * via POST /auth/tiktok-login.
+   */
+  const handleTikTokLogin = useCallback(async () => {
+    setIsSocialLoading(true);
+    setSocialError(null);
+
+    try {
+      const result = await signInWithTikTok();
+      if (!result) {
+        // User cancelled
+        setIsSocialLoading(false);
+        return;
+      }
+
+      const response = await apiFetch<LoginResponse>(
+        AUTH_ENDPOINTS.TIKTOK_LOGIN,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            auth_code: result.authCode,
+            ...(result.codeVerifier ? { code_verifier: result.codeVerifier } : {}),
+          }),
+        },
+      );
+
+      await storeJwt(response.access_token);
+      if (response.refresh_token) {
+        await storeRefreshToken(response.refresh_token);
+      }
+      setAuthenticated(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 403) {
+          setSocialError("TikTok login is not currently available.");
+        } else {
+          setSocialError("TikTok login failed. Please try again.");
+        }
+      } else {
+        setSocialError("TikTok sign-in failed. Please try again.");
+      }
+    } finally {
+      setIsSocialLoading(false);
+    }
+  }, [setAuthenticated]);
 
   const clearSocialError = useCallback(() => {
     setSocialError(null);
@@ -99,6 +153,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
     socialError,
     handleGoogleLogin,
     handleAppleLogin,
+    handleTikTokLogin,
     clearSocialError,
   };
 }

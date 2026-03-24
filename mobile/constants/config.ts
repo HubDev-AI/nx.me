@@ -37,6 +37,8 @@ export const APPLE_CLIENT_ID: string =
 export const GOOGLE_WEB_CLIENT_ID: string =
   (extra.googleWebClientId as string) ?? "";
 
+
+
 /** Auth API paths */
 export const AUTH_ENDPOINTS = {
   REGISTER: "/v1/auth/register",
@@ -46,6 +48,10 @@ export const AUTH_ENDPOINTS = {
   LOGIN: "/v1/auth/login",
   /** Social login uses the /login endpoint — backend accepts { provider, id_token, nonce? } */
   SOCIAL_LOGIN: "/v1/auth/login",
+  /** TikTok native SDK code exchange — backend accepts { auth_code, code_verifier? } */
+  TIKTOK_LOGIN: "/v1/auth/tiktok-login",
+  /** Returns { providers: string[] } — list of enabled auth providers */
+  PROVIDERS: "/v1/auth/providers",
   /**
    * Refresh token endpoint — POST with { refresh_token }.
    * NOTE: As of 2026-03-20, the backend does NOT expose a /v1/auth/refresh
@@ -57,6 +63,9 @@ export const AUTH_ENDPOINTS = {
   /** Server-side logout — POST with JWT in Authorization header */
   LOGOUT: "/v1/auth/logout",
 } as const;
+
+/** Auth provider type — matches backend provider strings */
+export type AuthProvider = "tiktok" | "google" | "apple" | "email";
 
 /** Analysis API paths */
 export const ANALYSIS_ENDPOINTS = {
@@ -102,7 +111,7 @@ export const COMMENTS_CONFIG = {
   /** Number of comments per page */
   PAGE_SIZE: 20,
   /** Max comment length (characters) */
-  MAX_COMMENT_LENGTH: 500,
+  MAX_COMMENT_LENGTH: 1000,
   /** Bottom sheet scrim opacity */
   SCRIM_OPACITY: 0.5,
   /** Sheet entry animation duration (ms) */
@@ -151,7 +160,7 @@ export const APPLE_MERCHANT_ID: string =
 /** Entitlement + payment API paths */
 export const ENTITLEMENT_ENDPOINTS = {
   GET: "/v1/entitlement",
-  PURCHASE_CREDITS: "/v1/credits/purchase",
+  PURCHASE_CREDITS: "/v1/credit-purchases",
   SUBSCRIBE: "/v1/subscriptions",
 } as const;
 
@@ -159,7 +168,7 @@ export const ENTITLEMENT_ENDPOINTS = {
 export const ADVISOR_ENDPOINTS = {
   MESSAGES: "/v1/advisor/messages",
   NUDGES: "/v1/advisor/nudges",
-  NUDGE_READ: (id: string) => `/v1/advisor/nudges/${id}/read`,
+  NUDGE_READ: (id: string) => `/v1/advisor/nudges/${id}`,
   MEMORIES: "/v1/memories",
   MEMORY_DELETE: (id: string) => `/v1/memories/${id}`,
 } as const;
@@ -232,6 +241,8 @@ export const MIN_TOUCH_TARGET = 44;
 /** Validation constants */
 export const AUTH_VALIDATION = {
   PASSWORD_MIN_LENGTH: 8,
+  /** Password must contain lowercase + uppercase + digits (Supabase policy) */
+  PASSWORD_PATTERN: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
   USERNAME_MIN_LENGTH: 3,
   USERNAME_MAX_LENGTH: 30,
   /** Alphanumeric + underscores, starts with letter */

@@ -82,7 +82,13 @@
           "enableGooglePay": true
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "react-native-tiktok",
+        {
+          "tiktokClientKey": ""
+        }
+      ]
     ],
     "extra": {
       "apiBaseUrl": "http://192.168.2.203:8001",
@@ -90,7 +96,8 @@
       "googleClientId": "",
       "googleWebClientId": "",
       "appleClientId": "",
-      "appleMerchantId": "merchant.ai.nxme.app"
+      "appleMerchantId": "merchant.ai.nxme.app",
+      "tiktokClientKey": ""
     }
   }
 }

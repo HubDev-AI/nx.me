@@ -172,8 +172,11 @@ export function useProfile(): UseProfileReturn {
           prev
             ? {
                 ...prev,
+                username: updated.username,
                 display_name: updated.display_name,
                 avatar_url: updated.avatar_url,
+                username_change_cooldown_remaining_seconds:
+                  updated.username_change_cooldown_remaining_seconds ?? null,
               }
             : prev,
         );

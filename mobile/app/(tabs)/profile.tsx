@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useNavigation } from "expo-router";
 
 import { THEME } from "../../constants/theme";
+import { TAB_BAR_HEIGHT } from "./_layout";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { MIN_TOUCH_TARGET, AUTH_ENDPOINTS } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
@@ -34,7 +35,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const toggleMenuRef = useRef<() => void>();
-  const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth } = useAuth();
+  const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth, setUsername: setAuthUsername } = useAuth();
   const { theme } = useTheme();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -96,9 +97,15 @@ export default function ProfileScreen() {
   const handleSaveProfile = useCallback(
     async (payload: UpdateProfilePayload): Promise<boolean> => {
       if (!profile) return false;
-      return updateProfile(profile.username, payload);
+      const success = await updateProfile(profile.username, payload);
+      // Propagate username change to auth context so all subsequent
+      // API calls and navigation use the new username.
+      if (success && payload.new_username) {
+        setAuthUsername(payload.new_username);
+      }
+      return success;
     },
-    [profile, updateProfile],
+    [profile, updateProfile, setAuthUsername],
   );
 
   const toggleMenu = useCallback(() => {
@@ -291,7 +298,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: THEME.spacing.xxl,
-    paddingBottom: 90,
+    paddingBottom: TAB_BAR_HEIGHT,
   },
   signInTitle: {
     fontFamily: FONTS.display,
@@ -335,7 +342,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   errorTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     marginTop: THEME.spacing.md,

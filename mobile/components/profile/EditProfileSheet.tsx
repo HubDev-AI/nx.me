@@ -12,23 +12,29 @@ import {
   Platform,
   StyleSheet,
   AccessibilityInfo,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 
 import { THEME } from "../../constants/theme";
 import {
+  AUTH_VALIDATION,
   IMAGE_PICKER as IMAGE_PICKER_CONFIG,
   MIN_TOUCH_TARGET,
   PROFILE_CONFIG,
 } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
+import { apiFetch } from "../../lib/api";
 import type { UserProfile, UpdateProfilePayload } from "./types";
 
 const AVATAR_SIZE = 88;
 const SHEET_ENTER_DURATION_MS = 300;
 const SHEET_EXIT_DURATION_MS = 200;
+const AVAILABILITY_CHECK_DEBOUNCE_MS = 300;
+/** Green checkmark for available username — not in THEME, defined here */
+const COLOR_SUCCESS = "#22c55e";
 
 interface EditProfileSheetProps {
   visible: boolean;
@@ -56,7 +62,10 @@ export function EditProfileSheet({
     profile.display_name ?? "",
   );
   const [avatarUri, setAvatarUri] = useState(profile.avatar_url ?? "");
-  const [hasChanges, setHasChanges] = useState(false);
+  const [newUsername, setNewUsername] = useState(profile.username ?? "");
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const scrimAnim = useRef(new Animated.Value(0)).current;
@@ -67,7 +76,9 @@ export function EditProfileSheet({
     if (visible) {
       setDisplayName(profile.display_name ?? "");
       setAvatarUri(profile.avatar_url ?? "");
-      setHasChanges(false);
+      setNewUsername(profile.username ?? "");
+      setUsernameAvailable(null);
+      setUsernameError(null);
 
       Animated.parallel([
         Animated.timing(slideAnim, {
@@ -105,6 +116,70 @@ export function EditProfileSheet({
     [slideAnim, scrimAnim],
   );
 
+  // Debounced username availability check
+  useEffect(() => {
+    if (newUsername === profile.username) {
+      setUsernameAvailable(null);
+      setUsernameError(null);
+      return;
+    }
+
+    if (
+      newUsername.length < AUTH_VALIDATION.USERNAME_MIN_LENGTH ||
+      newUsername.length > AUTH_VALIDATION.USERNAME_MAX_LENGTH ||
+      !AUTH_VALIDATION.USERNAME_PATTERN.test(newUsername)
+    ) {
+      setUsernameAvailable(false);
+      setUsernameError(
+        "3-30 chars, starts with letter, letters/numbers/underscores only",
+      );
+      return;
+    }
+
+    setUsernameChecking(true);
+    const timeout = setTimeout(async () => {
+      try {
+        const resp = await apiFetch<{ available: boolean; reason?: string }>(
+          `/v1/users/check-username?username=${encodeURIComponent(newUsername)}`,
+        );
+        setUsernameAvailable(resp.available);
+        setUsernameError(
+          resp.available
+            ? null
+            : resp.reason === "reserved"
+              ? "Username is reserved"
+              : "Username is taken",
+        );
+      } catch {
+        setUsernameError(null);
+        setUsernameAvailable(null);
+      } finally {
+        setUsernameChecking(false);
+      }
+    }, AVAILABILITY_CHECK_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeout);
+  }, [newUsername, profile.username]);
+
+  // Computed change tracking
+  const hasUsernameChange = newUsername !== (profile.username ?? "");
+  const hasDisplayNameChange = displayName !== (profile.display_name ?? "");
+  const hasChanges =
+    hasUsernameChange ||
+    hasDisplayNameChange ||
+    avatarUri !== (profile.avatar_url ?? "");
+
+  // Username validation
+  const isUsernameValid =
+    newUsername === profile.username ||
+    (newUsername.length >= AUTH_VALIDATION.USERNAME_MIN_LENGTH &&
+      newUsername.length <= AUTH_VALIDATION.USERNAME_MAX_LENGTH &&
+      AUTH_VALIDATION.USERNAME_PATTERN.test(newUsername) &&
+      usernameAvailable !== false);
+
+  const isCooldownActive =
+    (profile.username_change_cooldown_remaining_seconds ?? 0) > 0;
+
   const handleClose = useCallback(() => {
     if (hasChanges) {
       Alert.alert(
@@ -124,14 +199,9 @@ export function EditProfileSheet({
     }
   }, [hasChanges, animateClose, onClose]);
 
-  const handleDisplayNameChange = useCallback(
-    (text: string) => {
-      setDisplayName(text);
-      const original = profile.display_name ?? "";
-      setHasChanges(text !== original);
-    },
-    [profile.display_name],
-  );
+  const handleDisplayNameChange = useCallback((text: string) => {
+    setDisplayName(text);
+  }, []);
 
   const handlePickAvatar = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -144,16 +214,27 @@ export function EditProfileSheet({
     if (!result.canceled && result.assets[0]) {
       const newUri = result.assets[0].uri;
       setAvatarUri(newUri);
-      setHasChanges(true);
     }
   }, []);
+
+  const doSave = useCallback(
+    async (payload: UpdateProfilePayload) => {
+      const success = await onSave(payload);
+      if (success) {
+        animateClose(onClose);
+      }
+    },
+    [onSave, animateClose, onClose],
+  );
 
   const handleSave = useCallback(async () => {
     const payload: UpdateProfilePayload = {};
 
-    const originalDisplayName = profile.display_name ?? "";
-    if (displayName !== originalDisplayName) {
+    if (hasDisplayNameChange) {
       payload.display_name = displayName.trim();
+    }
+    if (hasUsernameChange) {
+      payload.new_username = newUsername.trim();
     }
 
     if (Object.keys(payload).length === 0) {
@@ -161,11 +242,29 @@ export function EditProfileSheet({
       return;
     }
 
-    const success = await onSave(payload);
-    if (success) {
-      animateClose(onClose);
+    // Warn about broken links if username changes
+    if (hasUsernameChange) {
+      Alert.alert(
+        "Change username?",
+        "Changing your username will break any links you've shared with your current username.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Change", onPress: () => doSave(payload) },
+        ],
+      );
+      return;
     }
-  }, [displayName, profile, onSave, animateClose, onClose]);
+
+    await doSave(payload);
+  }, [
+    displayName,
+    newUsername,
+    hasDisplayNameChange,
+    hasUsernameChange,
+    doSave,
+    animateClose,
+    onClose,
+  ]);
 
   const translateY = slideAnim.interpolate({
     inputRange: [0, 1],
@@ -237,21 +336,23 @@ export function EditProfileSheet({
 
             <Pressable
               onPress={handleSave}
-              disabled={isUpdating || !isDisplayNameValid}
+              disabled={isUpdating || !isDisplayNameValid || !isUsernameValid}
               style={[
                 styles.saveButton,
                 { backgroundColor: theme.accent },
-                (!isDisplayNameValid || isUpdating) &&
+                (!isDisplayNameValid || !isUsernameValid || isUpdating) &&
                   styles.saveButtonDisabled,
               ]}
               accessibilityLabel="Save profile changes"
               accessibilityRole="button"
-              accessibilityState={{ disabled: isUpdating || !isDisplayNameValid }}
+              accessibilityState={{
+                disabled: isUpdating || !isDisplayNameValid || !isUsernameValid,
+              }}
             >
               <Text
                 style={[
                   styles.saveButtonText,
-                  (!isDisplayNameValid || isUpdating) &&
+                  (!isDisplayNameValid || !isUsernameValid || isUpdating) &&
                     styles.saveButtonTextDisabled,
                 ]}
               >
@@ -291,6 +392,57 @@ export function EditProfileSheet({
             </View>
           </Pressable>
           <Text style={styles.avatarHint}>Tap to change photo</Text>
+
+          {/* Username input */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.fieldLabel}>USERNAME</Text>
+            <View style={styles.usernameInputRow}>
+              <Text style={styles.usernamePrefix}>@</Text>
+              <TextInput
+                value={newUsername}
+                onChangeText={setNewUsername}
+                style={[styles.input, styles.usernameInput]}
+                placeholderTextColor={THEME.colors.textMuted}
+                placeholder="username"
+                maxLength={AUTH_VALIDATION.USERNAME_MAX_LENGTH}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+                editable={!isCooldownActive}
+                accessibilityLabel="Username"
+              />
+              {/* Availability indicator */}
+              {newUsername !== profile.username && (
+                <View style={styles.usernameStatus}>
+                  {usernameChecking ? (
+                    <ActivityIndicator
+                      size="small"
+                      color={THEME.colors.textMuted}
+                    />
+                  ) : usernameAvailable === true ? (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color={COLOR_SUCCESS}
+                    />
+                  ) : usernameAvailable === false ? (
+                    <Ionicons
+                      name="close-circle"
+                      size={20}
+                      color={THEME.colors.destructive}
+                    />
+                  ) : null}
+                </View>
+              )}
+            </View>
+            {usernameError ? (
+              <Text style={styles.usernameErrorText}>{usernameError}</Text>
+            ) : isCooldownActive ? (
+              <Text style={styles.cooldownHint}>
+                You can change your username again later
+              </Text>
+            ) : null}
+          </View>
 
           {/* Display name input */}
           <View style={styles.fieldContainer}>
@@ -500,5 +652,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: THEME.colors.destructive,
     flex: 1,
+  },
+  usernameInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  usernamePrefix: {
+    fontFamily: FONTS.body,
+    fontSize: 16,
+    color: THEME.colors.textSecondary,
+    marginRight: THEME.spacing.xs,
+  },
+  usernameInput: {
+    flex: 1,
+  },
+  usernameStatus: {
+    marginLeft: THEME.spacing.sm,
+    width: 24,
+    alignItems: "center",
+  },
+  usernameErrorText: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: THEME.colors.destructive,
+    marginTop: THEME.spacing.xs,
+  },
+  cooldownHint: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    marginTop: THEME.spacing.xs,
   },
 });

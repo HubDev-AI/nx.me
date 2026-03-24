@@ -184,5 +184,20 @@ class Settings(BaseSettings):
     # Account deletion (Story 2-2 AC-FR5)
     USERNAME_RESERVATION_DAYS: int = 180          # days username is reserved post-deletion
 
+    # Auth provider feature flags — toggle login methods per environment.
+    # When disabled: API rejects requests, mobile hides the button.
+    AUTH_PROVIDER_GOOGLE_ENABLED: bool = True
+    AUTH_PROVIDER_APPLE_ENABLED: bool = False
+    AUTH_PROVIDER_EMAIL_ENABLED: bool = False
+    AUTH_PROVIDER_TIKTOK_ENABLED: bool = False
+
+    # TikTok OAuth2 credentials (Login Kit v2)
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+    # Synthetic email domain for TikTok users (internal identifier, never user-facing)
+    TIKTOK_SYNTHETIC_EMAIL_DOMAIN: str = "oauth.nxme.internal"
+    # Timeout for TikTok API calls (token exchange, user info)
+    TIKTOK_HTTPX_TIMEOUT_SECONDS: float = 15.0
+
 
 settings = Settings()

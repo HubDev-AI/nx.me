@@ -1,31 +1,36 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+/**
+ * Auth screen -- social-only login.
+ *
+ * Login methods are config-driven: the backend GET /auth/providers endpoint
+ * returns which providers are enabled. Only enabled providers are shown.
+ * When a provider is disabled, its button is hidden from the UI.
+ *
+ * For social auth (TikTok, Google, Apple), login and signup are the same
+ * flow -- the backend handles account creation on first login.
+ */
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  KeyboardAvoidingView,
-  ScrollView,
-  Platform,
-  Pressable,
-  TextInput,
+  ActivityIndicator,
 } from "react-native";
-import { useRouter, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
-// Error feedback colors from THEME
 import { THEME } from "../../constants/theme";
-import { AUTH_ENDPOINTS, AUTH_VALIDATION } from "../../constants/config";
-import { apiFetch, ApiError } from "../../lib/api";
-import { storeJwt, storeRefreshToken } from "../../lib/auth";
-import { useAuth } from "../../lib/auth-context";
-import { AuthInput } from "../../components/auth/AuthInput";
+import {
+  TEXT_INVERSE,
+  TEXT_PRIMARY,
+  TEXT_SHADOW_DARK,
+  ERROR_BG,
+} from "../../constants/colors";
 import { SocialLoginButtons } from "../../components/auth/SocialLoginButtons";
 import { useSocialAuth } from "../../hooks/useSocialAuth";
-import type { LoginResponse } from "../../components/auth/types";
+import { useEnabledProviders } from "../../hooks/useEnabledProviders";
 
-// Futuristic UI components
 import { HeroBackground } from "../../components/ui/HeroBackground";
 import { BrandLabel } from "../../components/ui/BrandLabel";
 import { GlowButton } from "../../components/ui/GlowButton";
@@ -33,31 +38,34 @@ import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 
 interface FieldErrors {
-  email?: string;
-  password?: string;
   general?: string;
 }
 
-export default function LoginScreen() {
-  const router = useRouter();
+export default function AuthScreen() {
   const insets = useSafeAreaInsets();
-  const { setAuthenticated, setUsername } = useAuth();
   const { theme } = useTheme();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [isLoading, setIsLoading] = useState(false);
+  // Fetch enabled providers from backend
+  const {
+    providers,
+    isLoading: isLoadingProviders,
+    error: providersError,
+    retry: retryProviders,
+  } = useEnabledProviders();
 
+  // Social auth
   const {
     isSocialLoading,
     socialError,
     handleGoogleLogin,
     handleAppleLogin,
+    handleTikTokLogin,
     clearSocialError,
   } = useSocialAuth();
 
-  // Surface social auth errors into the general error field
+  const [errors, setErrors] = useState<FieldErrors>({});
+
+  // Surface social auth errors
   useEffect(() => {
     if (socialError) {
       setErrors({ general: socialError });
@@ -65,257 +73,123 @@ export default function LoginScreen() {
     }
   }, [socialError, clearSocialError]);
 
-  const emailRef = useRef<TextInput>(null);
-  const passwordRef = useRef<TextInput>(null);
-
-  const validate = useCallback((): boolean => {
-    const fieldErrors: FieldErrors = {};
-
-    if (!email.trim()) {
-      fieldErrors.email = "Email is required";
-    } else if (!AUTH_VALIDATION.EMAIL_PATTERN.test(email.trim())) {
-      fieldErrors.email = "Enter a valid email address";
-    }
-
-    if (!password) {
-      fieldErrors.password = "Password is required";
-    }
-
-    setErrors(fieldErrors);
-
-    if (fieldErrors.email) {
-      emailRef.current?.focus();
-    } else if (fieldErrors.password) {
-      passwordRef.current?.focus();
-    }
-
-    return Object.keys(fieldErrors).length === 0;
-  }, [email, password]);
-
-  /**
-   * After storing the JWT, fetch the user's profile via GET /v1/auth/me.
-   */
-  const resolveUsername = useCallback(async () => {
-    try {
-      const me = await apiFetch<{ username: string }>("/v1/auth/me");
-      if (me?.username) {
-        setUsername(me.username);
-      }
-    } catch {
-      // /me failed — username stays null, profile screen will handle it
-    }
-  }, [setUsername]);
-
-  const handleLogin = useCallback(async () => {
-    if (!validate()) return;
-
-    setIsLoading(true);
-    setErrors({});
-
-    try {
-      const response = await apiFetch<LoginResponse>(AUTH_ENDPOINTS.EMAIL_LOGIN, {
-        method: "POST",
-        body: JSON.stringify({
-          email: email.trim(),
-          password,
-        }),
-      });
-
-      await storeJwt(response.access_token);
-      if (response.refresh_token) {
-        await storeRefreshToken(response.refresh_token);
-      }
-
-      // Resolve username before marking authenticated so profile can load immediately
-      await resolveUsername();
-
-      setAuthenticated(true);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 401) {
-          setErrors({ general: "Invalid email or password" });
-        } else if (err.status === 422) {
-          setErrors({ general: "Please check your input and try again" });
-        } else {
-          setErrors({ general: "Something went wrong. Please try again." });
-        }
-      } else {
-        setErrors({ general: "Unable to connect. Check your internet connection." });
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [email, password, validate, resolveUsername, setAuthenticated]);
-
-  const isAnyLoading = isLoading || isSocialLoading;
-
-  return (
-    <>
-      <Stack.Screen options={{ headerShown: false }} />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
-      >
-        {/* Full-bleed hero portrait -- the face IS the visual, no particles needed */}
+  // ---- Providers loading / error state ----
+  if (isLoadingProviders || providersError) {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
         <HeroBackground />
-
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            {
-              paddingTop: insets.top + 16,
-              paddingBottom: insets.bottom + 24,
-            },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Tiny brand label -- top-left like card-web fashion label */}
-          <BrandLabel />
-
-          {/* Spacer pushes all content to the bottom half of the viewport */}
-          <View style={styles.spacer} />
-
-          {/* Hero headline -- matches card-web "Your style, elevated." layout */}
-          <Animated.View entering={FadeInDown.duration(800).springify().damping(15)}>
-            <Text style={styles.heroTitle}>{"Welcome\nback,"}</Text>
-            <Text style={[styles.heroAccent, { color: theme.accent }]}>
-              to your glow-up
-            </Text>
-          </Animated.View>
-
-          {/* Subtitle */}
-          <Animated.View entering={FadeInDown.delay(150).duration(800).springify().damping(15)}>
-            <Text style={styles.subtitle}>Log in to your account</Text>
-          </Animated.View>
-
-          {/* General error */}
-          {errors.general ? (
-            <View style={styles.generalError} accessibilityRole="alert">
-              <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
-              <Text style={styles.generalErrorText}>{errors.general}</Text>
-            </View>
-          ) : null}
-
-          {/* Frosted form inputs */}
-          <Animated.View
-            entering={FadeInDown.delay(300).duration(800).springify().damping(15)}
-            style={styles.form}
-          >
-            <View style={styles.inputCard}>
-              <AuthInput
-                ref={emailRef}
-                label="Email"
-                value={email}
-                onChangeText={setEmail}
-                error={errors.email}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoComplete="email"
-                textContentType="emailAddress"
-                returnKeyType="next"
-                onSubmitEditing={() => passwordRef.current?.focus()}
-                editable={!isAnyLoading}
-              />
-            </View>
-            <View style={styles.inputCard}>
-              <AuthInput
-                ref={passwordRef}
-                label="Password"
-                value={password}
-                onChangeText={setPassword}
-                error={errors.password}
-                isPassword
-                autoCapitalize="none"
-                autoComplete="password"
-                textContentType="password"
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-                editable={!isAnyLoading}
-              />
-            </View>
-          </Animated.View>
-
-          {/* Full-width pill CTA -- accent follows session theme */}
-          <Animated.View entering={FadeInDown.delay(450).duration(800).springify().damping(15)}>
-            <View style={styles.ctaWrapper}>
+        <View style={styles.loadingContainer}>
+          {isLoadingProviders ? (
+            <ActivityIndicator size="large" color={theme.accent} />
+          ) : (
+            <View style={styles.providerErrorContainer}>
+              <Ionicons name="cloud-offline-outline" size={32} color={TEXT_PRIMARY} />
+              <Text style={styles.providerErrorText}>{providersError}</Text>
               <GlowButton
-                title="Log in"
-                onPress={handleLogin}
-                isLoading={isLoading}
-                disabled={isSocialLoading}
+                title="Retry"
+                onPress={retryProviders}
                 glowColor={theme.accent}
                 size="large"
               />
             </View>
-          </Animated.View>
+          )}
+        </View>
+      </>
+    );
+  }
 
-          {/* Social login + switch link */}
-          <Animated.View entering={FadeInDown.delay(600).duration(800).springify().damping(15)}>
+  const socialProviders = providers.filter((p) => p !== "email");
+
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <HeroBackground />
+
+      <View
+        style={[
+          styles.content,
+          {
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 24,
+          },
+        ]}
+      >
+        <BrandLabel />
+        <View style={styles.spacer} />
+
+        {/* Hero headline */}
+        <Animated.View entering={FadeInDown.duration(800).springify().damping(15)}>
+          <Text style={styles.heroTitle}>{"Your style,\nelevated"}</Text>
+          <Text style={[styles.heroAccent, { color: theme.accent }]}>
+            start your glow-up
+          </Text>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(150).duration(800).springify().damping(15)}>
+          <Text style={styles.subtitle}>
+            Sign in or create an account to continue
+          </Text>
+        </Animated.View>
+
+        {/* General error */}
+        {errors.general ? (
+          <View style={styles.generalError} accessibilityRole="alert">
+            <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
+            <Text style={styles.generalErrorText}>{errors.general}</Text>
+          </View>
+        ) : null}
+
+        {/* Social login buttons (config-driven) */}
+        {socialProviders.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(300).duration(800).springify().damping(15)}>
             <SocialLoginButtons
+              enabledProviders={providers}
               onGooglePress={handleGoogleLogin}
               onApplePress={handleAppleLogin}
-              disabled={isAnyLoading}
+              onTikTokPress={handleTikTokLogin}
+              disabled={isSocialLoading}
             />
-
-            {/* Signup link */}
-            <View style={styles.switchRow}>
-              <Text style={styles.switchText}>{"Don\u2019t have an account? "}</Text>
-              <Pressable
-                onPress={() => router.push("/(auth)/signup")}
-                disabled={isAnyLoading}
-                accessibilityLabel="Sign up"
-                accessibilityRole="link"
-              >
-                <Text
-                  style={[
-                    styles.switchLink,
-                    { color: theme.accent, textDecorationColor: theme.accent + "80" },
-                  ]}
-                >
-                  Sign up
-                </Text>
-              </Pressable>
-            </View>
           </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        )}
+      </View>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-    backgroundColor: "transparent",
+  loadingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  scrollContent: {
-    flexGrow: 1,
+  providerErrorContainer: {
+    alignItems: "center",
+    gap: THEME.spacing.lg,
     paddingHorizontal: THEME.spacing.xxl,
-    justifyContent: "flex-end" as const,
   },
-  /* ---- Tiny brand label -- top-left like card-web ---- */
-  brandLabel: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 11,
-    letterSpacing: 4,
-    color: "rgba(255, 255, 255, 0.7)",
-    textTransform: "uppercase" as const,
+  providerErrorText: {
+    fontFamily: FONTS.body,
+    fontSize: 15,
+    color: TEXT_PRIMARY,
+    textAlign: "center",
   },
-  /* ---- Spacer pushes content to the bottom half ---- */
+  content: {
+    ...StyleSheet.absoluteFillObject,
+    paddingHorizontal: THEME.spacing.xxl,
+    justifyContent: "flex-end",
+  },
   spacer: {
     flex: 1,
-    minHeight: 180,
+    minHeight: 120,
   },
-  /* ---- Hero headline -- Instrument Serif 48px, left-aligned ---- */
   heroTitle: {
     fontFamily: FONTS.display,
     fontSize: 48,
     lineHeight: 52,
-    color: "#ffffff",
+    color: TEXT_INVERSE,
     letterSpacing: -0.5,
-    textShadowColor: "rgba(0, 0, 0, 0.4)",
+    textShadowColor: TEXT_SHADOW_DARK,
     textShadowOffset: { width: 0, height: 3 },
     textShadowRadius: 12,
   },
@@ -326,22 +200,20 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     marginBottom: THEME.spacing.md,
   },
-  /* ---- Subtitle -- readable on any background ---- */
   subtitle: {
     fontFamily: FONTS.body,
     fontSize: 15,
-    color: "#e8e8e8",
+    color: TEXT_PRIMARY,
     marginBottom: THEME.spacing.xxl,
     textShadowColor: "rgba(0, 0, 0, 0.7)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  /* ---- Error banner ---- */
   generalError: {
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.sm,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    backgroundColor: ERROR_BG,
     borderRadius: THEME.radius.md,
     padding: THEME.spacing.md,
     marginBottom: THEME.spacing.lg,
@@ -350,49 +222,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: THEME.colors.destructive,
     flex: 1,
-  },
-  /* ---- Form area ---- */
-  form: {
-    marginBottom: THEME.spacing.lg,
-  },
-  inputCard: {
-    backgroundColor: "rgba(8, 8, 8, 0.78)",
-    borderRadius: THEME.radius.xl,
-    paddingHorizontal: THEME.spacing.lg,
-    paddingTop: THEME.spacing.md,
-    paddingBottom: 0,
-    marginBottom: THEME.spacing.md,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255, 255, 255, 0.08)",
-  },
-  /* ---- CTA wrapper ---- */
-  ctaWrapper: {
-    marginTop: THEME.spacing.sm,
-    marginBottom: THEME.spacing.xs,
-    borderRadius: THEME.radius.pill,
-    overflow: "hidden",
-  },
-  /* ---- Switch row -- login/signup toggle ---- */
-  switchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: THEME.spacing.lg,
-    minHeight: 44,
-  },
-  switchText: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: "#e8e8e8",
-    textShadowColor: "rgba(0, 0, 0, 0.7)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  switchLink: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 15,
-    textDecorationLine: "underline" as const,
   },
 });

@@ -16,6 +16,7 @@ export interface UserProfile {
   post_count: number;
   total_reactions: number;
   member_since: string;
+  username_change_cooldown_remaining_seconds?: number | null;
 }
 
 /** Matches HistoryEntry in app/api/users.py */
@@ -36,9 +37,10 @@ export interface GlowUpHistoryResponse {
   has_more: boolean;
 }
 
-/** Matches UpdateProfileRequest in app/api/users.py — only display_name is accepted */
+/** Matches UpdateProfileRequest in app/api/users.py */
 export interface UpdateProfilePayload {
   display_name?: string;
+  new_username?: string;
 }
 
 /** Matches UpdateProfileResponse in app/api/users.py */
@@ -46,4 +48,5 @@ export interface UpdateProfileResponse {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  username_change_cooldown_remaining_seconds?: number | null;
 }
