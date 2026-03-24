@@ -8,6 +8,12 @@ __pycache__/
 .env
 .env.*
 !.env.example
+app/.env
+app/.env.*
+!app/.env.example
+mobile/.env
+mobile/.env.*
+!mobile/.env.example
 
 # OS
 .DS_Store

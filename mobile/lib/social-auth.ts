@@ -12,7 +12,7 @@ import { Platform } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
 
-import { GOOGLE_WEB_CLIENT_ID, UNIVERSAL_LINK_ORIGIN } from "../constants/config";
+import { GOOGLE_CLIENT_ID, GOOGLE_WEB_CLIENT_ID, UNIVERSAL_LINK_ORIGIN } from "../constants/config";
 
 // Lazy-load Google Sign-In to avoid crashing in Expo Go where
 // the native module (RNGoogleSignin) is not available.
@@ -62,6 +62,7 @@ function ensureGoogleConfigured(): void {
   const { GoogleSignin } = getGoogleSignin();
   GoogleSignin.configure({
     webClientId: GOOGLE_WEB_CLIENT_ID,
+    iosClientId: GOOGLE_CLIENT_ID,
     offlineAccess: false,
   });
   googleConfigured = true;

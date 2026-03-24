@@ -10,7 +10,7 @@ const extra = Constants.expoConfig?.extra ?? {};
 import { Platform } from "react-native";
 export const API_BASE_URL: string =
   Platform.OS === "web" && __DEV__
-    ? "http://localhost:8001"
+    ? "http://localhost:8000"
     : (extra.apiBaseUrl as string) ?? "https://api.nxme.ai";
 
 /** Universal link origin — only HTTPS allowed, no custom URI schemes */

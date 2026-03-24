@@ -1,12 +1,12 @@
 .PHONY: up down reset nuke nuke-keep migrate worker test lint format
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
-up: .venv .env
-	@docker compose up -d
+up: .venv app/.env
+	@set -a && . ./app/.env && set +a && docker compose up -d
 	@echo "▶ Starting local Supabase..."
-	@supabase start -x realtime,imgproxy,edge-runtime,logflare,vector,supavisor 2>/dev/null || true
+	@set -a && . ./app/.env && set +a && supabase start -x realtime,imgproxy,edge-runtime,logflare,vector,supavisor 2>/dev/null || true
 	@.venv/bin/pip install -q -r requirements.txt -r requirements-dev.txt
-	@.venv/bin/python -m app.migrations.run
+	@set -a && . ./app/.env && set +a && .venv/bin/python -m app.migrations.run
 	@echo ""
 	@echo "  API:    http://localhost:8000"
 	@echo "  Docs:   http://localhost:8000/docs"
@@ -25,7 +25,7 @@ down:
 reset:
 	docker compose down -v
 	supabase stop --no-backup 2>/dev/null || true
-	rm -rf .venv .env
+	rm -rf .venv app/.env
 	@echo "Reset complete. Run 'make up' to start fresh."
 
 # ── Wipe all test data (no restart needed) ───────────────────────────────────
@@ -59,5 +59,5 @@ format:
 	python3 -m venv .venv
 	.venv/bin/pip install -q --upgrade pip
 
-.env:
-	@./scripts/local-env.sh
+app/.env:
+	@./scripts/local-env.sh app/.env
