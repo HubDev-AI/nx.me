@@ -30,7 +30,9 @@ try {
 }
 
 import { THEME } from "../constants/theme";
+import { ERROR_BORDER } from "../constants/colors";
 import { PageBackground } from "../components/ui/PageBackground";
+import { PressableScale } from "../components/ui/PressableScale";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { FONTS } from "../hooks/useFonts";
@@ -198,7 +200,7 @@ export default function SettingsScreen() {
           {/* ─── Subscription Section ─────────────────────────────────── */}
           <Animated.View entering={FadeInDown.delay(120).duration(400)}>
             <Text style={styles.sectionLabel}>SUBSCRIPTION</Text>
-            <Pressable
+            <PressableScale
               style={styles.glassCard}
               onPress={() => router.push("/subscription")}
               accessibilityLabel="Manage subscription"
@@ -219,13 +221,13 @@ export default function SettingsScreen() {
                   color={THEME.colors.textMuted}
                 />
               </View>
-            </Pressable>
+            </PressableScale>
           </Animated.View>
 
           {/* ─── Privacy Section ──────────────────────────────────────── */}
           <Animated.View entering={FadeInDown.delay(190).duration(400)}>
             <Text style={styles.sectionLabel}>PRIVACY</Text>
-            <Pressable
+            <PressableScale
               style={styles.glassCard}
               onPress={() => router.push("/blocked-users")}
               accessibilityLabel="Blocked users"
@@ -246,7 +248,7 @@ export default function SettingsScreen() {
                   color={THEME.colors.textMuted}
                 />
               </View>
-            </Pressable>
+            </PressableScale>
           </Animated.View>
 
           {/* ─── About Section ────────────────────────────────────────── */}
@@ -271,7 +273,7 @@ export default function SettingsScreen() {
                 Permanently delete your account and all associated data. This
                 action cannot be undone.
               </Text>
-              <Pressable
+              <PressableScale
                 onPress={handleDeleteAccount}
                 disabled={isDeleting}
                 style={[
@@ -293,7 +295,7 @@ export default function SettingsScreen() {
                     <Text style={styles.deleteButtonText}>Delete Account</Text>
                   </>
                 )}
-              </Pressable>
+              </PressableScale>
             </View>
           </Animated.View>
         </ScrollView>
@@ -441,7 +443,7 @@ const styles = StyleSheet.create({
 
   // Danger zone
   dangerCard: {
-    borderColor: "rgba(239, 68, 68, 0.2)",
+    borderColor: ERROR_BORDER,
   },
   dangerText: {
     fontFamily: FONTS.body,

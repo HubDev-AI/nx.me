@@ -113,6 +113,17 @@ class JobRepository:
         )
         return result.data or None
 
+    def get_for_refund(self, job_id: str) -> dict | None:
+        """Fetch job fields needed for refund operation."""
+        result = (
+            self._sb.table("glow_up_jobs")
+            .select("id, user_id, status, credit_reservation_id")
+            .eq("id", job_id)
+            .maybe_single()
+            .execute()
+        )
+        return result.data or None
+
     def get_jobs_for_post(self, job_id: str) -> dict | None:
         """Fetch job fields needed for post creation. Returns None if not found."""
         result = (
@@ -193,6 +204,23 @@ class JobRepository:
         """Insert a usage_events row. Returns the inserted row."""
         result = self._sb.table("usage_events").insert(event_data).execute()
         return result.data[0] if result.data else {}
+
+    def get_usage_event_status(self, job_id: str) -> str | None:
+        """Get the current status of the usage_event for a job.
+
+        Returns the status string ('reserved', 'committed', 'released',
+        'refunded') or None if no event exists.
+        """
+        result = (
+            self._sb.table("usage_events")
+            .select("status")
+            .eq("job_id", job_id)
+            .maybe_single()
+            .execute()
+        )
+        if result.data:
+            return result.data.get("status")
+        return None
 
     def update_usage_event(self, job_id: str, update_data: dict) -> list[dict]:
         """Update usage_events rows for a given job_id (e.g. cancel/refund)."""

@@ -19,12 +19,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from supabase import Client
 
-from app.api.deps import get_current_user, get_image_repo, get_job_repo, get_post_repo, get_redis, get_supabase
+from app.api.deps import get_block_repo, get_current_user, get_image_repo, get_job_repo, get_post_repo, get_redis, get_supabase
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
+from app.repositories.block_repo import BlockRepository
 from app.repositories.post_repo import PostRepository
 from app.services.public_url import build_avatar_url, publish_post_images
 
@@ -251,6 +252,7 @@ async def create_comment(
     claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
+    block_repo: BlockRepository = Depends(get_block_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
 ) -> Response:
     """Add a comment to a post. Auth required (AC-U6)."""
@@ -269,6 +271,16 @@ async def create_comment(
     post = await run_sync(post_repo.get_active_post, str(post_id))
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    # Block check: reject if the post owner has blocked the commenting user
+    post_owner_id = post["user_id"]
+    if post_owner_id != user_id:
+        blocker_ids = await run_sync(block_repo.get_blocker_ids, user_id)
+        if post_owner_id in blocker_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You cannot interact with this user's posts",
+            )
 
     # Atomic: insert comment + increment count in single transaction
     comment = await run_sync(

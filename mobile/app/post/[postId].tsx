@@ -3,7 +3,7 @@
  * Reuses ReactionButton and CommentsSheet components.
  */
 import { useState, useCallback } from "react";
-import { View, Text, Image, ScrollView, StyleSheet, Pressable, Share, Alert, ActivityIndicator } from "react-native";
+import { View, Text, Image, ScrollView, StyleSheet, Pressable, Share, Alert, ActivityIndicator, Platform } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { THEME } from "../../constants/theme";
+import { OVERLAY_LIGHT, OVERLAY_MEDIUM } from "../../constants/colors";
 import { FEED_ENDPOINTS, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
@@ -109,12 +110,27 @@ export default function PostDetailScreen() {
     setCommentCount((c) => c + 1);
   }, []);
 
-  const handleShare = useCallback(() => {
+  const handleShare = useCallback(async () => {
     hapticLight();
     const shareMessage = caption
       ? `${caption} — Check it out on NXME ${UNIVERSAL_LINK_ORIGIN}`
       : `Check out this glow-up on NXME ${UNIVERSAL_LINK_ORIGIN}`;
-    Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+    try {
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({ url: UNIVERSAL_LINK_ORIGIN, text: shareMessage });
+        } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(UNIVERSAL_LINK_ORIGIN);
+          Alert.alert("Link copied", "Share link copied to clipboard");
+        }
+      } else if (Platform.OS === "ios") {
+        await Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+      } else {
+        await Share.share({ message: shareMessage });
+      }
+    } catch {
+      // User cancelled share sheet — not an error
+    }
   }, [caption]);
 
   const handleUserPress = useCallback(() => {
@@ -337,7 +353,7 @@ export default function PostDetailScreen() {
             accessibilityLabel="Close"
             accessibilityRole="button"
           >
-            <Ionicons name="close" size={16} color="#ffffff" />
+            <Ionicons name="close" size={16} color={THEME.colors.white} />
           </Pressable>
         </Animated.View>
 
@@ -351,7 +367,7 @@ export default function PostDetailScreen() {
               accessibilityLabel="Share post"
               accessibilityRole="button"
             >
-              <Ionicons name="share-outline" size={16} color="#ffffff" />
+              <Ionicons name="share-outline" size={16} color={THEME.colors.white} />
             </Pressable>
           </Animated.View>
 
@@ -364,7 +380,7 @@ export default function PostDetailScreen() {
               accessibilityLabel="More options"
               accessibilityRole="button"
             >
-              <Ionicons name="ellipsis-horizontal" size={16} color="#ffffff" />
+              <Ionicons name="ellipsis-horizontal" size={16} color={THEME.colors.white} />
             </Pressable>
           </Animated.View>
         </View>
@@ -415,17 +431,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: THEME.spacing.xl,
   },
   headerRight: {
     flexDirection: "row",
-    gap: 10,
+    gap: THEME.spacing.md,
   },
   headerBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: OVERLAY_LIGHT,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -449,7 +465,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: THEME.radius.sm,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: OVERLAY_LIGHT,
   },
   afterLabelWrap: {
     position: "absolute",
@@ -466,15 +482,15 @@ const styles = StyleSheet.create({
   labelText: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: 10,
-    color: "#ffffff",
+    color: THEME.colors.white,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
 
   // ─── Footer ─────────────────────────────────────────────────────────────
   footer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.md,
   },
   actionsRow: {
     flexDirection: "row",
@@ -509,13 +525,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     color: THEME.colors.textPrimary,
-    marginTop: 8,
+    marginTop: THEME.spacing.sm,
   },
 
   // ─── Deleting overlay ───────────────────────────────────────────────────
   deletingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: OVERLAY_MEDIUM,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 100,

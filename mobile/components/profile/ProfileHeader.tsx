@@ -5,6 +5,7 @@ import {
   Image,
   Pressable,
   Share,
+  Alert,
   Platform,
   StyleSheet,
 } from "react-native";
@@ -121,15 +122,23 @@ export function ProfileHeader({
     });
   }, []);
 
-  const handleShare = useCallback(() => {
-    const sharePayload =
-      Platform.OS === "ios"
-        ? { url: shareUrl }
-        : { message: shareUrl };
-
-    Share.share(sharePayload).catch(() => {
+  const handleShare = useCallback(async () => {
+    try {
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({ url: shareUrl });
+        } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(shareUrl);
+          Alert.alert("Link copied", "Share link copied to clipboard");
+        }
+      } else if (Platform.OS === "ios") {
+        await Share.share({ url: shareUrl });
+      } else {
+        await Share.share({ message: shareUrl });
+      }
+    } catch {
       // User cancelled or share failed -- no action needed
-    });
+    }
   }, [shareUrl]);
 
   return (
@@ -311,10 +320,10 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.xs / 2,
   },
   displayName: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
+    fontFamily: FONTS.display,
+    fontSize: 20,
     color: THEME.colors.textPrimary,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   username: {
     fontFamily: FONTS.body,

@@ -119,5 +119,18 @@ export const CORAL_TINT = "rgba(244,63,94,0.08)";
 export const CORAL_TINT_STRONG = "rgba(244,63,94,0.12)";
 export const SKELETON_SHIMMER = "rgba(255,255,255,0.05)";
 export const SUCCESS_BG = "rgba(74,222,128,0.1)";
+export const OVERLAY_LIGHT = "rgba(0,0,0,0.4)";
 export const OVERLAY_MEDIUM = "rgba(0,0,0,0.6)";
 export const OVERLAY_HEAVY = "rgba(0,0,0,0.95)";
+
+/** Auth / form tokens */
+export const AUTH_INPUT_BG = "rgba(8, 8, 8, 0.78)";
+export const TEXT_SHADOW_DARK = "rgba(0, 0, 0, 0.4)";
+export const TEXT_MUTED = "rgba(255, 255, 255, 0.7)";
+export const ERROR_BORDER = "rgba(239, 68, 68, 0.2)";
+
+/** Tab bar tokens */
+export const TAB_BAR_BG = "rgba(17, 17, 17, 0.85)";
+export const TAB_BAR_BORDER = "rgba(255, 255, 255, 0.08)";
+export const TAB_BAR_GLOW = "rgba(255, 255, 255, 0.1)";
+export const SCROLL_TOP_BG = "rgba(10, 10, 10, 0.95)";

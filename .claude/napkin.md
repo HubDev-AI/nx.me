@@ -53,6 +53,13 @@
 - Amendment A-4 defines the DB-driven tier system — no tier names in code, `user.tier_id: UUID` only, tiers seeded via migration, admin CRUD API at `/admin/tiers`.
 - Amendment A-5 defines usage tracking (`usage_events` table), `EntitlementResult`, error codes (TIER_LIMIT_DAILY etc.), and `require_entitlement()` / `require_feature()` FastAPI dependencies. **Read A-5 before implementing any story that touches generation, nudges, or advisor chat.**
 
+## Auth Provider Patterns
+
+- **TikTok uses native SDK + server code exchange**: `react-native-tiktok` (Expo plugin) handles auth natively on iOS/Android → returns `authCode` (+`codeVerifier` on Android). Backend exchanges code via TikTok API → creates Supabase user with synthetic email + HMAC-derived password. No web browser flow, no HTTPS redirect URI hassle.
+- **Auth provider flags**: `AUTH_PROVIDER_{GOOGLE,APPLE,EMAIL,TIKTOK}_ENABLED` in config. When disabled: API returns 403, mobile hides the button. Mobile fetches enabled providers from `GET /auth/providers`.
+- **Login/signup is one screen**: `(auth)/login.tsx` is the unified auth screen. `(auth)/signup.tsx` is a redirect. Social auth handles both login and signup in a single flow (backend creates account on first login).
+- **TikTok native SDK requires dev build**: Won't work in Expo Go or web. Use `npx expo run:ios` or `npx expo run:android` to test.
+
 ## Story Creator Patterns
 
 - **A-4 vs AC-3 tension**: AC-3 requires FREE_TRIAL_ANALYSES, IDENTITY_SIMILARITY_THRESHOLD, MAX_CONCURRENT_GENERATIONS_PER_USER in config module. A-4 says these are DB-driven. Resolution: keep them in config as global defaults/ceilings; per-tier values in DB take precedence in EntitlementService, but config values serve as circuit-breaker / non-tier paths (e.g., stuck-job watchdog).

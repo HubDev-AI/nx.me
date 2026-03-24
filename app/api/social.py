@@ -24,9 +24,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_client_ip, get_feed_repo, get_redis, get_supabase
+from app.api.deps import get_block_repo, get_client_ip, get_feed_repo, get_redis, get_supabase
 from app.config import settings
 from app.db.async_helpers import run_sync
+from app.repositories.block_repo import BlockRepository
 from app.repositories.feed_repo import FeedRepository
 from app.services.public_url import build_avatar_url
 
@@ -108,7 +109,9 @@ async def get_feed(
     sort: FeedSort = Query(FeedSort.NEWEST, description="Sort strategy"),
     cursor: str | None = Query(None, description="Cursor for pagination (ISO timestamp or composite)"),
     limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"),
+    authorization: Annotated[str | None, Header()] = None,
     feed_repo: FeedRepository = Depends(get_feed_repo),
+    block_repo: BlockRepository = Depends(get_block_repo),
     supabase: Client = Depends(get_supabase),
 ) -> FeedResponse:
     """Public feed endpoint — no auth required.
@@ -116,19 +119,34 @@ async def get_feed(
     AC-FR6: Zero authenticated API calls required.
     AC-D7: Posts with non-cleared images excluded.
     AC-U10: biggest_improvements uses reaction_count only, no AI scores.
+
+    If the caller provides a valid JWT, posts from blocked/blocking users
+    are excluded from the results.
     """
+    # Optional auth: if a valid JWT is present, resolve blocked user IDs
+    excluded_user_ids: set[str] = set()
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from app.api.middleware.auth import validate_jwt
+            claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
+            user_id = claims["sub"]
+            excluded_user_ids = await run_sync(block_repo.get_all_hidden_user_ids, user_id)
+        except Exception:
+            # Invalid/expired token on a public endpoint — proceed without filtering
+            pass
+
     # Fetch limit+1 to determine has_more
     fetch_limit = limit + 1
 
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     if sort == FeedSort.NEWEST:
-        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit, excluded_user_ids)
     elif sort == FeedSort.TRENDING:
-        posts = await run_sync(feed_repo.fetch_trending, cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_trending, cursor, fetch_limit, excluded_user_ids)
     elif sort == FeedSort.BIGGEST_IMPROVEMENTS:
-        posts = await run_sync(feed_repo.fetch_biggest_improvements, cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_biggest_improvements, cursor, fetch_limit, excluded_user_ids)
     else:
-        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit)
+        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit, excluded_user_ids)
 
     has_more = len(posts) > limit
     if has_more:

@@ -208,7 +208,9 @@ const styles = StyleSheet.create({
   cell: {
     borderRadius: THEME.radius.md,
     overflow: "hidden",
-    backgroundColor: THEME.colors.surface,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   thumbnail: {
     width: "100%",
@@ -242,7 +244,7 @@ const styles = StyleSheet.create({
   emptyIconCircle: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: THEME.radius.pill,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: THEME.spacing.xs,
@@ -251,6 +253,7 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
+    letterSpacing: THEME.typography.heading.letterSpacing,
     marginTop: THEME.spacing.md,
     textAlign: "center",
   },

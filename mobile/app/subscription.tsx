@@ -27,6 +27,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
+import { PressableScale } from "../components/ui/PressableScale";
 import { useTheme } from "../lib/theme-context";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
@@ -378,7 +379,7 @@ export default function SubscriptionScreen() {
                 {/* Cancel for premium users */}
                 {isPremium &&
                   entitlement?.subscription_status === "active" && (
-                    <Pressable
+                    <PressableScale
                       onPress={handleCancel}
                       disabled={isCancelling}
                       style={styles.cancelLink}
@@ -395,7 +396,7 @@ export default function SubscriptionScreen() {
                           Cancel subscription
                         </Text>
                       )}
-                    </Pressable>
+                    </PressableScale>
                   )}
               </View>
             </Animated.View>
@@ -404,7 +405,7 @@ export default function SubscriptionScreen() {
             {!isPremium && hasPremiumOption && (
               <Animated.View entering={FadeInDown.delay(140).duration(400)}>
                 <Text style={styles.sectionLabel}>RECOMMENDED</Text>
-                <Pressable
+                <PressableScale
                   onPress={handleSubscribe}
                   disabled={isSubscribing}
                   style={[
@@ -448,7 +449,7 @@ export default function SubscriptionScreen() {
                       </Text>
                     )}
                   </View>
-                </Pressable>
+                </PressableScale>
               </Animated.View>
             )}
 
@@ -468,7 +469,7 @@ export default function SubscriptionScreen() {
                         entering={FadeInDown.delay(260 + index * 60).duration(350)}
                         style={styles.packCardWrapper}
                       >
-                        <Pressable
+                        <PressableScale
                           onPress={() => handleBuyCredits(pack)}
                           disabled={purchasingId !== null}
                           style={[
@@ -519,7 +520,7 @@ export default function SubscriptionScreen() {
                               </Text>
                             )}
                           </View>
-                        </Pressable>
+                        </PressableScale>
                       </Animated.View>
                     );
                   })}

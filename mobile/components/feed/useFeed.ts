@@ -48,6 +48,7 @@ export function useFeed(): UseFeedReturn {
   const isLoadingRef = useRef(false);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reactingRef = useRef<Set<string>>(new Set());
 
   const fetchFeed = useCallback(
     async (cursor: string | null, sort: FeedSortValue): Promise<FeedResponse> => {
@@ -125,6 +126,8 @@ export function useFeed(): UseFeedReturn {
     setError(null);
 
     try {
+      setPaginationFailed(false);
+      cursorRef.current = null;
       const response = await fetchFeed(null, activeSort);
       setPosts(response.posts);
       cursorRef.current = response.next_cursor;
@@ -171,8 +174,9 @@ export function useFeed(): UseFeedReturn {
 
   const reactToPost = useCallback(
     async (postId: string) => {
-      // Dedup: skip if already reacted in this session
-      if (reactedPostIds.has(postId)) return;
+      // Dedup: synchronous ref check prevents race from rapid taps
+      if (reactingRef.current.has(postId)) return;
+      reactingRef.current.add(postId);
 
       // Optimistic update: increment count and mark as reacted
       setReactedPostIds((prev) => new Set(prev).add(postId));
@@ -200,6 +204,7 @@ export function useFeed(): UseFeedReturn {
         );
       } catch (err) {
         // Rollback optimistic update on failure
+        reactingRef.current.delete(postId);
         setReactedPostIds((prev) => {
           const next = new Set(prev);
           next.delete(postId);
@@ -215,7 +220,7 @@ export function useFeed(): UseFeedReturn {
         console.warn("Reaction failed:", err);
       }
     },
-    [reactedPostIds],
+    [],
   );
 
   const incrementCommentCount = useCallback((postId: string) => {

@@ -77,10 +77,10 @@ const styles = StyleSheet.create({
     borderColor: THEME.colors.glassBorder,
   },
   userBubble: {
-    borderTopRightRadius: THEME.spacing.xs,
+    borderTopRightRadius: THEME.radius.sm / 2,
   },
   senderLabel: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 13,
     marginBottom: THEME.spacing.xs / 2,
   },

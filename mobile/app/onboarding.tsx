@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,10 +9,9 @@ import { apiFetch } from "../lib/api";
 import { registerForPushNotifications } from "../lib/notifications";
 import { setItem } from "../lib/secure-storage";
 import { THEME } from "../constants/theme";
-
-/** Semantic green for success states */
-const SUCCESS_GREEN = "#4ADE80";
+import { SUCCESS_DARK } from "../constants/colors";
 import { PageBackground } from "../components/ui/PageBackground";
+import { PressableScale } from "../components/ui/PressableScale";
 import { useTheme } from "../lib/theme-context";
 import { FONTS } from "../hooks/useFonts";
 
@@ -23,9 +22,6 @@ interface EntitlementSnapshot {
   credit_balance: number;
   can_generate: boolean;
 }
-
-/** Spacing unit (8dp grid) */
-const SPACING = 8;
 
 /** Feature list items shown to new users */
 const FEATURES = [
@@ -120,7 +116,7 @@ export default function OnboardingScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + SPACING * 3 },
+          { paddingBottom: insets.bottom + THEME.spacing.xxl },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -140,7 +136,7 @@ export default function OnboardingScreen() {
         {/* Trial count badge */}
         {!isLoadingEntitlement && !entitlementError && trialRemaining !== null && trialRemaining > 0 && (
           <View style={styles.trialBadge}>
-            <Ionicons name="gift-outline" size={20} color={SUCCESS_GREEN} />
+            <Ionicons name="gift-outline" size={20} color={SUCCESS_DARK} />
             <Text style={styles.trialBadgeText}>
               {trialRemaining} free {trialRemaining === 1 ? "trial" : "trials"} included
             </Text>
@@ -187,14 +183,15 @@ export default function OnboardingScreen() {
               onPress={handleEnablePush}
               isLoading={isRequestingPush}
             />
-            <Pressable
+            <PressableScale
+              scale={0.97}
               onPress={() => setPushCompleted(true)}
               accessibilityLabel="Skip push notifications"
               accessibilityRole="button"
               style={styles.skipButton}
             >
               <Text style={styles.skipText}>Not now</Text>
-            </Pressable>
+            </PressableScale>
           </View>
         )}
 
@@ -220,12 +217,12 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.bg,
   },
   scrollContent: {
-    paddingHorizontal: SPACING * 3,
+    paddingHorizontal: THEME.spacing.xxl,
   },
   header: {
     alignItems: "center",
-    marginTop: SPACING * 6,
-    marginBottom: SPACING * 4,
+    marginTop: THEME.spacing.xxxl + THEME.spacing.lg,
+    marginBottom: THEME.spacing.xxxl,
   },
   logoCircle: {
     width: 72,
@@ -236,14 +233,14 @@ const styles = StyleSheet.create({
     borderColor: THEME.colors.glassBorder,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: SPACING * 2,
+    marginBottom: THEME.spacing.lg,
   },
   title: {
     fontFamily: FONTS.display,
     ...THEME.typography.headingLg,
     color: THEME.colors.textPrimary,
     textAlign: "center",
-    marginBottom: SPACING,
+    marginBottom: THEME.spacing.sm,
   },
   subtitle: {
     fontFamily: FONTS.body,
@@ -259,20 +256,20 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    paddingVertical: SPACING * 1.5,
-    paddingHorizontal: SPACING * 2,
+    paddingVertical: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.lg,
     borderRadius: THEME.radius.md,
-    gap: SPACING,
-    marginBottom: SPACING * 4,
+    gap: THEME.spacing.sm,
+    marginBottom: THEME.spacing.xxxl,
   },
   trialBadgeText: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
-    color: SUCCESS_GREEN,
+    color: SUCCESS_DARK,
   },
   featureList: {
-    gap: SPACING * 2,
-    marginBottom: SPACING * 4,
+    gap: THEME.spacing.lg,
+    marginBottom: THEME.spacing.xxxl,
   },
   featureRow: {
     flexDirection: "row",
@@ -281,9 +278,9 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.md,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    padding: SPACING * 2,
+    padding: THEME.spacing.lg,
     minHeight: 44,
-    gap: SPACING * 2,
+    gap: THEME.spacing.lg,
   },
   featureIconCircle: {
     width: 48,
@@ -297,7 +294,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   featureTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 17,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
@@ -313,17 +310,17 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.lg,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    padding: SPACING * 3,
-    marginBottom: SPACING * 4,
+    padding: THEME.spacing.xxl,
+    marginBottom: THEME.spacing.xxxl,
   },
   pushHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING,
-    marginBottom: SPACING,
+    gap: THEME.spacing.sm,
+    marginBottom: THEME.spacing.sm,
   },
   pushTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
@@ -332,30 +329,30 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.body,
     fontSize: 14,
     color: THEME.colors.textSecondary,
-    marginBottom: SPACING * 2,
+    marginBottom: THEME.spacing.lg,
     lineHeight: 20,
   },
   skipButton: {
-    marginTop: SPACING * 1.5,
-    paddingVertical: SPACING,
+    marginTop: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
     minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   skipText: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     fontSize: 14,
     color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   ctaContainer: {
-    marginBottom: SPACING * 2,
+    marginBottom: THEME.spacing.lg,
   },
   ctaHint: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     fontSize: 14,
     color: THEME.colors.textSecondary,
     textAlign: "center",
-    marginTop: SPACING,
+    marginTop: THEME.spacing.sm,
   },
 });

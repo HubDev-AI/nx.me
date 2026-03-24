@@ -101,6 +101,29 @@ class CreditLedger:
 
         logger.info("Credit released: reservation %s", reservation_id)
 
+    def refund(self, reservation_id: UUID) -> None:
+        """Refund a committed reservation — return the consumed credit.
+
+        Atomic via credit_refund RPC: uses UPDATE ... WHERE status = 'committed'
+        RETURNING * to prevent TOCTOU races. If the reservation was not committed
+        (e.g. already released), the RPC returns empty and we raise ValueError.
+
+        Unlike release() which undoes a hold (reserved -> released),
+        refund() undoes a consumption (committed -> released, delta = +1).
+        """
+        res_id_str = str(reservation_id)
+
+        result = self._sb.rpc("credit_refund", {
+            "p_reservation_id": res_id_str,
+        }).execute()
+
+        # RPC uses UPDATE ... WHERE status = 'committed' RETURNING *
+        # Empty result means reservation was not in committed state
+        if not result.data:
+            raise ValueError(f"Reservation {reservation_id} not found or not in committed state")
+
+        logger.info("Credit refunded: reservation %s", reservation_id)
+
     def commit(self, reservation_id: UUID) -> None:
         """Commit a reservation — credit is consumed (e.g., job succeeded).
 

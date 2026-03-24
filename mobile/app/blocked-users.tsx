@@ -26,6 +26,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
+import { PressableScale } from "../components/ui/PressableScale";
 import { useTheme } from "../lib/theme-context";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
@@ -258,7 +259,7 @@ export default function BlockedUsersScreen() {
                         </View>
 
                         {/* Unblock button */}
-                        <Pressable
+                        <PressableScale
                           onPress={() => handleUnblock(user)}
                           disabled={isUnblocking}
                           style={[
@@ -284,7 +285,7 @@ export default function BlockedUsersScreen() {
                               Unblock
                             </Text>
                           )}
-                        </Pressable>
+                        </PressableScale>
                       </View>
                     </View>
                   </Animated.View>
@@ -366,7 +367,7 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.lg,
   },
   emptyTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     ...THEME.typography.heading,
     color: THEME.colors.textPrimary,
   },

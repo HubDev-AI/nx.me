@@ -16,9 +16,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   PanResponder,
-  Dimensions,
   StyleSheet,
   AccessibilityInfo,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -31,8 +31,6 @@ import { CommentItem } from "./CommentItem";
 import { CommentInput } from "./CommentInput";
 import { CommentSkeleton } from "./CommentSkeleton";
 import type { Comment } from "./types";
-
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface CommentsSheetProps {
   visible: boolean;
@@ -48,6 +46,7 @@ export function CommentsSheet({
   onClose,
   onCommentPosted,
 }: CommentsSheetProps) {
+  const { height: SCREEN_HEIGHT } = useWindowDimensions();
   const router = useRouter();
   const {
     comments,
@@ -263,7 +262,7 @@ export function CommentsSheet({
       {/* Sheet */}
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : undefined}
         keyboardVerticalOffset={0}
       >
         {/* Dismiss area above the sheet — KeyboardAvoidingView sits over the
@@ -357,7 +356,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheet: {
-    maxHeight: SCREEN_HEIGHT * 0.75,
+    maxHeight: "75%",
     backgroundColor: THEME.colors.glass,
     borderTopLeftRadius: THEME.radius.xl,
     borderTopRightRadius: THEME.radius.xl,
@@ -400,7 +399,9 @@ const styles = StyleSheet.create({
     marginHorizontal: THEME.spacing.lg,
     marginBottom: THEME.spacing.sm,
     backgroundColor: "rgba(239, 68, 68, 0.1)",
-    borderRadius: THEME.radius.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    borderRadius: THEME.radius.md,
     padding: THEME.spacing.md,
   },
   errorBannerText: {
@@ -416,13 +417,13 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyText: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     color: THEME.colors.textPrimary,
     fontSize: 18,
     letterSpacing: THEME.typography.heading.letterSpacing,
   },
   emptyHint: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     color: THEME.colors.textSecondary,
     ...THEME.typography.caption,
   },
@@ -435,7 +436,9 @@ const styles = StyleSheet.create({
   retryButton: {
     paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.sm,
-    backgroundColor: THEME.colors.surfaceElevated,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     borderRadius: THEME.radius.sm,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",

@@ -54,11 +54,13 @@ card-web/autoresearch-results.tsv
 CODE_QUALITY_REPORT.md
 CODE_REVIEW_FINDINGS.md
 
-# Claude worktrees and manifests
+# Claude worktrees, manifests, and local settings
 .claude/worktrees/
 .claude/gsd-file-manifest.json
+.claude/settings.local.json
 
 # Background shell
 .bg-shell/
 
 mobile/screenshots/
+logs/

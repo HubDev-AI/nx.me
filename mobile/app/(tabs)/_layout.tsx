@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { View, Text, StyleSheet, Platform, Pressable } from "react-native";
 import Animated, {
@@ -16,11 +16,15 @@ import Animated, {
 import { BottomTabBar, type BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
 import { THEME } from "../../constants/theme";
+import { BG_PAGE, TEXT_PRIMARY, TAB_BAR_BG, TAB_BAR_BORDER, TAB_BAR_GLOW, SCROLL_TOP_BG } from "../../constants/colors";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { BrandLabel } from "../../components/ui/BrandLabel";
 import { FeedCreditBadge } from "../../components/feed/FeedCreditBadge";
 import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
+
+/** Height of the floating tab bar + bottom inset — used for paddingBottom in scroll views */
+export const TAB_BAR_HEIGHT = 90;
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -125,10 +129,20 @@ function ScrollToTopPill() {
         accessibilityLabel="Scroll to top"
         accessibilityRole="button"
       >
-        <Ionicons name="arrow-up" size={16} color="#0a0a0a" />
+        <Ionicons name="arrow-up" size={16} color={BG_PAGE} />
         <Text style={styles.scrollToTopText}>Top</Text>
       </Pressable>
     </Animated.View>
+  );
+}
+
+/** Tappable brand label that navigates to the feed/home tab */
+function HeaderBrandLabel() {
+  const router = useRouter();
+  return (
+    <Pressable onPress={() => router.push("/(tabs)")}>
+      <BrandLabel />
+    </Pressable>
   );
 }
 
@@ -158,11 +172,11 @@ function TabLayoutInner() {
           right: THEME.spacing.xl,
           height: 64,
           borderRadius: 32,
-          backgroundColor: "rgba(17, 17, 17, 0.85)",
+          backgroundColor: TAB_BAR_BG,
           borderTopWidth: StyleSheet.hairlineWidth,
-          borderTopColor: "rgba(255, 255, 255, 0.1)",
+          borderTopColor: TAB_BAR_GLOW,
           borderWidth: 1,
-          borderColor: "rgba(255, 255, 255, 0.08)",
+          borderColor: TAB_BAR_BORDER,
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 8 },
           shadowOpacity: 0.4,
@@ -175,11 +189,11 @@ function TabLayoutInner() {
           flex: 1,
         },
         headerStyle: {
-          backgroundColor: "rgba(10, 10, 10, 0.95)",
+          backgroundColor: SCROLL_TOP_BG,
         },
-        headerTintColor: "#e8e8e8",
+        headerTintColor: TEXT_PRIMARY,
         headerShadowVisible: false,
-        headerTitle: () => <BrandLabel />,
+        headerTitle: () => <HeaderBrandLabel />,
       }}
     >
       <Tabs.Screen
@@ -295,7 +309,7 @@ const styles = StyleSheet.create({
   scrollToTopText: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: 13,
-    color: "#0a0a0a",
+    color: BG_PAGE,
     letterSpacing: 0.5,
   },
 });

@@ -50,16 +50,18 @@ const skeletonStyles = StyleSheet.create({
   },
   card: {
     flexDirection: "row",
-    backgroundColor: THEME.colors.surface,
-    borderRadius: THEME.radius.lg - 2,
-    padding: THEME.spacing.lg - 2,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.lg,
     gap: THEME.spacing.md,
   },
   icon: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: THEME.colors.surfaceElevated,
+    backgroundColor: THEME.colors.glass,
   },
   lines: {
     flex: 1,
@@ -67,8 +69,8 @@ const skeletonStyles = StyleSheet.create({
   },
   line: {
     height: 12,
-    borderRadius: THEME.radius.sm - 2,
-    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.sm,
+    backgroundColor: THEME.colors.surface,
   },
 });
 
@@ -165,16 +167,17 @@ export function NudgeFeed() {
   // Mark nudge as read
   // -------------------------------------------------------------------------
   const handleMarkRead = useCallback(async (nudgeId: string) => {
-    // Optimistic update
+    // Optimistic update — set read_at to current time
+    const now = new Date().toISOString();
     setNudges((prev) =>
-      prev.map((n) => (n.id === nudgeId ? { ...n, is_read: true } : n)),
+      prev.map((n) => (n.id === nudgeId ? { ...n, read_at: now } : n)),
     );
     try {
       await markNudgeRead(nudgeId);
     } catch {
       // Revert on failure
       setNudges((prev) =>
-        prev.map((n) => (n.id === nudgeId ? { ...n, is_read: false } : n)),
+        prev.map((n) => (n.id === nudgeId ? { ...n, read_at: null } : n)),
       );
     }
   }, []);
@@ -290,14 +293,14 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
     marginTop: THEME.spacing.md,
   },
   emptySubtitle: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     ...THEME.typography.caption,
     color: THEME.colors.textSecondary,
     textAlign: "center",
@@ -311,7 +314,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.bg,
   },
   errorTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,

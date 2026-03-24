@@ -29,6 +29,13 @@ import type { UserMemory, MemoryType } from "../../lib/advisor";
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
 
+/** Extract a display string from a memory content object. */
+function memoryContentText(content: Record<string, unknown>): string {
+  if (typeof content.text === "string") return content.text;
+  if (typeof content.summary === "string") return content.summary;
+  return JSON.stringify(content);
+}
+
 // ---------------------------------------------------------------------------
 // Memory type display helpers
 // ---------------------------------------------------------------------------
@@ -135,7 +142,7 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
         <Pressable
           onPress={handleDelete}
           style={rowStyles.deleteButton}
-          accessibilityLabel={`Delete memory: ${memory.content}`}
+          accessibilityLabel={`Delete memory: ${memoryContentText(memory.content)}`}
           accessibilityRole="button"
         >
           <Ionicons name="trash-outline" size={22} color={THEME.colors.white} />
@@ -162,7 +169,7 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
             <Text style={rowStyles.date}>{dateStr}</Text>
           </View>
           <Text style={rowStyles.body} numberOfLines={3}>
-            {memory.content}
+            {memoryContentText(memory.content)}
           </Text>
         </View>
       </Animated.View>
@@ -174,7 +181,7 @@ const rowStyles = StyleSheet.create({
   wrapper: {
     position: "relative",
     overflow: "hidden",
-    borderRadius: THEME.radius.lg - 2,
+    borderRadius: THEME.radius.lg,
   },
   deleteContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -185,19 +192,20 @@ const rowStyles = StyleSheet.create({
     width: DELETE_BUTTON_WIDTH,
     height: "100%",
     backgroundColor: THEME.colors.destructive,
-    borderTopRightRadius: THEME.radius.lg - 2,
-    borderBottomRightRadius: THEME.radius.lg - 2,
+    borderTopRightRadius: THEME.radius.lg,
+    borderBottomRightRadius: THEME.radius.lg,
     alignItems: "center",
     justifyContent: "center",
   },
   card: {
     flexDirection: "row",
     backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg - 2,
+    borderRadius: THEME.radius.lg,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.lg - 2,
+    padding: THEME.spacing.lg,
     gap: THEME.spacing.md,
+    ...THEME.shadow.glass,
   },
   iconContainer: {
     width: 32,
@@ -311,7 +319,7 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
           disabled={!content.trim() || isAdding}
           style={({ pressed }) => [
             formStyles.addButton,
-            content.trim() && !isAdding && formStyles.addButtonActive,
+            content.trim() && !isAdding && [formStyles.addButtonActive, { backgroundColor: theme.accent }],
             pressed && content.trim() && !isAdding && formStyles.addButtonPressed,
           ]}
           accessibilityLabel="Add memory"
@@ -343,14 +351,18 @@ const formStyles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   typeChip: {
-    paddingHorizontal: THEME.spacing.lg - 2,
+    paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.sm,
-    borderRadius: THEME.radius.lg,
-    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     minHeight: 44,
     justifyContent: "center",
+    ...THEME.shadow.glass,
   },
   typeChipActive: {
+    borderColor: "transparent",
     // backgroundColor applied dynamically via inline style
   },
   typeChipText: {
@@ -370,9 +382,11 @@ const formStyles = StyleSheet.create({
   input: {
     flex: 1,
     fontFamily: FONTS.body,
-    backgroundColor: THEME.colors.surfaceElevated,
-    borderRadius: THEME.radius.lg - 2,
-    paddingHorizontal: THEME.spacing.lg - 2,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.lg,
     paddingTop: THEME.spacing.md - 2,
     paddingBottom: THEME.spacing.md - 2,
     fontSize: 14,
@@ -386,10 +400,12 @@ const formStyles = StyleSheet.create({
     borderRadius: MIN_TOUCH_TARGET / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: THEME.colors.border,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   addButtonActive: {
-    backgroundColor: THEME.colors.textPrimary,
+    borderWidth: 0,
   },
   addButtonPressed: {
     opacity: 0.85,
@@ -424,16 +440,18 @@ const memSkeletonStyles = StyleSheet.create({
   },
   card: {
     flexDirection: "row",
-    backgroundColor: THEME.colors.surface,
-    borderRadius: THEME.radius.lg - 2,
-    padding: THEME.spacing.lg - 2,
+    backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.lg,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
+    padding: THEME.spacing.lg,
     gap: THEME.spacing.md,
   },
   icon: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: THEME.colors.surfaceElevated,
+    backgroundColor: THEME.colors.glass,
   },
   lines: {
     flex: 1,
@@ -441,14 +459,15 @@ const memSkeletonStyles = StyleSheet.create({
   },
   line: {
     height: 12,
-    borderRadius: THEME.radius.sm - 2,
-    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.sm,
+    backgroundColor: THEME.colors.surface,
   },
 });
 
 const MemorySeparator = () => <View style={styles.separator} />;
 
 export function MemoryList() {
+  const { theme } = useTheme();
   const [memories, setMemories] = useState<UserMemory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -483,7 +502,7 @@ export function MemoryList() {
     async (type: MemoryType, content: string) => {
       setIsAdding(true);
       try {
-        const newMemory = await addMemory(type, content);
+        const newMemory = await addMemory(type, { text: content });
         setMemories((prev) => [newMemory, ...prev]);
       } catch (err) {
         const message =
@@ -571,7 +590,7 @@ export function MemoryList() {
           <Text style={styles.errorSubtitle}>{error}</Text>
           <Pressable
             onPress={loadMemories}
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Retry loading memories"
             accessibilityRole="button"
           >
@@ -630,14 +649,14 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
     marginTop: THEME.spacing.md,
   },
   emptySubtitle: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     ...THEME.typography.caption,
     color: THEME.colors.textSecondary,
     textAlign: "center",
@@ -650,7 +669,7 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   errorTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
@@ -670,7 +689,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.xl,
     paddingVertical: THEME.spacing.md - 2,
     borderRadius: THEME.radius.pill,
-    backgroundColor: THEME.colors.textPrimary,
     minHeight: MIN_TOUCH_TARGET,
   },
   retryButtonText: {

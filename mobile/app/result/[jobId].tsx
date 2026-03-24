@@ -14,7 +14,6 @@ import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
-  Pressable,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
@@ -35,6 +34,7 @@ import {
 } from "../../lib/analysis";
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
+import { PressableScale } from "../../components/ui/PressableScale";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
@@ -104,6 +104,7 @@ export default function ResultScreen() {
               await requestRefund(jobId);
               setRefundRequested(true);
             } catch {
+              setRefundRequested(false);
               Alert.alert("Error", "Failed to process refund. Please try again.");
             }
           },
@@ -117,6 +118,7 @@ export default function ResultScreen() {
               setRefundRequested(true);
               router.replace("/upload");
             } catch {
+              setRefundRequested(false);
               Alert.alert("Error", "Failed to process refund. Please try again.");
             }
           },
@@ -128,7 +130,14 @@ export default function ResultScreen() {
   const handleShare = useCallback(async () => {
     const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/result/${jobId}`;
     try {
-      if (Platform.OS === "ios") {
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({ url: shareUrl });
+        } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(shareUrl);
+          Alert.alert("Link copied", "Share link copied to clipboard");
+        }
+      } else if (Platform.OS === "ios") {
         await Share.share({ url: shareUrl });
       } else {
         await Share.share({ message: shareUrl });
@@ -187,14 +196,14 @@ export default function ResultScreen() {
           <Text style={styles.errorText}>
             {error ?? "No results available."}
           </Text>
-          <Pressable
+          <PressableScale
             onPress={handleNewGlowUp}
             style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Try again"
             accessibilityRole="button"
           >
             <Text style={styles.retryText}>Try Again</Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </>
     );
@@ -227,14 +236,14 @@ export default function ResultScreen() {
               ? "Generation was cancelled."
               : result.failure_reason ?? "Generation failed."}
           </Text>
-          <Pressable
+          <PressableScale
             onPress={handleNewGlowUp}
             style={[styles.retryButton, { backgroundColor: theme.accent }]}
             accessibilityLabel="Start a new glow-up"
             accessibilityRole="button"
           >
             <Text style={styles.retryText}>New Glow-Up</Text>
-          </Pressable>
+          </PressableScale>
         </View>
       </>
     );
@@ -296,22 +305,20 @@ export default function ResultScreen() {
               style={styles.ctaContainer}
             >
               {/* Primary action */}
-              <Pressable
+              <PressableScale
                 onPress={handleShare}
-                style={({ pressed }) => [
-                  styles.ctaPrimary,
-                  pressed && styles.ctaPrimaryPressed,
-                ]}
+                style={styles.ctaPrimary}
                 accessibilityLabel="Share your glow-up"
                 accessibilityRole="button"
               >
                 <Ionicons name="share-outline" size={20} color={THEME.colors.bg} />
                 <Text style={styles.ctaPrimaryText}>Share</Text>
-              </Pressable>
+              </PressableScale>
 
               {/* Refund action */}
               {!refundRequested ? (
-                <Pressable
+                <PressableScale
+                  scale={0.97}
                   onPress={handleRefund}
                   style={styles.refundButton}
                   accessibilityLabel="Report that this does not look like you"
@@ -325,7 +332,7 @@ export default function ResultScreen() {
                   <Text style={styles.refundText}>
                     This doesn't look like me
                   </Text>
-                </Pressable>
+                </PressableScale>
               ) : (
                 <View style={styles.refundConfirmed}>
                   <Ionicons
@@ -340,12 +347,11 @@ export default function ResultScreen() {
               )}
 
               {/* New glow-up */}
-              <Pressable
+              <PressableScale
                 onPress={handleNewGlowUp}
-                style={({ pressed }) => [
+                style={[
                   styles.newGlowUpButton,
                   { borderColor: theme.accent },
-                  pressed && styles.newGlowUpButtonPressed,
                 ]}
                 accessibilityLabel="Start a new glow-up"
                 accessibilityRole="button"
@@ -356,7 +362,7 @@ export default function ResultScreen() {
                   color={theme.accent}
                 />
                 <Text style={[styles.newGlowUpText, { color: theme.accent }]}>New Glow-Up</Text>
-              </Pressable>
+              </PressableScale>
             </Animated.View>
           )}
         </ScrollView>
@@ -455,9 +461,6 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
     minHeight: 48,
   },
-  ctaPrimaryPressed: {
-    backgroundColor: THEME.colors.surfaceElevated,
-  },
   ctaPrimaryText: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: 15,
@@ -500,9 +503,6 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
     minHeight: 44,
     borderWidth: 1,
-  },
-  newGlowUpButtonPressed: {
-    backgroundColor: THEME.colors.glass,
   },
   newGlowUpText: {
     fontFamily: FONTS.bodyMedium,

@@ -19,8 +19,8 @@ interface NudgeCardProps {
   onMarkRead: (id: string) => void;
 }
 
-function nudgeIcon(type: string): React.ComponentProps<typeof Ionicons>["name"] {
-  switch (type) {
+function nudgeIcon(trigger: string): React.ComponentProps<typeof Ionicons>["name"] {
+  switch (trigger) {
     case "tip":
       return "sparkles-outline";
     case "check_in":
@@ -34,30 +34,31 @@ function nudgeIcon(type: string): React.ComponentProps<typeof Ionicons>["name"] 
 
 function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
   const { theme } = useTheme();
+  const isRead = nudge.read_at !== null;
   const handlePress = useCallback(() => {
-    if (!nudge.is_read) {
+    if (!isRead) {
       onMarkRead(nudge.id);
     }
-  }, [nudge.id, nudge.is_read, onMarkRead]);
+  }, [nudge.id, isRead, onMarkRead]);
 
   return (
     <Pressable
       onPress={handlePress}
       style={({ pressed }) => [
         styles.card,
-        !nudge.is_read && styles.unreadCard,
+        !isRead && styles.unreadCard,
         pressed && styles.pressed,
       ]}
-      accessibilityLabel={`${nudge.is_read ? "" : "Unread "}nudge: ${nudge.title}`}
+      accessibilityLabel={`${isRead ? "" : "Unread "}nudge: ${nudge.trigger}`}
       accessibilityRole="button"
-      accessibilityHint={nudge.is_read ? undefined : "Tap to mark as read"}
+      accessibilityHint={isRead ? undefined : "Tap to mark as read"}
     >
       {/* Icon */}
       <View style={[styles.iconContainer, { backgroundColor: theme.accentMuted }]}>
         <Ionicons
-          name={nudgeIcon(nudge.type)}
+          name={nudgeIcon(nudge.trigger)}
           size={22}
-          color={nudge.is_read ? THEME.colors.textSecondary : theme.accent}
+          color={isRead ? THEME.colors.textSecondary : theme.accent}
         />
       </View>
 
@@ -65,12 +66,12 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
       <View style={styles.content}>
         <View style={styles.titleRow}>
           <Text
-            style={[styles.title, !nudge.is_read && styles.unreadTitle]}
+            style={[styles.title, !isRead && styles.unreadTitle]}
             numberOfLines={1}
           >
-            {nudge.title}
+            {nudge.trigger}
           </Text>
-          {!nudge.is_read && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
+          {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
         </View>
         <Text style={styles.body} numberOfLines={3}>
           {nudge.content}
@@ -87,16 +88,17 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: "row",
     backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg - 2,
+    borderRadius: THEME.radius.lg,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.lg - 2,
+    padding: THEME.spacing.lg,
     gap: THEME.spacing.md,
     minHeight: MIN_TOUCH_TARGET,
+    ...THEME.shadow.glass,
   },
   unreadCard: {
-    backgroundColor: THEME.colors.surfaceElevated,
-    borderColor: THEME.colors.border,
+    backgroundColor: THEME.colors.glassLight,
+    borderColor: THEME.colors.glassBorder,
   },
   pressed: {
     opacity: 0.8,
@@ -119,14 +121,14 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   title: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     ...THEME.typography.body,
-    letterSpacing: THEME.typography.heading.letterSpacing,
     color: THEME.colors.textPrimary,
+    textTransform: "capitalize",
     flex: 1,
   },
   unreadTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodyBold,
   },
   unreadDot: {
     width: 8,

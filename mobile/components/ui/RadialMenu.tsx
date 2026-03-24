@@ -14,6 +14,7 @@ import {
   Text,
   Pressable,
   StyleSheet,
+  Platform,
   useWindowDimensions,
   Modal,
 } from "react-native";
@@ -28,6 +29,15 @@ import Animated, {
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
+
+/** Platform-conditional glass view: BlurView on native, CSS backdrop-filter on web */
+const GlassView = Platform.OS === "web"
+  ? ({ children, style, ...props }: any) => (
+      <View style={[style, { backgroundColor: "rgba(0, 0, 0, 0.55)", backdropFilter: "blur(30px)" } as any]} {...props}>
+        {children}
+      </View>
+    )
+  : BlurView;
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
@@ -223,7 +233,7 @@ export function RadialMenu({
         accessibilityRole="button"
       >
         <Animated.View style={[styles.backdrop, backdropStyle]}>
-          <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
+          <GlassView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
           <View style={styles.backdropScrim} />
         </Animated.View>
       </Pressable>

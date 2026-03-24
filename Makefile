@@ -1,4 +1,4 @@
-.PHONY: up down reset migrate worker test lint format
+.PHONY: up down reset nuke nuke-keep migrate worker test lint format
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv .env
@@ -27,6 +27,13 @@ reset:
 	supabase stop --no-backup 2>/dev/null || true
 	rm -rf .venv .env
 	@echo "Reset complete. Run 'make up' to start fresh."
+
+# ── Wipe all test data (no restart needed) ───────────────────────────────────
+nuke:
+	.venv/bin/python scripts/nuke-data.py
+
+nuke-keep:
+	.venv/bin/python scripts/nuke-data.py --keep-demo
 
 # ── Run DB migrations ─────────────────────────────────────────────────────────
 migrate:

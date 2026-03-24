@@ -4,6 +4,7 @@ import {
   Text,
   Pressable,
   StyleSheet,
+  Platform,
   Animated as RNAnimated,
   Modal,
 } from "react-native";
@@ -14,6 +15,15 @@ import Animated, {
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
+
+/** Platform-conditional glass view: BlurView on native, CSS backdrop-filter on web */
+const GlassView = Platform.OS === "web"
+  ? ({ children, style, ...props }: any) => (
+      <View style={[style, { backgroundColor: "rgba(17, 17, 17, 0.85)", backdropFilter: "blur(20px)" } as any]} {...props}>
+        {children}
+      </View>
+    )
+  : BlurView;
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
@@ -110,7 +120,7 @@ export function DropdownMenu({
             },
           ]}
         >
-          <BlurView intensity={40} tint="dark" style={styles.blurFill}>
+          <GlassView intensity={40} tint="dark" style={styles.blurFill}>
             <View style={styles.cardInner}>
               <Pressable
                 /* Prevent touches inside the card from bubbling to the backdrop */
@@ -130,7 +140,7 @@ export function DropdownMenu({
                 ))}
               </Pressable>
             </View>
-          </BlurView>
+          </GlassView>
         </RNAnimated.View>
       </Pressable>
     </Modal>

@@ -9,15 +9,15 @@ import { useState, useCallback } from "react";
 import {
   View,
   Text,
-  Pressable,
   StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
+import { PressableScale } from "../../components/ui/PressableScale";
 import { useTheme } from "../../lib/theme-context";
+import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { ChatView } from "../../components/advisor/ChatView";
@@ -56,44 +56,48 @@ const TABS: TabConfig[] = [
 
 export default function AdvisorScreen() {
   const [activeTab, setActiveTab] = useState<AdvisorTab>("chat");
-  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
   const handleTabChange = useCallback((tab: AdvisorTab) => {
+    hapticLight();
     setActiveTab(tab);
   }, []);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <PageBackground overlayOpacity={0.88} />
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Ada</Text>
-        <Text style={styles.headerSubtitle}>Your style advisor</Text>
-      </View>
 
       {/* Tab bar */}
       <View style={styles.tabBar} accessibilityRole="tablist">
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
           return (
-            <Pressable
+            <PressableScale
               key={tab.key}
+              scale={0.94}
+              haptic={false}
               onPress={() => handleTabChange(tab.key)}
-              style={[styles.tab, isActive && { backgroundColor: theme.accentMuted }]}
+              style={[
+                styles.tab,
+                isActive && {
+                  backgroundColor: theme.accent + "1A",
+                  borderColor: theme.accent,
+                  ...THEME.shadow.glow(theme.accent),
+                },
+              ]}
               accessibilityLabel={`${tab.label} tab`}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
             >
               <Ionicons
                 name={isActive ? tab.iconFocused : tab.icon}
-                size={20}
+                size={18}
                 color={isActive ? theme.accent : THEME.colors.textSecondary}
               />
               <Text style={[styles.tabLabel, isActive && { color: theme.accent, fontFamily: FONTS.bodySemiBold }]}>
                 {tab.label}
               </Text>
-            </Pressable>
+            </PressableScale>
           );
         })}
       </View>
@@ -113,28 +117,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.bg,
   },
-  header: {
-    paddingHorizontal: THEME.spacing.xl,
-    paddingTop: THEME.spacing.sm,
-    paddingBottom: THEME.spacing.xs,
-  },
-  headerTitle: {
-    fontFamily: FONTS.display,
-    ...THEME.typography.headingLg,
-    color: THEME.colors.textPrimary,
-  },
-  headerSubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-    marginTop: THEME.spacing.xs / 2,
-  },
   tabBar: {
     flexDirection: "row",
-    paddingHorizontal: THEME.spacing.lg,
-    paddingTop: THEME.spacing.md,
-    paddingBottom: THEME.spacing.sm,
-    gap: THEME.spacing.xs,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingVertical: THEME.spacing.md,
+    marginTop: THEME.spacing.sm,
+    marginBottom: THEME.spacing.xs,
+    gap: THEME.spacing.sm,
+    backgroundColor: "transparent",
   },
   tab: {
     flex: 1,
@@ -142,9 +132,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: THEME.spacing.sm,
-    paddingVertical: THEME.spacing.md - 2,
-    borderRadius: THEME.radius.sm,
+    paddingVertical: THEME.spacing.sm + 2,
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     minHeight: MIN_TOUCH_TARGET,
+    ...THEME.shadow.glass,
   },
   tabLabel: {
     fontFamily: FONTS.bodyMedium,

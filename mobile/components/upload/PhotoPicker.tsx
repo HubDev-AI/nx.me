@@ -49,6 +49,7 @@ interface PhotoPickerProps {
 // ---------------------------------------------------------------------------
 
 const MIME_FALLBACK = "image/jpeg";
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 
 function extractMimeType(asset: ImagePicker.ImagePickerAsset): string {
   if (asset.mimeType) return asset.mimeType;
@@ -96,6 +97,16 @@ export default function PhotoPicker({
       if (result.canceled || result.assets.length === 0) return;
       const asset = result.assets[0];
       if (!asset) return;
+
+      // Validate file size before accepting the image
+      if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
+        Alert.alert(
+          "Image too large",
+          "Please select an image under 10MB.",
+        );
+        return;
+      }
+
       onPhotoSelected({
         uri: asset.uri,
         fileName: extractFileName(asset),

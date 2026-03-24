@@ -25,10 +25,10 @@ import {
   Animated,
   ActivityIndicator,
   StyleSheet,
-  Dimensions,
   PanResponder,
   AccessibilityInfo,
   Linking,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -48,7 +48,6 @@ import { CreditBadge } from "./CreditBadge";
 import { CreditPackCard } from "./CreditPackCard";
 import { PremiumCard } from "./PremiumCard";
 
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const SWIPE_DISMISS_THRESHOLD = 100;
 
 interface PaywallModalProps {
@@ -65,6 +64,8 @@ export function PaywallModal({
   onClose,
   onPurchaseComplete,
 }: PaywallModalProps) {
+  const { height: SCREEN_HEIGHT } = useWindowDimensions();
+
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -479,11 +480,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    maxHeight: SCREEN_HEIGHT * 0.85,
-    backgroundColor: THEME.colors.bg,
+    maxHeight: "85%",
+    backgroundColor: THEME.colors.glass,
     borderTopLeftRadius: THEME.radius.xl,
     borderTopRightRadius: THEME.radius.xl,
-    borderTopWidth: 0.5,
+    borderTopWidth: 1,
     borderTopColor: THEME.colors.glassBorder,
     paddingTop: THEME.spacing.sm,
     paddingBottom: 40,

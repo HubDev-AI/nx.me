@@ -1,9 +1,10 @@
-"""Generation API — trigger, poll, and cancel glow-up jobs.
+"""Generation API — trigger, poll, cancel, and refund glow-up jobs.
 
 Story 4-3:
   POST /analyses/{analysis_id}/generate — entitlement check, credit reserve, enqueue ARQ job
   GET  /jobs/{job_id}                   — poll job status with estimated wait
   POST /jobs/{job_id}/cancel            — cancel in-flight job, release credit
+  POST /jobs/{job_id}/refund            — refund completed/failed job, return credit
 """
 from __future__ import annotations
 
@@ -95,6 +96,12 @@ class JobStatusResponse(BaseModel):
 
 
 class CancelResponse(BaseModel):
+    job_id: str
+    status: str
+    credit_refunded: bool
+
+
+class RefundResponse(BaseModel):
     job_id: str
     status: str
     credit_refunded: bool
@@ -586,5 +593,114 @@ async def cancel_job(
     return CancelResponse(
         job_id=str(job_id),
         status=JobStatus.CANCELLED,
+        credit_refunded=credit_refunded,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /jobs/{job_id}/refund
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/jobs/{job_id}/refund",
+    response_model=RefundResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def refund_job(
+    job_id: UUID,
+    claims: UserClaims = Depends(get_current_user),
+    job_repo: JobRepository = Depends(get_job_repo),
+    ledger: CreditLedger = Depends(get_credit_ledger),
+) -> RefundResponse:
+    """Refund a completed or failed generation job.
+
+    Releases the credit reservation if the job had one, returning
+    the credit to the user's balance.
+
+    Only allowed for jobs in completed or failed status. Cancelled jobs
+    already have their credits released at cancellation time. Pending
+    and processing jobs should be cancelled instead.
+    """
+    user_id_str: str = claims["sub"]
+
+    job = await run_sync(job_repo.get_for_refund, str(job_id))
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+    if job["user_id"] != user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorised to refund this job",
+        )
+
+    # Idempotency guard: reject if this job was already refunded (prevents double-spend)
+    usage_status = await run_sync(job_repo.get_usage_event_status, str(job_id))
+    if usage_status in ("refunded", "released"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "ALREADY_REFUNDED",
+                    "message": "This job has already been refunded.",
+                }
+            },
+        )
+
+    refundable_statuses = {JobStatus.COMPLETED, JobStatus.FAILED}
+
+    if job["status"] not in refundable_statuses:
+        if job["status"] == JobStatus.CANCELLED:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": {
+                        "code": "ALREADY_REFUNDED",
+                        "message": "Cancelled jobs are automatically refunded.",
+                    }
+                },
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "JOB_NOT_REFUNDABLE",
+                    "message": f"Job in '{job['status']}' status cannot be refunded. Cancel it instead.",
+                }
+            },
+        )
+
+    # --- Refund credit reservation ---
+    credit_refunded = False
+    if job.get("credit_reservation_id"):
+        reservation_id = UUID(job["credit_reservation_id"])
+
+        # Try refund (committed -> released) first, then release (reserved -> released)
+        # as a fallback for edge cases where the reservation was never committed.
+        try:
+            ledger.refund(reservation_id)
+            credit_refunded = True
+        except ValueError:
+            # Reservation not in committed state — try release in case it's
+            # still reserved (e.g. worker failed before committing).
+            try:
+                ledger.release(reservation_id)
+                credit_refunded = True
+            except ValueError:
+                logger.warning(
+                    "Credit refund/release failed for reservation %s (already resolved)",
+                    job["credit_reservation_id"],
+                )
+
+    # --- Update usage_events ---
+    await run_sync(job_repo.update_usage_event, str(job_id), {"status": "refunded"})
+
+    logger.info("Job %s refunded by user %s (credit_refunded=%s)", job_id, user_id_str, credit_refunded)
+
+    return RefundResponse(
+        job_id=str(job_id),
+        status=job["status"],
         credit_refunded=credit_refunded,
     )

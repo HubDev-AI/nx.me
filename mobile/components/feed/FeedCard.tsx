@@ -6,6 +6,8 @@ import {
   Pressable,
   StyleSheet,
   Share,
+  Alert,
+  Platform,
   Dimensions,
 } from "react-native";
 import ReanimatedAnimated, {
@@ -125,6 +127,7 @@ export const FeedCard = React.memo(function FeedCard({
   const cardRef = useRef<View>(null);
 
   const handleLongPress = useCallback(() => {
+    if (doubleTapFiredRef.current) return; // Don't show menu if double-tap just fired
     hapticLight();
     // Measure card position to anchor the dropdown near the top-right
     cardRef.current?.measureInWindow((x, y, width, _height) => {
@@ -148,8 +151,23 @@ export const FeedCard = React.memo(function FeedCard({
     {
       label: "Share",
       icon: "share-outline",
-      onPress: () => {
-        Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+      onPress: async () => {
+        try {
+          if (Platform.OS === "web") {
+            if (typeof navigator !== "undefined" && navigator.share) {
+              await navigator.share({ url: UNIVERSAL_LINK_ORIGIN, text: shareMessage });
+            } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+              await navigator.clipboard.writeText(UNIVERSAL_LINK_ORIGIN);
+              Alert.alert("Link copied", "Share link copied to clipboard");
+            }
+          } else if (Platform.OS === "ios") {
+            await Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+          } else {
+            await Share.share({ message: shareMessage });
+          }
+        } catch {
+          // User cancelled share sheet — not an error
+        }
       },
     },
     {
@@ -171,13 +189,16 @@ export const FeedCard = React.memo(function FeedCard({
 
   // ─── Double-tap to like ──────────────────────────────────────────────────
   const lastTapRef = useRef<number>(0);
+  const doubleTapFiredRef = useRef(false);
   const [showHeartOverlay, setShowHeartOverlay] = useState(false);
 
   const handleImageTap = useCallback(() => {
     const now = Date.now();
     if (now - lastTapRef.current < DOUBLE_TAP_DELAY_MS) {
-      // Double-tap detected
+      // Double-tap detected — set flag to suppress long-press
       lastTapRef.current = 0; // Reset to avoid triple-tap
+      doubleTapFiredRef.current = true;
+      setTimeout(() => { doubleTapFiredRef.current = false; }, 600);
       hapticMedium();
       onReact(post.post_id);
       setShowHeartOverlay(true);

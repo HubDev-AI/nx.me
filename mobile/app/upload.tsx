@@ -514,13 +514,13 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.md,
   },
   loadingTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
   },
   elapsedText: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 24,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,

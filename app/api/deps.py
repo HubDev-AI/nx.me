@@ -108,7 +108,10 @@ async def get_current_user(
             .maybe_single()
             .execute()
         )
-        is_banned = bool(user_row.data and user_row.data.get("is_banned"))
+        if not user_row or not user_row.data:
+            is_banned = False
+        else:
+            is_banned = bool(user_row.data.get("is_banned"))
         await redis_client.set(ban_key, "1" if is_banned else "0", ex=60)
         cached = "1" if is_banned else "0"
 

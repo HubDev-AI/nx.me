@@ -14,6 +14,7 @@ import Animated from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
+import { TAB_BAR_HEIGHT } from "./_layout";
 import { useTheme } from "../../lib/theme-context";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { FEED_CONFIG } from "../../constants/config";
@@ -273,7 +274,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     flexGrow: 1,
-    paddingBottom: 90,
+    paddingBottom: TAB_BAR_HEIGHT,
   },
   footer: {
     paddingVertical: THEME.spacing.xl,
@@ -288,13 +289,13 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     ...THEME.typography.heading,
     color: THEME.colors.textPrimary,
     marginTop: THEME.spacing.lg,
   },
   emptySubtitle: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     fontSize: 15,
     color: THEME.colors.textSecondary,
     textAlign: "center",

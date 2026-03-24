@@ -8,6 +8,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { TAB_BAR_HEIGHT } from "./_layout";
 
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
@@ -180,7 +181,7 @@ export default function CreateScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + THEME.spacing.xxl, paddingBottom: 90 },
+          { paddingTop: insets.top + THEME.spacing.xxl, paddingBottom: TAB_BAR_HEIGHT },
         ]}
         showsVerticalScrollIndicator={false}
       >

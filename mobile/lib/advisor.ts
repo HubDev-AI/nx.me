@@ -20,15 +20,15 @@ export interface AdvisorMessage {
 
 export interface MessagesResponse {
   messages: AdvisorMessage[];
+  next_cursor: string | null;
   has_more: boolean;
 }
 
 export interface Nudge {
   id: string;
-  title: string;
+  trigger: string;
   content: string;
-  type: string;
-  is_read: boolean;
+  read_at: string | null;
   created_at: string;
 }
 
@@ -47,7 +47,7 @@ export type MemoryType =
 export interface UserMemory {
   id: string;
   type: MemoryType;
-  content: string;
+  content: Record<string, unknown>;
   created_at: string;
 }
 
@@ -110,7 +110,8 @@ export async function fetchNudges(
 /** Mark a nudge as read. */
 export async function markNudgeRead(nudgeId: string): Promise<void> {
   await apiFetch(ADVISOR_ENDPOINTS.NUDGE_READ(nudgeId), {
-    method: "POST",
+    method: "PATCH",
+    body: JSON.stringify({ read: true }),
   });
 }
 
@@ -126,7 +127,7 @@ export async function fetchMemories(): Promise<MemoriesResponse> {
 /** Add a new memory. */
 export async function addMemory(
   type: MemoryType,
-  content: string,
+  content: Record<string, unknown>,
 ): Promise<UserMemory> {
   return apiFetch<UserMemory>(ADVISOR_ENDPOINTS.MEMORIES, {
     method: "POST",

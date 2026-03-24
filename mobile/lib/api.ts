@@ -12,10 +12,34 @@ type RequestOptions = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
 };
 
-/** Flag to prevent concurrent refresh attempts */
-let isRefreshing = false;
-/** Queued requests waiting for a refresh to complete */
+/** Coalesced refresh promise — all concurrent 401 handlers share this */
 let refreshPromise: Promise<string | null> | null = null;
+
+/** Callback invoked when the refresh token is expired / revoked */
+let onSessionExpired: (() => void) | null = null;
+
+/**
+ * Register a handler that fires when the session expires (refresh fails).
+ * AuthContext calls this on mount so it can trigger logout + navigation.
+ */
+export function setSessionExpiredHandler(handler: () => void) {
+  onSessionExpired = handler;
+}
+
+/**
+ * Coalesce concurrent token refresh attempts into a single request.
+ * The promise is cleared only AFTER it settles, so every waiter that
+ * called `getRefreshedToken()` while the refresh was in-flight will
+ * receive the same result.
+ */
+async function getRefreshedToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = refreshAccessToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
 
 /**
  * Attempt to refresh the access token using the stored refresh token.
@@ -35,6 +59,7 @@ async function refreshAccessToken(): Promise<string | null> {
 
     if (!response.ok) {
       await clearAllTokens();
+      onSessionExpired?.();
       return null;
     }
 
@@ -49,6 +74,7 @@ async function refreshAccessToken(): Promise<string | null> {
     return data.access_token;
   } catch {
     await clearAllTokens();
+    onSessionExpired?.();
     return null;
   }
 }
@@ -93,16 +119,7 @@ export async function apiFetch<T = unknown>(
 
   // On 401 with a JWT, attempt token refresh and retry once
   if (response.status === 401 && jwt) {
-    // Coalesce concurrent refresh attempts into a single request
-    if (!isRefreshing) {
-      isRefreshing = true;
-      refreshPromise = refreshAccessToken().finally(() => {
-        isRefreshing = false;
-        refreshPromise = null;
-      });
-    }
-
-    const newJwt = await (refreshPromise ?? refreshAccessToken());
+    const newJwt = await getRefreshedToken();
 
     if (newJwt) {
       // Retry the original request with the new token

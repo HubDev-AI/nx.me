@@ -63,7 +63,9 @@ const skeletonStyles = StyleSheet.create({
   bubble: {
     height: 48,
     borderRadius: THEME.radius.lg,
-    backgroundColor: THEME.colors.surface,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   left: {
     alignSelf: "flex-start",
@@ -93,6 +95,10 @@ export function ChatView() {
   const listRef = useRef<FlatList<AdvisorMessage>>(null);
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Preserves the user's message across paywall dismissals */
+  const savedMessageRef = useRef<string | null>(null);
+  /** Cursor for loading older message pages */
+  const nextCursorRef = useRef<string | null>(null);
   /** Track the last message ID to only auto-scroll on appended messages */
   const lastMessageIdRef = useRef<string | null>(null);
 
@@ -106,6 +112,7 @@ export function ChatView() {
       const response = await fetchMessages();
       // API returns newest first; we display oldest first, so reverse
       setMessages(response.messages.slice().reverse());
+      nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
       const message =
@@ -130,14 +137,13 @@ export function ChatView() {
   // Load older messages (pagination)
   // -------------------------------------------------------------------------
   const loadOlderMessages = useCallback(async () => {
-    if (!hasMore || isLoadingMore || messages.length === 0) return;
+    if (!hasMore || isLoadingMore || !nextCursorRef.current) return;
     setIsLoadingMore(true);
     try {
-      // The oldest message in our list is the cursor for older pages
-      const oldestMessage = messages[0]!;
-      const response = await fetchMessages(oldestMessage.id);
+      const response = await fetchMessages(nextCursorRef.current);
       const older = response.messages.slice().reverse();
       setMessages((prev) => [...older, ...prev]);
+      nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
     } catch {
@@ -204,7 +210,8 @@ export function ChatView() {
         setMessages((prev) =>
           prev.filter((m) => m.id !== optimisticUserMsg.id),
         );
-        setInputText(trimmed); // Restore input
+        savedMessageRef.current = trimmed;
+        setInputText(trimmed); // Restore input immediately
         setShowPaywall(true);
       } else {
         // Mark optimistic message as failed (keep in list)
@@ -282,7 +289,7 @@ export function ChatView() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       {/* Message list */}
@@ -344,7 +351,7 @@ export function ChatView() {
           disabled={!canSend}
           style={({ pressed }) => [
             styles.sendButton,
-            canSend && styles.sendButtonActive,
+            canSend && [styles.sendButtonActive, { backgroundColor: theme.accent }],
             pressed && canSend && styles.sendButtonPressed,
           ]}
           accessibilityLabel="Send message"
@@ -365,7 +372,14 @@ export function ChatView() {
       {/* Paywall modal — shown on 402 */}
       <PaywallModal
         visible={showPaywall}
-        onClose={() => setShowPaywall(false)}
+        onClose={() => {
+          setShowPaywall(false);
+          // Restore the user's message if paywall was dismissed without purchase
+          if (savedMessageRef.current) {
+            setInputText(savedMessageRef.current);
+            savedMessageRef.current = null;
+          }
+        }}
       />
     </KeyboardAvoidingView>
   );
@@ -393,14 +407,14 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
     marginTop: THEME.spacing.md,
   },
   emptySubtitle: {
-    fontFamily: FONTS.displayItalic,
+    fontFamily: FONTS.body,
     ...THEME.typography.caption,
     color: THEME.colors.textSecondary,
     textAlign: "center",
@@ -414,7 +428,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.bg,
   },
   errorTitle: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 18,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,
@@ -473,8 +487,10 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     fontFamily: FONTS.body,
-    backgroundColor: THEME.colors.surfaceElevated,
+    backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.xl,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
     paddingHorizontal: THEME.spacing.lg,
     paddingTop: THEME.spacing.md - 2,
     paddingBottom: THEME.spacing.md - 2,
@@ -489,10 +505,12 @@ const styles = StyleSheet.create({
     borderRadius: MIN_TOUCH_TARGET / 2,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: THEME.colors.border,
+    backgroundColor: THEME.colors.glass,
+    borderWidth: 1,
+    borderColor: THEME.colors.glassBorder,
   },
   sendButtonActive: {
-    backgroundColor: THEME.colors.textPrimary,
+    borderWidth: 0,
   },
   sendButtonPressed: {
     opacity: 0.85,

@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.md,
   },
   title: {
-    fontFamily: FONTS.display,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 22,
     color: THEME.colors.textPrimary,
     letterSpacing: THEME.typography.heading.letterSpacing,

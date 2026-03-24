@@ -29,12 +29,18 @@ class FeedRepository:
     # v_feed_posts view — feed queries
     # ------------------------------------------------------------------
 
-    def fetch_newest(self, cursor: str | None, limit: int) -> list[dict]:
+    def fetch_newest(
+        self,
+        cursor: str | None,
+        limit: int,
+        excluded_user_ids: set[str] | None = None,
+    ) -> list[dict]:
         """Fetch posts ordered by created_at DESC.
 
         Uses v_feed_posts view which JOINs images to enforce AC-D7
         (both images must be 'cleared') at the database level.
         Hidden posts (auto-hidden via report threshold) are excluded.
+        Posts by excluded_user_ids (blocked/blocking) are filtered out.
         """
         query = (
             self._sb.table("v_feed_posts")
@@ -46,10 +52,18 @@ class FeedRepository:
         if cursor:
             query = query.lt("created_at", cursor)
 
+        if excluded_user_ids:
+            query = query.not_.in_("user_id", list(excluded_user_ids))
+
         result = query.execute()
         return result.data or []
 
-    def fetch_trending(self, cursor: str | None, limit: int) -> list[dict]:
+    def fetch_trending(
+        self,
+        cursor: str | None,
+        limit: int,
+        excluded_user_ids: set[str] | None = None,
+    ) -> list[dict]:
         """Fetch posts ordered by HN-style time-decay score via feed_trending RPC.
 
         score = reaction_count / POWER(hours_since_post + 2, 1.5)
@@ -64,10 +78,18 @@ class FeedRepository:
                 params["p_cursor_created"] = parts[1]
                 params["p_cursor_id"] = parts[2]
 
+        if excluded_user_ids:
+            params["p_excluded_user_ids"] = list(excluded_user_ids)
+
         result = self._sb.rpc("feed_trending", params).execute()
         return result.data or []
 
-    def fetch_biggest_improvements(self, cursor: str | None, limit: int) -> list[dict]:
+    def fetch_biggest_improvements(
+        self,
+        cursor: str | None,
+        limit: int,
+        excluded_user_ids: set[str] | None = None,
+    ) -> list[dict]:
         """Fetch posts ordered by reaction_count DESC (AC-U10: no AI scores).
 
         Uses feed_biggest_improvements() SQL function with tuple-based
@@ -81,6 +103,9 @@ class FeedRepository:
                 params["p_cursor_reactions"] = int(parts[0])
                 params["p_cursor_created"] = parts[1]
                 params["p_cursor_id"] = parts[2]
+
+        if excluded_user_ids:
+            params["p_excluded_user_ids"] = list(excluded_user_ids)
 
         result = self._sb.rpc("feed_biggest_improvements", params).execute()
         return result.data or []
