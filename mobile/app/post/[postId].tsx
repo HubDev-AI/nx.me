@@ -15,7 +15,7 @@ import Animated, {
 
 import { THEME } from "../../constants/theme";
 import { OVERLAY_LIGHT, OVERLAY_MEDIUM } from "../../constants/colors";
-import { FEED_ENDPOINTS, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
+import { FEED_ENDPOINTS, UNIVERSAL_LINK_ORIGIN, MIN_TOUCH_TARGET } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { apiFetch, ApiError } from "../../lib/api";
@@ -261,7 +261,7 @@ export default function PostDetailScreen() {
       <View style={styles.container}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + THEME.spacing.lg }}
           showsVerticalScrollIndicator={false}
         >
           {/* Before image — full width */}
@@ -429,9 +429,9 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.md,
   },
   headerBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    borderRadius: MIN_TOUCH_TARGET / 2,
     backgroundColor: OVERLAY_LIGHT,
     alignItems: "center",
     justifyContent: "center",

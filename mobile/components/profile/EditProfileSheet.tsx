@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import {
@@ -58,6 +59,7 @@ export function EditProfileSheet({
   onClose,
 }: EditProfileSheetProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [displayName, setDisplayName] = useState(
     profile.display_name ?? "",
   );
@@ -311,7 +313,10 @@ export function EditProfileSheet({
         <Animated.View
           style={[
             styles.sheet,
-            { transform: [{ translateY }] },
+            {
+              transform: [{ translateY }],
+              paddingBottom: Math.max(insets.bottom, THEME.spacing.xxl),
+            },
           ]}
         >
           {/* Glass top border */}
@@ -498,7 +503,6 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.glass,
     borderTopLeftRadius: THEME.radius.xl,
     borderTopRightRadius: THEME.radius.xl,
-    paddingBottom: THEME.spacing.xxl,
     overflow: "hidden",
   },
   sheetTopBorder: {
@@ -546,7 +550,7 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.pill,
     paddingHorizontal: THEME.spacing.xl,
     paddingVertical: THEME.spacing.sm,
-    minHeight: 36,
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
   },

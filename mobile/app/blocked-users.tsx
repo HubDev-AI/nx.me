@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 80,
+    paddingTop: THEME.spacing.xxxl * 2 + THEME.spacing.lg,
     gap: THEME.spacing.md,
   },
   loadingText: {
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 36,
+    minHeight: MIN_TOUCH_TARGET,
     paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.xs,
   },

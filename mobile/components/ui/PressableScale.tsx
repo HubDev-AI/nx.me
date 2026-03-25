@@ -5,6 +5,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
+import { THEME } from "../../constants/theme";
 import { hapticLight } from "../../lib/haptics";
 
 interface PressableScaleProps extends PressableProps {
@@ -30,10 +31,10 @@ export function PressableScale({
     <Animated.View style={[animStyle, style]}>
       <Pressable
         onPressIn={() => {
-          sv.value = withSpring(scale, { damping: 15, stiffness: 300 });
+          sv.value = withSpring(scale, THEME.animation.press);
         }}
         onPressOut={() => {
-          sv.value = withSpring(1, { damping: 15, stiffness: 300 });
+          sv.value = withSpring(1, THEME.animation.press);
         }}
         onPress={(e) => {
           if (haptic) hapticLight();

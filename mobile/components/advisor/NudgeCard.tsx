@@ -19,6 +19,18 @@ interface NudgeCardProps {
   onMarkRead: (id: string) => void;
 }
 
+function nudgeLabel(trigger: string): string {
+  const labels: Record<string, string> = {
+    check_in: "Check-in",
+    tip: "Tip",
+    reminder: "Reminder",
+    welcome: "Welcome",
+    milestone: "Milestone",
+    outfit_post: "Outfit Post",
+  };
+  return labels[trigger] ?? trigger.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
 function nudgeIcon(trigger: string): React.ComponentProps<typeof Ionicons>["name"] {
   switch (trigger) {
     case "tip":
@@ -49,7 +61,7 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
         !isRead && styles.unreadCard,
         pressed && styles.pressed,
       ]}
-      accessibilityLabel={`${isRead ? "" : "Unread "}nudge: ${nudge.trigger}`}
+      accessibilityLabel={`${isRead ? "" : "Unread "}nudge: ${nudgeLabel(nudge.trigger)}`}
       accessibilityRole="button"
       accessibilityHint={isRead ? undefined : "Tap to mark as read"}
     >
@@ -69,7 +81,7 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
             style={[styles.title, !isRead && styles.unreadTitle]}
             numberOfLines={1}
           >
-            {nudge.trigger}
+            {nudgeLabel(nudge.trigger)}
           </Text>
           {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
         </View>

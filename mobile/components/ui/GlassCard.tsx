@@ -23,7 +23,7 @@ export function GlassCard({
 }: GlassCardProps) {
   return (
     <Animated.View
-      entering={animate ? FadeIn.duration(500) : undefined}
+      entering={animate ? FadeIn.duration(250) : undefined}
       style={[
         sharedStyles.glassCard,
         light && { backgroundColor: THEME.colors.glassLight },

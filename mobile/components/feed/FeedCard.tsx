@@ -32,7 +32,7 @@ import { useTheme } from "../../lib/theme-context";
 import { hapticLight, hapticMedium } from "../../lib/haptics";
 import type { FeedPost } from "./types";
 
-const IMAGE_HEIGHT = 240;
+export const FEED_IMAGE_HEIGHT = 240;
 const LONG_PRESS_DELAY_MS = 500;
 const DOUBLE_TAP_DELAY_MS = 300;
 const HEART_OVERLAY_SIZE = 60;
@@ -375,8 +375,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "rgba(255,255,255,0.1)",
     ...THEME.shadow.glass,
   },
   // ─── Header row (user info + Before -> After) ─────────────────────────
@@ -423,9 +421,8 @@ const styles = StyleSheet.create({
     marginLeft: THEME.spacing.sm,
   },
   beforeAfterLabel: {
-    fontFamily: FONTS.bodyMedium,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 11,
-    fontWeight: "600",
     color: THEME.colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -433,7 +430,7 @@ const styles = StyleSheet.create({
   // ─── Image area ─────────────────────────────────────────────────────────
   imageRow: {
     flexDirection: "row",
-    height: IMAGE_HEIGHT,
+    height: FEED_IMAGE_HEIGHT,
     overflow: "hidden",
   },
   imageContainer: {
@@ -479,9 +476,8 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.sm,
   },
   commentCount: {
-    fontFamily: FONTS.bodyMedium,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 14,
-    fontWeight: "600",
     color: THEME.colors.textSecondary,
   },
   timestamp: {

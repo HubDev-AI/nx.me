@@ -18,7 +18,7 @@ import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { useAuth } from "../../lib/auth-context";
 import { getItem, deleteItem } from "../../lib/secure-storage";
-import { SECURE_STORE_KEYS } from "../../constants/config";
+import { SECURE_STORE_KEYS, MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchEntitlement } from "../../lib/entitlement";
 
 export function EmailVerifyBanner() {
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.pill,
     paddingHorizontal: THEME.spacing.md,
     paddingVertical: THEME.spacing.xs,
-    minHeight: 32,
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -170,8 +170,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   dismissButton: {
-    width: 32,
-    height: 32,
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: THEME.radius.pill,

@@ -310,7 +310,8 @@ const styles = StyleSheet.create({
   },
   lightboxImage: {
     width: SCREEN_WIDTH - 32,
-    height: SCREEN_WIDTH - 32,
+    height: undefined,
+    aspectRatio: 3 / 4,
     borderRadius: THEME.radius.md,
   },
 });

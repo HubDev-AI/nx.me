@@ -199,6 +199,9 @@ const styles = StyleSheet.create({
     lineHeight: 52,
     letterSpacing: -0.5,
     marginBottom: THEME.spacing.md,
+    textShadowColor: TEXT_SHADOW_DARK,
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 12,
   },
   subtitle: {
     fontFamily: FONTS.body,
@@ -219,6 +222,7 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.lg,
   },
   generalErrorText: {
+    fontFamily: FONTS.body,
     fontSize: 14,
     color: THEME.colors.destructive,
     flex: 1,

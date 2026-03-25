@@ -3,7 +3,7 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
-import { View } from "react-native";
+import { View, Text } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
@@ -55,8 +55,9 @@ function AuthGuard() {
 
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
+  const [initError, setInitError] = useState<Error | null>(null);
   const [initialAuth, setInitialAuth] = useState(false);
-  const fontsLoaded = useAppFonts();
+  const { fontsLoaded, fontError } = useAppFonts();
 
   // Cold start initialization
   useEffect(() => {
@@ -86,10 +87,14 @@ export default function RootLayout() {
       registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });
 
       setInitialAuth(authed);
-      setIsReady(true);
     }
 
-    initialize();
+    initialize()
+      .then(() => setIsReady(true))
+      .catch((e) => {
+        setInitError(e instanceof Error ? e : new Error(String(e)));
+        setIsReady(true); // Still set ready so splash hides
+      });
   }, []);
 
   // Deep link guard
@@ -103,13 +108,23 @@ export default function RootLayout() {
   }, []);
 
   const onLayoutReady = useCallback(async () => {
-    if (isReady && fontsLoaded) {
+    if (isReady && (fontsLoaded || fontError)) {
       await SplashScreen.hideAsync();
     }
-  }, [isReady, fontsLoaded]);
+  }, [isReady, fontsLoaded, fontError]);
 
-  if (!isReady || !fontsLoaded) {
+  if (!isReady || (!fontsLoaded && !fontError)) {
     return null;
+  }
+
+  if (fontError || initError) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+        <Text style={{ color: '#e8e8e8', fontSize: 16, textAlign: 'center', marginBottom: 16 }}>
+          Something went wrong. Please restart the app.
+        </Text>
+      </View>
+    );
   }
 
   const inner = (

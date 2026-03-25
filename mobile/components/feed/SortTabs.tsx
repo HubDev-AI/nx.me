@@ -8,13 +8,11 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
-import { FEED_SORT } from "../../constants/config";
+import { FEED_SORT, MIN_TOUCH_TARGET } from "../../constants/config";
 import type { FeedSortValue } from "../../constants/config";
 import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
-
-const MIN_TOUCH_TARGET = 44;
 
 interface SortTabConfig {
   value: FeedSortValue;

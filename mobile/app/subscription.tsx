@@ -240,12 +240,12 @@ export default function SubscriptionScreen() {
         </View>
 
         {isLoading ? (
-          <View style={styles.centered}>
+          <View style={[styles.centered, { paddingBottom: insets.bottom }]}>
             <ActivityIndicator color={theme.accent} size="large" />
             <Text style={styles.loadingText}>Loading subscription...</Text>
           </View>
         ) : error ? (
-          <View style={styles.centered}>
+          <View style={[styles.centered, { paddingBottom: insets.bottom }]}>
             <Ionicons
               name="alert-circle-outline"
               size={48}
@@ -827,7 +827,7 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.pill,
     paddingHorizontal: THEME.spacing.xxl,
     paddingVertical: THEME.spacing.sm,
-    minHeight: 36,
+    minHeight: MIN_TOUCH_TARGET,
     alignItems: "center",
     justifyContent: "center",
     width: "100%",

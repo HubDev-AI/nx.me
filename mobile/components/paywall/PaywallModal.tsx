@@ -33,6 +33,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
+import { SUCCESS_DARK } from "../../constants/colors";
 import { FONTS } from "../../hooks/useFonts";
 import { PAYWALL_ANIMATION, MIN_TOUCH_TARGET } from "../../constants/config";
 import {
@@ -411,7 +412,7 @@ export function PaywallModal({
           {/* Success banner */}
           {purchaseState === "success" && (
             <View style={styles.successBanner}>
-              <Ionicons name="checkmark-circle" size={18} color="#4ADE80" />
+              <Ionicons name="checkmark-circle" size={18} color={SUCCESS_DARK} />
               <Text style={styles.successBannerText}>
                 Purchase complete!
               </Text>
@@ -607,7 +608,7 @@ const styles = StyleSheet.create({
   },
   successBannerText: {
     fontFamily: FONTS.bodySemiBold,
-    color: "#4ADE80",
+    color: SUCCESS_DARK,
     fontSize: 14,
   },
 });

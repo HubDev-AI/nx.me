@@ -10,7 +10,7 @@ import Animated, {
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
 import { THEME } from "../../constants/theme";
-import { BG_PAGE, TEXT_PRIMARY, TAB_BAR_BG, TAB_BAR_BORDER, SCROLL_TOP_BG } from "../../constants/colors";
+import { BG_PAGE, TEXT_PRIMARY, TAB_BAR_BG, TAB_BAR_BORDER, SCROLL_TOP_BG, TAB_INACTIVE_COLOR } from "../../constants/colors";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { BrandLabel } from "../../components/ui/BrandLabel";
@@ -89,7 +89,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
         const color = isFocused
           ? theme.accent
-          : "rgba(255, 255, 255, 0.45)";
+          : TAB_INACTIVE_COLOR;
 
         // Render the icon using the tabBarIcon option
         const icon = options.tabBarIcon?.({
@@ -178,7 +178,7 @@ function TabLayoutInner() {
       tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
         tabBarActiveTintColor: theme.accent,
-        tabBarInactiveTintColor: "rgba(255, 255, 255, 0.45)",
+        tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
         tabBarShowLabel: false,
         headerStyle: {
           backgroundColor: SCROLL_TOP_BG,
