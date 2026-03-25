@@ -90,18 +90,28 @@ def _derive_tiktok_password(open_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+class FeatureFlags(BaseModel):
+    onboarding_enabled: bool
+
+
 class ProvidersResponse(BaseModel):
     providers: list[str]
+    features: FeatureFlags
 
 
 @router.get("/providers", response_model=ProvidersResponse)
 async def get_providers() -> ProvidersResponse:
-    """Return the list of currently enabled auth providers.
+    """Return enabled auth providers and feature flags.
 
     The mobile app calls this on startup to decide which login buttons
-    to render.  No authentication required.
+    to render and which features to show.  No authentication required.
     """
-    return ProvidersResponse(providers=_get_enabled_providers())
+    return ProvidersResponse(
+        providers=_get_enabled_providers(),
+        features=FeatureFlags(
+            onboarding_enabled=settings.FEATURE_ONBOARDING_ENABLED,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

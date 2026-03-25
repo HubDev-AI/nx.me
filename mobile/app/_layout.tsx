@@ -7,6 +7,7 @@ import { View, Platform } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
+import { useEnabledProviders } from "../hooks/useEnabledProviders";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
@@ -26,6 +27,7 @@ function AuthGuard() {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const { features } = useEnabledProviders();
 
   useEffect(() => {
     const inAuthGroup = segments[0] === "(auth)";
@@ -34,18 +36,20 @@ function AuthGuard() {
     if (!isAuthenticated && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (isAuthenticated && inAuthGroup) {
-      // Coming from login/register — check if onboarding has been completed
-      getItem("nxme_onboarding_complete").then((value) => {
-        if (!value) {
-          router.replace("/onboarding");
-        } else {
-          router.replace("/(tabs)");
-        }
-      });
-    } else if (isAuthenticated && !inAuthGroup && !onOnboarding) {
-      // Already in main app — nothing to do
+      if (features.onboarding_enabled) {
+        // Check if onboarding was already completed
+        getItem("nxme_onboarding_complete").then((value) => {
+          if (!value) {
+            router.replace("/onboarding");
+          } else {
+            router.replace("/(tabs)");
+          }
+        });
+      } else {
+        router.replace("/(tabs)");
+      }
     }
-  }, [isAuthenticated, segments]);
+  }, [isAuthenticated, segments, features.onboarding_enabled]);
 
   return <Slot />;
 }

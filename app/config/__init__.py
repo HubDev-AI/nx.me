@@ -191,6 +191,9 @@ class Settings(BaseSettings):
     AUTH_PROVIDER_EMAIL_ENABLED: bool = False
     AUTH_PROVIDER_TIKTOK_ENABLED: bool = False
 
+    # Feature flags — toggle mobile UI features per environment.
+    FEATURE_ONBOARDING_ENABLED: bool = False
+
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""
     TIKTOK_CLIENT_SECRET: str = ""
