@@ -9,7 +9,6 @@ import {
   View,
   Text,
   ScrollView,
-  Pressable,
   ActivityIndicator,
   Alert,
   StyleSheet,
@@ -19,15 +18,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import type ExpoConstants from "expo-constants";
-
-// Safely resolve expo-constants — if unavailable (bare workflow edge case),
-// we fall back to a static version string instead of crashing the screen.
-let Constants: typeof ExpoConstants | undefined;
-try {
-  Constants = require("expo-constants") as typeof ExpoConstants;
-} catch {
-  // expo-constants not available
-}
 
 import { THEME } from "../constants/theme";
 import { ERROR_BORDER } from "../constants/colors";
@@ -39,6 +29,16 @@ import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
 import { apiFetch, ApiError } from "../lib/api";
 import { clearAllTokens } from "../lib/auth";
+
+// Safely resolve expo-constants — if unavailable (bare workflow edge case),
+// we fall back to a static version string instead of crashing the screen.
+let Constants: typeof ExpoConstants | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for graceful fallback in bare workflow
+  Constants = require("expo-constants") as typeof ExpoConstants;
+} catch {
+  // expo-constants not available
+}
 
 // ---------------------------------------------------------------------------
 // Types

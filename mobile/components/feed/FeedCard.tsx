@@ -81,10 +81,10 @@ export const FeedCard = React.memo(function FeedCard({
   }));
   const handleCardPressIn = useCallback(() => {
     pressScale.value = withSpring(0.98, THEME.animation.press);
-  }, []);
+  }, [pressScale]);
   const handleCardPressOut = useCallback(() => {
     pressScale.value = withSpring(1, THEME.animation.press);
-  }, []);
+  }, [pressScale]);
 
   const handleReact = useCallback(() => {
     onReact(post.post_id);
@@ -96,10 +96,10 @@ export const FeedCard = React.memo(function FeedCard({
 
   const handleCommentPressIn = useCallback(() => {
     commentScale.value = withSpring(0.96, THEME.animation.press);
-  }, []);
+  }, [commentScale]);
   const handleCommentPressOut = useCallback(() => {
     commentScale.value = withSpring(1, THEME.animation.press);
-  }, []);
+  }, [commentScale]);
 
   const handlePostPress = useCallback(() => {
     router.push({

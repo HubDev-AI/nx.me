@@ -179,7 +179,7 @@ export default function ProfileScreen() {
         />
         <Text style={styles.signInTitle}>Complete your profile</Text>
         <Text style={styles.signInSubtitle}>
-          We couldn't determine your username. Please log out and sign in again,
+          We couldn&apos;t determine your username. Please log out and sign in again,
           or register a new account.
         </Text>
         <Pressable

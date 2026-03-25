@@ -45,7 +45,7 @@ export function ShimmerLogo({ size = 36, glowColor = THEME.colors.textPrimary }:
       -1,
       true,
     );
-  }, []);
+  }, [glow, shimmer]);
 
   const textStyle = useAnimatedStyle(() => ({
     opacity: interpolate(glow.value, [0, 1], [0.85, 1]),

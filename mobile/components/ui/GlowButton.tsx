@@ -8,7 +8,6 @@ import {
   Pressable,
   ActivityIndicator,
   StyleSheet,
-  View,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -35,8 +34,6 @@ interface GlowButtonProps {
   /** Size variant */
   size?: "default" | "large";
 }
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function GlowButton({
   title,
@@ -71,7 +68,7 @@ export function GlowButton({
       glowPulse.value = withTiming(0, { duration: 300 });
       textScale.value = 1;
     }
-  }, [isDisabled]);
+  }, [isDisabled, glowPulse, textScale]);
 
   const handlePress = useCallback(() => {
     hapticLight();
@@ -80,11 +77,11 @@ export function GlowButton({
 
   const handlePressIn = useCallback(() => {
     pressScale.value = withSpring(0.96, THEME.animation.press);
-  }, []);
+  }, [pressScale]);
 
   const handlePressOut = useCallback(() => {
     pressScale.value = withSpring(1, THEME.animation.press);
-  }, []);
+  }, [pressScale]);
 
   const glowStyle = useAnimatedStyle(() => ({
     shadowOpacity: 0.3 + glowPulse.value * 0.5,

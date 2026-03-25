@@ -123,7 +123,7 @@ export function CommentsSheet({
         useNativeDriver: true,
       }),
     ]).start();
-  }, [backdropOpacity, sheetTranslateY, panY]);
+  }, [backdropOpacity, sheetTranslateY, panY, SCREEN_HEIGHT]);
 
   const animateOut = useCallback(
     (callback: () => void) => {
@@ -140,7 +140,7 @@ export function CommentsSheet({
         }),
       ]).start(callback);
     },
-    [backdropOpacity, sheetTranslateY],
+    [backdropOpacity, sheetTranslateY, SCREEN_HEIGHT],
   );
 
   // ---------------------------------------------------------------------------

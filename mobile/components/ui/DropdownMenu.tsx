@@ -16,6 +16,9 @@ import Animated, {
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+
 /** Platform-conditional glass view: BlurView on native, CSS backdrop-filter on web */
 const GlassView = Platform.OS === "web"
   ? ({ children, style, ...props }: any) => (
@@ -24,9 +27,6 @@ const GlassView = Platform.OS === "web"
       </View>
     )
   : BlurView;
-
-import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
 
 export interface DropdownMenuItem {
   label: string;

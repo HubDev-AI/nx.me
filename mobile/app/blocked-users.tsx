@@ -48,7 +48,7 @@ interface BlockedUser {
 }
 
 interface BlockedListResponse {
-  users: Array<{
+  users: {
     id: string;
     blocked_id: string;
     created_at: string;
@@ -56,7 +56,7 @@ interface BlockedListResponse {
     display_name?: string;
     /** Backend now resolves username for blocked users */
     username?: string;
-  }>;
+  }[];
   next_cursor: string | null;
   has_more: boolean;
 }

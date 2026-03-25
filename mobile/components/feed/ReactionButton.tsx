@@ -41,11 +41,11 @@ export const ReactionButton = React.memo(function ReactionButton({
 
   const handlePressIn = useCallback(() => {
     scale.value = withSpring(0.96, THEME.animation.press);
-  }, []);
+  }, [scale]);
 
   const handlePressOut = useCallback(() => {
     scale.value = withSpring(1, THEME.animation.press);
-  }, []);
+  }, [scale]);
 
   const handlePress = useCallback(() => {
     hapticLight();

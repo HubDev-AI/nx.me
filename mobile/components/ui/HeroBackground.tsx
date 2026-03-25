@@ -3,7 +3,7 @@
  * Full-bleed image, NO overlay, NO gradient bands.
  * The portrait is the star. Form inputs have their own frosted backgrounds.
  */
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { StyleSheet, Image, type ImageSourcePropType } from "react-native";
 import Animated, {
   useSharedValue,

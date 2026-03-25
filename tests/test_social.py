@@ -50,6 +50,9 @@ class TestFeedModels:
         post = FeedPostResponse(
             post_id="p-1",
             user_id="u-1",
+            username="alice",
+            display_name="Alice",
+            avatar_url="https://cdn.example.com/avatar.jpg",
             caption="Test caption",
             before_image_url="https://cdn.example.com/before.jpg",
             after_image_url="https://cdn.example.com/after.jpg",
@@ -128,7 +131,7 @@ class TestValidateGuestToken:
             validate_guest_token(redis_mock, token)
         )
 
-        expected_hash = hashlib.sha256(token.encode()).hexdigest()[:32]
+        expected_hash = hashlib.sha256(token.encode()).hexdigest()
         registration_key = f"guest_token:{expected_hash}"
 
         # SET was called with the hashed key, correct TTL, and NX flag

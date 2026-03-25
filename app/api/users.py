@@ -382,7 +382,6 @@ async def update_user_profile(
         logger.info("Profile updated for user %s: fields=%s", user_id, list(updates.keys()))
 
     # --- Username change (with cooldown) ---
-    username_changed = False
     if body.new_username is not None and body.new_username != user["username"]:
         # Enforce cooldown
         username_changed_at_str = user.get("username_changed_at")
@@ -415,7 +414,6 @@ async def update_user_profile(
         # Apply username change atomically
         try:
             await run_sync(user_repo.update_username, user_id, body.new_username)
-            username_changed = True
         except Exception as exc:
             if "unique" in str(exc).lower():
                 raise HTTPException(

@@ -330,7 +330,7 @@ export default function ResultScreen() {
                     color={THEME.colors.textSecondary}
                   />
                   <Text style={styles.refundText}>
-                    This doesn't look like me
+                    This doesn&apos;t look like me
                   </Text>
                 </PressableScale>
               ) : (

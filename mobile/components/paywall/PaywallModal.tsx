@@ -181,7 +181,7 @@ export function PaywallModal({
       // Move focus to close button so screen readers enter the modal
       closeButtonRef.current?.focus();
     }
-  }, [visible, animateIn]);
+  }, [visible, animateIn, loadEntitlement]);
 
   const loadEntitlement = useCallback(async () => {
     setIsFetching(true);
