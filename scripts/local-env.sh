@@ -54,6 +54,9 @@ AUTH_PROVIDER_APPLE_ENABLED=false
 AUTH_PROVIDER_EMAIL_ENABLED=false
 AUTH_PROVIDER_TIKTOK_ENABLED=false
 
+# ── Feature Flags ────────────────────────────────────────────────────────────
+FEATURE_ONBOARDING_ENABLED=false
+
 LOGIN_IP_LIMIT=100
 REGISTRATION_IP_LIMIT=100
 EOF
