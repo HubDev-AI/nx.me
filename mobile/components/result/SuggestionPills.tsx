@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.md,
+    borderRadius: THEME.radius.pill,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingVertical: THEME.spacing.md,

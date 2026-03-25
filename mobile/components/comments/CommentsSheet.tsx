@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
@@ -47,6 +48,7 @@ export function CommentsSheet({
   onCommentPosted,
 }: CommentsSheetProps) {
   const { height: SCREEN_HEIGHT } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const {
     comments,
@@ -262,7 +264,7 @@ export function CommentsSheet({
       {/* Sheet */}
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
-        behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
         keyboardVerticalOffset={0}
       >
         {/* Dismiss area above the sheet — KeyboardAvoidingView sits over the
@@ -281,6 +283,7 @@ export function CommentsSheet({
               transform: [
                 { translateY: Animated.add(sheetTranslateY, panY) },
               ],
+              paddingBottom: Math.max(insets.bottom, THEME.spacing.lg),
             },
           ]}
           {...panResponder.panHandlers}
@@ -363,7 +366,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderTopColor: THEME.colors.glassBorder,
     paddingTop: THEME.spacing.sm,
-    paddingBottom: THEME.spacing.lg,
   },
   handleBar: {
     width: 36,

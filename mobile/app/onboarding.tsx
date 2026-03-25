@@ -111,7 +111,7 @@ export default function OnboardingScreen() {
         : "Welcome to NXME";
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top + THEME.spacing.lg }]}>
       <PageBackground overlayOpacity={0.88} />
       <ScrollView
         contentContainerStyle={[
@@ -201,6 +201,7 @@ export default function OnboardingScreen() {
             title="Analyze My Style"
             onPress={handleAnalyzeCTA}
             disabled={isLoadingEntitlement && !entitlementError}
+            isLoading={isLoadingEntitlement && !entitlementError}
           />
           <Text style={styles.ctaHint}>
             Upload a photo and let AI do the rest

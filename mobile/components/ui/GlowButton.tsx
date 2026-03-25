@@ -21,6 +21,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { THEME } from "../../constants/theme";
+import { CTA_PRIMARY } from "../../constants/colors";
 import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 
@@ -40,7 +41,7 @@ export function GlowButton({
   onPress,
   isLoading = false,
   disabled = false,
-  glowColor = THEME.colors.textPrimary,
+  glowColor = CTA_PRIMARY,
   size = "default",
 }: GlowButtonProps) {
   const glowPulse = useSharedValue(0);
@@ -158,7 +159,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   button: {
-    backgroundColor: THEME.colors.textPrimary,
+    backgroundColor: CTA_PRIMARY,
     minHeight: 48,
     borderRadius: THEME.radius.pill,
     alignItems: "center",

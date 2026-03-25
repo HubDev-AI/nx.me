@@ -34,10 +34,10 @@ function useWebFonts() {
   }, []);
 }
 
-export function useAppFonts() {
+export function useAppFonts(): { fontsLoaded: boolean; fontError: Error | null } {
   useWebFonts();
 
-  const [fontsLoaded] = useExpoFonts({
+  const [fontsLoaded, fontError] = useExpoFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
@@ -47,8 +47,8 @@ export function useAppFonts() {
   });
 
   // On web, fonts load via CSS — always consider them loaded
-  if (Platform.OS === "web") return true;
-  return fontsLoaded;
+  if (Platform.OS === "web") return { fontsLoaded: true, fontError: null };
+  return { fontsLoaded, fontError };
 }
 
 export const FONTS = {

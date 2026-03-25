@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    minHeight: 36,
+    minHeight: MIN_TOUCH_TARGET,
   },
   settingsRowLeft: {
     flexDirection: "row",
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    minHeight: MIN_TOUCH_TARGET - THEME.spacing.lg * 2,
+    minHeight: MIN_TOUCH_TARGET,
   },
   navRowLeft: {
     flexDirection: "row",

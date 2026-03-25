@@ -12,8 +12,7 @@ import { useTheme } from "../../lib/theme-context";
 import { formatCount } from "../../lib/format";
 import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
-
-const MIN_TOUCH_TARGET = 44;
+import { MIN_TOUCH_TARGET } from "../../constants/config";
 
 interface ReactionButtonProps {
   reactionCount: number;
@@ -93,8 +92,7 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.sm,
   },
   count: {
-    fontFamily: FONTS.bodyMedium,
+    fontFamily: FONTS.bodySemiBold,
     fontSize: 14,
-    fontWeight: "600",
   },
 });

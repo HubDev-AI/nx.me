@@ -2,10 +2,11 @@ import { useEffect, useRef } from "react";
 import { View, Animated, StyleSheet } from "react-native";
 
 import { THEME } from "../../constants/theme";
+import { FEED_IMAGE_HEIGHT } from "./FeedCard";
 
 const SHIMMER_DURATION_MS = 1200;
 const SKELETON_CARD_COUNT = 3;
-const IMAGE_HEIGHT = 180;
+const IMAGE_HEIGHT = FEED_IMAGE_HEIGHT;
 
 /** Single skeleton card matching FeedCard layout */
 function SkeletonCard() {
@@ -37,6 +38,12 @@ function SkeletonCard() {
 
   return (
     <View style={styles.card} accessibilityLabel="Loading post">
+      {/* Header placeholder */}
+      <View style={styles.headerPlaceholder}>
+        <Animated.View style={[styles.avatarPlaceholder, { opacity }]} />
+        <Animated.View style={[styles.namePlaceholder, { opacity }]} />
+      </View>
+
       {/* Image placeholder */}
       <Animated.View style={[styles.imagePlaceholder, { opacity }]} />
 
@@ -112,6 +119,25 @@ const styles = StyleSheet.create({
     height: 32,
     width: 64,
     borderRadius: THEME.radius.lg,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  headerPlaceholder: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.sm,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+  },
+  avatarPlaceholder: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  namePlaceholder: {
+    height: 14,
+    width: 100,
+    borderRadius: THEME.radius.sm,
     backgroundColor: "rgba(255,255,255,0.08)",
   },
 });

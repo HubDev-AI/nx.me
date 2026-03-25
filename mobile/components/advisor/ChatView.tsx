@@ -19,6 +19,7 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
@@ -79,6 +80,7 @@ const skeletonStyles = StyleSheet.create({
 
 export function ChatView() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   // -------------------------------------------------------------------------
   // State
   // -------------------------------------------------------------------------
@@ -334,7 +336,7 @@ export function ChatView() {
       )}
 
       {/* Input bar */}
-      <View style={styles.inputBar}>
+      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, THEME.spacing.sm) }]}>
         <TextInput
           style={styles.textInput}
           value={inputText}

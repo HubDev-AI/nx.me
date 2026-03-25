@@ -48,7 +48,7 @@ export function PageBackground({ overlayOpacity = 0.82, imageIndex }: PageBackgr
   }));
 
   const handleLoad = useCallback(() => {
-    opacity.value = withTiming(1, { duration: 800, easing: Easing.out(Easing.ease) });
+    opacity.value = withTiming(1, { duration: 400, easing: Easing.out(Easing.ease) });
   }, [opacity]);
 
   return (

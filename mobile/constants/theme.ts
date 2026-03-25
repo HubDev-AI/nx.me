@@ -100,6 +100,7 @@ export const THEME = {
     quick: { damping: 20, stiffness: 300 },
     slow: { damping: 12, stiffness: 100 },
     duration: {
+      instant: 150,
       fast: 200,
       normal: 300,
       slow: 500,
