@@ -65,6 +65,12 @@ CODE_REVIEW_FINDINGS.md
 .claude/gsd-file-manifest.json
 .claude/settings.local.json
 
+# Local tool caches
+.letta/
+
+# MCP server config (contains local paths/credentials)
+.mcp.json
+
 # Background shell
 .bg-shell/
 
