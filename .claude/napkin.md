@@ -12,6 +12,7 @@
 | 2026-03-17 | self | Assumed the migration runner lived under `app/scripts/` while reviewing migration docs | In this repo the runner is `app/migrations/run.py`; verify actual file paths before citing migration workflow details |
 | 2026-03-17 | self | Treated spec validity as ID coverage only and missed acceptance-detail gaps | When validating backlog/spec docs, also compare each source finding's required branches/status codes/scope against the sprint summary, not just whether the ID appears |
 | 2026-03-20 | self | JWT ES256 validation crashed because `cryptography` package was missing from venv (PyJWT needs it for EC keys). Standalone test worked because system Python had it. | When PyJWT uses non-HS256 algorithms, always verify `cryptography` is installed in the project venv, not just system Python. Also: never use `PyJWKClient` (urllib-based) inside async handlers -- use httpx + PyJWK instead. |
+| 2026-03-24 | self | BottomTabBar icon clipping: overriding `insets` prop in custom tabBar wrapper was insufficient because BottomTabView.renderTabBar reads insets from SafeAreaInsetsContext BEFORE passing them to the tabBar callback | For floating pill tab bars, ALWAYS set `safeAreaInsets={{ top:0, right:0, bottom:0, left:0 }}` on the Tabs/Navigator component AND zero insets in the tabBar wrapper. The navigator-level prop is the primary fix; the wrapper-level override is a safety net. |
 
 ## User Preferences
 - Follow repo `AGENTS.md` skill instructions before doing substantive work.
