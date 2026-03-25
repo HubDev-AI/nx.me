@@ -250,6 +250,10 @@ class TestLoginModels:
         resp = RegisterResponse(
             user_id="u-1",
             username="alice",
-            email_verification_required=True,
+            access_token="at-123",
+            refresh_token="rt-456",
+            expires_at=1710720000,
         )
-        assert resp.email_verification_required is True
+        assert resp.user_id == "u-1"
+        assert resp.username == "alice"
+        assert resp.access_token == "at-123"

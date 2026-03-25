@@ -24,7 +24,7 @@ else:
 import httpx
 import jwt
 from jwt import PyJWK
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 
 from app.config import settings
 

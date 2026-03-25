@@ -120,7 +120,7 @@ export function ProfileHeader({
       });
       return next;
     });
-  }, []);
+  }, [borderProgress, chevronRotation, expandProgress]);
 
   const handleShare = useCallback(async () => {
     try {

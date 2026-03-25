@@ -161,7 +161,7 @@ export function ChatView() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoadingMore, messages]);
+  }, [hasMore, isLoadingMore]);
 
   // -------------------------------------------------------------------------
   // Send message

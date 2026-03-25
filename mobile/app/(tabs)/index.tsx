@@ -41,7 +41,6 @@ export default function HomeScreen() {
     isLoading,
     isRefreshing,
     isLoadingMore,
-    hasMore: _hasMore,
     error,
     activeSort,
     reactedPostIds,
@@ -171,7 +170,7 @@ export default function HomeScreen() {
         <ActivityIndicator size="small" color={theme.accent} />
       </View>
     );
-  }, [isLoadingMore]);
+  }, [isLoadingMore, theme.accent]);
 
   const renderEmpty = useCallback(() => {
     if (isLoading) return null;
@@ -202,7 +201,7 @@ export default function HomeScreen() {
         </Text>
       </View>
     );
-  }, [isLoading, error, loadFeed]);
+  }, [isLoading, error, loadFeed, theme.accent]);
 
   const renderHeader = useCallback(
     () => (

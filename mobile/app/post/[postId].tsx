@@ -35,7 +35,6 @@ export default function PostDetailScreen() {
     caption,
     displayName,
     username,
-    avatarUrl,
     userId,
     reactionCount: initialReactionCount,
     commentCount: initialCommentCount,
@@ -133,15 +132,7 @@ export default function PostDetailScreen() {
     }
   }, [caption]);
 
-  const handleUserPress = useCallback(() => {
-    hapticLight();
-    if (username) {
-      router.push({
-        pathname: "/card/[username]",
-        params: { username },
-      });
-    }
-  }, [router, username]);
+
 
   const handleDeletePost = useCallback(() => {
     if (!postId || isDeleting) return;

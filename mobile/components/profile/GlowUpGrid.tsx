@@ -107,7 +107,7 @@ export function GlowUpGrid({
         </Text>
       </View>
     );
-  }, [items.length]);
+  }, [items.length, theme.accent]);
 
   return (
     <FlatList
@@ -155,10 +155,10 @@ const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowU
 
   const handlePressIn = useCallback(() => {
     scale.value = withSpring(0.97, THEME.animation.press);
-  }, []);
+  }, [scale]);
   const handlePressOut = useCallback(() => {
     scale.value = withSpring(1, THEME.animation.press);
-  }, []);
+  }, [scale]);
 
   return (
     <Animated.View style={[{ width: size, height: size }, pressStyle]}>

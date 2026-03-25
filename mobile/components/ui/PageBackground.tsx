@@ -3,7 +3,7 @@
  * Uses a random hero image at low opacity for visual depth.
  * Every page gets a different background per session.
  */
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { StyleSheet, Image, View, type ImageSourcePropType } from "react-native";
 import Animated, {
   useSharedValue,
@@ -11,7 +11,6 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import { THEME } from "../../constants/theme";
 
 // Reuse the hero images — they work great as subtle backgrounds
 const BG_IMAGES: ImageSourcePropType[] = [

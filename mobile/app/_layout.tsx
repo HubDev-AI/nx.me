@@ -3,7 +3,7 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
-import { View, Platform } from "react-native";
+import { View } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
@@ -31,7 +31,6 @@ function AuthGuard() {
 
   useEffect(() => {
     const inAuthGroup = segments[0] === "(auth)";
-    const onOnboarding = segments[0] === "onboarding";
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace("/(auth)/login");
@@ -49,7 +48,7 @@ function AuthGuard() {
         router.replace("/(tabs)");
       }
     }
-  }, [isAuthenticated, segments, features.onboarding_enabled]);
+  }, [isAuthenticated, segments, features.onboarding_enabled, router]);
 
   return <Slot />;
 }

@@ -1,0 +1,9 @@
+{"iteration":1,"before":36,"after":42,"action":"Fix 2 ruff errors, 2 mobile ESLint errors, 5 unused-var warnings, auto-fix 16 warnings","result":"kept","note":"backend_lint 9→15 (maxed), mobile errors 2→0, warnings 51→30"}
+{"iteration":2,"before":42,"after":45,"action":"Fix 6 unused-var warnings and 1 require-import warning in mobile","result":"kept","note":"mobile warnings 30→24, mobile_lint 0→3"}
+{"iteration":3,"before":45,"after":46,"action":"Fix 4 failing tests (config IP limit, register response model, feed post model, guest token hash)","result":"kept","note":"test_pass_rate 19→20 (maxed), 145/145 passing"}
+{"iteration":4,"before":46,"after":47,"action":"Add 15 tests for health.py and blocks.py","result":"kept","note":"coverage 16.6→18.0%, 160 tests total"}
+{"iteration":5,"before":47,"after":49,"action":"Add 37 tests for admin.py and deps.py","result":"kept","note":"coverage 18.0→22.7%, 197 tests total"}
+{"iteration":6,"before":49,"after":61,"action":"Fix 23 react-hooks/exhaustive-deps warnings across 13 mobile files","result":"kept","note":"mobile_lint 3→15 (maxed), warnings 24→1"}
+{"iteration":7,"before":61,"after":65,"action":"Add 37 tests for errors.py, entitlement.py, public.py, analyses.py + fix 3 ruff issues","result":"kept","note":"coverage 22.7→29.5%, 234 tests, backend_lint back to 15/15"}
+{"iteration":8,"before":65,"after":65,"action":"Add 34 tests for content_filter and entitlement models","result":"kept","note":"coverage 29.5→29.8%, 268 tests. Models were already partially covered via imports."}
+{"iteration":9,"before":65,"after":65,"action":"Add 62 tests across middleware auth, auth extended, content filter, entitlement models, public, analyses","result":"kept","note":"coverage 29.8→30.0%, 296 tests. Pure model/helper tests have diminishing returns — need route handler integration tests for further coverage."}

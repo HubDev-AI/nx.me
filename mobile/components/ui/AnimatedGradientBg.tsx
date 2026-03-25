@@ -82,7 +82,7 @@ export function AnimatedGradientBg({
         -1, false,
       ),
     );
-  }, [duration]);
+  }, [duration, p1, p2, p3, p4]);
 
   // Large soft blush glow — top area
   const glow1 = useAnimatedStyle(() => ({

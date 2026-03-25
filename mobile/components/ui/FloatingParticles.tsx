@@ -99,7 +99,7 @@ function Particle({
       delay,
       withTiming(1, { duration: 1200, easing: Easing.out(Easing.ease) }),
     );
-  }, []);
+  }, [delay, duration, particleOpacity, size, startY, swayAmplitude, swayDuration, translateX, translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
