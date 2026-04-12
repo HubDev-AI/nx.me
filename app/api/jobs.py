@@ -19,6 +19,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
+from app.analytics import events
 from app.api.deps import (
     get_analysis_user,
     get_credit_ledger,
@@ -226,6 +227,12 @@ async def save_job(
         )
 
     saved_at = result.get("saved_at") or datetime.now(tz=timezone.utc).isoformat()
+
+    try:
+        events.glowup_save(job_id=str(job_id), user_id=user_id_str)
+    except Exception:
+        logger.warning("Analytics emit failed for glowup_save", exc_info=True)
+
     return SaveResponse(saved_at=saved_at)
 
 

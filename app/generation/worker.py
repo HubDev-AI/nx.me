@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -17,6 +18,7 @@ import PIL.Image
 import redis.asyncio as aioredis
 from supabase import Client
 
+from app.analytics import events as analytics_events
 from app.config import settings
 from app.generation.color_normalizer import normalize_output
 from app.generation.cost_tracker import CostTracker
@@ -613,6 +615,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
 
     ledger = CreditLedger(supabase)
     user_id_for_concurrent: str | None = None
+    _t0 = time.monotonic()
 
     # Fetch job data FIRST — needed for credit release in all failure paths (P2-6)
     job_data = await _fetch_and_claim_job(job_repo, cost_tracker, job_id, supabase)
@@ -681,6 +684,20 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         # Record success for circuit breaker
         await cost_tracker.record_success()
 
+        _latency_ms = int((time.monotonic() - _t0) * 1000)
+        try:
+            analytics_events.glowup_generation_completed(
+                job_id=job_id,
+                source_id=job_data.get("source_id", ""),
+                user_id=user_id,
+                arcface_score=identity_result.similarity_score,
+                latency_ms=_latency_ms,
+            )
+        except Exception:
+            logger.warning(
+                "Analytics emit failed for glowup_generation_completed", exc_info=True
+            )
+
         logger.info(
             "Job %s completed: identity=%.3f, cost=$%.4f",
             job_id,
@@ -691,6 +708,18 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     except Exception as exc:
         logger.exception("Job %s failed: %s", job_id, exc)
         await cost_tracker.record_failure()
+        _failure_code = type(exc).__name__
+        try:
+            analytics_events.glowup_generation_failed(
+                job_id=job_id,
+                source_id=job_data.get("source_id", ""),
+                user_id=job_data.get("user_id", ""),
+                failure_code=_failure_code,
+            )
+        except Exception:
+            logger.warning(
+                "Analytics emit failed for glowup_generation_failed", exc_info=True
+            )
         await _fail_job(job_repo, job_id, job_data, FAILURE_PROVIDER, supabase=supabase)
     finally:
         if user_id_for_concurrent:

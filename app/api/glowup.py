@@ -10,6 +10,7 @@ Thin wiring layer: GlowupService + existing generation logic handle business log
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
@@ -17,6 +18,7 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
+from app.analytics import events
 from app.api.deps import (
     get_analysis_user,
     get_credit_ledger,
@@ -238,8 +240,45 @@ async def analyze_glowup(
       428 FACE_MOD_CONSENT_REQUIRED — user has not granted consent.
     """
     user_id: str = claims["sub"]
+    upload_id_str = str(upload_id)
+    _t0 = time.monotonic()
 
-    result = await glowup_svc.create_analysis(str(upload_id), user_id)
+    try:
+        result = await glowup_svc.create_analysis(upload_id_str, user_id)
+    except HTTPException as exc:
+        failure_code = "UNKNOWN"
+        detail = exc.detail
+        if isinstance(detail, dict):
+            error_block = detail.get("error", {})
+            if isinstance(error_block, dict):
+                failure_code = error_block.get("code", "UNKNOWN")
+        try:
+            events.glowup_analyze_failed(
+                upload_id=upload_id_str,
+                user_id=user_id,
+                failure_code=failure_code,
+            )
+        except Exception:
+            logger.warning(
+                "Analytics emit failed for glowup_analyze_failed", exc_info=True
+            )
+        raise
+
+    duration_ms = int((time.monotonic() - _t0) * 1000)
+
+    try:
+        events.glowup_analyze_completed(
+            glowup_analysis_id=str(result.glowup_analysis_id),
+            upload_id=upload_id_str,
+            user_id=user_id,
+            face_shape=result.face_shape,
+            symmetry_score=result.symmetry_score,
+            duration_ms=duration_ms,
+        )
+    except Exception:
+        logger.warning(
+            "Analytics emit failed for glowup_analyze_completed", exc_info=True
+        )
 
     return AnalyzeResponse(
         glowup_analysis_id=str(result.glowup_analysis_id),

@@ -5,6 +5,7 @@ advisor nudges, and reconciliation cron jobs.
 
 Run: arq app.worker_settings.WorkerSettings
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,6 +23,7 @@ from app.advisor.nudge_scheduler import (
     schedule_post_analysis_nudge,
     check_nudge_eligibility,
 )
+from app.workers.retention import run_retention
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ async def startup(ctx: dict) -> None:
 
     if settings.ADAPTER__IMAGE_GENERATION_ADAPTER != "mock":
         from app.generation.identity_checker import preload_arcface
+
         preload_arcface()
 
     logger.info("Unified worker ready")
@@ -72,9 +75,12 @@ class WorkerSettings:
         cron(watchdog_stuck_jobs, second=0),  # Every minute
         cron(check_nudge_eligibility, hour=6, minute=0),  # Daily at 06:00 UTC
         cron(reconcile_reaction_counts, hour=3, minute=0),  # Nightly at 03:00 UTC
+        cron(run_retention, hour=3, minute=30),  # Nightly at 03:30 UTC
     ]
 
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-    job_timeout = settings.GENERATION_TIMEOUT_SECONDS + 60  # buffer for upload + identity check
+    job_timeout = (
+        settings.GENERATION_TIMEOUT_SECONDS + 60
+    )  # buffer for upload + identity check
     max_jobs = 10
     keep_result = 3600
