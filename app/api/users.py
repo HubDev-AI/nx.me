@@ -5,6 +5,7 @@ Story 6-3:
   GET  /users/{username}/history  — private, owner only
   PATCH /users/{username}         — update display_name, avatar, and/or username, owner only
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,16 +17,26 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 import redis.asyncio as aioredis
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_analysis_repo, get_client_ip, get_current_user, get_image_repo, get_job_repo, get_redis, get_user_repo
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_glowup_analysis_repo,
+    get_image_repo,
+    get_job_repo,
+    get_redis,
+    get_upload_repo,
+    get_user_repo,
+    require_app_feature,
+)
 from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
-from app.repositories.analysis_repo import AnalysisRepository
+from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
 from app.repositories.image_repo import ImageRepository
-from app.repositories.job_repo import JobRepository
+from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
+from app.repositories.upload_repo import UploadRepository
 from app.repositories.user_repo import UserRepository
-from app.api.deps import require_app_feature
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +49,7 @@ _USERNAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 _USERNAME_MIN_LENGTH = 3
 _USERNAME_MAX_LENGTH = 30
 _USERNAME_CHANGE_COOLDOWN_HOURS = 24
-_USERNAME_CHECK_RATE_LIMIT = 30          # max requests per window
+_USERNAME_CHECK_RATE_LIMIT = 30  # max requests per window
 _USERNAME_CHECK_RATE_WINDOW_SECONDS = 60  # 1 minute
 
 
@@ -119,7 +130,9 @@ def _lookup_user(user_repo: UserRepository, username: str) -> dict:
 @router.get("/users/check-username", response_model=UsernameAvailabilityResponse)
 async def check_username(
     request: Request,
-    username: str = Query(min_length=_USERNAME_MIN_LENGTH, max_length=_USERNAME_MAX_LENGTH),
+    username: str = Query(
+        min_length=_USERNAME_MIN_LENGTH, max_length=_USERNAME_MAX_LENGTH
+    ),
     user_repo: UserRepository = Depends(get_user_repo),
     r: aioredis.Redis = Depends(get_redis),
 ) -> UsernameAvailabilityResponse:
@@ -176,7 +189,11 @@ async def get_user_profile(
 
     avatar_storage_key = user.get("avatar_storage_key")
     avatar_url = (
-        await run_sync(image_repo.build_avatar_signed_url, avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+        await run_sync(
+            image_repo.build_avatar_signed_url,
+            avatar_storage_key,
+            settings.SIGNED_URL_EXPIRY_SECONDS,
+        )
         if avatar_storage_key
         else None
     )
@@ -201,7 +218,9 @@ async def get_user_profile(
 @router.get("/users/{username}/history", response_model=HistoryResponse)
 async def get_user_history(
     username: str,
-    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    cursor: str | None = Query(
+        None, description="Cursor ({created_at}|{id} composite)"
+    ),
     limit: int = Query(
         _DEFAULT_HISTORY_PAGE_SIZE,
         ge=1,
@@ -210,14 +229,18 @@ async def get_user_history(
     ),
     claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
+    upload_repo: UploadRepository = Depends(get_upload_repo),
     job_repo: JobRepository = Depends(get_job_repo),
-    image_repo: ImageRepository = Depends(get_image_repo),
-    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
+    glowup_analysis_repo: GlowupAnalysisRepository = Depends(get_glowup_analysis_repo),
 ) -> HistoryResponse:
-    """Return the authenticated user's analysis history in reverse chronological order.
+    """Return the authenticated user's glow-up history in reverse chronological order.
 
-    Owner only — returns 403 if the token does not belong to the requested user.
+    Owner only — returns 404 if the token does not belong to the requested user.
     Cursor-paginated using created_at timestamp.
+
+    History = uploads that have a glowup_analyses row and at least one completed job.
+    The before_image_url comes directly from uploads.image_url; the after_image_url
+    comes from jobs.after_image_url of the most recent completed job.
     """
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
@@ -232,88 +255,76 @@ async def get_user_history(
 
     fetch_limit = limit + 1
 
-    analyses = await run_sync(analysis_repo.list_for_user, user_id, fetch_limit, cursor)
+    uploads = await run_sync(upload_repo.list_for_user, user_id, fetch_limit, cursor)
 
-    has_more = len(analyses) > limit
+    has_more = len(uploads) > limit
     if has_more:
-        analyses = analyses[:limit]
+        uploads = uploads[:limit]
 
     next_cursor: str | None = (
-        f"{analyses[-1]['created_at']}|{analyses[-1]['id']}"
-        if has_more and analyses
+        f"{uploads[-1]['created_at']}|{uploads[-1]['id']}"
+        if has_more and uploads
         else None
     )
 
-    # -- Batch-fetch related data instead of N+1 per-analysis queries ----------
+    # -- Batch-fetch related data instead of N+1 per-upload queries ----------
 
-    analysis_ids = [row["id"] for row in analyses]
+    upload_ids = [row["id"] for row in uploads]
 
-    # 1. Collect original_image_ids from analyses and fetch all in one query
-    original_image_ids = [
-        row["original_image_id"] for row in analyses if row.get("original_image_id")
-    ]
-    before_images_by_id: dict[str, dict] = {}
-    if original_image_ids:
-        for img in await run_sync(image_repo.get_by_ids, original_image_ids):
-            if img.get("storage_key"):
-                before_images_by_id[img["id"]] = img
+    # 1. Fetch glowup_analyses for these uploads (one per upload, unique index).
+    #    Build upload_id → analysis mapping for later assembly.
+    analysis_by_upload: dict[str, dict] = {}
+    if upload_ids:
+        for analysis in await run_sync(
+            lambda: (
+                glowup_analysis_repo._sb.table("glowup_analyses")
+                .select("id, upload_id, face_shape, symmetry_score, recommendations")
+                .in_("upload_id", upload_ids)
+                .execute()
+                .data
+                or []
+            )
+        ):
+            analysis_by_upload[analysis["upload_id"]] = analysis
 
-    # 2. Fetch latest completed glow_up_job per analysis in one query.
-    #    PostgREST doesn't support DISTINCT ON, so fetch all completed jobs
-    #    for these analyses and pick the latest per analysis_id in Python.
-    jobs_by_analysis: dict[str, str] = {}  # analysis_id -> generated_image_id
+    # 2. Fetch latest completed job per glowup_analysis in one query.
+    #    PostgREST doesn't support DISTINCT ON, so pick latest per source_id in Python.
+    analysis_ids = [a["id"] for a in analysis_by_upload.values()]
+    jobs_by_analysis: dict[str, str] = {}  # analysis_id -> after_image_url
     if analysis_ids:
-        for job in await run_sync(job_repo.get_completed_jobs_for_analyses, analysis_ids):
-            aid = job["analysis_id"]
-            # First seen per analysis_id is the latest (ordered desc)
-            if aid not in jobs_by_analysis and job.get("generated_image_id"):
-                jobs_by_analysis[aid] = job["generated_image_id"]
+        for job in await run_sync(
+            job_repo.get_completed_jobs_for_sources, SOURCE_TYPE_GLOWUP, analysis_ids
+        ):
+            sid = job["source_id"]
+            # First seen per source_id is the latest (ordered desc by created_at)
+            if sid not in jobs_by_analysis and job.get("after_image_url"):
+                jobs_by_analysis[sid] = job["after_image_url"]
 
-    # 3. Fetch all generated images in one query
-    generated_image_ids = list(jobs_by_analysis.values())
-    after_images_by_id: dict[str, dict] = {}
-    if generated_image_ids:
-        for img in await run_sync(image_repo.get_by_ids, generated_image_ids):
-            if img.get("storage_key"):
-                after_images_by_id[img["id"]] = img
-
-    # 4. Batch-sign all URLs, grouped by bucket to minimise overhead
-    def _sign_url(bucket: str, storage_key: str) -> str | None:
-        try:
-            return image_repo.create_signed_url(bucket, storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
-        except Exception:
-            logger.warning("Failed to sign URL: bucket=%s key=%s", bucket, storage_key, exc_info=True)
-            return None
-
-    signed_before: dict[str, str | None] = {}
-    for img_id, img in before_images_by_id.items():
-        bucket = img.get("bucket") or "raw-selfies"
-        signed_before[img_id] = _sign_url(bucket, img["storage_key"])
-
-    signed_after: dict[str, str | None] = {}
-    for img_id, img in after_images_by_id.items():
-        bucket = img.get("bucket") or "generated-images"
-        signed_after[img_id] = _sign_url(bucket, img["storage_key"])
-
-    # 5. Assemble entries using the pre-fetched lookups
+    # 3. Assemble entries — no image signing needed; uploads.image_url and
+    #    jobs.after_image_url are stable CDN paths stored directly.
     entries: list[HistoryEntry] = []
-    for row in analyses:
-        before_url: str | None = None
-        after_url: str | None = None
+    for row in uploads:
+        upload_id = row["id"]
+        analysis = analysis_by_upload.get(upload_id)
 
-        orig_id = row.get("original_image_id")
-        if orig_id and orig_id in signed_before:
-            before_url = signed_before[orig_id]
+        analysis_id: str | None = analysis["id"] if analysis else None
+        face_shape: str | None = analysis.get("face_shape") if analysis else None
+        symmetry_score: float | None = (
+            analysis.get("symmetry_score") if analysis else None
+        )
+        raw_recs: list[dict] = (
+            (analysis.get("recommendations") or []) if analysis else []
+        )
 
-        gen_id = jobs_by_analysis.get(row["id"])
-        if gen_id and gen_id in signed_after:
-            after_url = signed_after[gen_id]
+        after_url: str | None = (
+            jobs_by_analysis.get(analysis_id) if analysis_id else None
+        )
 
         entries.append(
             HistoryEntry(
-                analysis_id=row["id"],
-                face_shape=row.get("face_shape"),
-                symmetry_score=row.get("symmetry_score"),
+                analysis_id=analysis_id or upload_id,
+                face_shape=face_shape,
+                symmetry_score=symmetry_score,
                 recommendations=[
                     RecommendationItem(
                         rank=r["rank"],
@@ -321,16 +332,19 @@ async def get_user_history(
                         suggestion=r["suggestion_text"],
                         rationale=r.get("rationale"),
                     )
-                    for r in (row.get("recommendations") or [])
+                    for r in raw_recs
                 ],
-                before_image_url=before_url,
+                before_image_url=row.get("image_url"),
                 after_image_url=after_url,
                 created_at=row["created_at"],
             )
         )
 
     logger.info(
-        "History fetched for user %s: %d entries (has_more=%s)", user_id, len(entries), has_more
+        "History fetched for user %s: %d entries (has_more=%s)",
+        user_id,
+        len(entries),
+        has_more,
     )
 
     return HistoryResponse(
@@ -373,7 +387,9 @@ async def update_user_profile(
     if body.display_name is not None:
         updates["display_name"] = body.display_name
     if body.avatar_storage_key is not None:
-        avatar_pattern = rf"^avatars/{re.escape(user_id)}/[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|webp)$"
+        avatar_pattern = (
+            rf"^avatars/{re.escape(user_id)}/[a-zA-Z0-9_\-]+\.(jpg|jpeg|png|webp)$"
+        )
         if not re.match(avatar_pattern, body.avatar_storage_key):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -384,7 +400,9 @@ async def update_user_profile(
     if updates:
         updates["updated_at"] = datetime.now(tz=timezone.utc).isoformat()
         await run_sync(user_repo.update_profile, user_id, updates)
-        logger.info("Profile updated for user %s: fields=%s", user_id, list(updates.keys()))
+        logger.info(
+            "Profile updated for user %s: fields=%s", user_id, list(updates.keys())
+        )
 
     # --- Username change (with cooldown) ---
     if body.new_username is not None and body.new_username != user["username"]:
@@ -394,7 +412,9 @@ async def update_user_profile(
             last_change = datetime.fromisoformat(username_changed_at_str)
             if last_change.tzinfo is None:
                 last_change = last_change.replace(tzinfo=timezone.utc)
-            cooldown_end = last_change + timedelta(hours=_USERNAME_CHANGE_COOLDOWN_HOURS)
+            cooldown_end = last_change + timedelta(
+                hours=_USERNAME_CHANGE_COOLDOWN_HOURS
+            )
             now = datetime.now(tz=timezone.utc)
             if now < cooldown_end:
                 remaining = int((cooldown_end - now).total_seconds())
@@ -437,7 +457,11 @@ async def update_user_profile(
         )
     refreshed_avatar_key = refreshed.get("avatar_storage_key")
     avatar_url = (
-        await run_sync(image_repo.build_avatar_signed_url, refreshed_avatar_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+        await run_sync(
+            image_repo.build_avatar_signed_url,
+            refreshed_avatar_key,
+            settings.SIGNED_URL_EXPIRY_SECONDS,
+        )
         if refreshed_avatar_key
         else None
     )

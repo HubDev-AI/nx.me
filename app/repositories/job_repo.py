@@ -1,8 +1,13 @@
-"""Job repository — all supabase queries for glow_up_jobs and usage_events.
+"""Job repository — all supabase queries for the polymorphic jobs table.
 
-Follows the same pattern as UserRepository: constructor takes a Client,
+Follows the same pattern as other repositories: constructor takes a Client,
 methods are synchronous (callers use run_sync for async handlers).
+
+The jobs table is polymorphic: source_type + source_id point at either a
+glowup_analyses row (today) or a makeup_sessions row (future Makeup feature).
+Application-layer integrity only — no DB foreign key for the polymorphic ref.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,46 +19,29 @@ logger = logging.getLogger(__name__)
 
 # Columns needed for job status polling
 JOB_STATUS_SELECT = (
-    "id, user_id, status, queue_lane, updated_at, "
-    "original_image_id, generated_image_id, failure_reason, "
+    "id, user_id, status, source_type, source_id, updated_at, "
+    "before_image_url, after_image_url, failure_reason, saved_at, "
     "identity_preserved, credit_reservation_id"
 )
 
+# Source type constant for Glow Up — avoids magic strings in callers.
+SOURCE_TYPE_GLOWUP = "glowup_analysis"
+
 
 class JobRepository:
-    """Encapsulates all DB calls related to glow_up_jobs and usage_events."""
+    """Encapsulates all DB calls related to the jobs table and usage_events."""
 
     def __init__(self, supabase: Client) -> None:
         self._sb = supabase
 
     # ------------------------------------------------------------------
-    # glow_up_jobs — read
+    # jobs — read
     # ------------------------------------------------------------------
-
-    def get_for_analysis(self, job_id: str) -> dict | None:
-        """Fetch analysis_id from a glow_up_job row (for shareable card).
-
-        Returns a dict with analysis_id, or None if the job is not found.
-        """
-        result = (
-            self._sb.table("glow_up_jobs")
-            .select("analysis_id")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
-        )
-        if not result or not result.data:
-            return None
-        return result.data
 
     def get_by_id(self, job_id: str) -> dict | None:
         """Fetch a single job by ID. Returns None if not found."""
         result = (
-            self._sb.table("glow_up_jobs")
-            .select("*")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
+            self._sb.table("jobs").select("*").eq("id", job_id).maybe_single().execute()
         )
         if not result or not result.data:
             return None
@@ -62,7 +50,7 @@ class JobRepository:
     def get_by_id_with_fields(self, job_id: str, fields: str) -> dict | None:
         """Fetch a job by ID selecting specific fields. Returns None if not found."""
         result = (
-            self._sb.table("glow_up_jobs")
+            self._sb.table("jobs")
             .select(fields)
             .eq("id", job_id)
             .maybe_single()
@@ -74,19 +62,13 @@ class JobRepository:
 
     def get_by_id_single(self, job_id: str) -> dict:
         """Fetch a single job by ID using .single() (raises if not found)."""
-        result = (
-            self._sb.table("glow_up_jobs")
-            .select("*")
-            .eq("id", job_id)
-            .single()
-            .execute()
-        )
+        result = self._sb.table("jobs").select("*").eq("id", job_id).single().execute()
         return result.data
 
     def get_by_idempotency_key(self, key: str, user_id: str) -> dict | None:
         """Check for an existing job by idempotency key + user. Returns None if not found."""
         result = (
-            self._sb.table("glow_up_jobs")
+            self._sb.table("jobs")
             .select("id, status")
             .eq("idempotency_key", key)
             .eq("user_id", user_id)
@@ -100,7 +82,7 @@ class JobRepository:
     def get_for_status_poll(self, job_id: str) -> dict | None:
         """Fetch job fields needed for GET /jobs/{job_id} status polling."""
         result = (
-            self._sb.table("glow_up_jobs")
+            self._sb.table("jobs")
             .select(JOB_STATUS_SELECT)
             .eq("id", job_id)
             .maybe_single()
@@ -113,7 +95,7 @@ class JobRepository:
     def get_for_cancel(self, job_id: str) -> dict | None:
         """Fetch job fields needed for cancel operation."""
         result = (
-            self._sb.table("glow_up_jobs")
+            self._sb.table("jobs")
             .select("id, user_id, status, credit_reservation_id")
             .eq("id", job_id)
             .maybe_single()
@@ -126,8 +108,21 @@ class JobRepository:
     def get_for_refund(self, job_id: str) -> dict | None:
         """Fetch job fields needed for refund operation."""
         result = (
-            self._sb.table("glow_up_jobs")
+            self._sb.table("jobs")
             .select("id, user_id, status, credit_reservation_id")
+            .eq("id", job_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
+    def get_for_save(self, job_id: str) -> dict | None:
+        """Fetch job fields needed for the save operation."""
+        result = (
+            self._sb.table("jobs")
+            .select("id, user_id, status, saved_at")
             .eq("id", job_id)
             .maybe_single()
             .execute()
@@ -139,8 +134,8 @@ class JobRepository:
     def get_jobs_for_post(self, job_id: str) -> dict | None:
         """Fetch job fields needed for post creation. Returns None if not found."""
         result = (
-            self._sb.table("glow_up_jobs")
-            .select("id, user_id, status, original_image_id, generated_image_id")
+            self._sb.table("jobs")
+            .select("id, user_id, status, before_image_url, after_image_url")
             .eq("id", job_id)
             .maybe_single()
             .execute()
@@ -149,12 +144,31 @@ class JobRepository:
             return None
         return result.data
 
-    def get_completed_jobs_for_analyses(self, analysis_ids: list[str]) -> list[dict]:
-        """Fetch latest completed glow_up_jobs for a list of analysis IDs (for history)."""
+    def get_completed_jobs_for_source(self, source_ids: list[str]) -> list[dict]:
+        """Fetch latest completed jobs for a list of source_ids (e.g. for history)."""
         result = (
-            self._sb.table("glow_up_jobs")
-            .select("analysis_id, generated_image_id, created_at")
-            .in_("analysis_id", analysis_ids)
+            self._sb.table("jobs")
+            .select("source_id, after_image_url, created_at")
+            .in_("source_id", source_ids)
+            .eq("status", "completed")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+
+    def get_completed_jobs_for_sources(
+        self, source_type: str, source_ids: list[str]
+    ) -> list[dict]:
+        """Fetch latest completed jobs for a list of source_ids filtered by source_type.
+
+        Returns rows ordered desc by created_at so callers can take the first
+        occurrence per source_id to get the most recent completed job.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select("source_id, after_image_url, created_at")
+            .eq("source_type", source_type)
+            .in_("source_id", source_ids)
             .eq("status", "completed")
             .order("created_at", desc=True)
             .execute()
@@ -164,7 +178,7 @@ class JobRepository:
     def get_stuck_jobs(self, cutoff: str) -> list[dict]:
         """Fetch jobs stuck in 'processing' or 'finalizing' state before the given UTC cutoff."""
         result = (
-            self._sb.table("glow_up_jobs")
+            self._sb.table("jobs")
             .select("id, credit_reservation_id, status")
             .in_("status", ["processing", "finalizing"])
             .lt("updated_at", cutoff)
@@ -173,23 +187,43 @@ class JobRepository:
         return result.data or []
 
     # ------------------------------------------------------------------
-    # glow_up_jobs — write
+    # jobs — write
     # ------------------------------------------------------------------
 
     def create(self, job_data: dict) -> dict:
         """Insert a new job row. Returns the inserted row."""
-        result = self._sb.table("glow_up_jobs").insert(job_data).execute()
+        result = self._sb.table("jobs").insert(job_data).execute()
         return result.data[0] if result.data else {}
 
     def update(self, job_id: str, update_data: dict) -> list[dict]:
         """Generic update for a job row by ID. Returns updated rows."""
+        result = self._sb.table("jobs").update(update_data).eq("id", job_id).execute()
+        return result.data or []
+
+    def save(self, job_id: str, user_id: str) -> dict | None:
+        """Set saved_at to NOW() for a job owned by user_id. Idempotent.
+
+        Only updates if saved_at IS NULL (first-save semantics). Subsequent
+        calls with the same job_id silently succeed by returning the existing
+        saved_at via a second fetch.
+        Returns the job row (with saved_at populated), or None if not found.
+        """
+        now_utc = datetime.now(tz=timezone.utc).isoformat()
+        # Only set saved_at if it is still NULL — idempotent
+        self._sb.table("jobs").update({"saved_at": now_utc}).eq("id", job_id).eq(
+            "user_id", user_id
+        ).is_("saved_at", None).execute()
+
+        # Fetch the current row (saved_at may have been set in a previous call)
         result = (
-            self._sb.table("glow_up_jobs")
-            .update(update_data)
+            self._sb.table("jobs")
+            .select("id, saved_at")
             .eq("id", job_id)
+            .eq("user_id", user_id)
+            .maybe_single()
             .execute()
         )
-        return result.data or []
+        return result.data or None
 
     def claim(self, job_id: str) -> list[dict]:
         """Conditionally transition job from queued → processing.
@@ -199,11 +233,13 @@ class JobRepository:
         """
         now_utc = datetime.now(tz=timezone.utc).isoformat()
         result = (
-            self._sb.table("glow_up_jobs")
-            .update({
-                "status": "processing",
-                "updated_at": now_utc,
-            })
+            self._sb.table("jobs")
+            .update(
+                {
+                    "status": "processing",
+                    "updated_at": now_utc,
+                }
+            )
             .eq("id", job_id)
             .eq("status", "queued")
             .execute()

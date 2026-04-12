@@ -2,6 +2,7 @@
 
 Shared dependencies injected into route handlers via Depends().
 """
+
 from __future__ import annotations
 
 import hmac
@@ -15,7 +16,11 @@ import redis.asyncio as aioredis
 
 from app.api.middleware.auth import UserClaims, validate_jwt
 from app.db.async_helpers import run_sync
-from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, EntitlementResult, PAYMENT_REQUIRED_CODES
+from app.entitlement.models import (
+    ENTITLEMENT_ERROR_MESSAGES,
+    EntitlementResult,
+    PAYMENT_REQUIRED_CODES,
+)
 
 if TYPE_CHECKING:
     from app.advisor.llm_port import LLMPort
@@ -24,14 +29,17 @@ if TYPE_CHECKING:
     from app.entitlement.tier_repo import TierRepository
     from app.payment.ports import PaymentPort
     from app.repositories.advisor_repo import AdvisorRepository
-    from app.repositories.analysis_repo import AnalysisRepository
     from app.repositories.block_repo import BlockRepository
     from app.repositories.feed_repo import FeedRepository
+    from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
     from app.repositories.post_repo import PostRepository
     from app.repositories.subscription_repo import SubscriptionRepository
+    from app.repositories.upload_repo import UploadRepository
     from app.repositories.user_repo import UserRepository
+    from app.services.glowup_service import GlowupService
+    from app.services.upload_service import UploadService
 
 logger = logging.getLogger(__name__)
 
@@ -102,11 +110,13 @@ async def get_current_user(
         # Cache miss — query DB and cache for 60s
         # C-3: Wrap sync Supabase call to avoid blocking the event loop
         user_row = await run_sync(
-            lambda: supabase.table("users")
-            .select("is_banned")
-            .eq("id", user_id)
-            .maybe_single()
-            .execute()
+            lambda: (
+                supabase.table("users")
+                .select("is_banned")
+                .eq("id", user_id)
+                .maybe_single()
+                .execute()
+            )
         )
         if not user_row or not user_row.data:
             is_banned = False
@@ -207,11 +217,32 @@ def get_image_repo(request: Request) -> "ImageRepository":
     return ImageRepository(request.app.state.supabase)
 
 
-def get_analysis_repo(request: Request) -> "AnalysisRepository":
-    """Return an AnalysisRepository wired to the app's Supabase client."""
-    from app.repositories.analysis_repo import AnalysisRepository
+def get_upload_repo(request: Request) -> "UploadRepository":
+    """Return an UploadRepository wired to the app's Supabase client."""
+    from app.repositories.upload_repo import UploadRepository
 
-    return AnalysisRepository(request.app.state.supabase)
+    return UploadRepository(request.app.state.supabase)
+
+
+def get_glowup_analysis_repo(request: Request) -> "GlowupAnalysisRepository":
+    """Return a GlowupAnalysisRepository wired to the app's Supabase client."""
+    from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
+
+    return GlowupAnalysisRepository(request.app.state.supabase)
+
+
+def get_upload_service(request: Request) -> "UploadService":
+    """Return an UploadService wired to the app's Supabase client."""
+    from app.services.upload_service import UploadService
+
+    return UploadService(request.app.state.supabase)
+
+
+def get_glowup_service(request: Request) -> "GlowupService":
+    """Return a GlowupService wired to the app's Supabase client."""
+    from app.services.glowup_service import GlowupService
+
+    return GlowupService(request.app.state.supabase)
 
 
 def get_block_repo(request: Request) -> "BlockRepository":
@@ -284,8 +315,10 @@ def get_payment_adapter() -> "PaymentPort":
 
     if settings.ADAPTER__PAYMENT_ADAPTER == "stripe":
         from app.payment.adapters.stripe_adapter import StripePaymentAdapter
+
         return StripePaymentAdapter()
     from app.payment.adapters.mock import MockPaymentAdapter
+
     return MockPaymentAdapter()
 
 
@@ -298,8 +331,10 @@ def get_llm_adapter() -> "LLMPort":
 
     if settings.ADAPTER__LLM_ADAPTER == "anthropic":
         from app.advisor.adapters.anthropic_adapter import AnthropicAdapter
+
         return AnthropicAdapter()
     from app.advisor.adapters.mock import MockLLMAdapter
+
     return MockLLMAdapter()
 
 
@@ -313,6 +348,7 @@ def require_entitlement(action: str):
             claims: UserClaims = Depends(get_current_user),
         ): ...
     """
+
     async def _check(
         claims: UserClaims = Depends(get_current_user),
         svc: "EntitlementService" = Depends(get_entitlement_service),
@@ -331,11 +367,15 @@ def require_entitlement(action: str):
                 detail={
                     "error": {
                         "code": result.error_code,
-                        "message": _ERROR_MESSAGES.get(result.error_code, "Entitlement check failed"),
+                        "message": _ERROR_MESSAGES.get(
+                            result.error_code, "Entitlement check failed"
+                        ),
                         "detail": {
                             "limit": result.limit,
                             "used": result.used,
-                            "retry_after": result.retry_after.isoformat() if result.retry_after else None,
+                            "retry_after": result.retry_after.isoformat()
+                            if result.retry_after
+                            else None,
                             "reset_in_seconds": result.reset_in_seconds,
                             "upgrade_available": result.upgrade_available,
                         },
@@ -356,6 +396,7 @@ def require_feature(feature: str):
             _: None = Depends(require_feature("advisor_chat")),
         ): ...
     """
+
     async def _check(
         claims: UserClaims = Depends(get_current_user),
         svc: "EntitlementService" = Depends(get_entitlement_service),
