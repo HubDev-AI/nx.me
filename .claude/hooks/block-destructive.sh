@@ -35,4 +35,21 @@ if echo "$COMMAND" | grep -qE '(cat|less|head|tail|more|source|grep|sed|awk|bat)
   exit 0
 fi
 
+# Block pip / pip3 install — project standard is uv
+if echo "$COMMAND" | grep -qE '(^|[^a-zA-Z_])(pip3?|python3?\s+-m\s+pip)\s+install\b'; then
+  echo '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "Blocked pip install. Use uv add <packages> (see CLAUDE.md). If this is an intentional override, run manually."}}'
+  exit 0
+fi
+
+# Block direct push to dev / main (must go through PR)
+# Matches: git push <remote> dev|main, git push <remote> HEAD:dev, git push -u origin dev
+# Allows: git push origin <feature-branch>, git push --delete, fetch/pull
+if echo "$COMMAND" | grep -qE 'git\s+push(\s+(-[a-zA-Z]+|--[a-z-]+))*\s+\S+(\s+(HEAD:)?(dev|main)\b|\s*$)'; then
+  # Further check: only block if dev/main is the target ref (or implicit via tracking)
+  if echo "$COMMAND" | grep -qE 'git\s+push.*\s(HEAD:)?(dev|main)(\s|$)'; then
+    echo '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "Blocked direct push to dev/main. Workflow is feature-branch -> PR -> merge (see MEMORY.md). If this is an intentional override, run manually."}}'
+    exit 0
+  fi
+fi
+
 exit 0
