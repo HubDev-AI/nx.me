@@ -5,6 +5,8 @@ import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
 import { View, Text } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
+import { QueryClientProvider } from "@tanstack/react-query";
+import NetInfo from "@react-native-community/netinfo";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 import { useEnabledProviders } from "../hooks/useEnabledProviders";
@@ -19,6 +21,13 @@ import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "..
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
+import { OfflineBanner } from "../components/ui/OfflineBanner";
+import { queryClient } from "../lib/query-client";
+import { initSentry } from "../lib/sentry";
+import { mutationQueue } from "../lib/offline-queue";
+
+// Initialize Sentry once at module import — before any component renders.
+initSentry();
 
 // Keep splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync();
@@ -107,6 +116,28 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, []);
 
+  // Replay queued offline mutations whenever connectivity is restored.
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(async (state) => {
+      if (!state.isConnected) return;
+      const pending = mutationQueue.list();
+      for (const queued of pending) {
+        try {
+          await queryClient
+            .getMutationCache()
+            .build(queryClient, {
+              mutationKey: queued.mutationKey as readonly unknown[],
+            })
+            .execute(queued.variables);
+          mutationQueue.dequeue(queued.id);
+        } catch {
+          // Leave in queue; next reconnect will retry.
+        }
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   const onLayoutReady = useCallback(async () => {
     if (isReady && (fontsLoaded || fontError)) {
       await SplashScreen.hideAsync();
@@ -131,26 +162,29 @@ export default function RootLayout() {
     <View style={{ flex: 1, backgroundColor: THEME.colors.bg }} onLayout={onLayoutReady}>
       <StatusBar style="light" />
       <AuthGuard />
+      <OfflineBanner />
     </View>
   );
 
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <AuthProvider initialAuth={initialAuth}>
-          {StripeProvider ? (
-            <StripeProvider
-              publishableKey={STRIPE_PUBLISHABLE_KEY}
-              urlScheme="https"
-              merchantIdentifier={APPLE_MERCHANT_ID}
-            >
-              {inner}
-            </StripeProvider>
-          ) : (
-            inner
-          )}
-        </AuthProvider>
-      </ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AuthProvider initialAuth={initialAuth}>
+            {StripeProvider ? (
+              <StripeProvider
+                publishableKey={STRIPE_PUBLISHABLE_KEY}
+                urlScheme="https"
+                merchantIdentifier={APPLE_MERCHANT_ID}
+              >
+                {inner}
+              </StripeProvider>
+            ) : (
+              inner
+            )}
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }
