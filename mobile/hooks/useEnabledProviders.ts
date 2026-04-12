@@ -3,6 +3,8 @@
  *
  * GET /auth/providers returns { providers: string[] }.
  * The mobile UI uses this to decide which login buttons to render.
+ *
+ * Feature flags live in `lib/features-context` (hydrated from GET /v1/features).
  */
 import { useState, useEffect, useCallback } from "react";
 
@@ -10,15 +12,8 @@ import { AUTH_ENDPOINTS } from "../constants/config";
 import type { AuthProvider } from "../constants/config";
 import { API_BASE_URL } from "../constants/config";
 
-export interface FeatureFlags {
-  onboarding_enabled: boolean;
-}
-
-const DEFAULT_FEATURES: FeatureFlags = { onboarding_enabled: false };
-
 interface UseEnabledProvidersReturn {
   providers: AuthProvider[];
-  features: FeatureFlags;
   isLoading: boolean;
   error: string | null;
   retry: () => void;
@@ -26,7 +21,6 @@ interface UseEnabledProvidersReturn {
 
 export function useEnabledProviders(): UseEnabledProvidersReturn {
   const [providers, setProviders] = useState<AuthProvider[]>([]);
-  const [features, setFeatures] = useState<FeatureFlags>(DEFAULT_FEATURES);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -48,10 +42,9 @@ export function useEnabledProviders(): UseEnabledProvidersReturn {
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
-        const data = (await resp.json()) as { providers: AuthProvider[]; features?: FeatureFlags };
+        const data = (await resp.json()) as { providers: AuthProvider[] };
         if (!cancelled) {
           setProviders(data.providers);
-          setFeatures(data.features ?? DEFAULT_FEATURES);
           setError(null);
         }
       } catch {
@@ -70,5 +63,5 @@ export function useEnabledProviders(): UseEnabledProvidersReturn {
     return () => { cancelled = true; };
   }, [attempt]);
 
-  return { providers, features, isLoading, error, retry };
+  return { providers, isLoading, error, retry };
 }

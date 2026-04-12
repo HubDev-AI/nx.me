@@ -10,11 +10,11 @@ import NetInfo from "@react-native-community/netinfo";
 import * as Sentry from "@sentry/react-native";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
-import { useEnabledProviders } from "../hooks/useEnabledProviders";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import { FeaturesProvider, useFeatures } from "../lib/features-context";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
@@ -39,24 +39,53 @@ initSentry();
 SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, setAuthenticated } = useAuth();
+  const { features, isLoading: featuresLoading } = useFeatures();
   const router = useRouter();
   const segments = useSegments();
-  const { features } = useEnabledProviders();
+  const guestInitRef = useRef(false);
+
+  // In guest mode, provision the backend guest token once and mark the
+  // session as authenticated so downstream auth-gated UI works unchanged.
+  useEffect(() => {
+    if (featuresLoading) return;
+    if (features.auth_required) return;
+    if (guestInitRef.current) return;
+    guestInitRef.current = true;
+    getOrCreateGuestToken()
+      .then(() => setAuthenticated(true))
+      .catch((err) => {
+        if (__DEV__) console.warn("Guest session init failed:", err);
+        // Allow the session to proceed unauthenticated; guest-gated endpoints
+        // will fail gracefully. We still clear the init lock so a later
+        // connectivity recovery can retry.
+        guestInitRef.current = false;
+      });
+  }, [featuresLoading, features.auth_required, setAuthenticated]);
 
   useEffect(() => {
+    if (featuresLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
+    const currentRoute = segments.join("/");
 
-    // Dev shortcut: bypass auth entirely and jump straight to a feature screen.
-    // Allow navigating to related routes (e.g. upload → result) so flows work end-to-end.
+    const guestMode = !features.auth_required;
+
+    // Dev shortcut: jump straight to a specific route for iteration.
+    // Only active when the route is actually different from where we are.
     if (DEV_FEATURE_FOCUS) {
-      const currentRoute = segments.join("/");
       const focusBase = DEV_FEATURE_FOCUS.replace(/^\//, "");
       const allowedPrefixes = [focusBase, "result"];
       const onAllowedRoute = allowedPrefixes.some((p) => currentRoute.startsWith(p));
       if (!onAllowedRoute) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        router.replace(DEV_FEATURE_FOCUS as any);
+        router.replace(DEV_FEATURE_FOCUS as never);
+      }
+      return;
+    }
+
+    if (guestMode) {
+      // Guest mode: never land on the auth screens.
+      if (inAuthGroup) {
+        router.replace("/(tabs)");
       }
       return;
     }
@@ -65,7 +94,6 @@ function AuthGuard() {
       router.replace("/(auth)/login");
     } else if (isAuthenticated && inAuthGroup) {
       if (features.onboarding_enabled) {
-        // Check if onboarding was already completed
         getItem("nxme_onboarding_complete").then((value) => {
           if (!value) {
             router.replace("/onboarding");
@@ -77,7 +105,14 @@ function AuthGuard() {
         router.replace("/(tabs)");
       }
     }
-  }, [isAuthenticated, segments, features.onboarding_enabled, router]);
+  }, [
+    featuresLoading,
+    features.auth_required,
+    features.onboarding_enabled,
+    isAuthenticated,
+    segments,
+    router,
+  ]);
 
   return <Slot />;
 }
@@ -114,8 +149,9 @@ export default function RootLayout() {
         try { await deleteItem(SECURE_STORE_KEYS.JWT); } catch {}
       }
 
-      // 2. Non-critical init — never blocks auth
-      getOrCreateGuestToken().catch((err) => { if (__DEV__) console.warn("Guest token init failed:", err); });
+      // 2. Non-critical init — never blocks auth. Guest token provisioning
+      //    now happens inside AuthGuard once feature flags resolve, so we
+      //    avoid hitting POST /auth/guest when auth is required.
       registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });
 
       setInitialAuth(authed);
@@ -140,19 +176,16 @@ export default function RootLayout() {
   }, []);
 
   // Replay queued offline mutations whenever connectivity is restored.
-  // NetInfo fires immediately on subscribe with current state, so a queue
-  // persisted from a prior session drains on mount if we're online.
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(async (state) => {
       if (!state.isConnected) return;
-      if (replayingRef.current) return; // mutex: another drain is in-flight
+      if (replayingRef.current) return;
       replayingRef.current = true;
       try {
         const pending = mutationQueue.list();
         for (const queued of pending) {
           const fn = lookupReplayableMutation(queued.mutationKey);
           if (!fn) {
-            // No registered handler — drop after logging. Keeps queue clean.
             Sentry.captureMessage("Unhandled replayable mutation", {
               tags: { source: "replay" },
               extra: { mutationKey: queued.mutationKey },
@@ -167,14 +200,12 @@ export default function RootLayout() {
             const appError = parseApiError(err);
             const attempts = queued.replayAttempts + 1;
             if (!shouldRetry(appError) || attempts >= MAX_REPLAY_ATTEMPTS) {
-              // Terminal: dequeue, log, do not surface a toast (would spam on reconnect).
               Sentry.captureException(err, {
                 tags: { source: "replay", kind: appError.kind },
                 extra: { mutationKey: queued.mutationKey, attempts },
               });
               mutationQueue.dequeue(queued.id);
             } else {
-              // Retryable: bump attempt count and leave in queue for next reconnect.
               mutationQueue.dequeue(queued.id);
               mutationQueue.enqueue({ ...queued, replayAttempts: attempts });
             }
@@ -219,19 +250,21 @@ export default function RootLayout() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <AuthProvider initialAuth={initialAuth}>
-            {StripeProvider ? (
-              <StripeProvider
-                publishableKey={STRIPE_PUBLISHABLE_KEY}
-                urlScheme="https"
-                merchantIdentifier={APPLE_MERCHANT_ID}
-              >
-                {inner}
-              </StripeProvider>
-            ) : (
-              inner
-            )}
-          </AuthProvider>
+          <FeaturesProvider>
+            <AuthProvider initialAuth={initialAuth}>
+              {StripeProvider ? (
+                <StripeProvider
+                  publishableKey={STRIPE_PUBLISHABLE_KEY}
+                  urlScheme="https"
+                  merchantIdentifier={APPLE_MERCHANT_ID}
+                >
+                  {inner}
+                </StripeProvider>
+              ) : (
+                inner
+              )}
+            </AuthProvider>
+          </FeaturesProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </ErrorBoundary>

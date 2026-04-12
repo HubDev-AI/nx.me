@@ -12,6 +12,7 @@ export type AppError =
   | { kind: 'notFound'; message: string; cause?: unknown }
   | { kind: 'business'; message: string; errorCode: string; status: number; cause?: unknown }
   | { kind: 'faceAnalysis'; message: string; errorCode: string; zone?: FaceErrorZone; reason?: string; cause?: unknown }
+  | { kind: 'featureDisabled'; message: string; feature?: string; cause?: unknown }
   | { kind: 'unknown'; message: string; cause?: unknown };
 
 const FACE_ERROR_CODES = new Set([
@@ -83,8 +84,18 @@ export function parseApiError(err: unknown): AppError {
   switch (err.status) {
     case 401:
       return { kind: 'auth', message: "Your session expired. Let's sign you back in.", cause: err };
-    case 403:
+    case 403: {
+      if (code === 'FEATURE_DISABLED') {
+        const details = (body?.error?.details ?? {}) as { feature?: string };
+        return {
+          kind: 'featureDisabled',
+          message: serverMsg ?? 'This feature is not currently available.',
+          feature: details.feature,
+          cause: err,
+        };
+      }
       return { kind: 'permission', message: "You don't have access to do that.", cause: err };
+    }
     case 404:
       return { kind: 'notFound', message: "We couldn't find that.", cause: err };
     case 422: {

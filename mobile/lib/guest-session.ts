@@ -1,34 +1,41 @@
-import { Platform } from "react-native";
 import { getItem, setItem } from "./secure-storage";
-import { SECURE_STORE_KEYS } from "../constants/config";
+import {
+  API_BASE_URL,
+  AUTH_ENDPOINTS,
+  SECURE_STORE_KEYS,
+} from "../constants/config";
+
+interface GuestResponse {
+  user_id: string;
+  guest_token: string;
+}
 
 /**
- * Retrieve existing guest token or create a new one.
- * Web: uses crypto.randomUUID() or Math.random fallback.
- * Native: uses expo-crypto for secure random bytes.
+ * Retrieve the cached guest token or ask the backend for a fresh one.
+ *
+ * The backend `POST /v1/auth/guest` endpoint:
+ * - Provisions a `users.is_guest=true` row and a 64-hex session token.
+ * - Returns 403 `FEATURE_DISABLED` when `FEATURE_AUTH_REQUIRED=true`.
+ *
+ * Callers must only invoke this in guest mode (features.auth_required=false);
+ * the token is persisted to SecureStore so subsequent calls skip the network.
  */
 export async function getOrCreateGuestToken(): Promise<string> {
   const existing = await getItem(SECURE_STORE_KEYS.GUEST_TOKEN);
   if (existing) return existing;
 
-  let token: string;
-
-  if (Platform.OS === "web") {
-    // Web: use browser crypto API
-    if (typeof crypto !== "undefined" && crypto.randomUUID) {
-      token = crypto.randomUUID() + crypto.randomUUID();
-    } else {
-      token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    }
-  } else {
-    // Native: use expo-crypto
-    const Crypto = require("expo-crypto");
-    const randomBytes = await Crypto.getRandomBytesAsync(32);
-    token = Array.from(randomBytes as Uint8Array)
-      .map((b: number) => b.toString(16).padStart(2, "0"))
-      .join("");
+  const resp = await fetch(`${API_BASE_URL}${AUTH_ENDPOINTS.GUEST}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!resp.ok) {
+    throw new Error(`Guest token request failed: HTTP ${resp.status}`);
   }
-
-  await setItem(SECURE_STORE_KEYS.GUEST_TOKEN, token);
-  return token;
+  const data = (await resp.json()) as GuestResponse;
+  if (!data.guest_token) {
+    throw new Error("Guest token response missing guest_token field");
+  }
+  await setItem(SECURE_STORE_KEYS.GUEST_TOKEN, data.guest_token);
+  return data.guest_token;
 }

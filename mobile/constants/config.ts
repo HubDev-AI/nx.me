@@ -50,6 +50,12 @@ export const AUTH_ENDPOINTS = {
   SOCIAL_LOGIN: "/v1/auth/login",
   /** TikTok native SDK code exchange — backend accepts { auth_code, code_verifier? } */
   TIKTOK_LOGIN: "/v1/auth/tiktok-login",
+  /**
+   * Guest session — POST creates a guest user and returns { user_id, guest_token }.
+   * Only accepts requests when FEATURE_AUTH_REQUIRED is off server-side;
+   * otherwise returns 403 FEATURE_DISABLED.
+   */
+  GUEST: "/v1/auth/guest",
   /** Returns { providers: string[] } — list of enabled auth providers */
   PROVIDERS: "/v1/auth/providers",
   /**
