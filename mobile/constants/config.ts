@@ -238,6 +238,9 @@ export const PROFILE_CONFIG = {
 /** Touch target minimum (pt) — WCAG / platform guidelines */
 export const MIN_TOUCH_TARGET = 44;
 
+/** Sentry DSN — empty disables crash reporting (warns in dev) */
+export const SENTRY_DSN: string = process.env.EXPO_PUBLIC_SENTRY_DSN ?? "";
+
 /** Validation constants */
 export const AUTH_VALIDATION = {
   PASSWORD_MIN_LENGTH: 8,
