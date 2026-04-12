@@ -9,6 +9,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -63,8 +64,10 @@ export function FeaturesProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const value = useMemo(() => ({ features, isLoading }), [features, isLoading]);
+
   return (
-    <FeaturesContext.Provider value={{ features, isLoading }}>
+    <FeaturesContext.Provider value={value}>
       {children}
     </FeaturesContext.Provider>
   );

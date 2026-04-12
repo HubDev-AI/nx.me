@@ -11,6 +11,7 @@ flows; new per-session guests get random UUIDs and guest_session_tokens.
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
@@ -24,11 +25,17 @@ logger = logging.getLogger(__name__)
 # 64-hex-character tokens (256 bits of entropy). Matches the shape already
 # used by guest_session_token throughout the codebase.
 _GUEST_TOKEN_BYTES = 32
+_GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _generate_guest_token() -> str:
     """Generate a 64-hex-character guest session token."""
     return secrets.token_hex(_GUEST_TOKEN_BYTES)
+
+
+def is_valid_guest_token_format(token: str) -> bool:
+    """Cheap format check so callers skip DB lookup for garbage tokens."""
+    return bool(_GUEST_TOKEN_RE.match(token))
 
 
 def create_guest_user(supabase: Client) -> tuple[UUID, str]:
