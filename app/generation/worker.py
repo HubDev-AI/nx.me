@@ -3,6 +3,7 @@
 process_generation_job: full lifecycle (reserve → generate → identity → commit/release)
 watchdog_stuck_jobs: cron job to recover stuck processing jobs
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,21 +31,26 @@ from app.generation.models import (
 )
 from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
-from app.repositories.analysis_repo import AnalysisRepository
+from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
 from app.repositories.image_repo import ImageRepository
-from app.repositories.job_repo import JobRepository
+from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
 
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 # G-9: Expanded allowlist to cover fallback provider CDN domains
-_ALLOWED_IMAGE_HOSTS = frozenset([
-    "fal.ai", "fal.run", "fal.media",
-    "storage.googleapis.com",
-    "replicate.delivery", "pbxt.replicate.delivery",  # Replicate (potential fallback)
-    "cdn.stablediffusionapi.com",  # StableDiffusion API CDN
-])
+_ALLOWED_IMAGE_HOSTS = frozenset(
+    [
+        "fal.ai",
+        "fal.run",
+        "fal.media",
+        "storage.googleapis.com",
+        "replicate.delivery",
+        "pbxt.replicate.delivery",  # Replicate (potential fallback)
+        "cdn.stablediffusionapi.com",  # StableDiffusion API CDN
+    ]
+)
 
 # Atomic DECR + conditional cleanup (B-4: prevents leaked counter on crash)
 _CONCURRENT_CLEANUP_SCRIPT = """
@@ -63,7 +69,9 @@ def _validate_provider_url(url: str) -> None:
     """Reject URLs pointing to non-allowed hosts."""
     parsed = urlparse(url)
     hostname = parsed.hostname or ""
-    if not any(hostname == h or hostname.endswith(f".{h}") for h in _ALLOWED_IMAGE_HOSTS):
+    if not any(
+        hostname == h or hostname.endswith(f".{h}") for h in _ALLOWED_IMAGE_HOSTS
+    ):
         raise ValueError(f"Image URL host not in allowlist: {hostname}")
 
 
@@ -71,8 +79,10 @@ def _get_generator() -> GlowUpGeneratorPort:
     """Resolve generator adapter from config (lazy import)."""
     if settings.ADAPTER__IMAGE_GENERATION_ADAPTER == "falai":
         from app.generation.adapters.falai import FalAiAdapter
+
         return FalAiAdapter()
     from app.generation.adapters.mock import MockGeneratorAdapter
+
     return MockGeneratorAdapter()
 
 
@@ -81,10 +91,12 @@ def _get_nsfw_screener():
     adapter = settings.ADAPTER__NSFW_ADAPTER
     if adapter == "rekognition":
         from app.image_pipeline.nsfw_screener import RekognitionAdapter
+
         return RekognitionAdapter()
     if adapter != "mock":
         logger.warning("Unknown NSFW adapter '%s' — falling back to mock", adapter)
     from app.image_pipeline.nsfw_screener import MockNSFWAdapter
+
     return MockNSFWAdapter()
 
 
@@ -106,8 +118,16 @@ async def _fetch_and_claim_job(
         return None
 
     # Check if already cancelled/terminal before processing (P1-3)
-    if job_data["status"] in (JobStatus.CANCELLED, JobStatus.COMPLETED, JobStatus.FAILED):
-        logger.info("Job %s already in terminal state '%s' — skipping", job_id, job_data["status"])
+    if job_data["status"] in (
+        JobStatus.CANCELLED,
+        JobStatus.COMPLETED,
+        JobStatus.FAILED,
+    ):
+        logger.info(
+            "Job %s already in terminal state '%s' — skipping",
+            job_id,
+            job_data["status"],
+        )
         return None
 
     # Pre-flight checks — now using _fail_job which releases credits (P2-6)
@@ -133,19 +153,25 @@ async def _fetch_and_claim_job(
 async def _build_generation_context(
     job_repo: JobRepository,
     image_repo: ImageRepository,
-    analysis_repo: AnalysisRepository,
+    glowup_analysis_repo: GlowupAnalysisRepository,
     job_data: dict,
 ) -> tuple[GenerationOptions, str, dict, str]:
-    """Fetch analysis, build prompt, sign source URL, assemble GenerationOptions.
+    """Resolve analysis via polymorphic source_type/source_id, build prompt, sign URL.
 
     Returns (options, source_url, adaptive_params, prompt).
     """
-    # Fetch analysis for prompt building
+    # Resolve the analysis via polymorphic source_type/source_id.
+    # Only SOURCE_TYPE_GLOWUP is supported today; Makeup adds 'makeup_session'.
     analysis = None
-    if job_data.get("analysis_id"):
-        analysis_row = analysis_repo.get_for_worker(job_data["analysis_id"])
+    analysis_id_str = ""
+
+    if job_data.get("source_type") == SOURCE_TYPE_GLOWUP and job_data.get("source_id"):
+        source_id = job_data["source_id"]
+        analysis_id_str = source_id
+        analysis_row = glowup_analysis_repo.get_for_worker(source_id)
         if analysis_row:
             from app.face_analysis.models import AnalysisResult, FaceShape, Suggestion
+
             recs = analysis_row.get("recommendations") or []
             analysis = AnalysisResult(
                 face_shape=FaceShape(analysis_row["face_shape"]),
@@ -160,20 +186,31 @@ async def _build_generation_context(
                     for i, r in enumerate(recs)
                 ],
             )
+    else:
+        logger.warning(
+            "Unsupported or missing source_type '%s' for job %s — using fallback prompt",
+            job_data.get("source_type"),
+            job_data.get("id"),
+        )
 
     # Build prompt
     if analysis:
         prompt, negative, adaptive_params = build_prompt(
-            analysis, analysis_id=job_data.get("analysis_id", ""),
+            analysis,
+            analysis_id=analysis_id_str,
         )
     else:
         prompt = "Professional portrait with improved styling"
         negative = ""
-        adaptive_params = {"id_weight": 0.85, "guidance_scale": 4.0, "num_inference_steps": 30}
+        adaptive_params = {
+            "id_weight": 0.85,
+            "guidance_scale": 4.0,
+            "num_inference_steps": 30,
+        }
 
-    # Get source image signed URL
-    source_img = image_repo.get_by_id_single(job_data["original_image_id"])
-    source_url = image_repo.create_signed_url(source_img["bucket"], source_img["storage_key"], 300)
+    # Get source image: the upload's image_url is the storage key in raw-selfies.
+    # Resolve it via the glowup_analysis → upload → image_url chain.
+    source_url = _resolve_source_url(job_data, image_repo, glowup_analysis_repo)
 
     options = GenerationOptions(
         model=settings.FAL_MODEL_PRIMARY,
@@ -186,6 +223,46 @@ async def _build_generation_context(
     )
 
     return options, source_url, adaptive_params, prompt
+
+
+def _resolve_source_url(
+    job_data: dict,
+    image_repo: ImageRepository,
+    glowup_analysis_repo: GlowupAnalysisRepository,
+) -> str:
+    """Resolve the signed source image URL for the job.
+
+    For glowup_analysis jobs: glowup_analyses.upload_id → uploads.image_url
+    (which is the storage key in the raw-selfies bucket).
+    Returns a signed URL valid for 300 seconds.
+    """
+
+    source_type = job_data.get("source_type")
+    source_id = job_data.get("source_id")
+
+    if source_type == SOURCE_TYPE_GLOWUP and source_id:
+        # Fetch upload_id from glowup_analyses row.
+        analysis_row = glowup_analysis_repo.get_by_id(source_id)
+        if analysis_row and analysis_row.get("upload_id"):
+            upload_id = analysis_row["upload_id"]
+            # Import here to avoid circular dependency
+            from app.repositories.upload_repo import UploadRepository as _UR
+
+            # NOTE: We don't have supabase here directly, so we re-use image_repo._sb.
+            upload_repo = _UR(image_repo._sb)
+            upload = upload_repo.get_by_id(upload_id)
+            if upload and upload.get("image_url"):
+                storage_key = upload["image_url"]
+                return image_repo.create_signed_url("raw-selfies", storage_key, 300)
+
+    # Fallback: if job carries before_image_url directly (future or edge case).
+    if job_data.get("before_image_url"):
+        return job_data["before_image_url"]
+
+    raise ValueError(
+        f"Cannot resolve source image URL for job {job_data.get('id')}: "
+        f"source_type={source_type}, source_id={source_id}"
+    )
 
 
 async def _generate_and_validate(
@@ -225,7 +302,11 @@ async def _generate_and_validate(
     try:
         gen_result = await generator.generate(source_url, prompt, options)
     except Exception as primary_exc:
-        logger.warning("Primary model failed (%s): %s — trying fallbacks", options.model, primary_exc)
+        logger.warning(
+            "Primary model failed (%s): %s — trying fallbacks",
+            options.model,
+            primary_exc,
+        )
         gen_result = None
         for fallback_model in fallback_models:
             try:
@@ -238,7 +319,9 @@ async def _generate_and_validate(
                     guidance_scale=options.guidance_scale,
                     num_inference_steps=options.num_inference_steps,
                 )
-                gen_result = await generator.generate(source_url, prompt, fallback_options)
+                gen_result = await generator.generate(
+                    source_url, prompt, fallback_options
+                )
                 logger.info("Fallback model %s succeeded", fallback_model)
                 break
             except Exception as fb_exc:
@@ -262,7 +345,9 @@ async def _generate_and_validate(
 
     # G-11: Log generated image dimensions for debugging
     with PIL.Image.open(io.BytesIO(gen_image_bytes)) as _dim_img:
-        logger.info("Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height)
+        logger.info(
+            "Generated image dimensions: %dx%d", _dim_img.width, _dim_img.height
+        )
 
     # Write raw generated image to NXME storage before any checks
     # (architecture.md §160: write to storage first, never use provider
@@ -282,7 +367,11 @@ async def _generate_and_validate(
         try:
             image_repo.remove("generated-images", [storage_key])
         except Exception:
-            logger.error("Failed to remove NSFW image %s from storage — orphaned image", storage_key, exc_info=True)
+            logger.error(
+                "Failed to remove NSFW image %s from storage — orphaned image",
+                storage_key,
+                exc_info=True,
+            )
         await _fail_job(job_repo, job_id, job_data, FAILURE_NSFW, supabase=supabase)
         return None
 
@@ -304,10 +393,19 @@ async def _generate_and_validate(
                 .maybe_single()
                 .execute()
             )
-            if tier_row.data and tier_row.data.get("tiers", {}).get("identity_similarity_threshold") is not None:
-                identity_threshold = float(tier_row.data["tiers"]["identity_similarity_threshold"])
+            if (
+                tier_row.data
+                and tier_row.data.get("tiers", {}).get("identity_similarity_threshold")
+                is not None
+            ):
+                identity_threshold = float(
+                    tier_row.data["tiers"]["identity_similarity_threshold"]
+                )
         except Exception:
-            logger.debug("Could not fetch per-tier identity threshold for user %s — using global", user_id)
+            logger.debug(
+                "Could not fetch per-tier identity threshold for user %s — using global",
+                user_id,
+            )
 
     # Identity check — uses in-memory bytes, not provider URLs
     loop = asyncio.get_running_loop()
@@ -325,8 +423,11 @@ async def _generate_and_validate(
     # Identity failed → retry once
     # G-4: Retry parameters sourced from config
     if not identity_result.identity_preserved:
-        logger.info("Identity check failed (%.3f < %.2f) — retrying with tighter params",
-                    identity_result.similarity_score, identity_threshold)
+        logger.info(
+            "Identity check failed (%.3f < %.2f) — retrying with tighter params",
+            identity_result.similarity_score,
+            identity_threshold,
+        )
 
         retry_options = GenerationOptions(
             model=settings.FAL_MODEL_PRIMARY,
@@ -338,7 +439,8 @@ async def _generate_and_validate(
                 settings.IDENTITY_RETRY_ID_WEIGHT_CAP,
             ),
             guidance_scale=max(
-                adaptive_params["guidance_scale"] - settings.IDENTITY_RETRY_GUIDANCE_DELTA,
+                adaptive_params["guidance_scale"]
+                - settings.IDENTITY_RETRY_GUIDANCE_DELTA,
                 settings.IDENTITY_RETRY_GUIDANCE_FLOOR,
             ),
             num_inference_steps=adaptive_params["num_inference_steps"],
@@ -356,7 +458,9 @@ async def _generate_and_validate(
         resp.raise_for_status()
         retry_image_bytes = resp.content
 
-        image_repo.update_file("generated-images", storage_key, retry_image_bytes, "image/jpeg")
+        image_repo.update_file(
+            "generated-images", storage_key, retry_image_bytes, "image/jpeg"
+        )
 
         retry_identity = await loop.run_in_executor(
             None,
@@ -377,11 +481,17 @@ async def _generate_and_validate(
             except Exception:
                 logger.error(
                     "Failed to remove image %s after identity failure — orphaned",
-                    storage_key, exc_info=True,
+                    storage_key,
+                    exc_info=True,
                 )
-            await _fail_job(job_repo, job_id, job_data, FAILURE_IDENTITY,
-                            identity_score=retry_identity.similarity_score,
-                            supabase=supabase)
+            await _fail_job(
+                job_repo,
+                job_id,
+                job_data,
+                FAILURE_IDENTITY,
+                identity_score=retry_identity.similarity_score,
+                supabase=supabase,
+            )
             return None
 
     return gen_result, gen_image_bytes, source_image_bytes, identity_result
@@ -410,8 +520,10 @@ async def _finalize_job(
     4. Mark job "completed"
     If step 3 fails, the job stays in "finalizing" and the stuck-job watchdog can retry.
     """
-    with PIL.Image.open(io.BytesIO(gen_image_bytes)) as gen_img, \
-         PIL.Image.open(io.BytesIO(source_image_bytes)) as source_img_pil:
+    with (
+        PIL.Image.open(io.BytesIO(gen_image_bytes)) as gen_img,
+        PIL.Image.open(io.BytesIO(source_image_bytes)) as source_img_pil,
+    ):
         gen_img = normalize_output(source_img_pil, gen_img)
 
         output_buffer = io.BytesIO()
@@ -423,37 +535,44 @@ async def _finalize_job(
 
     # Step 1: Mark job as "finalizing" — idempotent marker so watchdog can detect
     # incomplete finalization and retry (H-2)
-    job_repo.update(job_id, {
-        "status": JobStatus.FINALIZING,
-        "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-    })
+    job_repo.update(
+        job_id,
+        {
+            "status": JobStatus.FINALIZING,
+            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+        },
+    )
 
     try:
-        # Step 2: Create images row for generated image
-        gen_image_row = image_repo.create({
-            "user_id": user_id,
-            "storage_key": storage_key,
-            "bucket": "generated-images",
-            "image_type": "generated_after",
-            "status": "cleared",
-        })
-
-        gen_image_id = gen_image_row.get("id") if gen_image_row else None
+        # Step 2: Create images row for generated image (for signed URL generation later).
+        image_repo.create(
+            {
+                "user_id": user_id,
+                "storage_key": storage_key,
+                "bucket": "generated-images",
+                "image_type": "generated_after",
+                "status": "cleared",
+            }
+        )
 
         # Step 3: Commit credit (money operation — last before final status)
         if job_data.get("credit_reservation_id"):
             ledger.commit(UUID(job_data["credit_reservation_id"]))
 
-        # Step 4: Update job → completed
-        job_repo.update(job_id, {
-            "status": JobStatus.COMPLETED,
-            "generated_image_id": gen_image_id,
-            "identity_similarity_score": identity_result.similarity_score,
-            "identity_preserved": True,
-            "estimated_cost_usd": gen_result.estimated_cost_usd,
-            "model_used": options.model,
-            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-        })
+        # Step 4: Update job → completed.
+        # The new jobs table stores after_image_url (storage key) directly
+        # instead of a generated_image_id FK. The route layer signs it on demand.
+        # Also persist before_image_url (source storage key) so GET /jobs/{id}
+        # can return both without a second lookup.
+        job_repo.update(
+            job_id,
+            {
+                "status": JobStatus.COMPLETED,
+                "after_image_url": storage_key,
+                "identity_preserved": True,
+                "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+            },
+        )
     except Exception:
         logger.exception(
             "Finalization failed for job %s — job remains in 'finalizing' for watchdog retry",
@@ -489,8 +608,9 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     nsfw_screener = ctx["nsfw_screener"]
     job_repo = JobRepository(supabase)
     image_repo = ImageRepository(supabase)
-    analysis_repo = AnalysisRepository(supabase)
+    glowup_analysis_repo = GlowupAnalysisRepository(supabase)
     from app.entitlement.ledger import CreditLedger
+
     ledger = CreditLedger(supabase)
     user_id_for_concurrent: str | None = None
 
@@ -508,37 +628,65 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         concurrent_key = f"concurrent:{user_id}"
 
         options, source_url, adaptive_params, prompt = await _build_generation_context(
-            job_repo, image_repo, analysis_repo, job_data
+            job_repo, image_repo, glowup_analysis_repo, job_data
         )
 
         storage_key = f"{user_id}/{job_id}.jpg"
 
-        async with httpx.AsyncClient(timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS) as http_client:
+        async with httpx.AsyncClient(
+            timeout=settings.GENERATION_HTTPX_TIMEOUT_SECONDS
+        ) as http_client:
             validate_result = await _generate_and_validate(
-                job_repo, image_repo, cost_tracker, generator,
-                job_id, job_data, options, source_url, adaptive_params,
-                prompt, options.negative_prompt, storage_key, user_id, supabase,
-                redis_client=redis, concurrent_key=concurrent_key,
-                nsfw_screener=nsfw_screener, http_client=http_client,
+                job_repo,
+                image_repo,
+                cost_tracker,
+                generator,
+                job_id,
+                job_data,
+                options,
+                source_url,
+                adaptive_params,
+                prompt,
+                options.negative_prompt,
+                storage_key,
+                user_id,
+                supabase,
+                redis_client=redis,
+                concurrent_key=concurrent_key,
+                nsfw_screener=nsfw_screener,
+                http_client=http_client,
             )
             if validate_result is None:
                 return
 
-            gen_result, gen_image_bytes, source_image_bytes, identity_result = validate_result
+            gen_result, gen_image_bytes, source_image_bytes, identity_result = (
+                validate_result
+            )
 
         await _finalize_job(
-            job_repo, image_repo, ledger,
-            job_id, job_data, user_id, storage_key,
-            gen_result, gen_image_bytes, source_image_bytes,
-            identity_result, options,
+            job_repo,
+            image_repo,
+            ledger,
+            job_id,
+            job_data,
+            user_id,
+            storage_key,
+            gen_result,
+            gen_image_bytes,
+            source_image_bytes,
+            identity_result,
+            options,
         )
 
         # Record success for circuit breaker
         await cost_tracker.record_success()
 
-        logger.info("Job %s completed: identity=%.3f, cost=$%.4f",
-                    job_id, identity_result.similarity_score,
-                    gen_result.estimated_cost_usd or 0)
+        logger.info(
+            "Job %s completed: identity=%.3f, cost=$%.4f",
+            job_id,
+            identity_result.similarity_score,
+            gen_result.estimated_cost_usd or 0,
+        )
 
     except Exception as exc:
         logger.exception("Job %s failed: %s", job_id, exc)
@@ -587,7 +735,11 @@ async def _fail_job(
     reservation_id_str = job_data.get("credit_reservation_id")
 
     credit_settled = False
-    if reservation_id_str and supabase is not None and current_status != JobStatus.COMPLETED:
+    if (
+        reservation_id_str
+        and supabase is not None
+        and current_status != JobStatus.COMPLETED
+    ):
         _ledger = CreditLedger(supabase)
         reservation_id = UUID(reservation_id_str)
         try:
@@ -603,7 +755,9 @@ async def _fail_job(
         except Exception as exc:
             logger.error(
                 "Failed to settle credit for job %s (status=%s): %s",
-                job_id, current_status, exc,
+                job_id,
+                current_status,
+                exc,
             )
 
     # Mark usage_event as released so the client refund endpoint won't
@@ -614,7 +768,8 @@ async def _fail_job(
         except Exception as exc:
             logger.error(
                 "Failed to update usage_event for job %s after credit settle: %s",
-                job_id, exc,
+                job_id,
+                exc,
             )
 
     update: dict = {
@@ -623,7 +778,8 @@ async def _fail_job(
         "updated_at": datetime.now(tz=timezone.utc).isoformat(),
     }
     if identity_score is not None:
-        update["identity_similarity_score"] = identity_score
+        # identity_similarity_score is not a column on the new jobs table;
+        # identity_preserved captures the boolean outcome.
         update["identity_preserved"] = False
 
     job_repo.update(job_id, update)

@@ -3,6 +3,7 @@
 Initialises shared resources (Supabase client, Redis) during lifespan
 and mounts all API routers.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,8 +17,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 
 from app.api import (
-    admin, analyses, auth, blocks, entitlement, features, generation, health,
-    posts, public, refund, social, users, webhooks,
+    admin,
+    auth,
+    blocks,
+    entitlement,
+    features,
+    glowup,
+    health,
+    jobs,
+    posts,
+    public,
+    refund,
+    social,
+    uploads,
+    user_consent,
+    users,
+    webhooks,
 )
 from app.api.errors import (
     ApiError,
@@ -44,7 +59,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.APP_ENV != "development":
         _mock_adapters = []
         for attr in dir(settings):
-            if attr.startswith("ADAPTER__") and getattr(settings, attr) in ("mock", "local"):
+            if attr.startswith("ADAPTER__") and getattr(settings, attr) in (
+                "mock",
+                "local",
+            ):
                 _mock_adapters.append(f"{attr}={getattr(settings, attr)}")
         if _mock_adapters:
             msg = f"FATAL: Mock/local adapters in {settings.APP_ENV}: {', '.join(_mock_adapters)}"
@@ -100,21 +118,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Pre-fetch ES256 JWKS key for JWT validation (Supabase CLI v2+ uses ES256)
     from app.api.middleware.auth import prefetch_jwks_key
+
     await prefetch_jwks_key()
 
     # Pre-load MediaPipe FaceMesh model (AC-2: health check gates on this)
     if settings.ADAPTER__FACE_ANALYSIS_ADAPTER == "mediapipe":
         from app.face_analysis.landmark_extractor import preload_model
+
         preload_model()
         logger.info("MediaPipe FaceMesh model pre-loaded")
     else:
-        logger.info("Face analysis adapter is not mediapipe — skipping MediaPipe model load")
+        logger.info(
+            "Face analysis adapter is not mediapipe — skipping MediaPipe model load"
+        )
 
     # G-10: Pre-load ArcFace model in API lifespan (not just worker) to avoid
     # first-request latency when identity_checker is called from the API process
     if settings.ADAPTER__IMAGE_GENERATION_ADAPTER != "mock":
         try:
             from app.generation.identity_checker import preload_arcface
+
             preload_arcface()
             logger.info("ArcFace identity model pre-loaded")
         except ImportError:
@@ -123,28 +146,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("ArcFace preload failed (non-fatal): %s", exc)
 
     # ARQ pool for enqueuing generation jobs
-    app.state.arq_pool = await create_pool(
-        RedisSettings.from_dsn(settings.REDIS_URL)
-    )
+    app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
 
     # Dev guest user — upsert so the fixed guest ID is always present for
     # legacy dev flows. Per-session guests (created via POST /auth/guest) get
     # their own user rows and don't collide with this one.
     if settings.APP_ENV == "development" and not settings.FEATURE_AUTH_REQUIRED:
         from app.db.async_helpers import run_sync
+
         guest_id = settings.DEV_GUEST_USER_ID
         await run_sync(
-            lambda: app.state.supabase.table("users").upsert(
-                {
-                    "id": guest_id,
-                    "username": "dev_guest",
-                    "display_name": "Dev Guest",
-                    "email": "dev-guest@nxme.internal",
-                    "is_guest": True,
-                    "tier_id": "a0000000-0000-0000-0000-000000000001",  # free tier
-                },
-                on_conflict="id",
-            ).execute()
+            lambda: (
+                app.state.supabase.table("users")
+                .upsert(
+                    {
+                        "id": guest_id,
+                        "username": "dev_guest",
+                        "display_name": "Dev Guest",
+                        "email": "dev-guest@nxme.internal",
+                        "is_guest": True,
+                        "tier_id": "a0000000-0000-0000-0000-000000000001",  # free tier
+                    },
+                    on_conflict="id",
+                )
+                .execute()
+            )
         )
         logger.info("Dev guest user seeded (id=%s)", guest_id)
 
@@ -198,10 +224,15 @@ def create_app() -> FastAPI:
     # M-25: CORS for local dev — allows Expo web preview to call the API.
     # Production should restrict origins to the actual domain.
     from fastapi.middleware.cors import CORSMiddleware
+
     if settings.APP_ENV == "development":
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["http://localhost:8087", "http://localhost:19006", "http://localhost:8081"],
+            allow_origins=[
+                "http://localhost:8087",
+                "http://localhost:19006",
+                "http://localhost:8081",
+            ],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -228,12 +259,19 @@ def create_app() -> FastAPI:
 
     # All API routes under /v1 prefix — single place to manage API version
     from fastapi import APIRouter
+
     v1 = APIRouter(prefix="/v1")
     v1.include_router(features.router)  # public — no auth required
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
-    v1.include_router(analyses.router)
-    v1.include_router(generation.router)
+    # Tier-3 API: uploads + glowup feature namespace + jobs
+    v1.include_router(uploads.router)
+    v1.include_router(glowup.router)
+    v1.include_router(jobs.router)
+    v1.include_router(user_consent.router)
+    # Legacy refund endpoint (/v1/analyses/{job_id}/refund) — still mounted
+    # until mobile client is fully migrated (Phase 4). New code uses
+    # POST /jobs/{job_id}/refund in app/api/jobs.py instead.
     v1.include_router(refund.router)
     v1.include_router(social.router)
     v1.include_router(posts.router)
@@ -243,6 +281,7 @@ def create_app() -> FastAPI:
     # Advisor routes always mounted; router-level require_app_feature("advisor_enabled")
     # returns 403 FEATURE_DISABLED when the flag is off.
     from app.api import advisor
+
     v1.include_router(advisor.router)
 
     app.include_router(v1)

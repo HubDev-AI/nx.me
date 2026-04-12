@@ -14,6 +14,7 @@ Verifies that _fail_job:
 Pattern: unit tests calling _fail_job directly with MagicMock dependencies,
 consistent with test_refund.py and test_face_errors.py.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -31,6 +32,7 @@ try:
         NON_USER_FAILURE_REASONS,
         JobStatus,
     )
+
     _WORKER_AVAILABLE = True
 except (ImportError, AttributeError):
     _WORKER_AVAILABLE = False
@@ -52,14 +54,16 @@ def _make_job_repo() -> MagicMock:
     return repo
 
 
-def _make_supabase(release_raises: Exception | None = None,
-                   refund_raises: Exception | None = None) -> MagicMock:
+def _make_supabase(
+    release_raises: Exception | None = None, refund_raises: Exception | None = None
+) -> MagicMock:
     """Return a mock Supabase client with a patched CreditLedger."""
     return MagicMock()  # CreditLedger is patched at import level in tests
 
 
-def _make_ledger(release_raises: Exception | None = None,
-                 refund_raises: Exception | None = None) -> MagicMock:
+def _make_ledger(
+    release_raises: Exception | None = None, refund_raises: Exception | None = None
+) -> MagicMock:
     ledger = MagicMock()
     if release_raises is not None:
         ledger.release.side_effect = release_raises
@@ -145,9 +149,7 @@ class TestWorkerAutoReleaseOnProviderFailure:
         job_data = _make_job_data(status=JobStatus.PROCESSING)
         ledger = _make_ledger()
 
-        job_repo, ledger = await _call_fail_job(
-            job_data, FAILURE_PROVIDER, ledger
-        )
+        job_repo, ledger = await _call_fail_job(job_data, FAILURE_PROVIDER, ledger)
 
         ledger.release.assert_called_once()
         ledger.refund.assert_not_called()
@@ -250,7 +252,9 @@ class TestWorkerNoAutoRefundOnUserCausedFailures:
     @pytest.mark.asyncio
     async def test_identity_failure_still_releases_credit(self):
         """IDENTITY_PRESERVATION_FAILED: credit is released."""
-        job_data = _make_job_data(status=JobStatus.PROCESSING, reservation_id=str(uuid4()))
+        job_data = _make_job_data(
+            status=JobStatus.PROCESSING, reservation_id=str(uuid4())
+        )
         ledger = _make_ledger()
 
         _, ledger = await _call_fail_job(
@@ -261,7 +265,11 @@ class TestWorkerNoAutoRefundOnUserCausedFailures:
 
     @pytest.mark.asyncio
     async def test_identity_failure_updates_identity_fields(self):
-        """Identity score and identity_preserved are written to the job row."""
+        """identity_preserved=False is written to the job row on identity failure.
+
+        The old jobs schema had an identity_similarity_score column; the tier-3
+        schema (0034) removes it — only the boolean identity_preserved is stored.
+        """
         job_data = _make_job_data(status=JobStatus.PROCESSING)
         ledger = _make_ledger()
 
@@ -270,8 +278,8 @@ class TestWorkerNoAutoRefundOnUserCausedFailures:
         )
 
         update_data = job_repo.update.call_args[0][1]
-        assert update_data["identity_similarity_score"] == pytest.approx(0.35)
         assert update_data["identity_preserved"] is False
+        assert "identity_similarity_score" not in update_data
 
 
 # ---------------------------------------------------------------------------

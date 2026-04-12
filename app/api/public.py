@@ -10,6 +10,7 @@ GET /api/public/cards/{username}/{share_hash}
   HTTP 404 — user exists but has no published posts / hash not found
   HTTP 410 — account deleted or post hard-deleted
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,10 +18,15 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import get_analysis_repo, get_job_repo, get_post_repo, get_user_repo
+from app.api.deps import (
+    get_glowup_analysis_repo,
+    get_job_repo,
+    get_post_repo,
+    get_user_repo,
+)
 from app.db.async_helpers import run_sync
-from app.repositories.analysis_repo import AnalysisRepository
-from app.repositories.job_repo import JobRepository
+from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
+from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
 from app.repositories.post_repo import PostRepository
 from app.repositories.user_repo import UserRepository
 
@@ -53,6 +59,35 @@ class CardResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _fetch_recommendations(
+    glow_up_job_id: str,
+    job_repo: JobRepository,
+    glowup_analysis_repo: GlowupAnalysisRepository,
+) -> list[dict]:
+    """Resolve recommendations for a post via the tier-3 schema.
+
+    Flow: jobs.id → jobs.source_id (when source_type='glowup_analysis') →
+    glowup_analyses.recommendations JSONB.
+    """
+    job_data = await run_sync(job_repo.get_by_id, glow_up_job_id)
+    if not job_data:
+        return []
+    if job_data.get("source_type") != SOURCE_TYPE_GLOWUP:
+        return []
+    source_id: str | None = job_data.get("source_id")
+    if not source_id:
+        return []
+    analysis = await run_sync(glowup_analysis_repo.get_by_id, source_id)
+    if not analysis:
+        return []
+    return analysis.get("recommendations") or []
+
+
+# ---------------------------------------------------------------------------
 # GET /public/cards/{username}
 # ---------------------------------------------------------------------------
 
@@ -63,7 +98,7 @@ async def get_shareable_card(
     user_repo: UserRepository = Depends(get_user_repo),
     post_repo: PostRepository = Depends(get_post_repo),
     job_repo: JobRepository = Depends(get_job_repo),
-    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
+    glowup_analysis_repo: GlowupAnalysisRepository = Depends(get_glowup_analysis_repo),
 ) -> CardResponse:
     """Return the shareable card for a user's latest published post.
 
@@ -103,17 +138,13 @@ async def get_shareable_card(
             detail="No published posts found for this user",
         )
 
-    # Step 3 — find the analysis for the post's glow_up_job
+    # Step 3 — resolve recommendations via tier-3 schema
     recommendations: list[dict] = []
-
     glow_up_job_id: str | None = post.get("glow_up_job_id")
     if glow_up_job_id:
-        job_data = await run_sync(job_repo.get_for_analysis, glow_up_job_id)
-
-        if job_data:
-            analysis_id: str | None = job_data.get("analysis_id")
-            if analysis_id:
-                recommendations = await run_sync(analysis_repo.get_recommendations, analysis_id)
+        recommendations = await _fetch_recommendations(
+            glow_up_job_id, job_repo, glowup_analysis_repo
+        )
 
     logger.info(
         "Shareable card served for user %s (post %s, %d recommendations)",
@@ -133,7 +164,7 @@ async def get_shareable_card_by_hash(
     user_repo: UserRepository = Depends(get_user_repo),
     post_repo: PostRepository = Depends(get_post_repo),
     job_repo: JobRepository = Depends(get_job_repo),
-    analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
+    glowup_analysis_repo: GlowupAnalysisRepository = Depends(get_glowup_analysis_repo),
 ) -> CardResponse:
     """Return a specific shareable card identified by its share hash.
 
@@ -166,11 +197,9 @@ async def get_shareable_card_by_hash(
     recommendations: list[dict] = []
     glow_up_job_id: str | None = post.get("glow_up_job_id")
     if glow_up_job_id:
-        job_data = await run_sync(job_repo.get_for_analysis, glow_up_job_id)
-        if job_data:
-            analysis_id: str | None = job_data.get("analysis_id")
-            if analysis_id:
-                recommendations = await run_sync(analysis_repo.get_recommendations, analysis_id)
+        recommendations = await _fetch_recommendations(
+            glow_up_job_id, job_repo, glowup_analysis_repo
+        )
 
     logger.info(
         "Shareable card served for %s/%s (post %s)",
@@ -183,7 +212,9 @@ async def get_shareable_card_by_hash(
 
 
 def _build_card_response(
-    user: dict, post: dict, recommendations: list[dict],
+    user: dict,
+    post: dict,
+    recommendations: list[dict],
 ) -> CardResponse:
     return CardResponse(
         username=user["username"],
