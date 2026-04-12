@@ -1,16 +1,19 @@
-"""Landmark extraction — MediaPipe FaceMesh wrapper and mock adapter.
+"""Landmark extraction — MediaPipe FaceLandmarker wrapper and mock adapter.
 
 AC-1: Extract 468 3D facial landmarks from a single face.
 AC-2: preload_model() called during FastAPI lifespan startup.
 AC-4: Landmark vectors are ephemeral — never written to DB (ADR-1).
 
-MediaPipe FaceMesh is NOT thread-safe with shared instances.
-Each request creates a new FaceMesh session reusing pre-loaded weights.
+MediaPipe Tasks API (0.10.x+): FaceLandmarker replaces the removed mp.solutions
+legacy API. Each request creates a new FaceLandmarker instance; model weights
+are cached on disk after the first call to preload_model().
 """
 from __future__ import annotations
 
 import io
 import logging
+import pathlib
+import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -19,8 +22,7 @@ import PIL.Image
 from fastapi import HTTPException, status
 
 from app.face_analysis.models import (
-    FACE_NOT_DETECTED,
-    MULTIPLE_FACES,
+    FACE_ERROR_NOT_DETECTED,
     AnalysisResult,
     FaceShape,
     Suggestion,
@@ -30,6 +32,14 @@ logger = logging.getLogger(__name__)
 
 # Module-level flag — set to True after preload_model() succeeds.
 _model_preloaded: bool = False
+
+# Model file — cached locally to avoid re-downloading on every restart.
+_MODEL_CACHE_DIR = pathlib.Path.home() / ".cache" / "mediapipe"
+_MODEL_PATH = _MODEL_CACHE_DIR / "face_landmarker.task"
+_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/"
+    "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -52,33 +62,62 @@ class FaceAnalysisPort(Protocol):
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _ensure_model() -> str:
+    """Download FaceLandmarker model to disk if not already cached. Returns path."""
+    if not _MODEL_PATH.exists():
+        _MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        logger.info("Downloading MediaPipe FaceLandmarker model to %s ...", _MODEL_PATH)
+        urllib.request.urlretrieve(_MODEL_URL, _MODEL_PATH)
+        logger.info(
+            "MediaPipe FaceLandmarker model downloaded (%d bytes)",
+            _MODEL_PATH.stat().st_size,
+        )
+    return str(_MODEL_PATH)
+
+
+def _make_landmarker_options(model_path: str):  # type: ignore[return]
+    """Build FaceLandmarkerOptions for IMAGE mode."""
+    import mediapipe as mp
+
+    return mp.tasks.vision.FaceLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=model_path),
+        running_mode=mp.tasks.vision.RunningMode.IMAGE,
+        num_faces=2,
+        min_face_detection_confidence=0.5,
+        min_face_presence_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Preload (AC-2)
 # ---------------------------------------------------------------------------
 
 
 def preload_model() -> None:
-    """Pre-load MediaPipe FaceMesh model into memory.
+    """Pre-load MediaPipe FaceLandmarker model into memory.
 
-    Called once during FastAPI lifespan startup. Blocks until model weights
-    are loaded. After this, creating new FaceMesh instances per request is
-    lightweight (reuses cached model weights).
+    Called once during FastAPI lifespan startup. Downloads the model file on
+    first run, then creates and immediately closes a FaceLandmarker instance
+    to trigger MediaPipe's internal weight caching. Subsequent instances reuse
+    those cached weights.
     """
     global _model_preloaded
+
+    model_path = _ensure_model()
+
     import mediapipe as mp
 
-    # Creating and immediately closing a FaceMesh instance triggers model download
-    # and caching. Subsequent instances reuse the cached weights.
-    with mp.solutions.face_mesh.FaceMesh(
-        static_image_mode=True,
-        max_num_faces=2,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    ) as _:
+    options = _make_landmarker_options(model_path)
+    with mp.tasks.vision.FaceLandmarker.create_from_options(options):
         pass
 
     _model_preloaded = True
-    logger.info("MediaPipe FaceMesh model pre-loaded and cached")
+    logger.info("MediaPipe FaceLandmarker model pre-loaded and cached")
 
 
 def is_model_preloaded() -> bool:
@@ -92,10 +131,10 @@ def is_model_preloaded() -> bool:
 
 
 class LandmarkExtractor:
-    """Extract 468 3D facial landmarks using MediaPipe FaceMesh.
+    """Extract 468 3D facial landmarks using MediaPipe FaceLandmarker.
 
-    Creates a new FaceMesh instance per call (thread-safe).
-    Model weights are pre-loaded via preload_model().
+    Creates a new FaceLandmarker instance per call (thread-safe). Model
+    weights are pre-loaded via preload_model().
     """
 
     def extract(self, image_bytes: bytes) -> Landmarks:
@@ -122,50 +161,58 @@ class LandmarkExtractor:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
                     "error": {
-                        "code": FACE_NOT_DETECTED,
+                        "code": FACE_ERROR_NOT_DETECTED,
                         "message": "Could not read the image. The file may be corrupted.",
-                        "retry_eligible": True,
+                        "details": {
+                            "zone": "whole",
+                            "reason": "Image file is corrupted or unreadable",
+                        },
                     }
                 },
             ) from exc
 
-        # Process with a fresh FaceMesh instance (reuses pre-loaded weights)
-        with mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=2,  # detect up to 2 to enforce single-face check
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        ) as face_mesh:
-            results = face_mesh.process(rgb_image)
+        model_path = _ensure_model()
+        options = _make_landmarker_options(model_path)
 
-        if not results.multi_face_landmarks:
+        with mp.tasks.vision.FaceLandmarker.create_from_options(options) as landmarker:
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_image)
+            result = landmarker.detect(mp_image)
+
+        if not result.face_landmarks:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
                     "error": {
-                        "code": FACE_NOT_DETECTED,
+                        "code": FACE_ERROR_NOT_DETECTED,
                         "message": "No face was detected. Please upload a clear, front-facing selfie.",
-                        "retry_eligible": True,
+                        "details": {
+                            "zone": "whole",
+                            "reason": "No face found in image",
+                        },
                     }
                 },
             )
 
-        if len(results.multi_face_landmarks) > 1:
+        if len(result.face_landmarks) > 1:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
                     "error": {
-                        "code": MULTIPLE_FACES,
+                        "code": FACE_ERROR_NOT_DETECTED,
                         "message": "Multiple faces detected. Please upload a selfie with only one face.",
-                        "retry_eligible": True,
+                        "details": {
+                            "zone": "whole",
+                            "reason": "Multiple faces detected in frame",
+                        },
                     }
                 },
             )
 
-        face_landmarks = results.multi_face_landmarks[0]
+        face_landmarks = result.face_landmarks[0]
+        # Tasks API returns 478 landmarks (468 face + 10 iris refinement).
+        # Slice to first 468 to match downstream classifier/scorer expectations.
         points = np.array(
-            [[lm.x, lm.y, lm.z] for lm in face_landmarks.landmark],
+            [[lm.x, lm.y, lm.z] for lm in face_landmarks[:468]],
             dtype=np.float64,
         )
 
