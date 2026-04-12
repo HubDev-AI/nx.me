@@ -76,3 +76,5 @@ CODE_REVIEW_FINDINGS.md
 
 mobile/screenshots/
 logs/
+# Added by code-review-graph
+.code-review-graph/
