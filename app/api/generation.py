@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.api.deps import (
     get_analysis_repo,
+    get_analysis_user,
     get_credit_ledger,
     get_current_user,
     get_entitlement_service,
@@ -27,7 +28,7 @@ from app.api.deps import (
 )
 from app.api.middleware.auth import UserClaims
 from app.config import settings
-from app.constants.tiers import SLUG_TO_TIER_NAME
+from app.constants.tiers import SLUG_TO_DB_TIER, SLUG_TO_TIER_NAME
 from app.db.async_helpers import run_sync
 from app.entitlement.ledger import CreditLedger
 from app.entitlement.models import ENTITLEMENT_ERROR_MESSAGES, PAYMENT_REQUIRED_CODES, TIER_CONCURRENT_LIMIT
@@ -56,8 +57,11 @@ _SLUG_TO_LANE: dict[str, str] = {
     "premium": LANE_PREMIUM,
 }
 
-# Maps tier slug → public tier name (for user_tier_at_enqueue column)
+# Maps tier slug → public display name (for API responses)
 _SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
+
+# Maps tier slug → DB enum value (for user_tier_at_enqueue column)
+_SLUG_TO_DB_TIER = SLUG_TO_DB_TIER
 
 # M-3: Average seconds per generation job moved to app/config/__init__.py
 
@@ -299,7 +303,6 @@ async def _enqueue_job(
         await arq_pool.enqueue_job(
             "process_generation_job",
             str(job_id),
-            _queue_name=queue_lane,
         )
     except Exception:
         if reservation_id:
@@ -333,7 +336,7 @@ async def create_generation(
     body: GenerateRequest,
     request: Request,
     idempotency_key_header: str | None = Header(None, alias="idempotency-key"),
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_analysis_user),
     redis_client: aioredis.Redis = Depends(get_redis),
     ent_svc: EntitlementService = Depends(get_entitlement_service),
     job_repo: JobRepository = Depends(get_job_repo),
@@ -372,7 +375,7 @@ async def create_generation(
         return idempotency_response
 
     queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
-    tier_name = _SLUG_TO_TIER_NAME.get(tier.slug, tier.slug.upper())
+    tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
     raw_position = await redis_client.llen(f"arq:queue:{queue_lane}")
     if raw_position <= 5:
         queue_position = raw_position
@@ -405,7 +408,7 @@ async def create_generation(
 @router.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_analysis_user),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
@@ -530,7 +533,7 @@ async def get_job(
 )
 async def cancel_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_analysis_user),
     job_repo: JobRepository = Depends(get_job_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> CancelResponse:

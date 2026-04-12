@@ -238,6 +238,14 @@ export const PROFILE_CONFIG = {
 /** Touch target minimum (pt) — WCAG / platform guidelines */
 export const MIN_TOUCH_TARGET = 44;
 
+/**
+ * Dev-only: when set, authenticated users land on this route instead of (tabs).
+ * Set DEV_FEATURE_FOCUS=upload in mobile/.env to jump straight to the glow-up flow.
+ * Always null in production (guarded by __DEV__ at call site).
+ */
+export const DEV_FEATURE_FOCUS: string | null =
+  __DEV__ ? ((extra.devFeatureFocus as string) || null) : null;
+
 /** Sentry DSN — empty disables crash reporting (warns in dev) */
 export const SENTRY_DSN: string = process.env.EXPO_PUBLIC_SENTRY_DSN ?? "";
 

@@ -147,38 +147,39 @@ class StylingModule:
         symmetry_score: float,
         keyword_count: int,
     ) -> dict:
-        """Adjust generation parameters based on input characteristics."""
-        id_weight = 0.86
+        """Adjust generation parameters for FLUX.2 Flex Edit.
+
+        BFL recommendations for portrait identity-preserving edits:
+        - guidance_scale 3.5-4.5: sweet spot for portraits
+        - num_inference_steps 30-40: good facial detail fidelity
+        - Higher guidance = more prompt adherence, less identity drift
+        """
         guidance = 4.0
+        steps = 35
 
-        # Keyword scaling
+        # Keyword count — more changes requested = slightly higher guidance
         if keyword_count >= 5:
-            id_weight = 0.82
-            guidance = 4.5
+            guidance = 4.2
+            steps = 40
         elif keyword_count in (3, 4):
-            id_weight = 0.85
             guidance = 4.0
+            steps = 35
         elif keyword_count <= 2:
-            id_weight = 0.87
             guidance = 3.8
+            steps = 30
 
-        # Symmetry adjustment
+        # Lower symmetry faces benefit from higher guidance to lock in features
         if symmetry_score < 0.75:
-            id_weight = min(id_weight + 0.04, 0.93)
-            guidance = max(guidance - 0.2, 3.5)
+            guidance = min(guidance + 0.2, 4.5)
 
-        # Face size adjustment
-        if face_ratio < 0.15:
-            id_weight = min(id_weight + 0.02, 0.93)
-
-        # Clamp to safe ranges
-        id_weight = max(0.80, min(0.93, round(id_weight, 2)))
-        guidance = max(3.5, min(4.8, round(guidance, 1)))
+        # Clamp to BFL recommended ranges
+        guidance = max(3.5, min(4.5, round(guidance, 1)))
+        steps = max(28, min(50, steps))
 
         return {
-            "id_weight": id_weight,
+            "id_weight": 0.95,  # unused by FLUX.2 but kept for interface compat
             "guidance_scale": guidance,
-            "num_inference_steps": 30,
+            "num_inference_steps": steps,
         }
 
 

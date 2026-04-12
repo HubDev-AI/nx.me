@@ -22,10 +22,13 @@ from tests.conftest import MockSupabase, requires_routers
 class TestGetPublicUrl:
     """Tests for get_public_url — exercises app/services/public_url.py."""
 
-    def test_uses_supabase_url_when_no_custom_base(self):
+    def test_url_contains_bucket_and_key(self):
+        """URL always contains the public bucket name and storage key."""
         key = "before/user123/photo.jpg"
         url = get_public_url(key)
-        assert settings.SUPABASE_URL in url
+        # When PUBLIC_STORAGE_BASE_URL is set, it is used; otherwise SUPABASE_URL is the base.
+        base = settings.PUBLIC_STORAGE_BASE_URL or settings.SUPABASE_URL
+        assert base in url
         assert "post-images" in url
         assert key in url
 
