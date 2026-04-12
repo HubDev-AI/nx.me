@@ -29,18 +29,15 @@ export const PROD_DEFAULT_FEATURES: FeatureFlags = {
 export const FEATURES_ENDPOINT = "/v1/features";
 
 /**
- * Short-name overrides applied in dev. `auth` → `auth_required=false`, etc.
+ * Short-name → flag-field mapping used by DEV_DISABLE_FEATURES.
  * Unknown names are ignored (noop) so typos don't break the app.
  */
-const DEV_SHORT_NAME_OVERRIDES: Record<
-  string,
-  (f: FeatureFlags) => FeatureFlags
-> = {
-  auth: (f) => ({ ...f, auth_required: false }),
-  social: (f) => ({ ...f, social_enabled: false }),
-  share: (f) => ({ ...f, share_enabled: false }),
-  onboarding: (f) => ({ ...f, onboarding_enabled: false }),
-  advisor: (f) => ({ ...f, advisor_enabled: false }),
+const DEV_SHORT_NAME_TO_FLAG: Record<string, keyof FeatureFlags> = {
+  auth: "auth_required",
+  social: "social_enabled",
+  share: "share_enabled",
+  onboarding: "onboarding_enabled",
+  advisor: "advisor_enabled",
 };
 
 function parseDevDisableList(raw: string): string[] {
@@ -57,10 +54,10 @@ export const DEV_DISABLE_FEATURES: readonly string[] = __DEV__
 /** Apply dev-only overrides on top of the backend-returned registry. */
 export function applyDevOverrides(features: FeatureFlags): FeatureFlags {
   if (!__DEV__ || DEV_DISABLE_FEATURES.length === 0) return features;
-  let next = features;
+  const next = { ...features };
   for (const name of DEV_DISABLE_FEATURES) {
-    const fn = DEV_SHORT_NAME_OVERRIDES[name];
-    if (fn) next = fn(next);
+    const flag = DEV_SHORT_NAME_TO_FLAG[name];
+    if (flag) next[flag] = false;
   }
   return next;
 }

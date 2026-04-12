@@ -68,43 +68,37 @@ function AuthGuard() {
     const inAuthGroup = segments[0] === "(auth)";
     const currentRoute = segments.join("/");
 
-    const guestMode = !features.auth_required;
-
     // Dev shortcut: jump straight to a specific route for iteration.
-    // Only active when the route is actually different from where we are.
     if (DEV_FEATURE_FOCUS) {
       const focusBase = DEV_FEATURE_FOCUS.replace(/^\//, "");
-      const allowedPrefixes = [focusBase, "result"];
-      const onAllowedRoute = allowedPrefixes.some((p) => currentRoute.startsWith(p));
-      if (!onAllowedRoute) {
-        router.replace(DEV_FEATURE_FOCUS as never);
-      }
+      const onAllowedRoute = [focusBase, "result"].some((p) =>
+        currentRoute.startsWith(p),
+      );
+      if (!onAllowedRoute) router.replace(DEV_FEATURE_FOCUS as never);
       return;
     }
 
-    if (guestMode) {
-      // Guest mode: never land on the auth screens.
-      if (inAuthGroup) {
-        router.replace("/(tabs)");
-      }
+    // Guest mode: never land on the auth screens.
+    if (!features.auth_required) {
+      if (inAuthGroup) router.replace("/(tabs)");
       return;
     }
 
-    if (!isAuthenticated && !inAuthGroup) {
-      router.replace("/(auth)/login");
-    } else if (isAuthenticated && inAuthGroup) {
-      if (features.onboarding_enabled) {
-        getItem("nxme_onboarding_complete").then((value) => {
-          if (!value) {
-            router.replace("/onboarding");
-          } else {
-            router.replace("/(tabs)");
-          }
-        });
-      } else {
-        router.replace("/(tabs)");
-      }
+    if (!isAuthenticated) {
+      if (!inAuthGroup) router.replace("/(auth)/login");
+      return;
     }
+
+    if (!inAuthGroup) return;
+
+    if (!features.onboarding_enabled) {
+      router.replace("/(tabs)");
+      return;
+    }
+
+    getItem("nxme_onboarding_complete").then((value) => {
+      router.replace(value ? "/(tabs)" : "/onboarding");
+    });
   }, [
     featuresLoading,
     features.auth_required,

@@ -58,6 +58,8 @@ export default function ResultScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const { features } = useFeatures();
+  // When Share is hidden, New Glow-Up takes over the primary slot.
+  const newGlowUpIsPrimary = !features.share_enabled;
 
   const [revealComplete, setRevealComplete] = useState(false);
   const [ctasVisible, setCtasVisible] = useState(false);
@@ -242,14 +244,14 @@ export default function ResultScreen() {
                     </PressableScale>
                   )}
 
-                  {/* Secondary: New Glow-Up. Becomes primary when Share is hidden. */}
+                  {/* New Glow-Up — promotes to primary styling when Share is hidden. */}
                   <PressableScale
                     onPress={handleNewGlowUp}
                     style={[
                       styles.ctaButton,
-                      features.share_enabled
-                        ? styles.ctaSecondary
-                        : { backgroundColor: theme.accent },
+                      newGlowUpIsPrimary
+                        ? { backgroundColor: theme.accent }
+                        : styles.ctaSecondary,
                     ]}
                     accessibilityLabel="Start a new glow-up"
                     accessibilityRole="button"
@@ -258,13 +260,13 @@ export default function ResultScreen() {
                       <Ionicons
                         name="sparkles-outline"
                         size={18}
-                        color={features.share_enabled ? theme.accent : THEME.colors.white}
+                        color={newGlowUpIsPrimary ? THEME.colors.white : theme.accent}
                       />
                       <Text
                         style={
-                          features.share_enabled
-                            ? [styles.ctaSecondaryText, { color: theme.accent }]
-                            : styles.ctaButtonText
+                          newGlowUpIsPrimary
+                            ? styles.ctaButtonText
+                            : [styles.ctaSecondaryText, { color: theme.accent }]
                         }
                       >
                         New Glow-Up
