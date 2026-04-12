@@ -12,16 +12,22 @@ export function initSentry(): void {
     }
     return;
   }
-  Sentry.init({
-    dsn: SENTRY_DSN,
-    environment:
-      (Constants.expoConfig?.extra?.environment as string | undefined) ??
-      "development",
-    tracesSampleRate: 0.1,
-    enableAutoSessionTracking: true,
-    enableNative: true,
-  });
-  initialized = true;
+  try {
+    Sentry.init({
+      dsn: SENTRY_DSN,
+      environment:
+        (Constants.expoConfig?.extra?.environment as string | undefined) ??
+        "development",
+      tracesSampleRate: 0.1,
+      enableAutoSessionTracking: true,
+      enableNative: true,
+    });
+    initialized = true;
+  } catch (err) {
+    if (__DEV__) {
+      console.warn("[Sentry] init failed:", err);
+    }
+  }
 }
 
 export function addBreadcrumb(

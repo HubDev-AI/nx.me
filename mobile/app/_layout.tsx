@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -7,6 +7,7 @@ import { View, Text } from "react-native";
 import { StripeProvider } from "../lib/stripe-web-shim";
 import { QueryClientProvider } from "@tanstack/react-query";
 import NetInfo from "@react-native-community/netinfo";
+import * as Sentry from "@sentry/react-native";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 import { useEnabledProviders } from "../hooks/useEnabledProviders";
@@ -25,6 +26,11 @@ import { OfflineBanner } from "../components/ui/OfflineBanner";
 import { queryClient } from "../lib/query-client";
 import { initSentry } from "../lib/sentry";
 import { mutationQueue } from "../lib/offline-queue";
+import { lookupReplayableMutation } from "../lib/mutation-registry";
+import { parseApiError, shouldRetry } from "../lib/errors";
+
+/** Upper bound on replay attempts before we drop a poisonous queue entry. */
+const MAX_REPLAY_ATTEMPTS = 5;
 
 // Initialize Sentry once at module import — before any component renders.
 initSentry();
@@ -67,6 +73,9 @@ export default function RootLayout() {
   const [initError, setInitError] = useState<Error | null>(null);
   const [initialAuth, setInitialAuth] = useState(false);
   const { fontsLoaded, fontError } = useAppFonts();
+  // Mutex guarding the offline-replay drain. NetInfo can fire back-to-back
+  // during a network flap; without this, we'd double-execute queued mutations.
+  const replayingRef = useRef(false);
 
   // Cold start initialization
   useEffect(() => {
@@ -117,22 +126,48 @@ export default function RootLayout() {
   }, []);
 
   // Replay queued offline mutations whenever connectivity is restored.
+  // NetInfo fires immediately on subscribe with current state, so a queue
+  // persisted from a prior session drains on mount if we're online.
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(async (state) => {
       if (!state.isConnected) return;
-      const pending = mutationQueue.list();
-      for (const queued of pending) {
-        try {
-          await queryClient
-            .getMutationCache()
-            .build(queryClient, {
-              mutationKey: queued.mutationKey as readonly unknown[],
-            })
-            .execute(queued.variables);
-          mutationQueue.dequeue(queued.id);
-        } catch {
-          // Leave in queue; next reconnect will retry.
+      if (replayingRef.current) return; // mutex: another drain is in-flight
+      replayingRef.current = true;
+      try {
+        const pending = mutationQueue.list();
+        for (const queued of pending) {
+          const fn = lookupReplayableMutation(queued.mutationKey);
+          if (!fn) {
+            // No registered handler — drop after logging. Keeps queue clean.
+            Sentry.captureMessage("Unhandled replayable mutation", {
+              tags: { source: "replay" },
+              extra: { mutationKey: queued.mutationKey },
+            });
+            mutationQueue.dequeue(queued.id);
+            continue;
+          }
+          try {
+            await fn(queued.variables);
+            mutationQueue.dequeue(queued.id);
+          } catch (err) {
+            const appError = parseApiError(err);
+            const attempts = queued.replayAttempts + 1;
+            if (!shouldRetry(appError) || attempts >= MAX_REPLAY_ATTEMPTS) {
+              // Terminal: dequeue, log, do not surface a toast (would spam on reconnect).
+              Sentry.captureException(err, {
+                tags: { source: "replay", kind: appError.kind },
+                extra: { mutationKey: queued.mutationKey, attempts },
+              });
+              mutationQueue.dequeue(queued.id);
+            } else {
+              // Retryable: bump attempt count and leave in queue for next reconnect.
+              mutationQueue.dequeue(queued.id);
+              mutationQueue.enqueue({ ...queued, replayAttempts: attempts });
+            }
+          }
         }
+      } finally {
+        replayingRef.current = false;
       }
     });
     return unsubscribe;
