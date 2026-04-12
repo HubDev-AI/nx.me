@@ -10,24 +10,35 @@ import { mutationQueue, type QueuedMutation } from '../offline-queue';
 
 export interface AppMutationOptions<TData, TVariables>
   extends UseMutationOptions<TData, unknown, TVariables> {
-  /** If true and offline, queue the mutation for replay. Default: false. */
+  /**
+   * If true and the device is offline, enqueue the mutation for replay on
+   * reconnect. When queued, `onSuccess` and `onError` do NOT fire in this
+   * session — use `onEnqueue` to show a "queued" toast at the call site.
+   * Default: false.
+   */
   queueOffline?: boolean;
   /** Required if `queueOffline` is true. Identifies the mutation in the queue. */
   mutationKey?: readonly unknown[];
+  /** Fires when a mutation is persisted to the offline queue instead of sent. */
+  onEnqueue?: (queued: QueuedMutation) => void;
 }
 
 export type AppMutationResult<TData, TVariables> = Omit<
   UseMutationResult<TData, unknown, TVariables>,
-  'error' | 'mutate'
+  'error' | 'mutate' | 'mutateAsync'
 > & {
   appError: AppError | null;
+  /**
+   * Fires the mutation. Resolves when the work completes (online) or after
+   * enqueueing (offline with `queueOffline: true`). Rejects on mutation error.
+   */
   mutate: (variables: TVariables) => Promise<void>;
 };
 
 export function useAppMutation<TData, TVariables>(
   options: AppMutationOptions<TData, TVariables>,
 ): AppMutationResult<TData, TVariables> {
-  const { queueOffline = false, mutationKey, mutationFn, ...rest } = options;
+  const { queueOffline = false, mutationKey, onEnqueue, mutationFn, ...rest } = options;
   const mutation = useMutation({ ...rest, mutationFn, mutationKey });
 
   const appError = useMemo(
@@ -37,8 +48,15 @@ export function useAppMutation<TData, TVariables>(
 
   const mutate = async (variables: TVariables): Promise<void> => {
     if (queueOffline) {
-      const netState = await NetInfo.fetch();
-      if (!netState.isConnected) {
+      let isConnected: boolean | null = true;
+      try {
+        const netState = await NetInfo.fetch();
+        isConnected = netState.isConnected;
+      } catch {
+        // NetInfo failed — assume online and fall through to mutation.
+        isConnected = true;
+      }
+      if (isConnected === false) {
         if (!mutationKey) {
           throw new Error('queueOffline=true requires mutationKey');
         }
@@ -49,10 +67,11 @@ export function useAppMutation<TData, TVariables>(
           createdAt: Date.now(),
         };
         mutationQueue.enqueue(queued);
+        onEnqueue?.(queued);
         return;
       }
     }
-    mutation.mutate(variables);
+    await mutation.mutateAsync(variables);
   };
 
   return { ...mutation, appError, mutate };
