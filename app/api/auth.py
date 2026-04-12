@@ -115,6 +115,45 @@ async def get_providers() -> ProvidersResponse:
 
 
 # ---------------------------------------------------------------------------
+# POST /auth/guest — create ephemeral guest user (only when auth is off)
+# ---------------------------------------------------------------------------
+
+
+class GuestResponse(BaseModel):
+    user_id: str
+    guest_token: str
+
+
+@router.post("/guest", response_model=GuestResponse, status_code=status.HTTP_201_CREATED)
+async def create_guest(
+    supabase: Client = Depends(get_supabase),
+) -> GuestResponse:
+    """Create a guest user session.
+
+    Only available when FEATURE_AUTH_REQUIRED is false. Returns a token the
+    mobile client persists in SecureStore and sends via X-Guest-Token.
+    Returns 403 FEATURE_DISABLED when auth is required.
+    """
+    if settings.FEATURE_AUTH_REQUIRED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": {
+                    "code": "FEATURE_DISABLED",
+                    "message": "Guest sessions are not available; authentication is required.",
+                    "detail": {"feature": "auth_required"},
+                }
+            },
+        )
+
+    from app.db.async_helpers import run_sync
+    from app.db.guest import create_guest_user
+
+    user_id, token = await run_sync(create_guest_user, supabase)
+    return GuestResponse(user_id=str(user_id), guest_token=token)
+
+
+# ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
 

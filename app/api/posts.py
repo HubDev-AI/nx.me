@@ -19,7 +19,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator
 from supabase import Client
 
-from app.api.deps import get_block_repo, get_current_user, get_image_repo, get_job_repo, get_post_repo, get_redis, get_supabase
+from app.api.deps import (
+    get_block_repo,
+    get_current_user,
+    get_image_repo,
+    get_job_repo,
+    get_post_repo,
+    get_redis,
+    get_supabase,
+    require_app_feature,
+)
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
@@ -31,7 +40,10 @@ from app.services.public_url import build_avatar_url, publish_post_images
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["posts"])
+router = APIRouter(
+    tags=["posts"],
+    dependencies=[Depends(require_app_feature("social_enabled"))],
+)
 
 # M-3: Comment rate limit constants moved to app/config/__init__.py
 

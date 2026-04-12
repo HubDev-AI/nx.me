@@ -47,12 +47,13 @@ cd mobile && npx expo lint      # ESLint
 
 ## Key Directories
 
-- `app/` — Backend (FastAPI routes, services, repositories, migrations)
-- `mobile/` — React Native app (Expo Router)
-- `mobile/components/` — Reusable UI components
-- `mobile/lib/` — API client, auth context, utilities
-- `app/config/` — AppConfig + TierConfig (see coding-conventions rule)
+- `app/` — Backend (FastAPI routes, services, repositories, migrations) — see `app/AGENTS.md`
+- `mobile/` — React Native app (Expo Router) — see `mobile/AGENTS.md`
+- `card-web/` — Next.js web surface — see `card-web/AGENTS.md`
 - `scripts/` — Dev utilities
+- `tests/` — Python test suite (lives at project root, not under `app/`)
+
+When working inside any of `app/`, `mobile/`, or `card-web/`, read that module's `AGENTS.md` first — it has module-specific commands, layout, and gotchas not covered here.
 
 ## Dev Feature Focus (test a screen without login)
 
@@ -79,12 +80,16 @@ Architecture decisions and project context: `~/.claude/projects/.../memory/MEMOR
 
 ## Conventions
 
-See `.claude/rules/` for language-specific standards (auto-loaded by glob):
-- `coding-conventions.md` — NXME-specific config sources, Context7, no magic numbers
-- `react.md` — Component state checklist, design tokens, a11y
-- `nodejs.md` — TypeScript/ESLint standards, Result pattern
-- `database-patterns.md` — ESR indexing, RLS, migration patterns
-- `code-standards.md` — Commit protocol, verification loop, deviation rules
+Cross-session rules and corrections live in `MEMORY.md` (see Memory section
+above). Key invariants to keep in mind:
+
+- **No magic strings/numbers** — literals go in named constants, config, or env.
+- **No env fallbacks** — fail fast if a required env var is missing.
+- **Always use `uv`** for Python packages (never `pip` / `pip3`).
+- **Branch workflow** — never push directly to `dev` / `main`; feature branch → PR → merge.
+- **Verification before "done"** — run the Verification Loop commands above; no "looks right" claims.
+- **Infinite scroll** for all pagination (no load-more buttons).
+- **Always reuse** — check for existing components/hooks/utilities before writing new ones.
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph

@@ -25,6 +25,7 @@ from app.repositories.analysis_repo import AnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.user_repo import UserRepository
+from app.api.deps import require_app_feature
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,11 @@ async def check_username(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users/{username}/profile", response_model=ProfileResponse)
+@router.get(
+    "/users/{username}/profile",
+    response_model=ProfileResponse,
+    dependencies=[Depends(require_app_feature("social_enabled"))],
+)
 async def get_user_profile(
     username: str,
     user_repo: UserRepository = Depends(get_user_repo),

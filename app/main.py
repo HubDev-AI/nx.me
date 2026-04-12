@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 
 from app.api import (
-    admin, analyses, auth, blocks, entitlement, generation, health,
+    admin, analyses, auth, blocks, entitlement, features, generation, health,
     posts, public, refund, social, users, webhooks,
 )
 from app.api.errors import (
@@ -127,8 +127,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         RedisSettings.from_dsn(settings.REDIS_URL)
     )
 
-    # Dev guest user — upsert so DEV_FEATURE_FOCUS=upload works without login
-    if settings.APP_ENV == "development" and settings.DEV_ALLOW_GUEST_ANALYSIS:
+    # Dev guest user — upsert so the fixed guest ID is always present for
+    # legacy dev flows. Per-session guests (created via POST /auth/guest) get
+    # their own user rows and don't collide with this one.
+    if settings.APP_ENV == "development" and not settings.FEATURE_AUTH_REQUIRED:
         from app.db.async_helpers import run_sync
         guest_id = settings.DEV_GUEST_USER_ID
         await run_sync(
@@ -138,6 +140,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     "username": "dev_guest",
                     "display_name": "Dev Guest",
                     "email": "dev-guest@nxme.internal",
+                    "is_guest": True,
                     "tier_id": "a0000000-0000-0000-0000-000000000001",  # free tier
                 },
                 on_conflict="id",
@@ -226,6 +229,7 @@ def create_app() -> FastAPI:
     # All API routes under /v1 prefix — single place to manage API version
     from fastapi import APIRouter
     v1 = APIRouter(prefix="/v1")
+    v1.include_router(features.router)  # public — no auth required
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
     v1.include_router(analyses.router)
@@ -236,12 +240,10 @@ def create_app() -> FastAPI:
     v1.include_router(blocks.router)
     v1.include_router(users.router)
 
-    if settings.ADVISOR_ENABLED:
-        from app.api import advisor
-        v1.include_router(advisor.router)
-        logger.info("Advisor module enabled — routes registered")
-    else:
-        logger.info("Advisor module disabled (ADVISOR_ENABLED=False)")
+    # Advisor routes always mounted; router-level require_app_feature("advisor_enabled")
+    # returns 403 FEATURE_DISABLED when the flag is off.
+    from app.api import advisor
+    v1.include_router(advisor.router)
 
     app.include_router(v1)
 
