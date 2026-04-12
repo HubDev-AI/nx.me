@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Sentry from "@sentry/react-native";
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
@@ -26,8 +27,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Log to console in dev; in production this would go to a crash reporter
-    console.error("ErrorBoundary caught:", error, info.componentStack);
+    Sentry.captureException(error, {
+      contexts: {
+        react: { componentStack: info.componentStack ?? undefined },
+      },
+      tags: { source: "errorBoundary" },
+    });
+    if (__DEV__) {
+      console.error("[ErrorBoundary]", error, info);
+    }
   }
 
   private handleReset = () => {
