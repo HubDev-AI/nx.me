@@ -30,7 +30,9 @@ import { PressableScale } from "../components/ui/PressableScale";
 import { useTheme } from "../lib/theme-context";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch } from "../lib/api";
+import { parseApiError } from "../lib/errors";
+import { showToast } from "../lib/toast";
 import { unblockUser } from "../lib/block";
 
 // ---------------------------------------------------------------------------
@@ -91,11 +93,8 @@ export default function BlockedUsersScreen() {
       }));
       setBlockedUsers(enriched);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? `Failed to load blocked users (${err.status})`
-          : "Failed to load blocked users",
-      );
+      const appError = parseApiError(err);
+      setError(appError.message);
     } finally {
       setIsLoading(false);
     }
@@ -125,8 +124,9 @@ export default function BlockedUsersScreen() {
                 setBlockedUsers((prev) =>
                   prev.filter((u) => u.blocked_id !== user.blocked_id),
                 );
-              } catch {
-                Alert.alert("Error", "Failed to unblock user. Please try again.");
+              } catch (err) {
+                const appError = parseApiError(err);
+                showToast({ kind: 'error', message: appError.message });
               } finally {
                 setUnblockingIds((prev) => {
                   const next = new Set(prev);
