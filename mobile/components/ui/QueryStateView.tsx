@@ -55,14 +55,20 @@ function DefaultSkeleton() {
 function ErrorState({ error, onRetry }: { error: AppError; onRetry?: () => void }) {
   const canRetry = onRetry !== undefined && isRetryable(error.kind);
   return (
-    <View style={styles.stateContainer}>
+    <View style={styles.stateContainer} accessibilityRole="alert">
       <View style={styles.iconCircle}>
         <Ionicons name={iconForError(error.kind)} size={32} color={THEME.colors.textSecondary} />
       </View>
       <Text style={styles.title}>{titleForError(error.kind)}</Text>
       <Text style={styles.message}>{error.message}</Text>
       {canRetry && (
-        <Pressable onPress={onRetry} style={styles.button}>
+        <Pressable
+          onPress={onRetry}
+          style={styles.button}
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.buttonText}>Try again</Text>
         </Pressable>
       )}
@@ -84,7 +90,13 @@ function EmptyState({
       </View>
       <Text style={styles.message}>{message}</Text>
       {action && (
-        <Pressable onPress={action.onPress} style={styles.button}>
+        <Pressable
+          onPress={action.onPress}
+          style={styles.button}
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.buttonText}>{action.label}</Text>
         </Pressable>
       )}
