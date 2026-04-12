@@ -23,11 +23,13 @@ import {
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
+import { LoadingSkeleton } from "../components/ui/LoadingSkeleton";
+import { useEntering } from "../lib/hooks/use-entering";
 import { useTheme } from "../lib/theme-context";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
@@ -96,6 +98,7 @@ export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { theme } = useTheme();
+  const { fadeInDown } = useEntering();
 
   const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -229,17 +232,39 @@ export default function SubscriptionScreen() {
             style={styles.backBtn}
             accessibilityLabel="Go back"
             accessibilityRole="button"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="chevron-back" size={24} color={THEME.colors.textPrimary} />
           </Pressable>
-          <Text style={styles.headerTitle}>Subscription</Text>
+          <Text
+            style={styles.headerTitle}
+            maxFontSizeMultiplier={1.3}
+          >
+            Subscription
+          </Text>
           <View style={styles.backBtn} />
         </View>
 
         {isLoading ? (
-          <View style={[styles.centered, { paddingBottom: insets.bottom }]}>
-            <ActivityIndicator color={theme.accent} size="large" />
-            <Text style={styles.loadingText}>Loading subscription...</Text>
+          <View
+            style={[
+              styles.scrollContent,
+              { paddingTop: THEME.spacing.lg, paddingBottom: insets.bottom + THEME.spacing.xxxl },
+            ]}
+          >
+            <View style={styles.planCard}>
+              <View style={[styles.planHeader, { gap: THEME.spacing.lg }]}>
+                <LoadingSkeleton height={56} width={56} borderRadius={THEME.radius.md} />
+                <View style={{ flex: 1, gap: THEME.spacing.sm }}>
+                  <LoadingSkeleton height={22} width="60%" />
+                  <LoadingSkeleton height={14} width="80%" />
+                </View>
+              </View>
+              <View style={[styles.statsRow, { marginTop: THEME.spacing.lg }]}>
+                <LoadingSkeleton height={56} width="48%" borderRadius={THEME.radius.md} />
+                <LoadingSkeleton height={56} width="48%" borderRadius={THEME.radius.md} />
+              </View>
+            </View>
           </View>
         ) : error ? (
           <View style={[styles.centered, { paddingBottom: insets.bottom }]}>
@@ -268,7 +293,7 @@ export default function SubscriptionScreen() {
             showsVerticalScrollIndicator={false}
           >
             {/* ---- Current Plan Card ---- */}
-            <Animated.View entering={FadeInDown.delay(0).duration(240)}>
+            <Animated.View entering={fadeInDown(0, 240)}>
               <View
                 style={[
                   styles.planCard,
@@ -400,8 +425,13 @@ export default function SubscriptionScreen() {
 
             {/* ---- Premium Upsell (if not already premium) ---- */}
             {!isPremium && hasPremiumOption && (
-              <Animated.View entering={FadeInDown.delay(60).duration(240)}>
-                <Text style={styles.sectionLabel}>RECOMMENDED</Text>
+              <Animated.View entering={fadeInDown(60, 240)}>
+                <Text
+                  style={styles.sectionLabel}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  RECOMMENDED
+                </Text>
                 <PressableScale
                   onPress={handleSubscribe}
                   disabled={isSubscribing}
@@ -452,8 +482,13 @@ export default function SubscriptionScreen() {
 
             {/* ---- Credit Packs ---- */}
             {!isPremium && creditPacks.length > 0 && (
-              <Animated.View entering={FadeInDown.delay(120).duration(240)}>
-                <Text style={styles.sectionLabel}>CREDIT PACKS</Text>
+              <Animated.View entering={fadeInDown(120, 240)}>
+                <Text
+                  style={styles.sectionLabel}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  CREDIT PACKS
+                </Text>
                 <Text style={styles.sectionDescription}>
                   Buy credits to unlock individual analyses
                 </Text>
@@ -463,7 +498,7 @@ export default function SubscriptionScreen() {
                     return (
                       <Animated.View
                         key={pack.pack_id}
-                        entering={FadeInDown.delay(260 + index * 60).duration(350)}
+                        entering={fadeInDown(160 + Math.min(index, 4) * 40, 240)}
                         style={styles.packCardWrapper}
                       >
                         <PressableScale
@@ -527,7 +562,7 @@ export default function SubscriptionScreen() {
 
             {/* ---- No purchase options available hint ---- */}
             {!isPremium && !hasPremiumOption && creditPacks.length === 0 && (
-              <Animated.View entering={FadeInDown.delay(60).duration(240)}>
+              <Animated.View entering={fadeInDown(60, 240)}>
                 <View style={styles.hintCard}>
                   <Ionicons
                     name="information-circle-outline"
@@ -688,6 +723,8 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bodyBold,
     fontSize: 20,
     letterSpacing: 0,
+    // Prevent digit-width jitter as counts change (e.g. 9 → 10).
+    fontVariant: ["tabular-nums"],
   },
   statLabel: {
     fontFamily: FONTS.body,
@@ -813,6 +850,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: THEME.colors.textPrimary,
     lineHeight: 38,
+    fontVariant: ["tabular-nums"],
   },
   packLabel: {
     fontFamily: FONTS.body,
