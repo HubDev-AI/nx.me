@@ -28,6 +28,7 @@ import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
 import { useTheme } from "../lib/theme-context";
+import { useEntering } from "../lib/hooks/use-entering";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
 import { apiFetch } from "../lib/api";
@@ -70,6 +71,7 @@ interface BlockedListResponse {
 export default function BlockedUsersScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const { fadeInDown } = useEntering();
 
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -228,7 +230,7 @@ export default function BlockedUsersScreen() {
                 return (
                   <Animated.View
                     key={user.id}
-                    entering={FadeInDown.delay(Math.min(index, 8) * 40).duration(240)}
+                    entering={fadeInDown(Math.min(index, 8) * 40, 240)}
                   >
                     <View style={styles.glassCard}>
                       <View style={styles.userRow}>

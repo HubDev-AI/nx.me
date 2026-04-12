@@ -16,7 +16,10 @@ import {
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
+
+import { LoadingSkeleton } from "../components/ui/LoadingSkeleton";
+import { useEntering } from "../lib/hooks/use-entering";
 import type ExpoConstants from "expo-constants";
 
 import { THEME } from "../constants/theme";
@@ -62,6 +65,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { setAuthenticated } = useAuth();
+  const { fadeInDown } = useEntering();
 
   const [me, setMe] = useState<MeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -158,13 +162,19 @@ export default function SettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* ─── Account Section ──────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(0).duration(240)}>
-            <Text style={styles.sectionLabel}>ACCOUNT</Text>
+          <Animated.View entering={fadeInDown(0, 240)}>
+            <Text
+              style={styles.sectionLabel}
+              maxFontSizeMultiplier={1.3}
+            >
+              ACCOUNT
+            </Text>
             <View style={styles.glassCard}>
               {isLoading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator color={THEME.colors.textSecondary} />
-                  <Text style={styles.loadingText}>Loading account...</Text>
+                <View style={styles.accountSkeleton}>
+                  <LoadingSkeleton height={18} width="40%" />
+                  <LoadingSkeleton height={18} width="60%" />
+                  <LoadingSkeleton height={18} width="70%" />
                 </View>
               ) : error ? (
                 <Text style={styles.errorText}>{error}</Text>
@@ -193,8 +203,13 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── Subscription Section ─────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(40).duration(240)}>
-            <Text style={styles.sectionLabel}>SUBSCRIPTION</Text>
+          <Animated.View entering={fadeInDown(40, 240)}>
+            <Text
+              style={styles.sectionLabel}
+              maxFontSizeMultiplier={1.3}
+            >
+              SUBSCRIPTION
+            </Text>
             <PressableScale
               style={styles.glassCard}
               onPress={() => router.push("/subscription")}
@@ -220,8 +235,13 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── Privacy Section ──────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(80).duration(240)}>
-            <Text style={styles.sectionLabel}>PRIVACY</Text>
+          <Animated.View entering={fadeInDown(80, 240)}>
+            <Text
+              style={styles.sectionLabel}
+              maxFontSizeMultiplier={1.3}
+            >
+              PRIVACY
+            </Text>
             <PressableScale
               style={styles.glassCard}
               onPress={() => router.push("/blocked-users")}
@@ -247,8 +267,13 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── About Section ────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(120).duration(240)}>
-            <Text style={styles.sectionLabel}>ABOUT</Text>
+          <Animated.View entering={fadeInDown(120, 240)}>
+            <Text
+              style={styles.sectionLabel}
+              maxFontSizeMultiplier={1.3}
+            >
+              ABOUT
+            </Text>
             <View style={styles.glassCard}>
               <SettingsRow
                 icon="information-circle-outline"
@@ -259,8 +284,11 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── Danger Zone ──────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(160).duration(240)}>
-            <Text style={[styles.sectionLabel, { color: THEME.colors.destructive }]}>
+          <Animated.View entering={fadeInDown(160, 240)}>
+            <Text
+              style={[styles.sectionLabel, { color: THEME.colors.destructive }]}
+              maxFontSizeMultiplier={1.3}
+            >
               DANGER ZONE
             </Text>
             <View style={[styles.glassCard, styles.dangerCard]}>
@@ -397,17 +425,10 @@ const styles = StyleSheet.create({
   },
 
   // Loading
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: THEME.spacing.md,
+  accountSkeleton: {
     paddingVertical: THEME.spacing.md,
-  },
-  loadingText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
+    paddingHorizontal: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
 
   // Error

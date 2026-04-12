@@ -2,7 +2,6 @@ import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
-  FadeInDown,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -13,6 +12,7 @@ import { TAB_BAR_HEIGHT } from "./_layout";
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { useTheme } from "../../lib/theme-context";
+import { useEntering } from "../../lib/hooks/use-entering";
 import { FONTS } from "../../hooks/useFonts";
 
 /* ------------------------------------------------------------------ */
@@ -80,11 +80,12 @@ function FeatureCard({
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
+  const { fadeInDown } = useEntering();
 
   return (
     <Animated.View
       key={feature.key}
-      entering={FadeInDown.duration(THEME.animation.duration.normal).delay(240 + index * 50)}
+      entering={fadeInDown(240 + index * 50, THEME.animation.duration.normal)}
       style={styles.gridCell}
     >
       <Animated.View style={pressStyle}>
@@ -168,6 +169,7 @@ export default function CreateScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const { fadeInDown } = useEntering();
 
   const handleFeaturePress = (feature: Feature) => {
     if (feature.active && feature.route) {
@@ -187,21 +189,23 @@ export default function CreateScreen() {
       >
         {/* Header */}
         <Animated.Text
-          entering={FadeInDown.duration(THEME.animation.duration.fast).delay(80)}
+          entering={fadeInDown(80, THEME.animation.duration.fast)}
           style={styles.title}
+          maxFontSizeMultiplier={1.3}
         >
           Create
         </Animated.Text>
         <Animated.Text
-          entering={FadeInDown.duration(THEME.animation.duration.fast).delay(160)}
+          entering={fadeInDown(160, THEME.animation.duration.fast)}
           style={styles.subtitle}
+          maxFontSizeMultiplier={1.3}
         >
           What would you like to do?
         </Animated.Text>
 
         {/* Divider below subtitle */}
         <Animated.View
-          entering={FadeInDown.duration(THEME.animation.duration.fast).delay(200)}
+          entering={fadeInDown(200, THEME.animation.duration.fast)}
           style={styles.subtitleDivider}
         />
 

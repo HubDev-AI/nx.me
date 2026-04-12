@@ -103,6 +103,7 @@ const styles = StyleSheet.create({
   text: {
     fontFamily: FONTS.bodyBold,
     ...THEME.typography.body,
+    fontVariant: ["tabular-nums"],
   },
   textSmall: {
     ...THEME.typography.caption,

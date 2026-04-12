@@ -18,7 +18,8 @@ import {
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
+import { useEntering } from "../../lib/hooks/use-entering";
 
 import { THEME } from "../../constants/theme";
 import {
@@ -40,6 +41,7 @@ import { FONTS } from "../../hooks/useFonts";
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const { fadeInDown } = useEntering();
 
   // Fetch enabled providers from backend
   const {
@@ -110,30 +112,33 @@ export default function AuthScreen() {
         <View style={styles.spacer} />
 
         {/* Hero headline */}
-        <Animated.View entering={FadeInDown.duration(300).springify().damping(16)}>
-          <Text style={styles.heroTitle}>{"Your style,\nelevated"}</Text>
-          <Text style={[styles.heroAccent, { color: theme.accent }]}>
+        <Animated.View entering={fadeInDown(0, 300)}>
+          <Text style={styles.heroTitle} maxFontSizeMultiplier={1.3}>{"Your style,\nelevated"}</Text>
+          <Text
+            style={[styles.heroAccent, { color: theme.accent }]}
+            maxFontSizeMultiplier={1.3}
+          >
             start your glow-up
           </Text>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(60).duration(300).springify().damping(16)}>
-          <Text style={styles.subtitle}>
+        <Animated.View entering={fadeInDown(60, 300)}>
+          <Text style={styles.subtitle} maxFontSizeMultiplier={1.4}>
             Sign in or create an account to continue
           </Text>
         </Animated.View>
 
-        {/* General error */}
-        {socialError ? (
-          <View style={styles.generalError} accessibilityRole="alert">
-            <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
-            <Text style={styles.generalErrorText}>{socialError.message}</Text>
-          </View>
-        ) : null}
-
-        {/* Social login buttons (config-driven) */}
+        {/* Social login buttons (config-driven) — error renders inline above the button group so it sits next to the action */}
         {socialProviders.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(120).duration(300).springify().damping(16)}>
+          <Animated.View entering={fadeInDown(120, 300)}>
+            {socialError ? (
+              <View style={styles.inlineError} accessibilityRole="alert" accessibilityLiveRegion="polite">
+                <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
+                <Text style={styles.inlineErrorText} maxFontSizeMultiplier={1.4}>
+                  {socialError.message}
+                </Text>
+              </View>
+            ) : null}
             <SocialLoginButtons
               enabledProviders={providers}
               onGooglePress={handleGoogleLogin}
@@ -203,16 +208,16 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  generalError: {
+  inlineError: {
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.sm,
     backgroundColor: ERROR_BG,
     borderRadius: THEME.radius.md,
     padding: THEME.spacing.md,
-    marginBottom: THEME.spacing.lg,
+    marginBottom: THEME.spacing.md,
   },
-  generalErrorText: {
+  inlineErrorText: {
     fontFamily: FONTS.body,
     fontSize: 14,
     color: THEME.colors.destructive,

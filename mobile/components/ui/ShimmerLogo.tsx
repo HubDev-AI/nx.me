@@ -7,6 +7,7 @@ import { StyleSheet, View } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useReducedMotion,
   withRepeat,
   withTiming,
   withDelay,
@@ -27,10 +28,18 @@ interface ShimmerLogoProps {
 export function ShimmerLogo({ size = 36, glowColor = THEME.colors.textPrimary }: ShimmerLogoProps) {
   const shimmer = useSharedValue(0);
   const glow = useSharedValue(0);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
-    // One-shot shimmer sweep on mount — animations users see on every auth
-    // visit become visual noise. The subtle glow pulse still loops.
+    // Respect reduced-motion: keep the logo fully lit with no repeating
+    // motion so the rest of the screen is still presentable.
+    if (reducedMotion) {
+      glow.value = 1;
+      return;
+    }
+
+    // One-shot shimmer sweep on mount (see UI audit: returning users hit
+    // login often, so infinite shimmer becomes visual noise).
     shimmer.value = withDelay(
       400,
       withTiming(1, {
@@ -39,13 +48,12 @@ export function ShimmerLogo({ size = 36, glowColor = THEME.colors.textPrimary }:
       }),
     );
 
-    // Gentle glow pulse
     glow.value = withRepeat(
       withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.sin) }),
       -1,
       true,
     );
-  }, [glow, shimmer]);
+  }, [glow, shimmer, reducedMotion]);
 
   const textStyle = useAnimatedStyle(() => ({
     opacity: interpolate(glow.value, [0, 1], [0.85, 1]),
