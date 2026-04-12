@@ -25,7 +25,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-import BeforeAfterReveal from "../../components/result/BeforeAfterReveal";
+// Phase 3: BeforeAfterReveal replaced by BeforeAfterSlider.
+// Phase 4 will update the full usage (rightLabel, Save/Share CTAs, consent).
+import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
 import {
   getJobStatus,
   requestRefund,
@@ -198,10 +200,11 @@ export default function ResultScreen() {
             >
               {/* Before / After Reveal */}
               {result?.before_image_url && result.after_image_url ? (
-                <BeforeAfterReveal
+                <BeforeAfterSlider
                   beforeUrl={result.before_image_url}
                   afterUrl={result.after_image_url}
-                  onRevealComplete={handleRevealComplete}
+                  rightLabel="Glow Up"
+                  onAccessibilityToggle={handleRevealComplete}
                 />
               ) : (
                 <View style={styles.missingImages}>
