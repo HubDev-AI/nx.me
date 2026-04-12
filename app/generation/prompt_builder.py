@@ -54,12 +54,12 @@ _validate_templates()  # Fail fast at import time
 # ---------------------------------------------------------------------------
 
 _IDENTITY_PHRASES = [
-    "This same person",
-    "The same individual",
-    "Clearly the same person",
-    "This exact person",
-    "Recognizably the same face",
-    "The same person, unmistakably",
+    "Photo of this person",
+    "Portrait of this person",
+    "Real photo of this person",
+    "Natural photo of this person",
+    "Authentic photo of this person",
+    "Candid portrait of this person",
 ]
 
 # ---------------------------------------------------------------------------

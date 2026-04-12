@@ -129,6 +129,40 @@ async def get_current_user(
     return claims
 
 
+async def get_analysis_user(
+    authorization: Annotated[str | None, Header()] = None,
+    x_guest_token: Annotated[str | None, Header(alias="X-Guest-Token")] = None,
+    supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> UserClaims:
+    """Auth dep for POST /analyses: accepts JWT *or* X-Guest-Token (dev only).
+
+    In development with DEV_ALLOW_GUEST_ANALYSIS=True, a valid 64-hex guest
+    token (validated via Redis) is accepted and mapped to the fixed dev guest
+    user ID. All other environments require a normal Bearer JWT.
+    """
+    from app.config import settings
+    import re
+
+    _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
+
+    if (
+        settings.APP_ENV == "development"
+        and settings.DEV_ALLOW_GUEST_ANALYSIS
+        and x_guest_token
+        and _GUEST_TOKEN_RE.match(x_guest_token)
+    ):
+        # Dev-only: valid 64-hex token format is sufficient; no Redis lookup needed.
+        return UserClaims(sub=settings.DEV_GUEST_USER_ID, role="authenticated", exp=9999999999)
+
+    # Fall through to normal JWT validation
+    return await get_current_user(
+        authorization=authorization,
+        supabase=supabase,
+        redis_client=redis_client,
+    )
+
+
 def require_admin(
     x_admin_key: Annotated[str | None, Header(alias="X-Admin-Key")] = None,
 ) -> None:

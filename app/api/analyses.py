@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 
-from app.api.deps import get_analysis_repo, get_current_user
+from app.api.deps import get_analysis_repo, get_analysis_user, get_current_user
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
@@ -61,7 +61,7 @@ class AnalysisDetailResponse(AnalysisResponse):
 async def create_analysis(
     request: Request,
     file: UploadFile,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_analysis_user),
     analysis_repo: AnalysisRepository = Depends(get_analysis_repo),
 ) -> Response:
     """Upload a selfie for face analysis.

@@ -2,10 +2,9 @@
  * BeforeAfterReveal — animated reveal sequence for glow-up results.
  *
  * Sequence:
- * 1. Before image slides in from left
- * 2. After image wipes in from right with glow ring
- * 3. Suggestion pills stagger up (handled by parent)
- * 4. CTAs fade in (handled by parent)
+ * 1. Before image fades/slides in
+ * 2. After image wipes in from right with accent border
+ * 3. CTAs fade in (handled by parent via onRevealComplete)
  *
  * Respects reduced-motion preference.
  */
@@ -18,17 +17,12 @@ import {
   Dimensions,
   Modal,
   AccessibilityInfo,
-  Platform,
+  Text,
 } from "react-native";
 import Animated, {
   FadeIn,
   SlideInLeft,
   SlideInRight,
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  withDelay,
   runOnJS,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -53,11 +47,9 @@ interface BeforeAfterRevealProps {
 // ---------------------------------------------------------------------------
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const IMAGE_SIZE = Math.min(SCREEN_WIDTH - 64, 320);
-const GLOW_SIZE = IMAGE_SIZE + 16;
+const IMAGE_WIDTH = SCREEN_WIDTH - 48; // 24px padding each side
 const BEFORE_DELAY_MS = 100;
 const AFTER_DELAY_MS = 500;
-const GLOW_DELAY_MS = 400;
 const SPRING_CONFIG = { damping: 18, stiffness: 120, mass: 0.8 };
 
 // ---------------------------------------------------------------------------
@@ -74,9 +66,6 @@ export default function BeforeAfterReveal({
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
 
-  const glowOpacity = useSharedValue(0);
-  const glowScale = useSharedValue(0.8);
-
   // Check reduced motion preference
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReducedMotion);
@@ -91,25 +80,9 @@ export default function BeforeAfterReveal({
     return () => clearTimeout(timer);
   }, [reducedMotion]);
 
-  // Glow ring animation
-  useEffect(() => {
-    if (!showAfter) return;
-    const delay = reducedMotion ? 0 : GLOW_DELAY_MS;
-    glowOpacity.value = withDelay(delay, withTiming(1, { duration: 300 }));
-    glowScale.value = withDelay(
-      delay,
-      withSpring(1, SPRING_CONFIG),
-    );
-  }, [showAfter, reducedMotion, glowOpacity, glowScale]);
-
   const handleRevealDone = useCallback(() => {
     onRevealComplete?.();
   }, [onRevealComplete]);
-
-  const glowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-    transform: [{ scale: glowScale.value }],
-  }));
 
   const beforeEntering = reducedMotion
     ? FadeIn.duration(150)
@@ -135,52 +108,43 @@ export default function BeforeAfterReveal({
 
   return (
     <View style={styles.container}>
-      {/* Before / After side by side */}
-      <View style={styles.imagesRow}>
-        {/* Before */}
-        <Animated.View entering={beforeEntering} style={styles.imageWrapper}>
+      {/* Before */}
+      <Animated.View entering={beforeEntering} style={styles.imageCard}>
+        <Pressable
+          onPress={() => setLightboxUri(beforeUrl)}
+          accessibilityLabel="View before photo fullscreen"
+          accessibilityRole="imagebutton"
+        >
+          <Image
+            source={{ uri: beforeUrl }}
+            style={styles.image}
+            accessibilityLabel="Before photo"
+          />
+          <View style={styles.labelBadge}>
+            <Text style={styles.labelText}>BEFORE</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
+
+      {/* After */}
+      {showAfter && (
+        <Animated.View entering={afterEntering} style={styles.imageCard}>
           <Pressable
-            onPress={() => setLightboxUri(beforeUrl)}
-            accessibilityLabel="View before photo fullscreen"
+            onPress={() => setLightboxUri(afterUrl)}
+            accessibilityLabel="View after photo fullscreen"
             accessibilityRole="imagebutton"
           >
             <Image
-              source={{ uri: beforeUrl }}
-              style={styles.image}
-              accessibilityLabel="Before photo"
+              source={{ uri: afterUrl }}
+              style={[styles.image, styles.afterImage, { borderColor: theme.accent + "66" }]}
+              accessibilityLabel="After photo"
             />
-            <View style={styles.beforeOverlay} />
-            <View style={styles.labelBadge}>
-              <Animated.Text style={styles.labelText}>Before</Animated.Text>
+            <View style={[styles.labelBadge, { backgroundColor: theme.accent + "CC" }]}>
+              <Text style={[styles.labelText, styles.labelTextAfter]}>AFTER</Text>
             </View>
           </Pressable>
         </Animated.View>
-
-        {/* After with glow ring */}
-        {showAfter && (
-          <Animated.View entering={afterEntering} style={styles.imageWrapper}>
-            {/* Glow ring behind */}
-            <Animated.View style={[styles.glowRing, glowStyle, { borderColor: theme.accent }]} />
-            <Pressable
-              onPress={() => setLightboxUri(afterUrl)}
-              accessibilityLabel="View after photo fullscreen"
-              accessibilityRole="imagebutton"
-            >
-              <Image
-                source={{ uri: afterUrl }}
-                style={styles.image}
-                accessibilityLabel="After photo"
-              />
-              <View style={styles.afterOverlay} />
-              <View style={[styles.labelBadge, styles.labelBadgeAfter, { backgroundColor: theme.accent + "B3" }]}>
-                <Animated.Text style={[styles.labelText, styles.labelTextAfter]}>
-                  After
-                </Animated.Text>
-              </View>
-            </Pressable>
-          </Animated.View>
-        )}
-      </View>
+      )}
 
       {/* Fullscreen lightbox modal */}
       <Modal
@@ -220,71 +184,37 @@ export default function BeforeAfterReveal({
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: "center",
-    paddingVertical: THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xl,
+    paddingTop: THEME.spacing.lg,
+    gap: THEME.spacing.lg,
   },
-  imagesRow: {
-    flexDirection: "row",
-    gap: THEME.spacing.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  imageWrapper: {
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
+  imageCard: {
+    borderRadius: THEME.radius.lg,
+    overflow: "hidden",
   },
   image: {
-    width: IMAGE_SIZE / 2 + 16,
-    height: IMAGE_SIZE / 2 + 16,
+    width: IMAGE_WIDTH,
+    aspectRatio: 3 / 4,
     borderRadius: THEME.radius.lg,
     backgroundColor: THEME.colors.surface,
   },
-  beforeOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15,23,42,0.72)",
-    borderRadius: THEME.radius.lg,
-  },
-  afterOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(244, 63, 94, 0.08)",
-    borderRadius: THEME.radius.lg,
-  },
-  glowRing: {
-    position: "absolute",
-    width: GLOW_SIZE / 2 + 24,
-    height: GLOW_SIZE / 2 + 24,
-    borderRadius: (GLOW_SIZE / 2 + 24) / 2,
+  afterImage: {
     borderWidth: 2,
-    ...Platform.select({
-      ios: {
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
   },
   labelBadge: {
     position: "absolute",
-    bottom: THEME.spacing.sm,
-    left: THEME.spacing.sm,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    paddingHorizontal: THEME.spacing.sm,
-    paddingVertical: THEME.spacing.xs,
+    bottom: THEME.spacing.md,
+    left: THEME.spacing.md,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.xs + 2,
     borderRadius: THEME.radius.sm,
-  },
-  labelBadgeAfter: {
-    // backgroundColor applied inline with theme.accent
   },
   labelText: {
     fontFamily: FONTS.bodyBold,
-    fontSize: 11,
+    fontSize: 13,
     color: THEME.colors.textPrimary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 1,
   },
   labelTextAfter: {
     color: THEME.colors.white,

@@ -11,10 +11,10 @@ import logging
 
 import redis.asyncio as aioredis
 from arq import cron
+from arq.connections import RedisSettings
 
 from app.config import settings
 from app.db.client import get_supabase_service
-from app.generation.models import QUEUE_LANES
 from app.generation.worker import process_generation_job, watchdog_stuck_jobs
 from app.api.social import persist_reaction, reconcile_reaction_counts
 from app.advisor.nudge_scheduler import (
@@ -66,9 +66,7 @@ class WorkerSettings:
     on_startup = startup
     on_shutdown = shutdown
 
-    # Listen to generation lanes + default
     queue_read_limit = 10
-    queues = [*QUEUE_LANES, "default"]
 
     cron_jobs = [
         cron(watchdog_stuck_jobs, second=0),  # Every minute
@@ -76,7 +74,7 @@ class WorkerSettings:
         cron(reconcile_reaction_counts, hour=3, minute=0),  # Nightly at 03:00 UTC
     ]
 
-    redis_settings = None
-    job_timeout = settings.GENERATION_TIMEOUT_SECONDS
+    redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    job_timeout = settings.GENERATION_TIMEOUT_SECONDS + 60  # buffer for upload + identity check
     max_jobs = 10
     keep_result = 3600

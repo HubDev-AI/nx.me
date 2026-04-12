@@ -18,7 +18,7 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
-import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS } from "../constants/config";
+import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS, DEV_FEATURE_FOCUS } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -46,6 +46,20 @@ function AuthGuard() {
 
   useEffect(() => {
     const inAuthGroup = segments[0] === "(auth)";
+
+    // Dev shortcut: bypass auth entirely and jump straight to a feature screen.
+    // Allow navigating to related routes (e.g. upload → result) so flows work end-to-end.
+    if (DEV_FEATURE_FOCUS) {
+      const currentRoute = segments.join("/");
+      const focusBase = DEV_FEATURE_FOCUS.replace(/^\//, "");
+      const allowedPrefixes = [focusBase, "result"];
+      const onAllowedRoute = allowedPrefixes.some((p) => currentRoute.startsWith(p));
+      if (!onAllowedRoute) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        router.replace(DEV_FEATURE_FOCUS as any);
+      }
+      return;
+    }
 
     if (!isAuthenticated && !inAuthGroup) {
       router.replace("/(auth)/login");

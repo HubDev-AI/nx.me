@@ -55,7 +55,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_by_id_with_fields(self, job_id: str, fields: str) -> dict | None:
         """Fetch a job by ID selecting specific fields. Returns None if not found."""
@@ -66,7 +68,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_by_id_single(self, job_id: str) -> dict:
         """Fetch a single job by ID using .single() (raises if not found)."""
@@ -89,7 +93,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_for_status_poll(self, job_id: str) -> dict | None:
         """Fetch job fields needed for GET /jobs/{job_id} status polling."""
@@ -100,7 +106,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_for_cancel(self, job_id: str) -> dict | None:
         """Fetch job fields needed for cancel operation."""
@@ -111,7 +119,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_for_refund(self, job_id: str) -> dict | None:
         """Fetch job fields needed for refund operation."""
@@ -122,7 +132,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_jobs_for_post(self, job_id: str) -> dict | None:
         """Fetch job fields needed for post creation. Returns None if not found."""
@@ -133,7 +145,9 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        if not result or not result.data:
+            return None
+        return result.data
 
     def get_completed_jobs_for_analyses(self, analysis_ids: list[str]) -> list[dict]:
         """Fetch latest completed glow_up_jobs for a list of analysis IDs (for history)."""
