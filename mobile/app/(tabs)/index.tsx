@@ -108,12 +108,12 @@ export default function HomeScreen() {
               if (status === 429) {
                 showToast({
                   kind: "warning",
-                  message: "You've submitted several reports recently. Please try again later.",
+                  message: "You've reported a lot recently. Give it a little while.",
                 });
               } else {
                 showToast({
                   kind: "error",
-                  message: "Failed to submit report. Please try again.",
+                  message: "Couldn't submit that report. Try again.",
                 });
               }
             }
@@ -141,7 +141,7 @@ export default function HomeScreen() {
               } catch {
                 showToast({
                   kind: "error",
-                  message: "Failed to block user. Please try again.",
+                  message: "Couldn't block that user. Try again.",
                 });
               }
             },

@@ -55,7 +55,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           </View>
           <Text style={styles.title}>Something went wrong</Text>
           <Text style={styles.message} numberOfLines={4}>
-            {this.state.error?.message ?? "An unexpected error occurred."}
+            {this.state.error?.message ?? "Something unexpected happened."}
           </Text>
           <Pressable
             style={styles.button}
@@ -64,7 +64,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             accessibilityRole="button"
           >
             <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-            <Text style={styles.buttonText}>Try Again</Text>
+            <Text style={styles.buttonText}>Try again</Text>
           </Pressable>
         </View>
       );

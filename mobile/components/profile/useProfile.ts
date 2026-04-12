@@ -90,7 +90,7 @@ export function useProfile(): UseProfileReturn {
         setHasMoreGlowUps(historyData.has_more);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to load profile",
+          err instanceof Error ? err.message : "We couldn't load this profile.",
         );
       } finally {
         setIsLoading(false);
@@ -117,7 +117,7 @@ export function useProfile(): UseProfileReturn {
         setHasMoreGlowUps(historyData.has_more);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to refresh profile",
+          err instanceof Error ? err.message : "We couldn't refresh this profile.",
         );
       } finally {
         setIsRefreshing(false);
@@ -183,7 +183,7 @@ export function useProfile(): UseProfileReturn {
         return true;
       } catch (err) {
         setUpdateError(
-          err instanceof Error ? err.message : "Failed to update profile",
+          err instanceof Error ? err.message : "We couldn't save those changes.",
         );
         return false;
       } finally {

@@ -101,7 +101,7 @@ export function NudgeFeed() {
       setHasMore(response.has_more);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to load nudges";
+        err instanceof Error ? err.message : "We couldn't load your nudges.";
       setError(message);
     } finally {
       setIsLoading(false);

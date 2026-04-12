@@ -118,7 +118,7 @@ export function ChatView() {
       setHasMore(response.has_more);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to load messages";
+        err instanceof Error ? err.message : "We couldn't load your messages.";
       setError(message);
     } finally {
       setIsLoading(false);
@@ -217,7 +217,7 @@ export function ChatView() {
         setShowPaywall(true);
       } else {
         // Mark optimistic message as failed (keep in list)
-        setError("Failed to send. Tap retry.");
+        setError("Couldn't send that. Tap retry.");
       }
     } finally {
       setIsSending(false);

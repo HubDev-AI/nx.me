@@ -192,7 +192,7 @@ export function PaywallModal({
       setEntitlement(state);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to load pricing";
+        err instanceof Error ? err.message : "We couldn't load pricing right now.";
       setFetchError(message);
     } finally {
       setIsFetching(false);
@@ -240,7 +240,7 @@ export function PaywallModal({
         onPurchaseComplete?.(updatedState);
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Purchase failed";
+          err instanceof Error ? err.message : "Something went wrong with your purchase.";
         setPurchaseError(message);
         setPurchaseState("error");
       } finally {
@@ -288,7 +288,7 @@ export function PaywallModal({
       onPurchaseComplete?.(updatedState);
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Subscription failed";
+        err instanceof Error ? err.message : "Something went wrong with your subscription.";
       setPurchaseError(message);
       setPurchaseState("error");
     }

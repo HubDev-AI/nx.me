@@ -111,7 +111,7 @@ export default function SubscriptionScreen() {
       const data = await fetchEntitlement();
       setEntitlement(data);
     } catch {
-      setError("Could not load subscription info. Please try again.");
+      setError("We couldn't load your subscription info. Try again.");
     } finally {
       setIsLoading(false);
     }
