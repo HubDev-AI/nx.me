@@ -103,5 +103,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     appleMerchantId:
       process.env.APPLE_MERCHANT_ID ?? "merchant.ai.nxme.app",
     tiktokClientKey: process.env.TIKTOK_CLIENT_KEY ?? "",
+    /** Dev only — skip to a specific screen after login. Set DEV_FEATURE_FOCUS=upload in .env */
+    devFeatureFocus: process.env.DEV_FEATURE_FOCUS ?? "",
   },
 });

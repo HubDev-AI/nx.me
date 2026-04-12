@@ -15,9 +15,16 @@ TRIAL = "free"
 CREDIT_HOLDER = "credits"
 PREMIUM = "premium"
 
-# Slug → display name mapping
+# Slug → display name mapping (for API responses / UI)
 SLUG_TO_TIER_NAME: dict[str, str] = {
     TRIAL: "Free",
     CREDIT_HOLDER: "Credits",
     PREMIUM: "Premium",
+}
+
+# Slug → DB enum value (must match glow_up_jobs_user_tier_at_enqueue_check constraint)
+SLUG_TO_DB_TIER: dict[str, str] = {
+    TRIAL: "TRIAL",
+    CREDIT_HOLDER: "CREDIT_HOLDER",
+    PREMIUM: "PREMIUM",
 }

@@ -40,8 +40,8 @@ migrate:
 	.venv/bin/python -m app.migrations.run
 
 # ── ARQ background worker (run in separate terminal) ──────────────────────────
-worker:
-	.venv/bin/arq app.worker_settings.WorkerSettings
+worker: app/.env
+	@set -a && . ./app/.env && set +a && .venv/bin/arq app.worker_settings.WorkerSettings
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:

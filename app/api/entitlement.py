@@ -13,7 +13,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user, get_entitlement_service, get_payment_adapter, get_subscription_repo
+from app.api.deps import get_analysis_user, get_current_user, get_entitlement_service, get_payment_adapter, get_subscription_repo
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.constants.tiers import SLUG_TO_TIER_NAME
@@ -74,7 +74,7 @@ def _build_purchase_options(svc: EntitlementService) -> PurchaseOptions | None:
 
 @router.get("/entitlement", response_model=EntitlementResponse)
 async def get_entitlement(
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_analysis_user),
     svc: EntitlementService = Depends(get_entitlement_service),
 ) -> EntitlementResponse:
     """Return the authenticated user's current entitlement snapshot.

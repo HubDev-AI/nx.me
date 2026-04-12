@@ -92,10 +92,16 @@ class ImageRepository:
     def create_signed_url(self, bucket: str, key: str, expires_in: int) -> str:
         """Create a signed URL for a private storage object.
 
-        Returns the signedURL string.
+        Returns the signedURL string.  When SUPABASE_PUBLIC_URL is set (local
+        dev), rewrites the host so mobile devices on the LAN can reach storage.
         """
+        from app.config import settings
+
         result = self._sb.storage.from_(bucket).create_signed_url(key, expires_in)
-        return result["signedURL"]
+        url = result["signedURL"]
+        if settings.SUPABASE_PUBLIC_URL and settings.SUPABASE_URL:
+            url = url.replace(settings.SUPABASE_URL, settings.SUPABASE_PUBLIC_URL, 1)
+        return url
 
     def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> None:
         """Upload bytes to a storage bucket."""
