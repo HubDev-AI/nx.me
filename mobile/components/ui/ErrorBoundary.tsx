@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Sentry from "@sentry/react-native";
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
@@ -26,8 +27,15 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Log to console in dev; in production this would go to a crash reporter
-    console.error("ErrorBoundary caught:", error, info.componentStack);
+    Sentry.captureException(error, {
+      contexts: {
+        react: { componentStack: info.componentStack ?? undefined },
+      },
+      tags: { source: "errorBoundary" },
+    });
+    if (__DEV__) {
+      console.error("[ErrorBoundary]", error, info);
+    }
   }
 
   private handleReset = () => {
@@ -47,7 +55,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
           </View>
           <Text style={styles.title}>Something went wrong</Text>
           <Text style={styles.message} numberOfLines={4}>
-            {this.state.error?.message ?? "An unexpected error occurred."}
+            {this.state.error?.message ?? "Something unexpected happened."}
           </Text>
           <Pressable
             style={styles.button}
@@ -56,7 +64,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             accessibilityRole="button"
           >
             <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-            <Text style={styles.buttonText}>Try Again</Text>
+            <Text style={styles.buttonText}>Try again</Text>
           </Pressable>
         </View>
       );

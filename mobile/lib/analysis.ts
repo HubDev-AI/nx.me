@@ -1,6 +1,8 @@
 /**
  * Analysis API client — handles upload, generation, job polling, and cancellation.
  */
+import * as Crypto from "expo-crypto";
+
 import { apiFetch } from "./api";
 import { ANALYSIS_ENDPOINTS, ANALYSIS_POLLING } from "../constants/config";
 
@@ -127,7 +129,12 @@ export async function startGeneration(
 ): Promise<GenerateResponse> {
   return apiFetch<GenerateResponse>(
     ANALYSIS_ENDPOINTS.GENERATE(analysisId),
-    { method: "POST" },
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: Crypto.randomUUID(),
+      }),
+    },
   );
 }
 

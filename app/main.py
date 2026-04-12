@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 
 from app.api import (
     admin, analyses, auth, blocks, entitlement, generation, health,
-    posts, public, social, users, webhooks,
+    posts, public, refund, social, users, webhooks,
 )
 from app.api.errors import (
     ApiError,
@@ -127,6 +127,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         RedisSettings.from_dsn(settings.REDIS_URL)
     )
 
+    # Dev guest user — upsert so DEV_FEATURE_FOCUS=upload works without login
+    if settings.APP_ENV == "development" and settings.DEV_ALLOW_GUEST_ANALYSIS:
+        from app.db.async_helpers import run_sync
+        guest_id = settings.DEV_GUEST_USER_ID
+        await run_sync(
+            lambda: app.state.supabase.table("users").upsert(
+                {
+                    "id": guest_id,
+                    "username": "dev_guest",
+                    "display_name": "Dev Guest",
+                    "email": "dev-guest@nxme.internal",
+                    "tier_id": "a0000000-0000-0000-0000-000000000001",  # free tier
+                },
+                on_conflict="id",
+            ).execute()
+        )
+        logger.info("Dev guest user seeded (id=%s)", guest_id)
+
     logger.info("Supabase, Redis, and ARQ pool initialised")
 
     yield
@@ -212,6 +230,7 @@ def create_app() -> FastAPI:
     v1.include_router(entitlement.router)
     v1.include_router(analyses.router)
     v1.include_router(generation.router)
+    v1.include_router(refund.router)
     v1.include_router(social.router)
     v1.include_router(posts.router)
     v1.include_router(blocks.router)

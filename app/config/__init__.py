@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_JWT_SECRET: str
+    # Public-facing Supabase URL for signed storage URLs (mobile needs LAN IP in dev)
+    SUPABASE_PUBLIC_URL: str = ""
 
     # Redis
     REDIS_URL: str = "redis://:localdev@localhost:6379/0"
@@ -85,13 +87,18 @@ class Settings(BaseSettings):
     COLOR_NORM_FACTOR_MAX: float = 1.2
 
     # Generation httpx timeout (audit G-5)
-    GENERATION_HTTPX_TIMEOUT_SECONDS: float = 30.0
+    GENERATION_HTTPX_TIMEOUT_SECONDS: float = 60.0
 
     # Model cost estimates (USD per generation, from provider pricing)
+    FAL_COST_NANO_BANANA_PRO: float = 0.150  # $0.15/image (Gemini 3 Pro)
+    FAL_COST_NANO_BANANA_2: float = 0.080  # $0.08/image at 1K default
+    FAL_COST_FLUX2_FLEX: float = 0.063  # $0.06/MP for 1024x1024
+    FAL_COST_NANO_BANANA: float = 0.039
+    FAL_COST_KONTEXT: float = 0.040
     FAL_COST_FLUX_PULID: float = 0.035
     FAL_COST_FLUX_DEV_IMG2IMG: float = 0.026
     FAL_COST_INSTANTID: float = 0.020
-    FAL_COST_DEFAULT: float = 0.035
+    FAL_COST_DEFAULT: float = 0.080
 
     # Advisor Sonnet model (chat responses)
     ADVISOR_MODEL_SONNET: str = "claude-sonnet-4-6"
@@ -116,7 +123,7 @@ class Settings(BaseSettings):
 
     # Generation / cost
     IMAGE_GEN_COST_CEILING_USD: float = 0.06
-    GENERATION_TIMEOUT_SECONDS: int = 60
+    GENERATION_TIMEOUT_SECONDS: int = 180
     CREDIT_COST_ALERT_USD: float = 0.05
     IDENTITY_MAX_RETRIES: int = 1
     MAX_PROMPT_KEYWORDS: int = 6
@@ -134,10 +141,10 @@ class Settings(BaseSettings):
     CB_COOLDOWN_SECONDS: int = 30           # seconds in OPEN before HALF_OPEN probe
     COST_BUCKET_TTL_SECONDS: int = 90_000   # 25 hours (24h + 1h buffer)
 
-    # Generation models (from generation-spec.md)
-    FAL_MODEL_PRIMARY: str = "fal-ai/flux-pulid"
-    FAL_MODEL_FALLBACK_1: str = "fal-ai/flux-general/image-to-image"
-    FAL_MODEL_FALLBACK_2: str = "fal-ai/instantid"
+    # Generation models
+    FAL_MODEL_PRIMARY: str = "fal-ai/nano-banana-2/edit"
+    FAL_MODEL_FALLBACK_1: str = "fal-ai/nano-banana/edit"
+    FAL_MODEL_FALLBACK_2: str = "fal-ai/nano-banana-pro/edit"
 
     # Transformation modules — pluggable feature flags
     ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"
@@ -193,6 +200,11 @@ class Settings(BaseSettings):
 
     # Feature flags — toggle mobile UI features per environment.
     FEATURE_ONBOARDING_ENABLED: bool = False
+
+    # Dev-only: accept X-Guest-Token on POST /analyses so DEV_FEATURE_FOCUS=upload
+    # works on a physical device without logging in. Never True in production.
+    DEV_ALLOW_GUEST_ANALYSIS: bool = False
+    DEV_GUEST_USER_ID: str = "00000000-0000-0000-0000-000000000001"
 
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""

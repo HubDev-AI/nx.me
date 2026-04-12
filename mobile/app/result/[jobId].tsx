@@ -4,19 +4,18 @@
  * Route: /result/[jobId]
  *
  * Flow:
- * 1. Fetch job result from GET /v1/jobs/{jobId}
+ * 1. Poll job result from GET /v1/jobs/{jobId} every 2s until terminal status
  * 2. Before image slides in, after wipes from right with glow ring
  * 3. Suggestion pills stagger up after reveal completes
- * 4. CTAs fade in: "Share", "Save", "This doesn't look like me"
- * 5. "This doesn't look like me" triggers refund + re-generation offer
+ * 4. CTAs fade in: "Share", "New Glow-Up", "This doesn't look like me"
+ * 5. "This doesn't look like me" triggers refund mutation
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
   Alert,
   Share,
   Platform,
@@ -35,9 +34,19 @@ import {
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { PressableScale } from "../../components/ui/PressableScale";
+import { QueryStateView } from "../../components/ui/QueryStateView";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
+import { useAppQuery } from "../../lib/hooks/use-app-query";
+import { useAppMutation } from "../../lib/hooks/use-app-mutation";
+import { showToast } from "../../lib/toast";
+
+// ---------------------------------------------------------------------------
+// Terminal statuses — polling stops when job reaches these
+// ---------------------------------------------------------------------------
+
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -48,37 +57,37 @@ export default function ResultScreen() {
   const router = useRouter();
   const { theme } = useTheme();
 
-  const [result, setResult] = useState<JobResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [revealComplete, setRevealComplete] = useState(false);
   const [ctasVisible, setCtasVisible] = useState(false);
   const [refundRequested, setRefundRequested] = useState(false);
 
-  // Fetch job result
-  useEffect(() => {
-    if (!jobId) return;
-    let cancelled = false;
+  // Poll job until terminal status
+  const jobQuery = useAppQuery<JobResult>({
+    queryKey: ["job", jobId],
+    queryFn: () => getJobStatus(jobId as string),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 2000;
+      if (TERMINAL_STATUSES.has(data.status)) return false;
+      return 2000;
+    },
+  });
 
-    setLoading(true);
-    getJobStatus(jobId)
-      .then((data) => {
-        if (!cancelled) {
-          setResult(data);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setError("Failed to load results. Please try again.");
-          setLoading(false);
-        }
+  const result = jobQuery.data;
+
+  // Refund mutation
+  const refundMutation = useAppMutation<void, void>({
+    mutationKey: ["refund", jobId],
+    mutationFn: () => requestRefund(jobId as string),
+    onSuccess: () => {
+      showToast({
+        kind: "success",
+        message: "Refund requested. Credits will be restored shortly.",
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId]);
+      setRefundRequested(true);
+    },
+  });
 
   const handleRevealComplete = useCallback(() => {
     setRevealComplete(true);
@@ -91,41 +100,13 @@ export default function ResultScreen() {
 
     Alert.alert(
       "Report issue",
-      "This will request a refund for this generation. Would you also like to try again?",
+      "We'll refund your credits. Continue?",
       [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Refund only",
-          onPress: async () => {
-            try {
-              await requestRefund(jobId);
-              setRefundRequested(true);
-            } catch {
-              setRefundRequested(false);
-              Alert.alert("Error", "Failed to process refund. Please try again.");
-            }
-          },
-        },
-        {
-          text: "Refund & retry",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await requestRefund(jobId);
-              setRefundRequested(true);
-              router.replace("/upload");
-            } catch {
-              setRefundRequested(false);
-              Alert.alert("Error", "Failed to process refund. Please try again.");
-            }
-          },
-        },
+        { text: "Cancel", style: "cancel" },
+        { text: "Refund", onPress: () => refundMutation.mutate() },
       ],
     );
-  }, [jobId, router]);
+  }, [jobId, refundMutation]);
 
   const handleShare = useCallback(async () => {
     const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/result/${jobId}`;
@@ -135,7 +116,7 @@ export default function ResultScreen() {
           await navigator.share({ url: shareUrl });
         } else if (typeof navigator !== "undefined" && navigator.clipboard) {
           await navigator.clipboard.writeText(shareUrl);
-          Alert.alert("Link copied", "Share link copied to clipboard");
+          showToast({ kind: "success", message: "Share link copied to clipboard." });
         }
       } else if (Platform.OS === "ios") {
         await Share.share({ url: shareUrl });
@@ -152,222 +133,159 @@ export default function ResultScreen() {
   }, [router]);
 
   // ---------------------------------------------------------------------------
-  // Render: Loading
+  // Render
   // ---------------------------------------------------------------------------
-
-  if (loading) {
-    return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Result",
-            headerStyle: { backgroundColor: THEME.colors.bg },
-            headerTintColor: THEME.colors.textPrimary,
-            headerShadowVisible: false,
-          }}
-        />
-        <View style={styles.centeredContainer}>
-          <PageBackground overlayOpacity={0.88} />
-          <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={styles.loadingText}>Loading results...</Text>
-        </View>
-      </>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: Error
-  // ---------------------------------------------------------------------------
-
-  if (error || !result) {
-    return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Result",
-            headerStyle: { backgroundColor: THEME.colors.bg },
-            headerTintColor: THEME.colors.textPrimary,
-            headerShadowVisible: false,
-          }}
-        />
-        <View style={styles.centeredContainer}>
-          <PageBackground overlayOpacity={0.88} />
-          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.destructive} />
-          <Text style={styles.errorText}>
-            {error ?? "No results available."}
-          </Text>
-          <PressableScale
-            onPress={handleNewGlowUp}
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
-            accessibilityLabel="Try again"
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>Try Again</Text>
-          </PressableScale>
-        </View>
-      </>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: Job failed/cancelled
-  // ---------------------------------------------------------------------------
-
-  if (result.status === "failed" || result.status === "cancelled") {
-    return (
-      <>
-        <Stack.Screen
-          options={{
-            title: "Result",
-            headerStyle: { backgroundColor: THEME.colors.bg },
-            headerTintColor: THEME.colors.textPrimary,
-            headerShadowVisible: false,
-          }}
-        />
-        <View style={styles.centeredContainer}>
-          <PageBackground overlayOpacity={0.88} />
-          <Ionicons
-            name={result.status === "cancelled" ? "close-circle-outline" : "alert-circle-outline"}
-            size={48}
-            color={result.status === "cancelled" ? THEME.colors.textSecondary : THEME.colors.destructive}
-          />
-          <Text style={styles.errorText}>
-            {result.status === "cancelled"
-              ? "Generation was cancelled."
-              : result.failure_reason ?? "Generation failed."}
-          </Text>
-          <PressableScale
-            onPress={handleNewGlowUp}
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
-            accessibilityLabel="Start a new glow-up"
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>New Glow-Up</Text>
-          </PressableScale>
-        </View>
-      </>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render: Success — before/after reveal
-  // ---------------------------------------------------------------------------
-
-  const hasBothImages = result.before_image_url && result.after_image_url;
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Your Glow-Up",
-          headerStyle: { backgroundColor: THEME.colors.bg },
-          headerTintColor: THEME.colors.textPrimary,
-          headerShadowVisible: false,
-        }}
-      />
-      <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
-        <PageBackground overlayOpacity={0.88} />
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {/* Before / After Reveal */}
-          {hasBothImages && result.before_image_url && result.after_image_url ? (
-            <BeforeAfterReveal
-              beforeUrl={result.before_image_url}
-              afterUrl={result.after_image_url}
-              onRevealComplete={handleRevealComplete}
+    <QueryStateView
+      isLoading={jobQuery.isLoading}
+      error={jobQuery.appError}
+      onRetry={() => jobQuery.refetch()}
+    >
+      {/* Job failed/cancelled — content-level failure inside a successful response */}
+      {result && (result.status === "failed" || result.status === "cancelled") ? (
+        <>
+          <Stack.Screen
+            options={{
+              title: "Result",
+              headerStyle: { backgroundColor: THEME.colors.bg },
+              headerTintColor: THEME.colors.textPrimary,
+              headerShadowVisible: false,
+            }}
+          />
+          <View style={styles.centeredContainer}>
+            <PageBackground overlayOpacity={0.88} />
+            <Ionicons
+              name={result.status === "cancelled" ? "close-circle-outline" : "alert-circle-outline"}
+              size={48}
+              color={result.status === "cancelled" ? THEME.colors.textSecondary : THEME.colors.destructive}
             />
-          ) : (
-            <View style={styles.missingImages}>
-              <Ionicons
-                name="image-outline"
-                size={48}
-                color={THEME.colors.textDisabled}
-              />
-              <Text style={styles.missingText}>
-                Images are not available yet.
-              </Text>
-            </View>
-          )}
-
-          {/* User Guidance */}
-          {result.user_guidance && revealComplete && (
-            <View style={styles.guidanceContainer}>
-              <Text style={styles.guidanceText}>{result.user_guidance}</Text>
-            </View>
-          )}
-
-          {/* CTAs */}
-          {ctasVisible && (
-            <Animated.View
-              entering={FadeIn.duration(250)}
-              style={styles.ctaContainer}
+            <Text style={styles.errorText}>
+              {result.status === "cancelled"
+                ? "Generation was cancelled."
+                : result.failure_reason ?? "Generation failed."}
+            </Text>
+            <PressableScale
+              onPress={handleNewGlowUp}
+              style={[styles.retryButton, { backgroundColor: theme.accent }]}
+              accessibilityLabel="Start a new glow-up"
+              accessibilityRole="button"
             >
-              {/* Primary action */}
-              <PressableScale
-                onPress={handleShare}
-                style={styles.ctaPrimary}
-                accessibilityLabel="Share your glow-up"
-                accessibilityRole="button"
-              >
-                <Ionicons name="share-outline" size={20} color={THEME.colors.bg} />
-                <Text style={styles.ctaPrimaryText}>Share</Text>
-              </PressableScale>
-
-              {/* Refund action */}
-              {!refundRequested ? (
-                <PressableScale
-                  scale={0.97}
-                  onPress={handleRefund}
-                  style={styles.refundButton}
-                  accessibilityLabel="Report that this does not look like you"
-                  accessibilityRole="button"
-                >
-                  <Ionicons
-                    name="flag-outline"
-                    size={16}
-                    color={THEME.colors.textSecondary}
-                  />
-                  <Text style={styles.refundText}>
-                    This doesn&apos;t look like me
-                  </Text>
-                </PressableScale>
+              <Text style={styles.retryText}>New Glow-Up</Text>
+            </PressableScale>
+          </View>
+        </>
+      ) : (
+        /* Success — before/after reveal */
+        <>
+          <Stack.Screen
+            options={{
+              title: "Your Glow-Up",
+              headerStyle: { backgroundColor: THEME.colors.bg },
+              headerTintColor: THEME.colors.textPrimary,
+              headerShadowVisible: false,
+            }}
+          />
+          <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+            <PageBackground overlayOpacity={0.88} />
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+            >
+              {/* Before / After Reveal */}
+              {result?.before_image_url && result.after_image_url ? (
+                <BeforeAfterReveal
+                  beforeUrl={result.before_image_url}
+                  afterUrl={result.after_image_url}
+                  onRevealComplete={handleRevealComplete}
+                />
               ) : (
-                <View style={styles.refundConfirmed}>
+                <View style={styles.missingImages}>
                   <Ionicons
-                    name="checkmark-circle-outline"
-                    size={16}
-                    color={theme.accent}
+                    name="image-outline"
+                    size={48}
+                    color={THEME.colors.textDisabled}
                   />
-                  <Text style={styles.refundConfirmedText}>
-                    Refund requested
+                  <Text style={styles.missingText}>
+                    Images are not available yet.
                   </Text>
                 </View>
               )}
 
-              {/* New glow-up */}
-              <PressableScale
-                onPress={handleNewGlowUp}
-                style={[
-                  styles.newGlowUpButton,
-                  { borderColor: theme.accent },
-                ]}
-                accessibilityLabel="Start a new glow-up"
-                accessibilityRole="button"
-              >
-                <Ionicons
-                  name="sparkles-outline"
-                  size={18}
-                  color={theme.accent}
-                />
-                <Text style={[styles.newGlowUpText, { color: theme.accent }]}>New Glow-Up</Text>
-              </PressableScale>
-            </Animated.View>
-          )}
-        </ScrollView>
-      </SafeAreaView>
-    </>
+              {/* User Guidance */}
+              {result?.user_guidance && revealComplete && (
+                <View style={styles.guidanceContainer}>
+                  <Text style={styles.guidanceText}>{result.user_guidance}</Text>
+                </View>
+              )}
+
+              {/* CTAs */}
+              {ctasVisible && (
+                <Animated.View
+                  entering={FadeIn.duration(250)}
+                  style={styles.ctaContainer}
+                >
+                  {/* Primary: Share */}
+                  <PressableScale
+                    onPress={handleShare}
+                    style={[styles.ctaButton, { backgroundColor: theme.accent }]}
+                    accessibilityLabel="Share your glow-up"
+                    accessibilityRole="button"
+                  >
+                    <View style={styles.ctaRow}>
+                      <Ionicons name="share-outline" size={18} color={THEME.colors.white} />
+                      <Text style={styles.ctaButtonText}>Share</Text>
+                    </View>
+                  </PressableScale>
+
+                  {/* Secondary: New Glow-Up */}
+                  <PressableScale
+                    onPress={handleNewGlowUp}
+                    style={[styles.ctaButton, styles.ctaSecondary]}
+                    accessibilityLabel="Start a new glow-up"
+                    accessibilityRole="button"
+                  >
+                    <View style={styles.ctaRow}>
+                      <Ionicons name="sparkles-outline" size={18} color={theme.accent} />
+                      <Text style={[styles.ctaSecondaryText, { color: theme.accent }]}>
+                        New Glow-Up
+                      </Text>
+                    </View>
+                  </PressableScale>
+
+                  {/* Tertiary: Refund */}
+                  {!refundRequested ? (
+                    <PressableScale
+                      scale={0.97}
+                      onPress={handleRefund}
+                      style={styles.ctaTertiary}
+                      accessibilityLabel="Report that this does not look like you"
+                      accessibilityRole="button"
+                    >
+                      <View style={styles.ctaRow}>
+                        <Ionicons name="flag-outline" size={14} color={THEME.colors.textMuted} />
+                        <Text style={styles.ctaTertiaryText}>
+                          This doesn&apos;t look like me
+                        </Text>
+                      </View>
+                    </PressableScale>
+                  ) : (
+                    <View style={styles.ctaTertiary}>
+                      <View style={styles.ctaRow}>
+                        <Ionicons name="checkmark-circle-outline" size={14} color={theme.accent} />
+                        <Text style={[styles.ctaTertiaryText, { color: theme.accent }]}>
+                          Refund requested
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </Animated.View>
+              )}
+            </ScrollView>
+          </SafeAreaView>
+        </>
+      )}
+    </QueryStateView>
   );
 }
 
@@ -384,9 +302,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: THEME.spacing.xxxl + THEME.spacing.lg,
+    paddingBottom: THEME.spacing.xxxl * 3,
   },
-  // Loading / Error states
+  // Error / failed states
   centeredContainer: {
     flex: 1,
     backgroundColor: THEME.colors.bg,
@@ -394,11 +312,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: THEME.spacing.xxxl,
     gap: THEME.spacing.lg,
-  },
-  loadingText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
   },
   errorText: {
     fontFamily: FONTS.body,
@@ -445,67 +358,46 @@ const styles = StyleSheet.create({
   },
   // CTAs
   ctaContainer: {
-    paddingHorizontal: THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xl,
     paddingTop: THEME.spacing.xxl,
-    gap: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
-  ctaPrimary: {
+  ctaRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: THEME.colors.glass,
+    gap: THEME.spacing.md,
+  },
+  ctaButton: {
+    alignItems: "center",
+    justifyContent: "center",
     borderRadius: THEME.radius.pill,
+    paddingVertical: THEME.spacing.lg,
+    minHeight: 52,
+  },
+  ctaButtonText: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 16,
+    color: THEME.colors.white,
+  },
+  ctaSecondary: {
+    backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    paddingVertical: THEME.spacing.lg - 2,
-    gap: THEME.spacing.sm,
-    minHeight: 48,
   },
-  ctaPrimaryText: {
-    fontFamily: FONTS.bodySemiBold,
+  ctaSecondaryText: {
+    fontFamily: FONTS.bodyMedium,
     fontSize: 15,
-    color: THEME.colors.textPrimary,
   },
-  // Refund
-  refundButton: {
-    flexDirection: "row",
+  ctaTertiary: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: THEME.spacing.md,
-    gap: THEME.spacing.sm,
-    minHeight: 44,
+    minHeight: 40,
   },
-  refundText: {
+  ctaTertiaryText: {
     fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-    textDecorationLine: "underline",
-  },
-  refundConfirmed: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: THEME.spacing.md,
-    gap: THEME.spacing.sm,
-  },
-  refundConfirmedText: {
-    fontFamily: FONTS.bodyMedium,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-  },
-  // New glow-up
-  newGlowUpButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: THEME.radius.pill,
-    paddingVertical: THEME.spacing.md,
-    gap: THEME.spacing.sm,
-    minHeight: 44,
-    borderWidth: 1,
-  },
-  newGlowUpText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
+    fontSize: 13,
+    color: THEME.colors.textMuted,
   },
 });

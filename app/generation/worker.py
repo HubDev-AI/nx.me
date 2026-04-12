@@ -568,22 +568,54 @@ async def _fail_job(
     identity_score: float | None = None,
     supabase: Client | None = None,
 ) -> None:
-    """Fail a job: release credit, update status."""
-    # Release credit reservation — but only if credit hasn't already been
-    # committed (M-4: double-release guard).  Jobs in "completed" or
-    # "finalizing" have already had their credit committed (or are mid-commit).
+    """Fail a job: release/refund credit, update usage_event, update status.
+
+    Credit handling (auto-refund for non-user-caused failures):
+    - Job in 'finalizing' state: credit was already committed → call refund()
+      (committed → released, adds +1 delta).
+    - Job in other states: credit is still reserved → call release()
+      (reserved → released, adds +1 delta).
+    - Job in 'completed' state: credit fully consumed — no action.
+
+    After a successful credit release or refund the usage_event is marked
+    'released' so the client-initiated refund endpoint (POST .../refund)
+    treats the job as already settled and returns 409 instead of double-refunding.
+    """
+    from app.entitlement.ledger import CreditLedger
+
     current_status = job_data.get("status")
-    if (
-        job_data.get("credit_reservation_id")
-        and supabase is not None
-        and current_status not in (JobStatus.COMPLETED, JobStatus.FINALIZING)
-    ):
+    reservation_id_str = job_data.get("credit_reservation_id")
+
+    credit_settled = False
+    if reservation_id_str and supabase is not None and current_status != JobStatus.COMPLETED:
+        _ledger = CreditLedger(supabase)
+        reservation_id = UUID(reservation_id_str)
         try:
-            from app.entitlement.ledger import CreditLedger
-            _ledger = CreditLedger(supabase)
-            _ledger.release(UUID(job_data["credit_reservation_id"]))
+            if current_status == JobStatus.FINALIZING:
+                # Credit was committed during finalisation — refund it back.
+                _ledger.refund(reservation_id)
+                logger.info("Credit refunded (finalizing rollback) for job %s", job_id)
+            else:
+                # Credit is still on hold — release the reservation.
+                _ledger.release(reservation_id)
+                logger.info("Credit released for job %s", job_id)
+            credit_settled = True
         except Exception as exc:
-            logger.error("Failed to release credit for job %s: %s", job_id, exc)
+            logger.error(
+                "Failed to settle credit for job %s (status=%s): %s",
+                job_id, current_status, exc,
+            )
+
+    # Mark usage_event as released so the client refund endpoint won't
+    # attempt a second release/refund (idempotency guard, M-4).
+    if credit_settled:
+        try:
+            job_repo.update_usage_event(job_id, {"status": "released"})
+        except Exception as exc:
+            logger.error(
+                "Failed to update usage_event for job %s after credit settle: %s",
+                job_id, exc,
+            )
 
     update: dict = {
         "status": JobStatus.FAILED,

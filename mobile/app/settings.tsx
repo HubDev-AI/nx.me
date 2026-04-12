@@ -27,7 +27,9 @@ import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch } from "../lib/api";
+import { parseApiError } from "../lib/errors";
+import { showToast } from "../lib/toast";
 import { clearAllTokens } from "../lib/auth";
 
 // Safely resolve expo-constants — if unavailable (bare workflow edge case),
@@ -82,11 +84,8 @@ export default function SettingsScreen() {
         if (!cancelled) setMe(data);
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err instanceof ApiError
-              ? `Failed to load account (${err.status})`
-              : "Failed to load account",
-          );
+          const appError = parseApiError(err);
+          setError(appError.message);
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -118,12 +117,8 @@ export default function SettingsScreen() {
               await clearAllTokens();
               setAuthenticated(false);
             } catch (err) {
-              Alert.alert(
-                "Error",
-                err instanceof ApiError
-                  ? `Could not delete account (${err.status})`
-                  : "Could not delete account. Please try again.",
-              );
+              const appError = parseApiError(err);
+              showToast({ kind: 'error', message: appError.message });
             } finally {
               setIsDeleting(false);
             }

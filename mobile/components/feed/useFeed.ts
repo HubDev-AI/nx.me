@@ -1,6 +1,8 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/api";
+import { parseApiError, type AppError } from "../../lib/errors";
 import {
   FEED_ENDPOINTS,
   FEED_CONFIG,
@@ -9,13 +11,18 @@ import {
 import type { FeedSortValue } from "../../constants/config";
 import type { FeedPost, FeedResponse, ReactionResponse } from "./types";
 
-interface UseFeedReturn {
+interface FeedPage {
+  posts: FeedPost[];
+  nextCursor: string | null;
+}
+
+export interface UseFeedReturn {
   posts: FeedPost[];
   isLoading: boolean;
   isRefreshing: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
-  error: string | null;
+  error: AppError | null;
   activeSort: FeedSortValue;
   reactedPostIds: Set<string>;
   paginationFailed: boolean;
@@ -28,148 +35,94 @@ interface UseFeedReturn {
   removePostsByUser: (userId: string) => void;
 }
 
+async function fetchFeedPage(
+  sort: FeedSortValue,
+  cursor: string | undefined,
+): Promise<FeedPage> {
+  const params = new URLSearchParams({
+    sort,
+    limit: String(FEED_CONFIG.PAGE_SIZE),
+  });
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  const response = await apiFetch<FeedResponse>(
+    `${FEED_ENDPOINTS.FEED}?${params.toString()}`,
+  );
+  return {
+    posts: response.posts,
+    nextCursor: response.next_cursor,
+  };
+}
+
 /**
  * Custom hook for feed state management.
  * Handles pagination, sort switching, optimistic reactions, and dedup.
+ * Uses TanStack useInfiniteQuery for fetch/retry/caching.
  */
 export function useFeed(): UseFeedReturn {
-  const [posts, setPosts] = useState<FeedPost[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const [activeSort, setActiveSort] = useState<FeedSortValue>(FEED_SORT.NEWEST);
   const [reactedPostIds, setReactedPostIds] = useState<Set<string>>(new Set());
-
-  const [paginationFailed, setPaginationFailed] = useState(false);
-
-  const cursorRef = useRef<string | null>(null);
-  const isLoadingRef = useRef(false);
-  const retryCountRef = useRef(0);
-  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reactingRef = useRef<Set<string>>(new Set());
 
-  const fetchFeed = useCallback(
-    async (cursor: string | null, sort: FeedSortValue): Promise<FeedResponse> => {
-      const params = new URLSearchParams({
-        sort,
-        limit: String(FEED_CONFIG.PAGE_SIZE),
-      });
-      if (cursor) {
-        params.set("cursor", cursor);
-      }
-      return apiFetch<FeedResponse>(
-        `${FEED_ENDPOINTS.FEED}?${params.toString()}`,
-      );
-    },
-    [],
+  const query = useInfiniteQuery<FeedPage, unknown>({
+    queryKey: ["feed", activeSort],
+    queryFn: ({ pageParam }) =>
+      fetchFeedPage(activeSort, pageParam as string | undefined),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    staleTime: 30_000,
+  });
+
+  const posts = useMemo(
+    () => query.data?.pages.flatMap((p) => p.posts) ?? [],
+    [query.data],
   );
 
-  const loadFeed = useCallback(async () => {
-    if (isLoadingRef.current) return;
-    isLoadingRef.current = true;
-    setIsLoading(true);
-    setError(null);
+  // Derived state: paginationFailed when there's an error and not currently fetching
+  const paginationFailed = !!query.error && !query.isFetching && posts.length > 0;
 
-    try {
-      const response = await fetchFeed(null, activeSort);
-      setPosts(response.posts);
-      cursorRef.current = response.next_cursor;
-      setHasMore(response.has_more);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to load feed",
-      );
-    } finally {
-      setIsLoading(false);
-      isLoadingRef.current = false;
-    }
-  }, [fetchFeed, activeSort]);
+  // ---------------------------------------------------------------------------
+  // Cache mutation helpers
+  // ---------------------------------------------------------------------------
+
+  const updateCache = useCallback(
+    (
+      updater: (
+        old: { pages: FeedPage[]; pageParams: unknown[] } | undefined,
+      ) => { pages: FeedPage[]; pageParams: unknown[] } | undefined,
+    ) => {
+      queryClient.setQueryData(["feed", activeSort], updater);
+    },
+    [queryClient, activeSort],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Public API methods
+  // ---------------------------------------------------------------------------
+
+  const loadFeed = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
 
   const loadMore = useCallback(async () => {
-    if (isLoadingRef.current || !hasMore || !cursorRef.current) return;
-    isLoadingRef.current = true;
-    setIsLoadingMore(true);
-
-    try {
-      const response = await fetchFeed(cursorRef.current, activeSort);
-      setPosts((prev) => {
-        const existingIds = new Set(prev.map((p) => p.post_id));
-        const newPosts = response.posts.filter((p) => !existingIds.has(p.post_id));
-        return [...prev, ...newPosts];
-      });
-      cursorRef.current = response.next_cursor;
-      setHasMore(response.has_more);
-      retryCountRef.current = 0;
-      setPaginationFailed(false);
-    } catch (err) {
-      console.warn("Feed loadMore error:", err);
-      retryCountRef.current += 1;
-      if (retryCountRef.current < 3) {
-        const delay = retryCountRef.current === 1 ? 2000 : 3000;
-        retryTimeoutRef.current = setTimeout(() => {
-          isLoadingRef.current = false;
-          loadMore();
-        }, delay);
-        return;
-      }
-      setPaginationFailed(true);
-    } finally {
-      setIsLoadingMore(false);
-      isLoadingRef.current = false;
+    if (query.hasNextPage && !query.isFetchingNextPage) {
+      await query.fetchNextPage();
     }
-  }, [fetchFeed, activeSort, hasMore]);
+  }, [query]);
 
   const refresh = useCallback(async () => {
-    setIsRefreshing(true);
-    setError(null);
-
-    try {
-      setPaginationFailed(false);
-      cursorRef.current = null;
-      const response = await fetchFeed(null, activeSort);
-      setPosts(response.posts);
-      cursorRef.current = response.next_cursor;
-      setHasMore(response.has_more);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to refresh feed",
-      );
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [fetchFeed, activeSort]);
+    await query.refetch();
+  }, [query]);
 
   const changeSort = useCallback(
     (sort: FeedSortValue) => {
       if (sort === activeSort) return;
       setActiveSort(sort);
-      setPosts([]);
-      cursorRef.current = null;
-      setHasMore(true);
-      setIsLoading(true);
-      setError(null);
-
-      // Fetch with new sort immediately
-      isLoadingRef.current = true;
-      fetchFeed(null, sort)
-        .then((response) => {
-          setPosts(response.posts);
-          cursorRef.current = response.next_cursor;
-          setHasMore(response.has_more);
-        })
-        .catch((err) => {
-          setError(
-            err instanceof Error ? err.message : "Failed to load feed",
-          );
-        })
-        .finally(() => {
-          setIsLoading(false);
-          isLoadingRef.current = false;
-        });
+      // The new sort value changes the queryKey — TanStack will auto-fetch
     },
-    [activeSort, fetchFeed],
+    [activeSort],
   );
 
   const reactToPost = useCallback(
@@ -180,13 +133,20 @@ export function useFeed(): UseFeedReturn {
 
       // Optimistic update: increment count and mark as reacted
       setReactedPostIds((prev) => new Set(prev).add(postId));
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.post_id === postId
-            ? { ...p, reaction_count: p.reaction_count + 1 }
-            : p,
-        ),
-      );
+      updateCache((old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            posts: page.posts.map((p) =>
+              p.post_id === postId
+                ? { ...p, reaction_count: p.reaction_count + 1 }
+                : p,
+            ),
+          })),
+        };
+      });
 
       try {
         const response = await apiFetch<ReactionResponse>(
@@ -195,13 +155,20 @@ export function useFeed(): UseFeedReturn {
         );
 
         // Reconcile with server count
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.post_id === postId
-              ? { ...p, reaction_count: response.reaction_count }
-              : p,
-          ),
-        );
+        updateCache((old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              posts: page.posts.map((p) =>
+                p.post_id === postId
+                  ? { ...p, reaction_count: response.reaction_count }
+                  : p,
+              ),
+            })),
+          };
+        });
       } catch (err) {
         // Rollback optimistic update on failure
         reactingRef.current.delete(postId);
@@ -210,49 +177,71 @@ export function useFeed(): UseFeedReturn {
           next.delete(postId);
           return next;
         });
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.post_id === postId
-              ? { ...p, reaction_count: Math.max(0, p.reaction_count - 1) }
-              : p,
-          ),
-        );
+        updateCache((old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              posts: page.posts.map((p) =>
+                p.post_id === postId
+                  ? { ...p, reaction_count: Math.max(0, p.reaction_count - 1) }
+                  : p,
+              ),
+            })),
+          };
+        });
         console.warn("Reaction failed:", err);
+      } finally {
+        reactingRef.current.delete(postId);
       }
     },
-    [],
+    [updateCache],
   );
 
-  const incrementCommentCount = useCallback((postId: string) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.post_id === postId
-          ? { ...p, comment_count: (p.comment_count ?? 0) + 1 }
-          : p,
-      ),
-    );
-  }, []);
+  const incrementCommentCount = useCallback(
+    (postId: string) => {
+      updateCache((old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            posts: page.posts.map((p) =>
+              p.post_id === postId
+                ? { ...p, comment_count: (p.comment_count ?? 0) + 1 }
+                : p,
+            ),
+          })),
+        };
+      });
+    },
+    [updateCache],
+  );
 
-  const removePostsByUser = useCallback((userId: string) => {
-    setPosts((prev) => prev.filter((p) => p.user_id !== userId));
-  }, []);
-
-  // Cleanup retry timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-      }
-    };
-  }, []);
+  const removePostsByUser = useCallback(
+    (userId: string) => {
+      updateCache((old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            posts: page.posts.filter((p) => p.user_id !== userId),
+          })),
+        };
+      });
+    },
+    [updateCache],
+  );
 
   return {
     posts,
-    isLoading,
-    isRefreshing,
-    isLoadingMore,
-    hasMore,
-    error,
+    isLoading: query.isLoading,
+    isRefreshing: query.isRefetching && !query.isFetchingNextPage,
+    isLoadingMore: query.isFetchingNextPage,
+    hasMore: query.hasNextPage ?? false,
+    error: query.error ? parseApiError(query.error) : null,
     activeSort,
     reactedPostIds,
     paginationFailed,

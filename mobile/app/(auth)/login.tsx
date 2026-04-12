@@ -8,7 +8,7 @@
  * For social auth (TikTok, Google, Apple), login and signup are the same
  * flow -- the backend handles account creation on first login.
  */
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import {
   View,
   Text,
@@ -37,10 +37,6 @@ import { GlowButton } from "../../components/ui/GlowButton";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 
-interface FieldErrors {
-  general?: string;
-}
-
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -63,15 +59,10 @@ export default function AuthScreen() {
     clearSocialError,
   } = useSocialAuth();
 
-  const [errors, setErrors] = useState<FieldErrors>({});
-
-  // Surface social auth errors
+  // Clear social error when navigating away (safety valve)
   useEffect(() => {
-    if (socialError) {
-      setErrors({ general: socialError });
-      clearSocialError();
-    }
-  }, [socialError, clearSocialError]);
+    return clearSocialError;
+  }, [clearSocialError]);
 
   // ---- Providers loading / error state ----
   if (isLoadingProviders || providersError) {
@@ -133,10 +124,10 @@ export default function AuthScreen() {
         </Animated.View>
 
         {/* General error */}
-        {errors.general ? (
+        {socialError ? (
           <View style={styles.generalError} accessibilityRole="alert">
             <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
-            <Text style={styles.generalErrorText}>{errors.general}</Text>
+            <Text style={styles.generalErrorText}>{socialError.message}</Text>
           </View>
         ) : null}
 

@@ -6,7 +6,6 @@ import {
   Pressable,
   StyleSheet,
   Share,
-  Alert,
   Platform,
   Dimensions,
 } from "react-native";
@@ -31,6 +30,7 @@ import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { hapticLight, hapticMedium } from "../../lib/haptics";
 import type { FeedPost } from "./types";
+import { showToast } from "../../lib/toast";
 
 export const FEED_IMAGE_HEIGHT = 240;
 const LONG_PRESS_DELAY_MS = 500;
@@ -158,7 +158,7 @@ export const FeedCard = React.memo(function FeedCard({
               await navigator.share({ url: UNIVERSAL_LINK_ORIGIN, text: shareMessage });
             } else if (typeof navigator !== "undefined" && navigator.clipboard) {
               await navigator.clipboard.writeText(UNIVERSAL_LINK_ORIGIN);
-              Alert.alert("Link copied", "Share link copied to clipboard");
+              showToast({ kind: 'success', message: "Share link copied to clipboard" });
             }
           } else if (Platform.OS === "ios") {
             await Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });

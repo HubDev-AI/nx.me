@@ -56,9 +56,11 @@ class TestSettings:
         assert not hasattr(settings, "MIN_AGE_YEARS")
 
     def test_adapter_defaults_are_mock(self):
-        """In dev/test, adapters default to mock to avoid external dependencies."""
+        """Adapters that hit external paid APIs default to mock in dev/test."""
+        # NSFW, LLM, and payment always mock (external paid APIs)
         assert settings.ADAPTER__NSFW_ADAPTER == "mock"
-        assert settings.ADAPTER__FACE_ANALYSIS_ADAPTER == "mock"
-        assert settings.ADAPTER__IMAGE_GENERATION_ADAPTER == "mock"
         assert settings.ADAPTER__LLM_ADAPTER == "mock"
         assert settings.ADAPTER__PAYMENT_ADAPTER == "mock"
+        # Face analysis uses local MediaPipe (no external call); image gen uses fal.ai in dev
+        assert settings.ADAPTER__FACE_ANALYSIS_ADAPTER in ("mock", "mediapipe")
+        assert settings.ADAPTER__IMAGE_GENERATION_ADAPTER in ("mock", "falai")

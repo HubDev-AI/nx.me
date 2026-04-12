@@ -128,7 +128,7 @@ export async function apiFetch<T = unknown>(
 
       if (!retryResponse.ok) {
         const body = await retryResponse.text().catch(() => "");
-        throw new ApiError(retryResponse.status, body, url);
+        throw new ApiError(retryResponse.status, body, url, retryResponse.headers);
       }
 
       // 204 No Content — return undefined (callers should type T as void)
@@ -144,7 +144,7 @@ export async function apiFetch<T = unknown>(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new ApiError(response.status, body, url);
+    throw new ApiError(response.status, body, url, response.headers);
   }
 
   // 204 No Content — return undefined (callers should type T as void)
@@ -157,13 +157,22 @@ export async function apiFetch<T = unknown>(
 
 
 export class ApiError extends Error {
+  readonly status: number;
+  readonly body: string;
+  readonly url: string;
+  readonly headers: Headers | null;
   constructor(
-    public readonly status: number,
-    public readonly body: string,
-    public readonly url: string,
+    status: number,
+    body: string,
+    url: string,
+    headers: Headers | null = null,
   ) {
     const message = __DEV__ ? `API ${status}: ${url}` : `API ${status}`;
     super(message);
+    this.status = status;
+    this.body = body;
+    this.url = url;
+    this.headers = headers;
     this.name = "ApiError";
   }
 }

@@ -49,10 +49,32 @@ class AnalysisResult:
 
 
 # ---------------------------------------------------------------------------
-# Error codes
+# Error codes — must match mobile parseApiError FACE_ERROR_CODES taxonomy
 # ---------------------------------------------------------------------------
 
-FACE_NOT_DETECTED = "FACE_NOT_DETECTED"
-MULTIPLE_FACES = "MULTIPLE_FACES"
-FACE_OBSTRUCTED = "FACE_OBSTRUCTED"
-IMAGE_TOO_BLURRY = "IMAGE_TOO_BLURRY"
+# Legacy uppercase constants — kept for backwards-compat references only.
+# Prefer the FACE_* constants below for all new code.
+FACE_NOT_DETECTED = "face_not_detected"
+MULTIPLE_FACES = "face_not_detected"  # treated as "no single face" on mobile
+FACE_OBSTRUCTED = "face_obscured"
+IMAGE_TOO_BLURRY = "face_not_detected"
+
+# Canonical face-error codes (mobile taxonomy)
+FACE_ERROR_NOT_DETECTED = "face_not_detected"
+FACE_ERROR_TOO_CLOSE = "face_too_close"
+FACE_ERROR_TOO_FAR = "face_too_far"
+FACE_ERROR_LIGHTING_TOO_DARK = "lighting_too_dark"
+FACE_ERROR_LIGHTING_TOO_BRIGHT = "lighting_too_bright"
+FACE_ERROR_OBSCURED = "face_obscured"
+
+
+@dataclass(frozen=True)
+class FaceErrorDetails:
+    """Structured details for a face-analysis error.
+
+    zone: which part of the frame/face is problematic.
+    reason: short human-readable description, e.g. "Face occupies >80% of frame".
+    """
+
+    zone: str  # center | top | bottom | left | right | whole
+    reason: str

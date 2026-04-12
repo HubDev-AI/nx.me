@@ -41,6 +41,14 @@ FAILURE_TIMEOUT = "GENERATION_TIMEOUT"
 FAILURE_PROVIDER = "PROVIDER_ERROR"
 FAILURE_CANCELLED = "CANCELLED"
 
+# Failure reasons caused by the provider/system (not the user).
+# Worker auto-releases credits for these. User-caused failures (NSFW, IDENTITY)
+# require the client to initiate the "Report issue" → refund flow.
+NON_USER_FAILURE_REASONS: frozenset[str] = frozenset([
+    FAILURE_TIMEOUT,
+    FAILURE_PROVIDER,
+])
+
 
 # ---------------------------------------------------------------------------
 # Generation options and results
@@ -55,9 +63,10 @@ class GenerationOptions:
     prompt: str
     negative_prompt: str
     reference_image_url: str
-    id_weight: float = 0.85
+    id_weight: float = 0.95
+    true_cfg: float = 1.0
     guidance_scale: float = 4.0
-    num_inference_steps: int = 30
+    num_inference_steps: int = 35
     image_size: str = "square_hd"
     max_sequence_length: int = 512
     # Flux Dev img2img specific

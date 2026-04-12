@@ -18,7 +18,9 @@ import { OVERLAY_LIGHT, OVERLAY_MEDIUM } from "../../constants/colors";
 import { FEED_ENDPOINTS, UNIVERSAL_LINK_ORIGIN, MIN_TOUCH_TARGET } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
-import { apiFetch, ApiError } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
+import { parseApiError } from "../../lib/errors";
+import { showToast } from "../../lib/toast";
 import { hapticLight, hapticError } from "../../lib/haptics";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
@@ -120,7 +122,7 @@ export default function PostDetailScreen() {
           await navigator.share({ url: UNIVERSAL_LINK_ORIGIN, text: shareMessage });
         } else if (typeof navigator !== "undefined" && navigator.clipboard) {
           await navigator.clipboard.writeText(UNIVERSAL_LINK_ORIGIN);
-          Alert.alert("Link copied", "Share link copied to clipboard");
+          showToast({ kind: 'success', message: "Share link copied to clipboard" });
         }
       } else if (Platform.OS === "ios") {
         await Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
@@ -155,11 +157,11 @@ export default function PostDetailScreen() {
               router.back();
             } catch (err) {
               hapticError();
-              const msg =
-                err instanceof ApiError && err.status === 403
-                  ? "You can only delete your own posts."
-                  : "Failed to delete post. Please try again.";
-              Alert.alert("Error", msg);
+              const appError = parseApiError(err);
+              const msg = appError.kind === 'permission'
+                ? "You can only delete your own posts."
+                : appError.message;
+              showToast({ kind: 'error', message: msg });
             } finally {
               setIsDeleting(false);
             }
@@ -185,11 +187,12 @@ export default function PostDetailScreen() {
             try {
               await blockUser(userId);
               hapticLight();
-              Alert.alert("Blocked", `${name} has been blocked.`);
+              showToast({ kind: 'success', message: `${name} has been blocked.` });
               router.back();
-            } catch {
+            } catch (err) {
               hapticError();
-              Alert.alert("Error", "Failed to block user. Please try again.");
+              const appError = parseApiError(err);
+              showToast({ kind: 'error', message: appError.message });
             }
           },
         },
@@ -212,10 +215,11 @@ export default function PostDetailScreen() {
             try {
               await reportPost(postId);
               hapticLight();
-              Alert.alert("Reported", "Thank you. Our team will review this post.");
-            } catch {
+              showToast({ kind: 'success', message: "Thank you. Our team will review this post." });
+            } catch (err) {
               hapticError();
-              Alert.alert("Error", "Failed to report post. Please try again.");
+              const appError = parseApiError(err);
+              showToast({ kind: 'error', message: appError.message });
             }
           },
         },
