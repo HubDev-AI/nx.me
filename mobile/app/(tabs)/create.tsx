@@ -187,13 +187,13 @@ export default function CreateScreen() {
       >
         {/* Header */}
         <Animated.Text
-          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(80)}
+          entering={FadeInDown.duration(THEME.animation.duration.fast).delay(80)}
           style={styles.title}
         >
           Create
         </Animated.Text>
         <Animated.Text
-          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(160)}
+          entering={FadeInDown.duration(THEME.animation.duration.fast).delay(160)}
           style={styles.subtitle}
         >
           What would you like to do?
@@ -201,7 +201,7 @@ export default function CreateScreen() {
 
         {/* Divider below subtitle */}
         <Animated.View
-          entering={FadeInDown.duration(THEME.animation.duration.slow).delay(200)}
+          entering={FadeInDown.duration(THEME.animation.duration.fast).delay(200)}
           style={styles.subtitleDivider}
         />
 

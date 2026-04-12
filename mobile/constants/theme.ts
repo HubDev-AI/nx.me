@@ -103,7 +103,12 @@ export const THEME = {
       instant: 150,
       fast: 200,
       normal: 300,
-      slow: 500,
+      /**
+       * Reserved for celebratory / first-time surfaces only (e.g. glow-up
+       * reveal). Never use for recurring UI — keep recurring animations
+       * at or below `normal` (300ms) so the interface stays responsive.
+       */
+      celebration: 500,
     },
   },
 } as const;
