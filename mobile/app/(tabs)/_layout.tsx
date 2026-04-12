@@ -16,9 +16,13 @@ import { FONTS } from "../../hooks/useFonts";
 import { BrandLabel } from "../../components/ui/BrandLabel";
 import { FeedCreditBadge } from "../../components/feed/FeedCreditBadge";
 import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
+import { useFeatures } from "../../lib/features-context";
 
 /** Height of the floating tab bar + bottom inset — used for paddingBottom in scroll views */
 export const TAB_BAR_HEIGHT = 90;
+
+/** Minimum visible tabs before we render the floating tab bar at all. */
+const MIN_TABS_FOR_BAR = 2;
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -171,83 +175,100 @@ function HeaderCreditBadge() {
 
 function TabLayoutInner() {
   const { theme } = useTheme();
+  const { features } = useFeatures();
+
+  const socialOn = features.social_enabled;
+  const advisorOn = features.advisor_enabled;
+
+  // Count of tabs that will appear in the bar. Create is always visible.
+  const visibleTabs =
+    1 /* create */ + (socialOn ? 2 : 0) /* home + profile */ + (advisorOn ? 1 : 0);
+
+  const initialRoute = socialOn ? "index" : "create";
+  const showTabBar = visibleTabs >= MIN_TABS_FOR_BAR;
 
   return (
     <>
-    <Tabs
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{
-        tabBarActiveTintColor: theme.accent,
-        tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
-        tabBarShowLabel: false,
-        headerStyle: {
-          backgroundColor: SCROLL_TOP_BG,
-        },
-        headerTintColor: TEXT_PRIMARY,
-        headerShadowVisible: false,
-        headerTitle: () => <HeaderBrandLabel />,
-      }}
-    >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Home",
-          headerRight: () => <HeaderCreditBadge />,
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon
-              name={focused ? "home" : "home-outline"}
-              color={color}
-              focused={focused}
-              accentColor={theme.accent}
-            />
-          ),
+      <Tabs
+        initialRouteName={initialRoute}
+        tabBar={(props) => (showTabBar ? <CustomTabBar {...props} /> : null)}
+        screenOptions={{
+          tabBarActiveTintColor: theme.accent,
+          tabBarInactiveTintColor: TAB_INACTIVE_COLOR,
+          tabBarShowLabel: false,
+          headerStyle: {
+            backgroundColor: SCROLL_TOP_BG,
+          },
+          headerTintColor: TEXT_PRIMARY,
+          headerShadowVisible: false,
+          headerTitle: () => <HeaderBrandLabel />,
         }}
-      />
-      <Tabs.Screen
-        name="create"
-        options={{
-          title: "Create",
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon
-              name={focused ? "add-circle" : "add-circle-outline"}
-              color={color}
-              focused={focused}
-              accentColor={theme.accent}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="advisor"
-        options={{
-          title: "Advisor",
-          href: "/advisor",
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon
-              name={focused ? "sparkles" : "sparkles-outline"}
-              color={color}
-              focused={focused}
-              accentColor={theme.accent}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: "Profile",
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon
-              name={focused ? "person" : "person-outline"}
-              color={color}
-              focused={focused}
-              accentColor={theme.accent}
-            />
-          ),
-        }}
-      />
-    </Tabs>
-    <ScrollToTopPill />
+      >
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: "Home",
+            href: socialOn ? "/(tabs)" : null,
+            headerRight: () => <HeaderCreditBadge />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon
+                name={focused ? "home" : "home-outline"}
+                color={color}
+                focused={focused}
+                accentColor={theme.accent}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="create"
+          options={{
+            title: "Create",
+            // In single-tab mode hide the header bar entirely so the upload
+            // screen renders full-bleed (no chrome).
+            headerShown: showTabBar,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon
+                name={focused ? "add-circle" : "add-circle-outline"}
+                color={color}
+                focused={focused}
+                accentColor={theme.accent}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="advisor"
+          options={{
+            title: "Advisor",
+            href: advisorOn ? "/advisor" : null,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon
+                name={focused ? "sparkles" : "sparkles-outline"}
+                color={color}
+                focused={focused}
+                accentColor={theme.accent}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            href: socialOn ? "/(tabs)/profile" : null,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon
+                name={focused ? "person" : "person-outline"}
+                color={color}
+                focused={focused}
+                accentColor={theme.accent}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+      {showTabBar && <ScrollToTopPill />}
     </>
   );
 }

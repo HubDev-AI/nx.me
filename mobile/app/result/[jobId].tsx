@@ -41,6 +41,7 @@ import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
 import { useAppMutation } from "../../lib/hooks/use-app-mutation";
 import { showToast } from "../../lib/toast";
+import { useFeatures } from "../../lib/features-context";
 
 // ---------------------------------------------------------------------------
 // Terminal statuses — polling stops when job reaches these
@@ -56,6 +57,9 @@ export default function ResultScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const router = useRouter();
   const { theme } = useTheme();
+  const { features } = useFeatures();
+  // When Share is hidden, New Glow-Up takes over the primary slot.
+  const newGlowUpIsPrimary = !features.share_enabled;
 
   const [revealComplete, setRevealComplete] = useState(false);
   const [ctasVisible, setCtasVisible] = useState(false);
@@ -225,29 +229,46 @@ export default function ResultScreen() {
                   entering={FadeIn.duration(250)}
                   style={styles.ctaContainer}
                 >
-                  {/* Primary: Share */}
-                  <PressableScale
-                    onPress={handleShare}
-                    style={[styles.ctaButton, { backgroundColor: theme.accent }]}
-                    accessibilityLabel="Share your glow-up"
-                    accessibilityRole="button"
-                  >
-                    <View style={styles.ctaRow}>
-                      <Ionicons name="share-outline" size={18} color={THEME.colors.white} />
-                      <Text style={styles.ctaButtonText}>Share</Text>
-                    </View>
-                  </PressableScale>
+                  {/* Primary: Share (hidden when SHARE_ENABLED=false) */}
+                  {features.share_enabled && (
+                    <PressableScale
+                      onPress={handleShare}
+                      style={[styles.ctaButton, { backgroundColor: theme.accent }]}
+                      accessibilityLabel="Share your glow-up"
+                      accessibilityRole="button"
+                    >
+                      <View style={styles.ctaRow}>
+                        <Ionicons name="share-outline" size={18} color={THEME.colors.white} />
+                        <Text style={styles.ctaButtonText}>Share</Text>
+                      </View>
+                    </PressableScale>
+                  )}
 
-                  {/* Secondary: New Glow-Up */}
+                  {/* New Glow-Up — promotes to primary styling when Share is hidden. */}
                   <PressableScale
                     onPress={handleNewGlowUp}
-                    style={[styles.ctaButton, styles.ctaSecondary]}
+                    style={[
+                      styles.ctaButton,
+                      newGlowUpIsPrimary
+                        ? { backgroundColor: theme.accent }
+                        : styles.ctaSecondary,
+                    ]}
                     accessibilityLabel="Start a new glow-up"
                     accessibilityRole="button"
                   >
                     <View style={styles.ctaRow}>
-                      <Ionicons name="sparkles-outline" size={18} color={theme.accent} />
-                      <Text style={[styles.ctaSecondaryText, { color: theme.accent }]}>
+                      <Ionicons
+                        name="sparkles-outline"
+                        size={18}
+                        color={newGlowUpIsPrimary ? THEME.colors.white : theme.accent}
+                      />
+                      <Text
+                        style={
+                          newGlowUpIsPrimary
+                            ? styles.ctaButtonText
+                            : [styles.ctaSecondaryText, { color: theme.accent }]
+                        }
+                      >
                         New Glow-Up
                       </Text>
                     </View>
