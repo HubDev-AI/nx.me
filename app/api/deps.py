@@ -144,17 +144,13 @@ async def get_analysis_user(
     Falls through to normal JWT validation otherwise.
     """
     from app.config import settings
-    import re
-
-    _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
+    from app.db.guest import is_valid_guest_token_format, resolve_guest_by_token
 
     if (
         not settings.FEATURE_AUTH_REQUIRED
         and x_guest_token
-        and _GUEST_TOKEN_RE.match(x_guest_token)
+        and is_valid_guest_token_format(x_guest_token)
     ):
-        from app.db.guest import resolve_guest_by_token
-
         guest_user_id = await run_sync(resolve_guest_by_token, supabase, x_guest_token)
         if guest_user_id is not None:
             return UserClaims(

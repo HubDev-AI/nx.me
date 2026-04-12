@@ -46,43 +46,46 @@ import { showToast } from "../lib/toast";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function tierLabel(tier: string): string {
-  switch (tier.toUpperCase()) {
-    case "FREE":
-      return "Free";
-    case "CREDITS":
-      return "Credits";
-    case "PREMIUM":
-      return "Premium";
-    default:
-      return tier;
-  }
+type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+
+/** Server returns this status when re-subscribing on an already-active plan. */
+const STATUS_ALREADY_SUBSCRIBED = "already_subscribed";
+
+interface TierConfig {
+  label: string;
+  icon: IoniconName;
+  description: (trialRemaining: number) => string;
 }
 
-function tierIcon(tier: string): React.ComponentProps<typeof Ionicons>["name"] {
-  switch (tier.toUpperCase()) {
-    case "PREMIUM":
-      return "diamond";
-    case "CREDITS":
-      return "flash";
-    default:
-      return "leaf-outline";
-  }
-}
-
-function tierDescription(tier: string, trialRemaining: number): string {
-  switch (tier.toUpperCase()) {
-    case "FREE":
-      return trialRemaining > 0
+const TIER_CONFIG: Record<string, TierConfig> = {
+  FREE: {
+    label: "Free",
+    icon: "leaf-outline",
+    description: (trialRemaining) =>
+      trialRemaining > 0
         ? `${trialRemaining} free ${trialRemaining === 1 ? "analysis" : "analyses"} remaining`
-        : "Trial expired -- upgrade to continue";
-    case "CREDITS":
-      return "Pay-as-you-go with credit packs";
-    case "PREMIUM":
-      return "Unlimited analyses & priority processing";
-    default:
-      return "Your current tier";
-  }
+        : "Trial expired -- upgrade to continue",
+  },
+  CREDITS: {
+    label: "Credits",
+    icon: "flash",
+    description: () => "Pay-as-you-go with credit packs",
+  },
+  PREMIUM: {
+    label: "Premium",
+    icon: "diamond",
+    description: () => "Unlimited analyses & priority processing",
+  },
+};
+
+const DEFAULT_TIER: TierConfig = {
+  label: "Plan",
+  icon: "leaf-outline",
+  description: () => "Your current tier",
+};
+
+function tierConfig(tier: string): TierConfig {
+  return TIER_CONFIG[tier.toUpperCase()] ?? { ...DEFAULT_TIER, label: tier };
 }
 
 // ---------------------------------------------------------------------------
@@ -102,20 +105,24 @@ export default function SubscriptionScreen() {
   const [isCancelling, setIsCancelling] = useState(false);
 
   // -------------------------------------------------------------------------
-  // Load entitlement
+  // Entitlement refresh — shared by initial load and all post-action refetches.
   // -------------------------------------------------------------------------
+  const refreshEntitlement = useCallback(async () => {
+    const updated = await fetchEntitlement();
+    setEntitlement(updated);
+  }, []);
+
   const loadEntitlement = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchEntitlement();
-      setEntitlement(data);
+      await refreshEntitlement();
     } catch {
       setError("We couldn't load your subscription info. Try again.");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [refreshEntitlement]);
 
   useEffect(() => {
     loadEntitlement();
@@ -129,16 +136,14 @@ export default function SubscriptionScreen() {
     try {
       const { checkout_url } = await purchaseCredits(pack.pack_id);
       await Linking.openURL(checkout_url);
-      // Re-fetch entitlement after returning from checkout
-      const updated = await fetchEntitlement();
-      setEntitlement(updated);
+      await refreshEntitlement();
     } catch (err) {
       const appError = parseApiError(err);
       showToast({ kind: 'error', message: appError.message });
     } finally {
       setPurchasingId(null);
     }
-  }, []);
+  }, [refreshEntitlement]);
 
   // -------------------------------------------------------------------------
   // Subscribe to premium
@@ -148,9 +153,8 @@ export default function SubscriptionScreen() {
     try {
       const response = await createSubscription();
 
-      if (response.status === "already_subscribed") {
-        const updated = await fetchEntitlement();
-        setEntitlement(updated);
+      if (response.status === STATUS_ALREADY_SUBSCRIBED) {
+        await refreshEntitlement();
         return;
       }
 
@@ -160,15 +164,14 @@ export default function SubscriptionScreen() {
       }
 
       await Linking.openURL(response.checkout_url);
-      const updated = await fetchEntitlement();
-      setEntitlement(updated);
+      await refreshEntitlement();
     } catch (err) {
       const appError = parseApiError(err);
       showToast({ kind: 'error', message: appError.message });
     } finally {
       setIsSubscribing(false);
     }
-  }, []);
+  }, [refreshEntitlement]);
 
   // -------------------------------------------------------------------------
   // Cancel subscription
@@ -186,8 +189,7 @@ export default function SubscriptionScreen() {
             setIsCancelling(true);
             try {
               await apiFetch("/v1/subscriptions", { method: "DELETE" });
-              const updated = await fetchEntitlement();
-              setEntitlement(updated);
+              await refreshEntitlement();
             } catch (err) {
               const appError = parseApiError(err);
               showToast({ kind: 'error', message: appError.message });
@@ -198,12 +200,13 @@ export default function SubscriptionScreen() {
         },
       ],
     );
-  }, []);
+  }, [refreshEntitlement]);
 
   // -------------------------------------------------------------------------
   // Derived state
   // -------------------------------------------------------------------------
   const tier = entitlement?.tier?.toUpperCase() ?? "FREE";
+  const tierMeta = tierConfig(tier);
   const isPremium = tier === "PREMIUM";
   const creditBalance = entitlement?.credit_balance ?? 0;
   const trialRemaining = entitlement?.trial_analyses_remaining ?? 0;
@@ -283,13 +286,13 @@ export default function SubscriptionScreen() {
                     ]}
                   >
                     <Ionicons
-                      name={tierIcon(tier)}
+                      name={tierMeta.icon}
                       size={28}
                       color={theme.accent}
                     />
                   </View>
                   <View style={styles.planInfo}>
-                    <Text style={styles.planTitle}>{tierLabel(tier)} Plan</Text>
+                    <Text style={styles.planTitle}>{tierMeta.label} Plan</Text>
                     <Text style={styles.planSubtitle}>
                       {isPremium
                         ? entitlement?.subscription_status === "active"
@@ -297,7 +300,7 @@ export default function SubscriptionScreen() {
                           : entitlement?.subscription_status === "canceling"
                             ? "Cancels at period end"
                             : "Active"
-                        : tierDescription(tier, trialRemaining)}
+                        : tierMeta.description(trialRemaining)}
                     </Text>
                   </View>
                 </View>
