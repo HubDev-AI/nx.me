@@ -22,6 +22,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
+import { showToast } from "../../lib/toast";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
@@ -507,7 +508,7 @@ export function MemoryList() {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to add memory";
-        Alert.alert("Error", message);
+        showToast({ kind: 'error', message });
       } finally {
         setIsAdding(false);
       }
@@ -548,7 +549,7 @@ export function MemoryList() {
                   ),
                 );
               }
-              Alert.alert("Error", "Failed to delete memory. Please try again.");
+              showToast({ kind: 'error', message: "Failed to delete memory. Please try again." });
             }
           },
         },

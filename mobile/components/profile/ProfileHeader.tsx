@@ -5,7 +5,6 @@ import {
   Image,
   Pressable,
   Share,
-  Alert,
   Platform,
   StyleSheet,
 } from "react-native";
@@ -29,6 +28,7 @@ import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { formatCount } from "../../lib/format";
+import { showToast } from "../../lib/toast";
 import type { UserProfile } from "./types";
 
 const AVATAR_SIZE = 40;
@@ -129,7 +129,7 @@ export function ProfileHeader({
           await navigator.share({ url: shareUrl });
         } else if (typeof navigator !== "undefined" && navigator.clipboard) {
           await navigator.clipboard.writeText(shareUrl);
-          Alert.alert("Link copied", "Share link copied to clipboard");
+          showToast({ kind: 'success', message: "Share link copied to clipboard" });
         }
       } else if (Platform.OS === "ios") {
         await Share.share({ url: shareUrl });

@@ -24,6 +24,7 @@ import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { IMAGE_PICKER } from "../../constants/config";
+import { showToast } from "../../lib/toast";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -114,10 +115,7 @@ export default function PhotoPicker({
 
       // Validate file size before accepting the image
       if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
-        Alert.alert(
-          "Image too large",
-          "Please select an image under 10MB.",
-        );
+        showToast({ kind: 'error', message: "Please select an image under 10MB." });
         return;
       }
 
