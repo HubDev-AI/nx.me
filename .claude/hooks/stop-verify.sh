@@ -103,4 +103,5 @@ if [ $CHECKS_RUN -eq 0 ]; then
   exit 0
 fi
 
+echo "stop-verify: $CHECKS_RUN checks passed" >&2
 exit 0
