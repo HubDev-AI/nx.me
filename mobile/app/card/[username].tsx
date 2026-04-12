@@ -27,6 +27,7 @@ import SuggestionPills from "../../components/result/SuggestionPills";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { AUTH_VALIDATION, CARD_ENDPOINTS } from "../../constants/config";
 import { apiFetch } from "../../lib/api";
+import { parseApiError } from "../../lib/errors";
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
@@ -89,9 +90,12 @@ export default function CardDetailScreen() {
           setLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (!cancelled) {
-          setError("Could not load this card. It may no longer be available.");
+          const appError = parseApiError(err);
+          setError(appError.kind === 'notFound'
+            ? "This card is no longer available."
+            : appError.message);
           setLoading(false);
         }
       });
@@ -116,8 +120,11 @@ export default function CardDetailScreen() {
         setCard(data);
         setLoading(false);
       })
-      .catch(() => {
-        setError("Could not load this card. It may no longer be available.");
+      .catch((err: unknown) => {
+        const appError = parseApiError(err);
+        setError(appError.kind === 'notFound'
+          ? "This card is no longer available."
+          : appError.message);
         setLoading(false);
       });
   }, [username]);

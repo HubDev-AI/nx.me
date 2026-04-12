@@ -39,6 +39,8 @@ import {
   type CreditPackOption,
 } from "../lib/entitlement";
 import { apiFetch } from "../lib/api";
+import { parseApiError } from "../lib/errors";
+import { showToast } from "../lib/toast";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -109,7 +111,7 @@ export default function SubscriptionScreen() {
       const data = await fetchEntitlement();
       setEntitlement(data);
     } catch {
-      setError("Could not load subscription info. Please try again.");
+      setError("We couldn't load your subscription info. Try again.");
     } finally {
       setIsLoading(false);
     }
@@ -131,10 +133,8 @@ export default function SubscriptionScreen() {
       const updated = await fetchEntitlement();
       setEntitlement(updated);
     } catch (err) {
-      Alert.alert(
-        "Purchase Failed",
-        err instanceof Error ? err.message : "Could not complete purchase.",
-      );
+      const appError = parseApiError(err);
+      showToast({ kind: 'error', message: appError.message });
     } finally {
       setPurchasingId(null);
     }
@@ -155,7 +155,7 @@ export default function SubscriptionScreen() {
       }
 
       if (!response.checkout_url) {
-        Alert.alert("Unavailable", "Subscription is not available at this time.");
+        showToast({ kind: 'warning', message: "Subscription is not available at this time." });
         return;
       }
 
@@ -163,10 +163,8 @@ export default function SubscriptionScreen() {
       const updated = await fetchEntitlement();
       setEntitlement(updated);
     } catch (err) {
-      Alert.alert(
-        "Subscription Failed",
-        err instanceof Error ? err.message : "Could not start subscription.",
-      );
+      const appError = parseApiError(err);
+      showToast({ kind: 'error', message: appError.message });
     } finally {
       setIsSubscribing(false);
     }
@@ -191,12 +189,8 @@ export default function SubscriptionScreen() {
               const updated = await fetchEntitlement();
               setEntitlement(updated);
             } catch (err) {
-              Alert.alert(
-                "Error",
-                err instanceof Error
-                  ? err.message
-                  : "Could not cancel subscription.",
-              );
+              const appError = parseApiError(err);
+              showToast({ kind: 'error', message: appError.message });
             } finally {
               setIsCancelling(false);
             }

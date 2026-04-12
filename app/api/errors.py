@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ApiError(HTTPException):
-    """Structured API error with code and message."""
+    """Structured API error with code, message, and optional details."""
 
     def __init__(
         self,
@@ -22,12 +22,17 @@ class ApiError(HTTPException):
         code: str,
         message: str,
         headers: dict[str, str] | None = None,
+        details: dict | None = None,
     ) -> None:
         self.code = code
         self.message = message
+        self.details = details
+        error_body: dict = {"code": code, "message": message}
+        if details is not None:
+            error_body["details"] = details
         super().__init__(
             status_code=status_code,
-            detail={"error": {"code": code, "message": message}},
+            detail={"error": error_body},
             headers=headers,
         )
 
@@ -48,16 +53,20 @@ def raise_api_error(
     code: str,
     message: str,
     headers: dict[str, str] | None = None,
+    details: dict | None = None,
 ) -> None:
     """Convenience function to raise a structured API error."""
-    raise ApiError(status_code=status_code, code=code, message=message, headers=headers)
+    raise ApiError(status_code=status_code, code=code, message=message, headers=headers, details=details)
 
 
 async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
     """Handle ApiError — return structured error response."""
+    error_body: dict = {"code": exc.code, "message": exc.message}
+    if exc.details is not None:
+        error_body["details"] = exc.details
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": {"code": exc.code, "message": exc.message}},
+        content={"error": error_body},
         headers=exc.headers,
     )
 

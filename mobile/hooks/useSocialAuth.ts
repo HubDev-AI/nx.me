@@ -9,7 +9,8 @@
  */
 import { useState, useCallback } from "react";
 
-import { apiFetch, ApiError } from "../lib/api";
+import { apiFetch } from "../lib/api";
+import { parseApiError, type AppError } from "../lib/errors";
 import { storeJwt, storeRefreshToken } from "../lib/auth";
 import { useAuth } from "../lib/auth-context";
 import { signInWithGoogle, signInWithApple, signInWithTikTok } from "../lib/social-auth";
@@ -18,7 +19,7 @@ import type { LoginResponse } from "../components/auth/types";
 
 interface UseSocialAuthReturn {
   isSocialLoading: boolean;
-  socialError: string | null;
+  socialError: AppError | null;
   handleGoogleLogin: () => Promise<void>;
   handleAppleLogin: () => Promise<void>;
   handleTikTokLogin: () => Promise<void>;
@@ -28,7 +29,7 @@ interface UseSocialAuthReturn {
 export function useSocialAuth(): UseSocialAuthReturn {
   const { setAuthenticated } = useAuth();
   const [isSocialLoading, setIsSocialLoading] = useState(false);
-  const [socialError, setSocialError] = useState<string | null>(null);
+  const [socialError, setSocialError] = useState<AppError | null>(null);
 
   /**
    * Generic handler for Google/Apple — sends id_token to POST /auth/login.
@@ -58,15 +59,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
         }
         setAuthenticated(true);
       } catch (err) {
-        if (err instanceof ApiError) {
-          if (err.status === 403) {
-            setSocialError("This login method is not currently available.");
-          } else {
-            setSocialError("Social login failed. Please try again.");
-          }
-        } else {
-          setSocialError("Unable to connect. Check your internet connection.");
-        }
+        setSocialError(parseApiError(err));
       } finally {
         setIsSocialLoading(false);
       }
@@ -80,8 +73,8 @@ export function useSocialAuth(): UseSocialAuthReturn {
       if (result) {
         await handleIdTokenLogin("google", result.idToken);
       }
-    } catch {
-      setSocialError("Google sign-in failed. Please try again.");
+    } catch (err) {
+      setSocialError(parseApiError(err));
     }
   }, [handleIdTokenLogin]);
 
@@ -91,8 +84,8 @@ export function useSocialAuth(): UseSocialAuthReturn {
       if (result) {
         await handleIdTokenLogin("apple", result.idToken, result.nonce);
       }
-    } catch {
-      setSocialError("Apple sign-in failed. Please try again.");
+    } catch (err) {
+      setSocialError(parseApiError(err));
     }
   }, [handleIdTokenLogin]);
 
@@ -130,15 +123,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
       }
       setAuthenticated(true);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 403) {
-          setSocialError("TikTok login is not currently available.");
-        } else {
-          setSocialError("TikTok login failed. Please try again.");
-        }
-      } else {
-        setSocialError("TikTok sign-in failed. Please try again.");
-      }
+      setSocialError(parseApiError(err));
     } finally {
       setIsSocialLoading(false);
     }

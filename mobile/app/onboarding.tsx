@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { AuthButton } from "../components/auth/AuthButton";
 import { apiFetch } from "../lib/api";
+import { parseApiError } from "../lib/errors";
 import { registerForPushNotifications } from "../lib/notifications";
 import { setItem } from "../lib/secure-storage";
 import { THEME } from "../constants/theme";
@@ -63,8 +64,10 @@ export default function OnboardingScreen() {
         if (!cancelled) {
           setTrialRemaining(data.trial_analyses_remaining);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
+          // Non-critical: entitlement info is decorative — silently degrade
+          void parseApiError(err);
           setEntitlementError(true);
         }
       } finally {

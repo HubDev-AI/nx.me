@@ -2,7 +2,7 @@
  * PhotoPicker — camera/gallery selection with permission handling.
  * Presents a bottom action sheet with two options: camera or gallery.
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Image,
   Alert,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -23,6 +24,7 @@ import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { IMAGE_PICKER } from "../../constants/config";
+import { showToast } from "../../lib/toast";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +79,19 @@ export default function PhotoPicker({
 }: PhotoPickerProps) {
   const { theme } = useTheme();
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [openingSource, setOpeningSource] = useState<"camera" | "gallery" | null>(null);
+  const galleryPermission = useRef<boolean | null>(null);
+  const cameraPermission = useRef<boolean | null>(null);
+
+  // Pre-warm permissions on mount so tap feels instant
+  useEffect(() => {
+    ImagePicker.getMediaLibraryPermissionsAsync().then((p) => {
+      galleryPermission.current = p.granted;
+    });
+    ImagePicker.getCameraPermissionsAsync().then((p) => {
+      cameraPermission.current = p.granted;
+    });
+  }, []);
 
   // Press scale animations for option pills and change button
   const cameraScale = useSharedValue(1);
@@ -100,10 +115,7 @@ export default function PhotoPicker({
 
       // Validate file size before accepting the image
       if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
-        Alert.alert(
-          "Image too large",
-          "Please select an image under 10MB.",
-        );
+        showToast({ kind: 'error', message: "Please select an image under 10MB." });
         return;
       }
 
@@ -122,15 +134,18 @@ export default function PhotoPicker({
   const pickFromGallery = useCallback(async () => {
     if (disabled || isPickerOpen) return;
     setIsPickerOpen(true);
+    setOpeningSource("gallery");
     try {
-      const permission =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert(
-          "Permission needed",
-          "Please allow access to your photo library in Settings.",
-        );
-        return;
+      if (!galleryPermission.current) {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        galleryPermission.current = permission.granted;
+        if (!permission.granted) {
+          Alert.alert(
+            "Permission needed",
+            "Please allow access to your photo library in Settings.",
+          );
+          return;
+        }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -141,20 +156,25 @@ export default function PhotoPicker({
       handleAsset(result);
     } finally {
       setIsPickerOpen(false);
+      setOpeningSource(null);
     }
   }, [disabled, isPickerOpen, handleAsset]);
 
   const pickFromCamera = useCallback(async () => {
     if (disabled || isPickerOpen) return;
     setIsPickerOpen(true);
+    setOpeningSource("camera");
     try {
-      const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert(
-          "Permission needed",
-          "Please allow camera access in Settings.",
-        );
-        return;
+      if (!cameraPermission.current) {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        cameraPermission.current = permission.granted;
+        if (!permission.granted) {
+          Alert.alert(
+            "Permission needed",
+            "Please allow camera access in Settings.",
+          );
+          return;
+        }
       }
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
@@ -165,6 +185,7 @@ export default function PhotoPicker({
       handleAsset(result);
     } finally {
       setIsPickerOpen(false);
+      setOpeningSource(null);
     }
   }, [disabled, isPickerOpen, handleAsset]);
 
@@ -235,11 +256,15 @@ export default function PhotoPicker({
             accessibilityLabel="Take a photo with camera"
             accessibilityRole="button"
           >
-            <Ionicons
-              name="camera-outline"
-              size={18}
-              color={disabled ? THEME.colors.textDisabled : theme.accent}
-            />
+            {openingSource === "camera" ? (
+              <ActivityIndicator size={16} color={theme.accent} />
+            ) : (
+              <Ionicons
+                name="camera-outline"
+                size={18}
+                color={disabled ? THEME.colors.textDisabled : theme.accent}
+              />
+            )}
             <Text
               style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
             >
@@ -265,11 +290,15 @@ export default function PhotoPicker({
             accessibilityLabel="Choose a photo from gallery"
             accessibilityRole="button"
           >
-            <Ionicons
-              name="images-outline"
-              size={18}
-              color={disabled ? THEME.colors.textDisabled : theme.accent}
-            />
+            {openingSource === "gallery" ? (
+              <ActivityIndicator size={16} color={theme.accent} />
+            ) : (
+              <Ionicons
+                name="images-outline"
+                size={18}
+                color={disabled ? THEME.colors.textDisabled : theme.accent}
+              />
+            )}
             <Text
               style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
             >

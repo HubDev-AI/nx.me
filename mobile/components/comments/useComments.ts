@@ -69,7 +69,7 @@ export function useComments(): UseCommentsReturn {
         setHasMore(response.has_more);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to load comments",
+          err instanceof Error ? err.message : "We couldn't load comments.",
         );
       } finally {
         setIsLoading(false);
@@ -169,7 +169,7 @@ export function useComments(): UseCommentsReturn {
         // Rollback: remove optimistic comment
         setComments((prev) => prev.filter((c) => c.comment_id !== tempId));
         setPostError(
-          err instanceof Error ? err.message : "Failed to post comment",
+          err instanceof Error ? err.message : "Couldn't post that comment.",
         );
       } finally {
         setIsPosting(false);
