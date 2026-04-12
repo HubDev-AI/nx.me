@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     STRIPE_API_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     ANTHROPIC_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""              # Required when ADAPTER__LLM_ADAPTER=anthropic (used for embeddings via OpenAI API)
+    OPENAI_API_KEY: str = ""  # Required when ADAPTER__LLM_ADAPTER=anthropic (used for embeddings via OpenAI API)
 
     # Adapter selection
     ADAPTER__NSFW_ADAPTER: str = "mock"
@@ -57,13 +57,17 @@ class Settings(BaseSettings):
     # Advisor module (pluggable — set to False to disable entirely)
     ADVISOR_ENABLED: bool = True
     ADVISOR_PERSONA_NAME: str = "Ada"
-    ADVISOR_CONTEXT_MEMORY_LIMIT: int = 3        # Max memories per request. Less = more human.
-    ADVISOR_MAX_MESSAGE_LENGTH: int = 2000        # Max chars per user message
-    ADVISOR_CHAT_RATE_LIMIT: int = 30             # Max messages per hour per user
-    ADVISOR_DEGRADATION_THRESHOLD: int = 50       # Daily messages before degrading to Haiku
-    ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30   # Messages before auto-summarize
-    ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7   # Days before auto-new conversation
-    ADVISOR_MILESTONE_DEDUP_HOURS: int = 48       # Hours before a duplicate milestone nudge is allowed
+    ADVISOR_CONTEXT_MEMORY_LIMIT: int = (
+        3  # Max memories per request. Less = more human.
+    )
+    ADVISOR_MAX_MESSAGE_LENGTH: int = 2000  # Max chars per user message
+    ADVISOR_CHAT_RATE_LIMIT: int = 30  # Max messages per hour per user
+    ADVISOR_DEGRADATION_THRESHOLD: int = 50  # Daily messages before degrading to Haiku
+    ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30  # Messages before auto-summarize
+    ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7  # Days before auto-new conversation
+    ADVISOR_MILESTONE_DEDUP_HOURS: int = (
+        48  # Hours before a duplicate milestone nudge is allowed
+    )
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
@@ -136,10 +140,10 @@ class Settings(BaseSettings):
     AVG_SECONDS_PER_JOB: int = 15
 
     # Cost tracker circuit breaker tuning (L-11)
-    CB_FAILURE_THRESHOLD: int = 5           # failures within window to open circuit
-    CB_FAILURE_WINDOW_SECONDS: int = 300    # 5-minute sliding window
-    CB_COOLDOWN_SECONDS: int = 30           # seconds in OPEN before HALF_OPEN probe
-    COST_BUCKET_TTL_SECONDS: int = 90_000   # 25 hours (24h + 1h buffer)
+    CB_FAILURE_THRESHOLD: int = 5  # failures within window to open circuit
+    CB_FAILURE_WINDOW_SECONDS: int = 300  # 5-minute sliding window
+    CB_COOLDOWN_SECONDS: int = 30  # seconds in OPEN before HALF_OPEN probe
+    COST_BUCKET_TTL_SECONDS: int = 90_000  # 25 hours (24h + 1h buffer)
 
     # Generation models
     FAL_MODEL_PRIMARY: str = "fal-ai/nano-banana-2/edit"
@@ -147,7 +151,9 @@ class Settings(BaseSettings):
     FAL_MODEL_FALLBACK_2: str = "fal-ai/nano-banana-pro/edit"
 
     # Transformation modules — pluggable feature flags
-    ENABLED_TRANSFORMATION_MODULES: str = "styling"  # Comma-separated: "styling,teeth,eyes"
+    ENABLED_TRANSFORMATION_MODULES: str = (
+        "styling"  # Comma-separated: "styling,teeth,eyes"
+    )
 
     # Stripe checkout return URLs (server-controlled — never user-supplied)
     STRIPE_SUCCESS_URL: str = "https://nxme.ai/payment/success"
@@ -159,15 +165,15 @@ class Settings(BaseSettings):
     STRIPE_PRICE_CREDITS_50: str = ""
 
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
-    REGISTRATION_FINGERPRINT_LIMIT: int = 3       # max attempts per device fingerprint
+    REGISTRATION_FINGERPRINT_LIMIT: int = 3  # max attempts per device fingerprint
     REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours
-    REGISTRATION_IP_LIMIT: int = 4                # max attempts per IP address
-    REGISTRATION_IP_WINDOW_SECONDS: int = 3_600   # 1 hour
+    REGISTRATION_IP_LIMIT: int = 4  # max attempts per IP address
+    REGISTRATION_IP_WINDOW_SECONDS: int = 3_600  # 1 hour
 
     # Rate limiting — login (LE-5: independent from registration)
     # Tightened to prevent brute force on shared IPs (corporate/mobile networks)
     LOGIN_IP_LIMIT: int = 5
-    LOGIN_IP_WINDOW_SECONDS: int = 900            # 15 minutes
+    LOGIN_IP_WINDOW_SECONDS: int = 900  # 15 minutes
 
     # Rate limiting — comments
     COMMENT_RATE_LIMIT: int = 10
@@ -185,11 +191,17 @@ class Settings(BaseSettings):
     TRUST_PROXY_HEADERS: bool = False
 
     # Guest reaction token registry (LR-8)
-    GUEST_TOKEN_TTL_SECONDS: int = 86_400         # 24 hours — registration window per token
-    GUEST_REACTION_LIMIT: int = 50                # max reactions per guest token per 24h
+    GUEST_TOKEN_TTL_SECONDS: int = 86_400  # 24 hours — registration window per token
+    GUEST_REACTION_LIMIT: int = 50  # max reactions per guest token per 24h
 
     # Account deletion (Story 2-2 AC-FR5)
-    USERNAME_RESERVATION_DAYS: int = 180          # days username is reserved post-deletion
+    USERNAME_RESERVATION_DAYS: int = 180  # days username is reserved post-deletion
+
+    # Retention policy — nightly cron in app/workers/retention.py
+    RETENTION_UPLOAD_DAYS: int = (
+        30  # uploads not accessed for N days are purged (with CASCADE)
+    )
+    RETENTION_JOB_DAYS: int = 7  # unsaved jobs older than N days are purged
 
     # Auth provider feature flags — toggle login methods per environment.
     # When disabled: API rejects requests, mobile hides the button.

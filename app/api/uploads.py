@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.analytics import events
 from app.api.deps import get_analysis_user, get_upload_service
 from app.api.middleware.auth import UserClaims
 from app.services.upload_service import UploadService
@@ -65,6 +66,15 @@ async def create_upload(
     content_type = file.content_type or "application/octet-stream"
 
     result = await upload_svc.create_upload(file_bytes, content_type, user_id)
+
+    try:
+        events.glowup_upload_created(
+            upload_id=str(result.upload_id),
+            user_id=user_id,
+            face_detected=result.face_detected,
+        )
+    except Exception:
+        logger.warning("Analytics emit failed for glowup_upload_created", exc_info=True)
 
     payload = UploadResponse(
         upload_id=str(result.upload_id),

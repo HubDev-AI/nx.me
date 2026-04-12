@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi import status as http_status
 from pydantic import BaseModel
 
+from app.analytics import events
 from app.api.deps import get_analysis_user
 from app.api.middleware.auth import UserClaims
 from app.db.async_helpers import run_sync
@@ -92,5 +93,12 @@ async def grant_face_mod_consent(
     )
 
     logger.info("Face-mod consent recorded for user %s at %s", user_id, now_utc)
+
+    try:
+        events.glowup_consent_granted(user_id=user_id)
+    except Exception:
+        logger.warning(
+            "Analytics emit failed for glowup_consent_granted", exc_info=True
+        )
 
     return FaceModConsentResponse(consented_at=now_utc)
