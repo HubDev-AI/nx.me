@@ -1,12 +1,16 @@
 /**
- * Upload Screen — photo selection, face validation, and generation trigger.
+ * Upload Screen — photo selection, progressive auto-upload, and Glow Up flow.
  *
- * Flow:
- * 1. User selects photo via camera/gallery
- * 2. "Analyze" button uploads to POST /v1/analyses
- * 3. On success, POST /v1/analyses/{id}/generate starts a job
- * 4. Navigates to result/[jobId] where polling continues
- * 5. Cancel button aborts in-flight requests
+ * Tier-3 two-step flow (R7 progressive auto-upload):
+ * 1. Photo picked → immediately call POST /v1/uploads (auto-trigger)
+ * 2. Phase `uploading` → spinner; on success → phase `uploaded`, store uploadId
+ * 3. "Analyze" button is disabled during `uploading`; enabled when `uploaded`
+ * 4. Tap Analyze → check consent → call POST /v1/uploads/{id}/glowup/analyze
+ * 5. On analyze success → call POST /v1/uploads/{id}/glowup/generate
+ * 6. On generate success → navigate to result/[jobId]
+ * 7. On 428 FACE_MOD_CONSENT_REQUIRED → show consent modal (via ConsentContext)
+ * 8. On FACE_NOT_DETECTED → show face_error state
+ * 9. Cancel aborts in-flight requests
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
@@ -28,26 +32,46 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
+import * as Crypto from "expo-crypto";
 
 import PhotoPicker, {
   type SelectedPhoto,
 } from "../components/upload/PhotoPicker";
 import {
-  createAnalysis,
-  startGeneration,
+  createUpload,
+  analyzeGlowup,
+  generateGlowup,
   cancelJob,
   getEntitlement,
   type EntitlementInfo,
 } from "../lib/analysis";
+import { ApiError } from "../lib/api";
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { useTheme } from "../lib/theme-context";
-import { ANALYSIS_POLLING } from "../constants/config";
+import {
+  ANALYSIS_POLLING,
+  HTTP_FACE_MOD_CONSENT_REQUIRED,
+  RETENTION_DISCLOSURE,
+} from "../constants/config";
 import { FONTS } from "../hooks/useFonts";
-import { useAppMutation } from "../lib/hooks/use-app-mutation";
 import { FaceErrorCard } from "../components/ui/FaceErrorCard";
+import { useConsent, ConsentDismissedError } from "../lib/consent-context";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// ---------------------------------------------------------------------------
+// Upload phase state machine
+// ---------------------------------------------------------------------------
+
+type UploadPhase =
+  | "idle"
+  | "uploading"
+  | "uploaded"
+  | "analyzing"
+  | "face_error"
+  | "generating"
+  | "error";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -56,6 +80,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export default function UploadScreen() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { requestConsentIfNeeded } = useConsent();
 
   // Press scale animations
   const analyzeScale = useSharedValue(1);
@@ -69,45 +94,17 @@ export default function UploadScreen() {
 
   // State
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
+  const [phase, setPhase] = useState<UploadPhase>("idle");
+  const [uploadId, setUploadId] = useState<string | null>(null);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isFaceError, setIsFaceError] = useState(false);
 
   // Refs
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // ---------------------------------------------------------------------------
-  // Mutation
-  // ---------------------------------------------------------------------------
-
-  const generation = useAppMutation<
-    { jobId: string },
-    { photo: SelectedPhoto }
-  >({
-    mutationKey: ["generation.create"],
-    mutationFn: async ({ photo: selectedPhoto }) => {
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      const analysis = await createAnalysis(
-        selectedPhoto.uri,
-        selectedPhoto.fileName,
-        selectedPhoto.mimeType,
-      );
-
-      if (controller.signal.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-
-      const { job_id } = await startGeneration(analysis.analysis_id);
-      return { jobId: job_id };
-    },
-    onSuccess: ({ jobId: newJobId }) => {
-      setCurrentJobId(newJobId);
-      router.push(`/result/${newJobId}`);
-    },
-  });
 
   // Fetch entitlement on mount
   useEffect(() => {
@@ -118,9 +115,10 @@ export default function UploadScreen() {
       });
   }, []);
 
-  // Elapsed timer during generation
+  // Elapsed timer during analyze/generating phases
+  const isProcessing = phase === "analyzing" || phase === "generating" || phase === "uploading";
   useEffect(() => {
-    if (generation.isPending) {
+    if (isProcessing) {
       setElapsedSeconds(0);
       timerRef.current = setInterval(() => {
         setElapsedSeconds((prev) => prev + 1);
@@ -134,7 +132,7 @@ export default function UploadScreen() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [generation.isPending]);
+  }, [isProcessing]);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
@@ -144,41 +142,172 @@ export default function UploadScreen() {
   }, []);
 
   // ---------------------------------------------------------------------------
+  // Auto-upload on photo pick
+  // ---------------------------------------------------------------------------
+
+  const handlePhotoSelected = useCallback(
+    async (selected: SelectedPhoto) => {
+      setPhoto(selected);
+      setPhase("uploading");
+      setUploadId(null);
+      setErrorMessage(null);
+      setIsFaceError(false);
+      setCurrentJobId(null);
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      try {
+        const result = await createUpload({
+          uri: selected.uri,
+          name: selected.fileName,
+          type: selected.mimeType,
+        });
+
+        if (controller.signal.aborted) return;
+        setUploadId(result.upload_id);
+        setPhase("uploaded");
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof Error && err.name === "AbortError") return;
+        const msg =
+          err instanceof ApiError && err.status >= 400 && err.status < 500
+            ? "Upload failed. Try a different photo."
+            : "Upload failed. Check your connection and try again.";
+        setErrorMessage(msg);
+        setPhase("error");
+      }
+    },
+    [],
+  );
+
+  // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
 
   const handlePhotoClear = useCallback(() => {
-    setPhoto(null);
-    generation.reset();
-  }, [generation]);
-
-  const handleAnalyze = useCallback(() => {
-    if (!photo) return;
-    generation.mutate({ photo });
-  }, [photo, generation]);
-
-  const handleCancel = useCallback(async () => {
-    // Abort in-flight requests immediately (analysis or generation start)
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-
-    // Reset mutation state
-    generation.reset();
+    setPhoto(null);
+    setPhase("idle");
+    setUploadId(null);
     setCurrentJobId(null);
+    setErrorMessage(null);
+    setIsFaceError(false);
+  }, []);
+
+  const handleAnalyze = useCallback(async () => {
+    if (!uploadId) return;
+    if (phase !== "uploaded") return;
+
+    // Gate on consent — shows modal if needed, resolves when granted.
+    try {
+      await requestConsentIfNeeded();
+    } catch (err) {
+      if (err instanceof ConsentDismissedError) {
+        // User dismissed consent modal — stay on upload screen, do nothing.
+        return;
+      }
+      throw err;
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setPhase("analyzing");
+    setErrorMessage(null);
+    setIsFaceError(false);
+
+    try {
+      // Step 1: analyze
+      await analyzeGlowup(uploadId);
+
+      if (controller.signal.aborted) return;
+
+      // Step 2: generate
+      setPhase("generating");
+      const idempotencyKey = Crypto.randomUUID();
+      const { job_id } = await generateGlowup(uploadId, idempotencyKey);
+
+      if (controller.signal.aborted) return;
+
+      setCurrentJobId(job_id);
+      router.push(`/result/${job_id}`);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      if (err instanceof Error && err.name === "AbortError") return;
+
+      if (err instanceof ApiError) {
+        if (err.status === HTTP_FACE_MOD_CONSENT_REQUIRED) {
+          // Should not happen (consent was granted above), but handle defensively.
+          setPhase("uploaded");
+          return;
+        }
+        // Check for face-not-detected error code in body
+        try {
+          const body = JSON.parse(err.body) as { error?: { code?: string } };
+          if (body?.error?.code === "face_not_detected") {
+            setIsFaceError(true);
+            setPhase("face_error");
+            return;
+          }
+        } catch {
+          // Ignore parse failures
+        }
+        const msg =
+          err.status === 402
+            ? "You're out of credits. Top up to continue."
+            : err.status >= 500
+              ? "Something went wrong on our end. Give it a moment."
+              : "Analysis failed. Try a different photo.";
+        setErrorMessage(msg);
+        setPhase("error");
+        return;
+      }
+
+      setErrorMessage("Something unexpected happened. Give it another try.");
+      setPhase("error");
+    }
+  }, [uploadId, phase, requestConsentIfNeeded, router]);
+
+  const handleCancel = useCallback(async () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setPhase(uploadId ? "uploaded" : "idle");
     setElapsedSeconds(0);
 
-    // Best-effort backend cancel (fire-and-forget)
     if (currentJobId) {
       cancelJob(currentJobId).catch(() => {});
+      setCurrentJobId(null);
     }
-  }, [currentJobId, generation]);
+  }, [uploadId, currentJobId]);
+
+  const handleRetry = useCallback(() => {
+    setPhase(uploadId ? "uploaded" : "idle");
+    setErrorMessage(null);
+    setIsFaceError(false);
+  }, [uploadId]);
 
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
 
-  const isAnalyzeDisabled = !photo || generation.isPending;
+  const isAnalyzeDisabled = phase !== "uploaded";
   const showTrialCount = entitlement !== null;
+  const isActivelyProcessing =
+    phase === "uploading" || phase === "analyzing" || phase === "generating";
+
+  function processingLabel(): string {
+    switch (phase) {
+      case "uploading":
+        return "Uploading photo…";
+      case "analyzing":
+        return "Analyzing your photo…";
+      case "generating":
+        return "Generating glow-up…";
+      default:
+        return "Processing…";
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Render
@@ -227,22 +356,26 @@ export default function UploadScreen() {
           >
             <PhotoPicker
               photo={photo}
-              onPhotoSelected={setPhoto}
+              onPhotoSelected={handlePhotoSelected}
               onPhotoClear={handlePhotoClear}
-              disabled={generation.isPending}
+              disabled={isActivelyProcessing}
             />
           </Animated.View>
 
-          {/* Face analysis error */}
-          {generation.appError?.kind === "faceAnalysis" && (
+          {/* Face error */}
+          {phase === "face_error" && isFaceError && (
             <FaceErrorCard
-              error={generation.appError}
-              onTryAgain={() => generation.reset()}
+              error={{
+                kind: "faceAnalysis",
+                message: "No face detected. Please upload a clear, front-facing selfie.",
+                errorCode: "face_not_detected",
+              }}
+              onTryAgain={handleRetry}
             />
           )}
 
           {/* Generic error */}
-          {generation.appError && generation.appError.kind !== "faceAnalysis" && (
+          {phase === "error" && errorMessage && (
             <Animated.View
               entering={FadeIn.duration(200)}
               exiting={FadeOut.duration(150)}
@@ -257,9 +390,9 @@ export default function UploadScreen() {
                 />
                 <Text style={styles.errorTitle}>Error</Text>
               </View>
-              <Text style={styles.errorGuidance}>{generation.appError.message}</Text>
+              <Text style={styles.errorGuidance}>{errorMessage}</Text>
               <Pressable
-                onPress={handleAnalyze}
+                onPress={handleRetry}
                 style={styles.retryButton}
                 accessibilityRole="button"
                 accessibilityLabel="Try again"
@@ -271,18 +404,20 @@ export default function UploadScreen() {
           )}
 
           {/* Loading state with elapsed timer */}
-          {generation.isPending && (
+          {isActivelyProcessing && (
             <Animated.View
               entering={FadeIn.duration(200)}
               style={styles.loadingCard}
-              accessibilityLabel={`Generating glow-up, ${elapsedSeconds} seconds elapsed`}
+              accessibilityLabel={`${processingLabel()} ${elapsedSeconds} seconds elapsed`}
               accessibilityRole="progressbar"
             >
               <ActivityIndicator size="large" color={theme.accent} />
-              <Text style={styles.loadingTitle}>Generating glow-up</Text>
-              <Text style={[styles.elapsedText, { color: theme.accent }]}>
-                {formatElapsed(elapsedSeconds)}
-              </Text>
+              <Text style={styles.loadingTitle}>{processingLabel()}</Text>
+              {(phase === "analyzing" || phase === "generating") && (
+                <Text style={[styles.elapsedText, { color: theme.accent }]}>
+                  {formatElapsed(elapsedSeconds)}
+                </Text>
+              )}
               {elapsedSeconds * 1000 > ANALYSIS_POLLING.TIMEOUT_HINT_MS && (
                 <Text style={styles.hintText}>
                   Taking longer than usual. Hang tight...
@@ -290,6 +425,9 @@ export default function UploadScreen() {
               )}
             </Animated.View>
           )}
+
+          {/* Retention disclosure */}
+          <Text style={styles.retentionDisclosure}>{RETENTION_DISCLOSURE}</Text>
         </ScrollView>
 
         {/* Bottom action area — glass bar with glowing top border */}
@@ -304,7 +442,7 @@ export default function UploadScreen() {
             { backgroundColor: theme.accent + "33" },
           ]} />
 
-          {generation.isPending ? (
+          {isActivelyProcessing ? (
             <AnimatedPressable
               onPress={handleCancel}
               onPressIn={() => { cancelScale.value = withSpring(0.97, THEME.animation.press); }}
@@ -484,6 +622,15 @@ const styles = StyleSheet.create({
     ...THEME.typography.caption,
     color: THEME.colors.textMuted,
     textAlign: "center",
+  },
+  // Retention disclosure
+  retentionDisclosure: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: "center",
+    marginTop: THEME.spacing.lg,
+    opacity: 0.7,
   },
   // Bottom bar
   bottomBar: {

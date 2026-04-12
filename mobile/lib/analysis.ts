@@ -1,10 +1,20 @@
 /**
  * Analysis API client — handles upload, generation, job polling, and cancellation.
+ *
+ * Tier-3 flow (active):
+ *   createUpload → analyzeGlowup → generateGlowup → getJob / pollJob
+ *
+ * Legacy tier-2 flow (kept for backward compat until fully removed):
+ *   createAnalysis → startGeneration
  */
 import * as Crypto from "expo-crypto";
 
 import { apiFetch } from "./api";
-import { ANALYSIS_ENDPOINTS, ANALYSIS_POLLING } from "../constants/config";
+import {
+  ANALYSIS_ENDPOINTS,
+  ANALYSIS_POLLING,
+  GLOWUP_ENDPOINTS,
+} from "../constants/config";
 
 // ---------------------------------------------------------------------------
 // Types — kept in sync with backend OpenAPI spec (2026-03-23)
@@ -71,6 +81,49 @@ export interface EntitlementInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Tier-3 types (Glow Up tier3 API — PR #56)
+// ---------------------------------------------------------------------------
+
+/** POST /v1/uploads response */
+export interface UploadCreateResponse {
+  upload_id: string;
+  face_detected: boolean;
+}
+
+/** Individual recommendation item (tier-3 shape) */
+export interface RecommendationItem {
+  rank: number;
+  category: string;
+  suggestion: string;
+}
+
+/** POST /v1/uploads/{id}/glowup/analyze response */
+export interface GlowupAnalyzeResponse {
+  glowup_analysis_id: string;
+  face_shape: string;
+  symmetry_score: number;
+  recommendations: RecommendationItem[];
+}
+
+/** POST /v1/uploads/{id}/glowup/generate response */
+export interface GlowupGenerateResponse {
+  job_id: string;
+  status: string;
+  estimated_wait_seconds: number;
+  queue_position: number;
+}
+
+/** POST /v1/jobs/{id}/save response */
+export interface JobSaveResponse {
+  saved_at: string;
+}
+
+/** POST /v1/users/me/face-mod-consent response */
+export interface FaceModConsentResponse {
+  consented_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Face error user-facing messages
 // ---------------------------------------------------------------------------
 
@@ -94,7 +147,81 @@ export function getFaceErrorGuidance(code: FaceErrorCode): string {
 }
 
 // ---------------------------------------------------------------------------
-// API calls
+// Tier-3 API calls
+// ---------------------------------------------------------------------------
+
+/**
+ * Upload a photo (multipart/form-data) to the tier-3 upload endpoint.
+ * Step 1 of the progressive upload flow — fires immediately after photo pick.
+ */
+export async function createUpload(file: {
+  uri: string;
+  name: string;
+  type: string;
+}): Promise<UploadCreateResponse> {
+  const formData = new FormData();
+  formData.append("file", {
+    uri: file.uri,
+    name: file.name,
+    type: file.type,
+  } as unknown as Blob);
+
+  return apiFetch<UploadCreateResponse>(GLOWUP_ENDPOINTS.UPLOAD, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+/**
+ * Run the Glow Up analysis on a previously uploaded file.
+ * Requires face-mod consent — throws ApiError(428) if consent missing.
+ */
+export async function analyzeGlowup(
+  uploadId: string,
+): Promise<GlowupAnalyzeResponse> {
+  return apiFetch<GlowupAnalyzeResponse>(
+    GLOWUP_ENDPOINTS.ANALYZE(uploadId),
+    { method: "POST" },
+  );
+}
+
+/**
+ * Kick off Glow Up image generation for an analyzed upload.
+ * idempotencyKey prevents duplicate jobs on retry.
+ */
+export async function generateGlowup(
+  uploadId: string,
+  idempotencyKey: string,
+): Promise<GlowupGenerateResponse> {
+  return apiFetch<GlowupGenerateResponse>(
+    GLOWUP_ENDPOINTS.GENERATE(uploadId),
+    {
+      method: "POST",
+      body: JSON.stringify({ idempotency_key: idempotencyKey }),
+    },
+  );
+}
+
+/**
+ * Save a completed job result. Idempotent — safe to call multiple times.
+ */
+export async function saveJob(jobId: string): Promise<JobSaveResponse> {
+  return apiFetch<JobSaveResponse>(GLOWUP_ENDPOINTS.JOB_SAVE(jobId), {
+    method: "POST",
+  });
+}
+
+/**
+ * Grant face-modification consent for the current user. Idempotent.
+ */
+export async function grantFaceModConsent(): Promise<FaceModConsentResponse> {
+  return apiFetch<FaceModConsentResponse>(GLOWUP_ENDPOINTS.FACE_MOD_CONSENT, {
+    method: "POST",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Legacy tier-2 API calls (kept while result/card screens still reference them)
 // ---------------------------------------------------------------------------
 
 /**

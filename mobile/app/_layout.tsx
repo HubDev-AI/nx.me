@@ -15,6 +15,7 @@ import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
+import { ConsentProvider } from "../lib/consent-context";
 import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
@@ -246,17 +247,19 @@ export default function RootLayout() {
         <ThemeProvider>
           <FeaturesProvider>
             <AuthProvider initialAuth={initialAuth}>
-              {StripeProvider ? (
-                <StripeProvider
-                  publishableKey={STRIPE_PUBLISHABLE_KEY}
-                  urlScheme="https"
-                  merchantIdentifier={APPLE_MERCHANT_ID}
-                >
-                  {inner}
-                </StripeProvider>
-              ) : (
-                inner
-              )}
+              <ConsentProvider>
+                {StripeProvider ? (
+                  <StripeProvider
+                    publishableKey={STRIPE_PUBLISHABLE_KEY}
+                    urlScheme="https"
+                    merchantIdentifier={APPLE_MERCHANT_ID}
+                  >
+                    {inner}
+                  </StripeProvider>
+                ) : (
+                  inner
+                )}
+              </ConsentProvider>
             </AuthProvider>
           </FeaturesProvider>
         </ThemeProvider>

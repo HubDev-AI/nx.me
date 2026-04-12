@@ -88,6 +88,32 @@ export const ANALYSIS_ENDPOINTS = {
   JOB_REFUND: (id: string) => `/v1/jobs/${id}/refund`,
 } as const;
 
+/** Tier-3 upload + Glow Up API paths */
+export const GLOWUP_ENDPOINTS = {
+  /** POST /v1/uploads — multipart upload, returns {upload_id, face_detected} */
+  UPLOAD: "/v1/uploads",
+  /** POST /v1/uploads/{id}/glowup/analyze — returns analysis; 428 if no consent */
+  ANALYZE: (uploadId: string) => `/v1/uploads/${uploadId}/glowup/analyze`,
+  /** POST /v1/uploads/{id}/glowup/generate — returns {job_id, status, ...} */
+  GENERATE: (uploadId: string) => `/v1/uploads/${uploadId}/glowup/generate`,
+  /** GET /v1/jobs/{id} — same jobs endpoint as before */
+  JOB_STATUS: (jobId: string) => `/v1/jobs/${jobId}`,
+  /** POST /v1/jobs/{id}/save — saves result */
+  JOB_SAVE: (jobId: string) => `/v1/jobs/${jobId}/save`,
+  /** POST /v1/users/me/face-mod-consent — idempotent consent */
+  FACE_MOD_CONSENT: "/v1/users/me/face-mod-consent",
+} as const;
+
+/** HTTP status code for missing face-mod consent (Tier-3 analyze gate). */
+export const HTTP_FACE_MOD_CONSENT_REQUIRED = 428;
+
+/** Retention disclosure text — shown on upload screen. */
+export const RETENTION_DISCLOSURE =
+  "Photos auto-delete after 30 days of no activity.";
+
+/** AI disclosure text — shown on result screen. */
+export const AI_DISCLOSURE = "AI-generated · not a photo";
+
 /** Analysis polling configuration */
 export const ANALYSIS_POLLING = {
   /** Interval between job status polls (ms) */

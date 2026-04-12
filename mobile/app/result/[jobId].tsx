@@ -1,14 +1,16 @@
 /**
- * Result Screen — displays before/after reveal animation with suggestions and CTAs.
+ * Result Screen — before/after slider with save/share actions and AI disclosure.
  *
  * Route: /result/[jobId]
  *
  * Flow:
  * 1. Poll job result from GET /v1/jobs/{jobId} every 2s until terminal status
- * 2. Before image slides in, after wipes from right with glow ring
- * 3. Suggestion pills stagger up after reveal completes
- * 4. CTAs fade in: "Share", "New Glow-Up", "This doesn't look like me"
- * 5. "This doesn't look like me" triggers refund mutation
+ * 2. BeforeAfterSlider with spring entrance plays on completion
+ * 3. ResultActions bar: Save / Share / Try-another
+ * 4. "AI-generated · not a photo" footer below actions
+ * 5. Save: calls POST /v1/jobs/{jobId}/save, tracks saveState
+ * 6. Share: view-shot composite via useShareComposite()
+ * 7. Try-another: navigate back to upload
  */
 import { useState, useCallback } from "react";
 import {
@@ -17,20 +19,18 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
-  Share,
-  Platform,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-// Phase 3: BeforeAfterReveal replaced by BeforeAfterSlider.
-// Phase 4 will update the full usage (rightLabel, Save/Share CTAs, consent).
 import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
+import { ResultActions, type SaveState } from "../../components/result/ResultActions";
+import { useShareComposite } from "../../components/result/ShareComposite";
 import {
   getJobStatus,
-  requestRefund,
+  saveJob,
   type JobResult,
 } from "../../lib/analysis";
 import { THEME } from "../../constants/theme";
@@ -39,11 +39,10 @@ import { PressableScale } from "../../components/ui/PressableScale";
 import { QueryStateView } from "../../components/ui/QueryStateView";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
-import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
+import { AI_DISCLOSURE } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
 import { useAppMutation } from "../../lib/hooks/use-app-mutation";
 import { showToast } from "../../lib/toast";
-import { useFeatures } from "../../lib/features-context";
 
 // ---------------------------------------------------------------------------
 // Terminal statuses — polling stops when job reaches these
@@ -59,13 +58,12 @@ export default function ResultScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const router = useRouter();
   const { theme } = useTheme();
-  const { features } = useFeatures();
-  // When Share is hidden, New Glow-Up takes over the primary slot.
-  const newGlowUpIsPrimary = !features.share_enabled;
 
-  const [revealComplete, setRevealComplete] = useState(false);
-  const [ctasVisible, setCtasVisible] = useState(false);
-  const [refundRequested, setRefundRequested] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("pending");
+
+  // Share composite hook — ShareCompositeView must be in the tree
+  const { ShareCompositeView, generateAndShare, isCapturing } =
+    useShareComposite();
 
   // Poll job until terminal status
   const jobQuery = useAppQuery<JobResult>({
@@ -82,59 +80,46 @@ export default function ResultScreen() {
 
   const result = jobQuery.data;
 
-  // Refund mutation
-  const refundMutation = useAppMutation<void, void>({
-    mutationKey: ["refund", jobId],
-    mutationFn: () => requestRefund(jobId as string),
+  // Save mutation
+  const saveMutation = useAppMutation<{ saved_at: string }, void>({
+    mutationKey: ["job.save", jobId],
+    mutationFn: () => saveJob(jobId as string),
     onSuccess: () => {
-      showToast({
-        kind: "success",
-        message: "Refund requested. Credits will be restored shortly.",
-      });
-      setRefundRequested(true);
+      setSaveState("saved");
+      showToast({ kind: "success", message: "Result saved." });
+    },
+    onError: () => {
+      setSaveState("pending");
+      showToast({ kind: "error", message: "Save failed. Try again." });
     },
   });
 
-  const handleRevealComplete = useCallback(() => {
-    setRevealComplete(true);
-    // Show CTAs shortly after reveal completes
-    setTimeout(() => setCtasVisible(true), 200);
-  }, []);
-
-  const handleRefund = useCallback(() => {
-    if (!jobId) return;
-
-    Alert.alert(
-      "Report issue",
-      "We'll refund your credits. Continue?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Refund", onPress: () => refundMutation.mutate() },
-      ],
-    );
-  }, [jobId, refundMutation]);
+  const handleSave = useCallback(() => {
+    if (saveState !== "pending") return;
+    setSaveState("saving");
+    saveMutation.mutate();
+  }, [saveState, saveMutation]);
 
   const handleShare = useCallback(async () => {
-    const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/result/${jobId}`;
+    if (!result?.before_image_url || !result.after_image_url) return;
     try {
-      if (Platform.OS === "web") {
-        if (typeof navigator !== "undefined" && navigator.share) {
-          await navigator.share({ url: shareUrl });
-        } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-          await navigator.clipboard.writeText(shareUrl);
-          showToast({ kind: "success", message: "Share link copied to clipboard." });
-        }
-      } else if (Platform.OS === "ios") {
-        await Share.share({ url: shareUrl });
-      } else {
-        await Share.share({ message: shareUrl });
+      await generateAndShare({
+        beforeUrl: result.before_image_url,
+        afterUrl: result.after_image_url,
+        rightLabel: "Glow Up",
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("timeout")) {
+        Alert.alert(
+          "Share failed",
+          "Images didn't finish loading. Try again in a moment.",
+        );
       }
-    } catch {
-      // User cancelled share sheet — not an error
+      // User-cancelled native share sheet — not an error
     }
-  }, [jobId]);
+  }, [result, generateAndShare]);
 
-  const handleNewGlowUp = useCallback(() => {
+  const handleTryAnother = useCallback(() => {
     router.replace("/upload");
   }, [router]);
 
@@ -148,7 +133,7 @@ export default function ResultScreen() {
       error={jobQuery.appError}
       onRetry={() => jobQuery.refetch()}
     >
-      {/* Job failed/cancelled — content-level failure inside a successful response */}
+      {/* Job failed/cancelled */}
       {result && (result.status === "failed" || result.status === "cancelled") ? (
         <>
           <Stack.Screen
@@ -172,17 +157,17 @@ export default function ResultScreen() {
                 : result.failure_reason ?? "Generation failed."}
             </Text>
             <PressableScale
-              onPress={handleNewGlowUp}
+              onPress={handleTryAnother}
               style={[styles.retryButton, { backgroundColor: theme.accent }]}
-              accessibilityLabel="Start a new glow-up"
+              accessibilityLabel="Try another photo"
               accessibilityRole="button"
             >
-              <Text style={styles.retryText}>New Glow-Up</Text>
+              <Text style={styles.retryText}>Try Another</Text>
             </PressableScale>
           </View>
         </>
       ) : (
-        /* Success — before/after reveal */
+        /* Success — before/after reveal + actions */
         <>
           <Stack.Screen
             options={{
@@ -198,13 +183,12 @@ export default function ResultScreen() {
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
             >
-              {/* Before / After Reveal */}
+              {/* Before / After Slider */}
               {result?.before_image_url && result.after_image_url ? (
                 <BeforeAfterSlider
                   beforeUrl={result.before_image_url}
                   afterUrl={result.after_image_url}
                   rightLabel="Glow Up"
-                  onAccessibilityToggle={handleRevealComplete}
                 />
               ) : (
                 <View style={styles.missingImages}>
@@ -219,94 +203,37 @@ export default function ResultScreen() {
                 </View>
               )}
 
-              {/* User Guidance */}
-              {result?.user_guidance && revealComplete && (
-                <View style={styles.guidanceContainer}>
-                  <Text style={styles.guidanceText}>{result.user_guidance}</Text>
-                </View>
+              {/* ResultActions — Save / Share / Try-another */}
+              {result?.before_image_url && result.after_image_url && (
+                <Animated.View entering={FadeIn.duration(300).delay(400)}>
+                  <ResultActions
+                    onSave={handleSave}
+                    onShare={handleShare}
+                    onTryAnother={handleTryAnother}
+                    saveState={saveState}
+                  />
+                </Animated.View>
               )}
 
-              {/* CTAs */}
-              {ctasVisible && (
+              {/* AI disclosure footer */}
+              {result?.before_image_url && result.after_image_url && (
+                <Text style={styles.aiDisclosure}>{AI_DISCLOSURE}</Text>
+              )}
+
+              {/* Capturing overlay hint */}
+              {isCapturing && (
                 <Animated.View
-                  entering={FadeIn.duration(250)}
-                  style={styles.ctaContainer}
+                  entering={FadeIn.duration(150)}
+                  style={styles.capturingBadge}
                 >
-                  {/* Primary: Share (hidden when SHARE_ENABLED=false) */}
-                  {features.share_enabled && (
-                    <PressableScale
-                      onPress={handleShare}
-                      style={[styles.ctaButton, { backgroundColor: theme.accent }]}
-                      accessibilityLabel="Share your glow-up"
-                      accessibilityRole="button"
-                    >
-                      <View style={styles.ctaRow}>
-                        <Ionicons name="share-outline" size={18} color={THEME.colors.white} />
-                        <Text style={styles.ctaButtonText}>Share</Text>
-                      </View>
-                    </PressableScale>
-                  )}
-
-                  {/* New Glow-Up — promotes to primary styling when Share is hidden. */}
-                  <PressableScale
-                    onPress={handleNewGlowUp}
-                    style={[
-                      styles.ctaButton,
-                      newGlowUpIsPrimary
-                        ? { backgroundColor: theme.accent }
-                        : styles.ctaSecondary,
-                    ]}
-                    accessibilityLabel="Start a new glow-up"
-                    accessibilityRole="button"
-                  >
-                    <View style={styles.ctaRow}>
-                      <Ionicons
-                        name="sparkles-outline"
-                        size={18}
-                        color={newGlowUpIsPrimary ? THEME.colors.white : theme.accent}
-                      />
-                      <Text
-                        style={
-                          newGlowUpIsPrimary
-                            ? styles.ctaButtonText
-                            : [styles.ctaSecondaryText, { color: theme.accent }]
-                        }
-                      >
-                        New Glow-Up
-                      </Text>
-                    </View>
-                  </PressableScale>
-
-                  {/* Tertiary: Refund */}
-                  {!refundRequested ? (
-                    <PressableScale
-                      scale={0.97}
-                      onPress={handleRefund}
-                      style={styles.ctaTertiary}
-                      accessibilityLabel="Report that this does not look like you"
-                      accessibilityRole="button"
-                    >
-                      <View style={styles.ctaRow}>
-                        <Ionicons name="flag-outline" size={14} color={THEME.colors.textMuted} />
-                        <Text style={styles.ctaTertiaryText}>
-                          This doesn&apos;t look like me
-                        </Text>
-                      </View>
-                    </PressableScale>
-                  ) : (
-                    <View style={styles.ctaTertiary}>
-                      <View style={styles.ctaRow}>
-                        <Ionicons name="checkmark-circle-outline" size={14} color={theme.accent} />
-                        <Text style={[styles.ctaTertiaryText, { color: theme.accent }]}>
-                          Refund requested
-                        </Text>
-                      </View>
-                    </View>
-                  )}
+                  <Text style={styles.capturingText}>Preparing share…</Text>
                 </Animated.View>
               )}
             </ScrollView>
           </SafeAreaView>
+
+          {/* Offscreen composite for share (must be in tree) */}
+          {ShareCompositeView}
         </>
       )}
     </QueryStateView>
@@ -326,7 +253,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: THEME.spacing.xxxl * 3,
+    paddingBottom: THEME.spacing.xxxl * 2,
   },
   // Error / failed states
   centeredContainer: {
@@ -357,17 +284,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: THEME.colors.bg,
   },
-  // User guidance
-  guidanceContainer: {
-    paddingHorizontal: THEME.spacing.lg,
-    paddingTop: THEME.spacing.lg,
-  },
-  guidanceText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
-  },
   // Missing images
   missingImages: {
     alignItems: "center",
@@ -380,48 +296,30 @@ const styles = StyleSheet.create({
     ...THEME.typography.caption,
     color: THEME.colors.textSecondary,
   },
-  // CTAs
-  ctaContainer: {
+  // AI disclosure
+  aiDisclosure: {
+    fontFamily: FONTS.body,
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    textAlign: "center",
     paddingHorizontal: THEME.spacing.xl,
-    paddingTop: THEME.spacing.xxl,
-    gap: THEME.spacing.md,
+    paddingBottom: THEME.spacing.lg,
+    opacity: 0.7,
   },
-  ctaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: THEME.spacing.md,
-  },
-  ctaButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: THEME.radius.pill,
-    paddingVertical: THEME.spacing.lg,
-    minHeight: 52,
-  },
-  ctaButtonText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 16,
-    color: THEME.colors.white,
-  },
-  ctaSecondary: {
+  // Capturing badge
+  capturingBadge: {
+    alignSelf: "center",
     backgroundColor: THEME.colors.glass,
+    borderRadius: THEME.radius.pill,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
+    marginBottom: THEME.spacing.md,
   },
-  ctaSecondaryText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
-  },
-  ctaTertiary: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: THEME.spacing.md,
-    minHeight: 40,
-  },
-  ctaTertiaryText: {
+  capturingText: {
     fontFamily: FONTS.body,
     fontSize: 13,
-    color: THEME.colors.textMuted,
+    color: THEME.colors.textSecondary,
   },
 });

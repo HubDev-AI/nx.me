@@ -22,9 +22,6 @@ import { useLocalSearchParams, Stack } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-// Phase 3: BeforeAfterReveal replaced by BeforeAfterSlider.
-// Phase 4 will update the full card wiring. card/[username] is an additional
-// importer beyond result/[jobId] — flagged for Phase 4 attention.
 import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
 import SuggestionPills from "../../components/result/SuggestionPills";
 import { PageBackground } from "../../components/ui/PageBackground";
