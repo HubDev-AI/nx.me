@@ -24,7 +24,14 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from pydantic import BaseModel
 from supabase import Client
 
-from app.api.deps import get_block_repo, get_client_ip, get_feed_repo, get_redis, get_supabase
+from app.api.deps import (
+    get_block_repo,
+    get_client_ip,
+    get_feed_repo,
+    get_redis,
+    get_supabase,
+    require_app_feature,
+)
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.block_repo import BlockRepository
@@ -33,7 +40,10 @@ from app.services.public_url import build_avatar_url
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["social"])
+router = APIRouter(
+    tags=["social"],
+    dependencies=[Depends(require_app_feature("social_enabled"))],
+)
 
 
 _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")

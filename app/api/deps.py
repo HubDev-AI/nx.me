@@ -135,11 +135,13 @@ async def get_analysis_user(
     supabase: Client = Depends(get_supabase),
     redis_client: aioredis.Redis = Depends(get_redis),
 ) -> UserClaims:
-    """Auth dep for POST /analyses: accepts JWT *or* X-Guest-Token (dev only).
+    """Auth dep accepting JWT or X-Guest-Token.
 
-    In development with DEV_ALLOW_GUEST_ANALYSIS=True, a valid 64-hex guest
-    token (validated via Redis) is accepted and mapped to the fixed dev guest
-    user ID. All other environments require a normal Bearer JWT.
+    Guest tokens are honoured when FEATURE_AUTH_REQUIRED is false. The token
+    is resolved against the users.guest_session_token column — no Redis
+    lookup, no tier-1 cache yet (cold path, one lookup per request).
+
+    Falls through to normal JWT validation otherwise.
     """
     from app.config import settings
     import re
@@ -147,13 +149,20 @@ async def get_analysis_user(
     _GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
     if (
-        settings.APP_ENV == "development"
-        and settings.DEV_ALLOW_GUEST_ANALYSIS
+        not settings.FEATURE_AUTH_REQUIRED
         and x_guest_token
         and _GUEST_TOKEN_RE.match(x_guest_token)
     ):
-        # Dev-only: valid 64-hex token format is sufficient; no Redis lookup needed.
-        return UserClaims(sub=settings.DEV_GUEST_USER_ID, role="authenticated", exp=9999999999)
+        from app.db.guest import resolve_guest_by_token
+
+        guest_user_id = await run_sync(resolve_guest_by_token, supabase, x_guest_token)
+        if guest_user_id is not None:
+            return UserClaims(
+                sub=str(guest_user_id),
+                role="authenticated",
+                exp=9999999999,
+            )
+        # Fall through to JWT — avoids leaking whether the token existed.
 
     # Fall through to normal JWT validation
     return await get_current_user(
@@ -366,6 +375,37 @@ def require_feature(feature: str):
                         "code": "TIER_FEATURE_LOCKED",
                         "message": f"Feature '{feature}' is not available on your current plan",
                         "detail": {"upgrade_available": True},
+                    }
+                },
+            )
+
+    return _check
+
+
+def require_app_feature(feature: str):
+    """FastAPI dependency: gate a route behind a global feature flag.
+
+    Distinct from `require_feature` (which checks per-tier entitlement).
+    `require_app_feature` checks the app-wide toggle exposed via
+    GET /v1/features. When disabled, returns 403 FEATURE_DISABLED.
+
+    Usage:
+        router = APIRouter(
+            prefix="/posts",
+            dependencies=[Depends(require_app_feature("social_enabled"))],
+        )
+    """
+    from app.features import is_enabled
+
+    async def _check() -> None:
+        if not is_enabled(feature):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": {
+                        "code": "FEATURE_DISABLED",
+                        "message": "This feature is not currently available.",
+                        "detail": {"feature": feature},
                     }
                 },
             )

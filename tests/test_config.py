@@ -46,7 +46,7 @@ class TestSettings:
         assert settings.SIGNED_URL_EXPIRY_SECONDS == 3600
 
     def test_generation_timeout(self):
-        assert settings.GENERATION_TIMEOUT_SECONDS == 60
+        assert settings.GENERATION_TIMEOUT_SECONDS == 180
 
     def test_image_gen_cost_ceiling(self):
         assert settings.IMAGE_GEN_COST_CEILING_USD <= 0.10  # Must stay under cost ceiling

@@ -33,13 +33,16 @@ from app.advisor.models import (
     NudgeResponse,
 )
 from app.advisor.service import AdvisorService
-from app.api.deps import get_current_user, get_redis, get_supabase, require_feature
+from app.api.deps import get_current_user, get_redis, get_supabase, require_app_feature, require_feature
 from app.api.middleware.auth import UserClaims
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["advisor"])
+router = APIRouter(
+    tags=["advisor"],
+    dependencies=[Depends(require_app_feature("advisor_enabled"))],
+)
 
 
 # ---------------------------------------------------------------------------

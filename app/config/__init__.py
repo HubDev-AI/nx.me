@@ -198,12 +198,20 @@ class Settings(BaseSettings):
     AUTH_PROVIDER_EMAIL_ENABLED: bool = False
     AUTH_PROVIDER_TIKTOK_ENABLED: bool = False
 
-    # Feature flags — toggle mobile UI features per environment.
-    FEATURE_ONBOARDING_ENABLED: bool = False
+    # Feature flags — unified registry exposed via GET /v1/features.
+    # Prod-safe defaults. Override per-env via app/.env.
+    # In development, typical dev overrides are:
+    #   FEATURE_AUTH_REQUIRED=false
+    #   FEATURE_ONBOARDING_ENABLED=false
+    #   FEATURE_SOCIAL_ENABLED=false  (already default)
+    FEATURE_AUTH_REQUIRED: bool = True
+    FEATURE_SOCIAL_ENABLED: bool = False  # post-poned — flip when launching social
+    FEATURE_SHARE_ENABLED: bool = True
+    FEATURE_ONBOARDING_ENABLED: bool = True
+    # Note: the advisor flag is the existing ADVISOR_ENABLED setting above.
 
-    # Dev-only: accept X-Guest-Token on POST /analyses so DEV_FEATURE_FOCUS=upload
-    # works on a physical device without logging in. Never True in production.
-    DEV_ALLOW_GUEST_ANALYSIS: bool = False
+    # Fixed user ID used as a fallback when auth is fully disabled (legacy dev guest).
+    # Per-session guest users (users.is_guest=true) coexist with this one.
     DEV_GUEST_USER_ID: str = "00000000-0000-0000-0000-000000000001"
 
     # TikTok OAuth2 credentials (Login Kit v2)

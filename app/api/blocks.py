@@ -7,13 +7,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 
-from app.api.deps import get_block_repo, get_current_user
+from app.api.deps import get_block_repo, get_current_user, require_app_feature
 from app.api.middleware.auth import UserClaims
 from app.repositories.block_repo import BlockRepository
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["blocks"])
+router = APIRouter(
+    tags=["blocks"],
+    dependencies=[Depends(require_app_feature("social_enabled"))],
+)
 
 
 # ---------------------------------------------------------------------------
