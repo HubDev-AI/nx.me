@@ -5,7 +5,6 @@ import {
   RefreshControl,
   Text,
   ActivityIndicator,
-  Pressable,
   Alert,
   StyleSheet,
   Platform,
@@ -17,6 +16,7 @@ import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
 import { useTheme } from "../../lib/theme-context";
 import { PageBackground } from "../../components/ui/PageBackground";
+import { QueryStateView } from "../../components/ui/QueryStateView";
 import { FEED_CONFIG } from "../../constants/config";
 import { FeedCard } from "../../components/feed/FeedCard";
 import { FeedSkeleton } from "../../components/feed/FeedSkeleton";
@@ -28,6 +28,7 @@ import type { FeedPost } from "../../components/feed/types";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
 import { hapticLight } from "../../lib/haptics";
+import { showToast } from "../../lib/toast";
 import { FONTS } from "../../hooks/useFonts";
 import { useTabBar } from "../../lib/tab-bar-context";
 
@@ -86,6 +87,7 @@ export default function HomeScreen() {
   }, [incrementCommentCount]);
 
   const handleReport = useCallback((postId: string) => {
+    // Confirmation dialog — keep as Alert
     Alert.alert(
       "Report Post",
       "Are you sure you want to report this post as inappropriate?",
@@ -97,19 +99,22 @@ export default function HomeScreen() {
           onPress: async () => {
             try {
               await reportPost(postId);
-              Alert.alert(
-                "Report Submitted",
-                "Thanks for helping keep NXME safe. We'll review this post.",
-              );
+              showToast({
+                kind: "success",
+                message: "Thanks for helping keep NXME safe. We'll review this post.",
+              });
             } catch (err: unknown) {
               const status = (err as { status?: number }).status;
               if (status === 429) {
-                Alert.alert(
-                  "Slow Down",
-                  "You've submitted several reports recently. Please try again later.",
-                );
+                showToast({
+                  kind: "warning",
+                  message: "You've submitted several reports recently. Please try again later.",
+                });
               } else {
-                Alert.alert("Error", "Failed to submit report. Please try again.");
+                showToast({
+                  kind: "error",
+                  message: "Failed to submit report. Please try again.",
+                });
               }
             }
           },
@@ -120,6 +125,7 @@ export default function HomeScreen() {
 
   const handleBlock = useCallback(
     (userId: string, displayName: string) => {
+      // Confirmation dialog — keep as Alert
       Alert.alert(
         `Block ${displayName}?`,
         "They won't be able to see your posts or comment on them.",
@@ -133,7 +139,10 @@ export default function HomeScreen() {
                 await blockUser(userId);
                 removePostsByUser(userId);
               } catch {
-                Alert.alert("Error", "Failed to block user. Please try again.");
+                showToast({
+                  kind: "error",
+                  message: "Failed to block user. Please try again.",
+                });
               }
             },
           },
@@ -174,24 +183,6 @@ export default function HomeScreen() {
 
   const renderEmpty = useCallback(() => {
     if (isLoading) return null;
-    if (error) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
-          <Text style={styles.emptyTitle}>Something went wrong</Text>
-          <Text style={styles.emptySubtitle}>{error}</Text>
-          <Pressable
-            onPress={loadFeed}
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
-            accessibilityLabel="Retry loading feed"
-            accessibilityRole="button"
-          >
-            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-            <Text style={styles.retryText}>Try Again</Text>
-          </Pressable>
-        </View>
-      );
-    }
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="images-outline" size={48} color={THEME.colors.textSecondary} />
@@ -201,7 +192,7 @@ export default function HomeScreen() {
         </Text>
       </View>
     );
-  }, [isLoading, error, loadFeed, theme.accent]);
+  }, [isLoading]);
 
   const renderHeader = useCallback(
     () => (
@@ -227,34 +218,41 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <PageBackground overlayOpacity={0.88} />
-      <AnimatedFlatList
-        ref={flatListRef as any}
-        data={posts}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={renderEmpty}
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => { hapticLight(); refresh(); }}
-            colors={[theme.accent]}
-            tintColor={theme.accent}
-            progressBackgroundColor={THEME.colors.bg}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-        removeClippedSubviews={Platform.OS === "android"}
-        maxToRenderPerBatch={FEED_CONFIG.MAX_TO_RENDER_PER_BATCH}
-        updateCellsBatchingPeriod={FEED_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
-        windowSize={FEED_CONFIG.WINDOW_SIZE}
-        contentContainerStyle={styles.listContent}
-      />
+      <QueryStateView
+        isLoading={false}
+        isEmpty={false}
+        error={posts.length === 0 && error ? error : null}
+        onRetry={loadFeed}
+      >
+        <AnimatedFlatList
+          ref={flatListRef as any}
+          data={posts}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={renderEmpty}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={() => { hapticLight(); refresh(); }}
+              colors={[theme.accent]}
+              tintColor={theme.accent}
+              progressBackgroundColor={THEME.colors.bg}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={Platform.OS === "android"}
+          maxToRenderPerBatch={FEED_CONFIG.MAX_TO_RENDER_PER_BATCH}
+          updateCellsBatchingPeriod={FEED_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
+          windowSize={FEED_CONFIG.WINDOW_SIZE}
+          contentContainerStyle={styles.listContent}
+        />
+      </QueryStateView>
 
       <CommentsSheet
         visible={isCommentsVisible}
@@ -300,19 +298,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-    marginTop: THEME.spacing.xl,
-    paddingHorizontal: THEME.spacing.xxl,
-    paddingVertical: THEME.spacing.md,
-    borderRadius: THEME.radius.pill,
-    minHeight: 44,
-  },
-  retryText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
-    color: THEME.colors.bg,
-  },
+  // retryButton and retryText removed — handled by QueryStateView
 });
