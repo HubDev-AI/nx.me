@@ -6,6 +6,7 @@ import { detectPlatform } from '@/lib/user-agent'
 const VALID_CARD = {
   username: 'janedoe',
   display_name: 'Jane Doe',
+  share_hash: 'abc123',
   before_image_url: 'https://example.com/before.jpg',
   after_image_url: 'https://example.com/after.jpg',
   recommendations: [
