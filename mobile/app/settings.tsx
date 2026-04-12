@@ -158,7 +158,7 @@ export default function SettingsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* ─── Account Section ──────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(50).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(0).duration(240)}>
             <Text style={styles.sectionLabel}>ACCOUNT</Text>
             <View style={styles.glassCard}>
               {isLoading ? (
@@ -193,7 +193,7 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── Subscription Section ─────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(120).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(40).duration(240)}>
             <Text style={styles.sectionLabel}>SUBSCRIPTION</Text>
             <PressableScale
               style={styles.glassCard}
@@ -220,7 +220,7 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── Privacy Section ──────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(190).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(80).duration(240)}>
             <Text style={styles.sectionLabel}>PRIVACY</Text>
             <PressableScale
               style={styles.glassCard}
@@ -247,7 +247,7 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── About Section ────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(260).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(120).duration(240)}>
             <Text style={styles.sectionLabel}>ABOUT</Text>
             <View style={styles.glassCard}>
               <SettingsRow
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
           </Animated.View>
 
           {/* ─── Danger Zone ──────────────────────────────────────────── */}
-          <Animated.View entering={FadeInDown.delay(330).duration(400)}>
+          <Animated.View entering={FadeInDown.delay(160).duration(240)}>
             <Text style={[styles.sectionLabel, { color: THEME.colors.destructive }]}>
               DANGER ZONE
             </Text>

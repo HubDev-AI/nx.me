@@ -268,7 +268,7 @@ export default function SubscriptionScreen() {
             showsVerticalScrollIndicator={false}
           >
             {/* ---- Current Plan Card ---- */}
-            <Animated.View entering={FadeInDown.delay(50).duration(400)}>
+            <Animated.View entering={FadeInDown.delay(0).duration(240)}>
               <View
                 style={[
                   styles.planCard,
@@ -400,7 +400,7 @@ export default function SubscriptionScreen() {
 
             {/* ---- Premium Upsell (if not already premium) ---- */}
             {!isPremium && hasPremiumOption && (
-              <Animated.View entering={FadeInDown.delay(140).duration(400)}>
+              <Animated.View entering={FadeInDown.delay(60).duration(240)}>
                 <Text style={styles.sectionLabel}>RECOMMENDED</Text>
                 <PressableScale
                   onPress={handleSubscribe}
@@ -452,7 +452,7 @@ export default function SubscriptionScreen() {
 
             {/* ---- Credit Packs ---- */}
             {!isPremium && creditPacks.length > 0 && (
-              <Animated.View entering={FadeInDown.delay(230).duration(400)}>
+              <Animated.View entering={FadeInDown.delay(120).duration(240)}>
                 <Text style={styles.sectionLabel}>CREDIT PACKS</Text>
                 <Text style={styles.sectionDescription}>
                   Buy credits to unlock individual analyses
@@ -527,7 +527,7 @@ export default function SubscriptionScreen() {
 
             {/* ---- No purchase options available hint ---- */}
             {!isPremium && !hasPremiumOption && creditPacks.length === 0 && (
-              <Animated.View entering={FadeInDown.delay(140).duration(400)}>
+              <Animated.View entering={FadeInDown.delay(60).duration(240)}>
                 <View style={styles.hintCard}>
                   <Ionicons
                     name="information-circle-outline"

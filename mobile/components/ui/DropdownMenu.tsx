@@ -208,6 +208,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     overflow: "hidden",
+    // Scale in from the trigger (top-right-aligned), not card center.
+    transformOrigin: "top right",
     ...THEME.shadow.card,
   },
   blurFill: {

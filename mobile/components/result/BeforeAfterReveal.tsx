@@ -50,7 +50,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const IMAGE_WIDTH = SCREEN_WIDTH - 48; // 24px padding each side
 const BEFORE_DELAY_MS = 100;
 const AFTER_DELAY_MS = 500;
-const SPRING_CONFIG = { damping: 18, stiffness: 120, mass: 0.8 };
+const SPRING_CONFIG = { damping: 20, stiffness: 170, mass: 0.9 };
 
 // ---------------------------------------------------------------------------
 // Component

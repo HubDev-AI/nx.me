@@ -29,14 +29,14 @@ export function ShimmerLogo({ size = 36, glowColor = THEME.colors.textPrimary }:
   const glow = useSharedValue(0);
 
   useEffect(() => {
-    // Shimmer sweep every 4s
-    shimmer.value = withRepeat(
-      withDelay(
-        2000,
-        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      false,
+    // One-shot shimmer sweep on mount — animations users see on every auth
+    // visit become visual noise. The subtle glow pulse still loops.
+    shimmer.value = withDelay(
+      400,
+      withTiming(1, {
+        duration: 1200,
+        easing: Easing.bezier(0.77, 0, 0.175, 1),
+      }),
     );
 
     // Gentle glow pulse

@@ -4,6 +4,8 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useAnimatedStyle,
+  useSharedValue,
+  withSpring,
   interpolate,
   Extrapolation,
 } from "react-native-reanimated";
@@ -73,49 +75,75 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   return (
     <Animated.View style={[styles.tabBar, { bottom: tabBarBottom }, animatedStyle]}>
       {state.routes.map((route, index) => {
-        const { options } = descriptors[route.key];
+        const descriptor = descriptors[route.key];
+        if (!descriptor) return null;
         const isFocused = state.index === index;
-
-        const onPress = () => {
-          const event = navigation.emit({
-            type: "tabPress",
-            target: route.key,
-            canPreventDefault: true,
-          });
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(route.name, route.params);
-          }
-        };
-
-        const onLongPress = () => {
-          navigation.emit({ type: "tabLongPress", target: route.key });
-        };
-
-        const color = isFocused
-          ? theme.accent
-          : TAB_INACTIVE_COLOR;
-
-        // Render the icon using the tabBarIcon option
-        const icon = options.tabBarIcon?.({
-          focused: isFocused,
-          color,
-          size: 24,
-        });
-
         return (
-          <Pressable
+          <TabButton
             key={route.key}
-            accessibilityRole="button"
-            accessibilityState={isFocused ? { selected: true } : {}}
-            accessibilityLabel={options.tabBarAccessibilityLabel ?? options.title}
-            onPress={onPress}
-            onLongPress={onLongPress}
-            style={styles.tabButton}
-          >
-            {icon}
-          </Pressable>
+            label={descriptor.options.tabBarAccessibilityLabel ?? descriptor.options.title}
+            icon={descriptor.options.tabBarIcon?.({
+              focused: isFocused,
+              color: isFocused ? theme.accent : TAB_INACTIVE_COLOR,
+              size: 24,
+            })}
+            isFocused={isFocused}
+            onPress={() => {
+              const event = navigation.emit({
+                type: "tabPress",
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!isFocused && !event.defaultPrevented) {
+                navigation.navigate(route.name, route.params);
+              }
+            }}
+            onLongPress={() =>
+              navigation.emit({ type: "tabLongPress", target: route.key })
+            }
+          />
         );
       })}
+    </Animated.View>
+  );
+}
+
+/** Tab button with spring scale-on-press for instant feedback. */
+function TabButton({
+  label,
+  icon,
+  isFocused,
+  onPress,
+  onLongPress,
+}: {
+  label: string | undefined;
+  icon: React.ReactNode;
+  isFocused: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  return (
+    <Animated.View style={[styles.tabButton, pressStyle]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={isFocused ? { selected: true } : {}}
+        accessibilityLabel={label}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onPressIn={() => {
+          scale.value = withSpring(0.92, THEME.animation.press);
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1, THEME.animation.press);
+        }}
+        style={styles.tabButtonPressable}
+      >
+        {icon}
+      </Pressable>
     </Animated.View>
   );
 }
@@ -308,6 +336,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     height: "100%",
+  },
+  tabButtonPressable: {
+    flex: 1,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
   },
   iconContainer: {
     alignItems: "center",

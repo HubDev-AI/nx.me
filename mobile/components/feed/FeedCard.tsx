@@ -307,7 +307,7 @@ export const FeedCard = React.memo(function FeedCard({
           {showHeartOverlay ? (
             <ReanimatedAnimated.View
               entering={FadeIn.duration(150)}
-              exiting={FadeOut.duration(450)}
+              exiting={FadeOut.duration(180)}
               style={styles.heartOverlay}
               pointerEvents="none"
             >

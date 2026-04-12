@@ -110,14 +110,14 @@ export default function AuthScreen() {
         <View style={styles.spacer} />
 
         {/* Hero headline */}
-        <Animated.View entering={FadeInDown.duration(800).springify().damping(15)}>
+        <Animated.View entering={FadeInDown.duration(300).springify().damping(16)}>
           <Text style={styles.heroTitle}>{"Your style,\nelevated"}</Text>
           <Text style={[styles.heroAccent, { color: theme.accent }]}>
             start your glow-up
           </Text>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(150).duration(800).springify().damping(15)}>
+        <Animated.View entering={FadeInDown.delay(60).duration(300).springify().damping(16)}>
           <Text style={styles.subtitle}>
             Sign in or create an account to continue
           </Text>
@@ -133,7 +133,7 @@ export default function AuthScreen() {
 
         {/* Social login buttons (config-driven) */}
         {socialProviders.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(300).duration(800).springify().damping(15)}>
+          <Animated.View entering={FadeInDown.delay(120).duration(300).springify().damping(16)}>
             <SocialLoginButtons
               enabledProviders={providers}
               onGooglePress={handleGoogleLogin}

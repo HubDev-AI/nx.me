@@ -228,7 +228,7 @@ export default function BlockedUsersScreen() {
                 return (
                   <Animated.View
                     key={user.id}
-                    entering={FadeInDown.delay(index * 60).duration(400)}
+                    entering={FadeInDown.delay(Math.min(index, 8) * 40).duration(240)}
                   >
                     <View style={styles.glassCard}>
                       <View style={styles.userRow}>
