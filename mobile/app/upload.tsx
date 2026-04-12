@@ -4,11 +4,9 @@
  * Flow:
  * 1. User selects photo via camera/gallery
  * 2. "Analyze" button uploads to POST /v1/analyses
- * 3. Face validation result displayed (error guidance if failed)
- * 4. On success, POST /v1/analyses/{id}/generate starts a job
- * 5. Elapsed timer shown during generation polling
- * 6. On completion, navigate to result/[jobId]
- * 7. Cancel button calls POST /v1/jobs/{id}/cancel
+ * 3. On success, POST /v1/analyses/{id}/generate starts a job
+ * 4. Navigates to result/[jobId] where polling continues
+ * 5. Cancel button aborts in-flight requests
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
@@ -37,30 +35,19 @@ import PhotoPicker, {
 import {
   createAnalysis,
   startGeneration,
-  pollJob,
   cancelJob,
   getEntitlement,
-  getFaceErrorGuidance,
-  type FaceErrorCode,
   type EntitlementInfo,
 } from "../lib/analysis";
-import { ApiError } from "../lib/api";
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { useTheme } from "../lib/theme-context";
 import { ANALYSIS_POLLING } from "../constants/config";
 import { FONTS } from "../hooks/useFonts";
+import { useAppMutation } from "../lib/hooks/use-app-mutation";
+import { FaceErrorCard } from "../components/ui/FaceErrorCard";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type UploadPhase =
-  | "idle"
-  | "uploading"
-  | "face_error"
-  | "generating"
-  | "error";
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -82,18 +69,45 @@ export default function UploadScreen() {
 
   // State
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
-  const [phase, setPhase] = useState<UploadPhase>("idle");
   const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null);
-  const [faceErrorCode, setFaceErrorCode] = useState<FaceErrorCode | null>(
-    null,
-  );
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   // Refs
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Mutation
+  // ---------------------------------------------------------------------------
+
+  const generation = useAppMutation<
+    { jobId: string },
+    { photo: SelectedPhoto }
+  >({
+    mutationKey: ["generation.create"],
+    mutationFn: async ({ photo: selectedPhoto }) => {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      const analysis = await createAnalysis(
+        selectedPhoto.uri,
+        selectedPhoto.fileName,
+        selectedPhoto.mimeType,
+      );
+
+      if (controller.signal.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
+      const { job_id } = await startGeneration(analysis.analysis_id);
+      return { jobId: job_id };
+    },
+    onSuccess: ({ jobId: newJobId }) => {
+      setCurrentJobId(newJobId);
+      router.push(`/result/${newJobId}`);
+    },
+  });
 
   // Fetch entitlement on mount
   useEffect(() => {
@@ -106,7 +120,7 @@ export default function UploadScreen() {
 
   // Elapsed timer during generation
   useEffect(() => {
-    if (phase === "generating") {
+    if (generation.isPending) {
       setElapsedSeconds(0);
       timerRef.current = setInterval(() => {
         setElapsedSeconds((prev) => prev + 1);
@@ -120,7 +134,7 @@ export default function UploadScreen() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [phase]);
+  }, [generation.isPending]);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
@@ -135,94 +149,35 @@ export default function UploadScreen() {
 
   const handlePhotoClear = useCallback(() => {
     setPhoto(null);
-    setPhase("idle");
-    setFaceErrorCode(null);
-    setErrorMessage(null);
-  }, []);
+    generation.reset();
+  }, [generation]);
 
-  const handleAnalyze = useCallback(async () => {
+  const handleAnalyze = useCallback(() => {
     if (!photo) return;
-
-    setPhase("uploading");
-    setFaceErrorCode(null);
-    setErrorMessage(null);
-
-    try {
-      // Step 1: Upload for analysis
-      const analysis = await createAnalysis(
-        photo.uri,
-        photo.fileName,
-        photo.mimeType,
-      );
-
-      // Step 2: Start generation
-      // NOTE: Face validation is now handled server-side during analysis.
-      // If the backend rejects the image, it returns a 422 which is caught
-      // by the ApiError handler below.
-      setPhase("generating");
-      const { job_id } = await startGeneration(analysis.analysis_id);
-      setCurrentJobId(job_id);
-
-      // Step 4: Poll for completion
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      const finalResult = await pollJob(
-        job_id,
-        () => {
-          // onUpdate — we just keep the timer running
-        },
-        controller.signal,
-      );
-
-      if (finalResult.status === "completed") {
-        router.replace(`/result/${job_id}`);
-      } else if (finalResult.status === "cancelled") {
-        setPhase("idle");
-        setCurrentJobId(null);
-      } else {
-        setPhase("error");
-        setErrorMessage(
-          finalResult.failure_reason ?? "Generation failed. Please try again.",
-        );
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        // User cancelled — already handled
-        return;
-      }
-      setPhase("error");
-      if (err instanceof ApiError) {
-        setErrorMessage(`Upload failed (${err.status}). Please try again.`);
-      } else {
-        setErrorMessage("Something went wrong. Please try again.");
-      }
-    }
-  }, [photo, router]);
+    generation.mutate({ photo });
+  }, [photo, generation]);
 
   const handleCancel = useCallback(async () => {
+    // Abort in-flight requests immediately (analysis or generation start)
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
 
-    if (currentJobId) {
-      try {
-        await cancelJob(currentJobId);
-      } catch {
-        // Best-effort cancel
-      }
-    }
-
-    setPhase("idle");
+    // Reset mutation state
+    generation.reset();
     setCurrentJobId(null);
-  }, [currentJobId]);
+    setElapsedSeconds(0);
+
+    // Best-effort backend cancel (fire-and-forget)
+    if (currentJobId) {
+      cancelJob(currentJobId).catch(() => {});
+    }
+  }, [currentJobId, generation]);
 
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
 
-  const isAnalyzeDisabled =
-    !photo || phase === "uploading" || phase === "generating";
-  const isLoading = phase === "uploading" || phase === "generating";
+  const isAnalyzeDisabled = !photo || generation.isPending;
   const showTrialCount = entitlement !== null;
 
   // ---------------------------------------------------------------------------
@@ -274,34 +229,20 @@ export default function UploadScreen() {
               photo={photo}
               onPhotoSelected={setPhoto}
               onPhotoClear={handlePhotoClear}
-              disabled={isLoading}
+              disabled={generation.isPending}
             />
           </Animated.View>
 
-          {/* Face validation error */}
-          {phase === "face_error" && faceErrorCode && (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              exiting={FadeOut.duration(150)}
-              style={styles.errorCard}
-              accessibilityRole="alert"
-            >
-              <View style={styles.errorHeader}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={20}
-                  color={THEME.colors.destructive}
-                />
-                <Text style={styles.errorTitle}>Face Validation Failed</Text>
-              </View>
-              <Text style={styles.errorGuidance}>
-                {getFaceErrorGuidance(faceErrorCode)}
-              </Text>
-            </Animated.View>
+          {/* Face analysis error */}
+          {generation.appError?.kind === "faceAnalysis" && (
+            <FaceErrorCard
+              error={generation.appError}
+              onTryAgain={() => generation.reset()}
+            />
           )}
 
           {/* Generic error */}
-          {phase === "error" && errorMessage && (
+          {generation.appError && generation.appError.kind !== "faceAnalysis" && (
             <Animated.View
               entering={FadeIn.duration(200)}
               exiting={FadeOut.duration(150)}
@@ -316,37 +257,37 @@ export default function UploadScreen() {
                 />
                 <Text style={styles.errorTitle}>Error</Text>
               </View>
-              <Text style={styles.errorGuidance}>{errorMessage}</Text>
+              <Text style={styles.errorGuidance}>{generation.appError.message}</Text>
+              <Pressable
+                onPress={handleAnalyze}
+                style={styles.retryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Try again"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.retryText}>Try again</Text>
+              </Pressable>
             </Animated.View>
           )}
 
           {/* Loading state with elapsed timer */}
-          {isLoading && (
+          {generation.isPending && (
             <Animated.View
               entering={FadeIn.duration(200)}
               style={styles.loadingCard}
-              accessibilityLabel={
-                phase === "uploading"
-                  ? "Uploading photo"
-                  : `Generating glow-up, ${elapsedSeconds} seconds elapsed`
-              }
+              accessibilityLabel={`Generating glow-up, ${elapsedSeconds} seconds elapsed`}
               accessibilityRole="progressbar"
             >
               <ActivityIndicator size="large" color={theme.accent} />
-              <Text style={styles.loadingTitle}>
-                {phase === "uploading" ? "Uploading..." : "Generating glow-up"}
+              <Text style={styles.loadingTitle}>Generating glow-up</Text>
+              <Text style={[styles.elapsedText, { color: theme.accent }]}>
+                {formatElapsed(elapsedSeconds)}
               </Text>
-              {phase === "generating" && (
-                <Text style={[styles.elapsedText, { color: theme.accent }]}>
-                  {formatElapsed(elapsedSeconds)}
+              {elapsedSeconds * 1000 > ANALYSIS_POLLING.TIMEOUT_HINT_MS && (
+                <Text style={styles.hintText}>
+                  Taking longer than usual. Hang tight...
                 </Text>
               )}
-              {phase === "generating" &&
-                elapsedSeconds * 1000 > ANALYSIS_POLLING.TIMEOUT_HINT_MS && (
-                  <Text style={styles.hintText}>
-                    Taking longer than usual. Hang tight...
-                  </Text>
-                )}
             </Animated.View>
           )}
         </ScrollView>
@@ -363,63 +304,60 @@ export default function UploadScreen() {
             { backgroundColor: theme.accent + "33" },
           ]} />
 
-          {phase === "generating" ? (
-            <Animated.View style={cancelPressStyle}>
-              <Pressable
-                onPress={handleCancel}
-                onPressIn={() => { cancelScale.value = withSpring(0.97, THEME.animation.press); }}
-                onPressOut={() => { cancelScale.value = withSpring(1, THEME.animation.press); }}
-                style={styles.cancelButton}
-                accessibilityLabel="Cancel generation"
-                accessibilityRole="button"
-              >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={20}
-                  color={THEME.colors.textPrimary}
-                />
-                <Text style={styles.cancelText}>Cancel</Text>
-              </Pressable>
-            </Animated.View>
+          {generation.isPending ? (
+            <AnimatedPressable
+              onPress={handleCancel}
+              onPressIn={() => { cancelScale.value = withSpring(0.97, THEME.animation.press); }}
+              onPressOut={() => { cancelScale.value = withSpring(1, THEME.animation.press); }}
+              style={[styles.cancelButton, cancelPressStyle]}
+              accessibilityLabel="Cancel"
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name="close-circle-outline"
+                size={20}
+                color={THEME.colors.textPrimary}
+              />
+              <Text style={styles.cancelText}>Cancel</Text>
+            </AnimatedPressable>
           ) : (
-            <Animated.View style={analyzePressStyle}>
-              <Pressable
-                onPress={handleAnalyze}
-                onPressIn={() => {
-                  if (!isAnalyzeDisabled) analyzeScale.value = withSpring(0.97, THEME.animation.press);
-                }}
-                onPressOut={() => {
-                  analyzeScale.value = withSpring(1, THEME.animation.press);
-                }}
-                disabled={isAnalyzeDisabled}
+            <AnimatedPressable
+              onPress={handleAnalyze}
+              onPressIn={() => {
+                if (!isAnalyzeDisabled) analyzeScale.value = withSpring(0.97, THEME.animation.press);
+              }}
+              onPressOut={() => {
+                analyzeScale.value = withSpring(1, THEME.animation.press);
+              }}
+              disabled={isAnalyzeDisabled}
+              style={[
+                styles.analyzeButton,
+                isAnalyzeDisabled
+                  ? styles.analyzeButtonDisabled
+                  : [
+                      { backgroundColor: theme.accent },
+                      THEME.shadow.glow(theme.accent),
+                    ],
+                analyzePressStyle,
+              ]}
+              accessibilityLabel="Analyze photo"
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isAnalyzeDisabled }}
+            >
+              <Ionicons
+                name="sparkles"
+                size={20}
+                color={isAnalyzeDisabled ? THEME.colors.textDisabled : THEME.colors.white}
+              />
+              <Text
                 style={[
-                  styles.analyzeButton,
-                  isAnalyzeDisabled
-                    ? styles.analyzeButtonDisabled
-                    : [
-                        { backgroundColor: theme.accent },
-                        THEME.shadow.glow(theme.accent),
-                      ],
+                  styles.analyzeText,
+                  isAnalyzeDisabled && styles.analyzeTextDisabled,
                 ]}
-                accessibilityLabel="Analyze photo"
-                accessibilityRole="button"
-                accessibilityState={{ disabled: isAnalyzeDisabled }}
               >
-                <Ionicons
-                  name="sparkles"
-                  size={20}
-                  color={isAnalyzeDisabled ? THEME.colors.textDisabled : THEME.colors.white}
-                />
-                <Text
-                  style={[
-                    styles.analyzeText,
-                    isAnalyzeDisabled && styles.analyzeTextDisabled,
-                  ]}
-                >
-                  Analyze
-                </Text>
-              </Pressable>
-            </Animated.View>
+                Analyze
+              </Text>
+            </AnimatedPressable>
           )}
         </View>
       </SafeAreaView>
@@ -502,6 +440,21 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.body,
     ...THEME.typography.body,
     color: THEME.colors.textSecondary,
+  },
+  retryButton: {
+    marginTop: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    paddingHorizontal: THEME.spacing.lg,
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    alignSelf: "flex-start",
+  },
+  retryText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 14,
+    color: THEME.colors.textPrimary,
   },
   // Loading card
   loadingCard: {
