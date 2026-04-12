@@ -1,5 +1,5 @@
 import { ApiError } from './api';
-import { parseApiError } from './errors';
+import { parseApiError, shouldRetry } from './errors';
 
 describe('parseApiError', () => {
   it('maps network errors (TypeError from fetch)', () => {
@@ -67,5 +67,75 @@ describe('parseApiError', () => {
   it('falls back to unknown for unexpected errors', () => {
     const result = parseApiError('weird string');
     expect(result.kind).toBe('unknown');
+  });
+});
+
+describe('parseApiError — backend shapes', () => {
+  it('extracts fieldErrors from Pydantic 422 shape', () => {
+    const err = new ApiError(
+      422,
+      JSON.stringify({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid',
+          details: [
+            { loc: ['body', 'email'], msg: 'field required', type: 'missing' },
+            { loc: ['body', 'password'], msg: 'too short', type: 'min_length' },
+          ],
+        },
+      }),
+      '/v1/x',
+    );
+    const result = parseApiError(err);
+    if (result.kind === 'validation') {
+      expect(result.fieldErrors).toEqual({ email: 'field required', password: 'too short' });
+    } else {
+      throw new Error('expected validation kind');
+    }
+  });
+
+  it('reads retryAfter from Retry-After header', () => {
+    const headers = new Headers({ 'Retry-After': '60' });
+    const err = new ApiError(429, '{"error":{"code":"x","message":"y"}}', '/v1/x', headers);
+    const result = parseApiError(err);
+    if (result.kind === 'rateLimit') {
+      expect(result.retryAfter).toBe(60);
+    } else {
+      throw new Error('expected rateLimit kind');
+    }
+  });
+
+  it('handles empty body on 422', () => {
+    const err = new ApiError(422, '', '/v1/x');
+    expect(parseApiError(err).kind).toBe('validation');
+  });
+
+  it('falls back to unknown for unhandled status', () => {
+    const err = new ApiError(418, '{"error":{"code":"teapot","message":"brew"}}', '/v1/x');
+    expect(parseApiError(err).kind).toBe('unknown');
+  });
+
+  it('classifies AbortError as network', () => {
+    const err = new Error('The operation was aborted.');
+    err.name = 'AbortError';
+    expect(parseApiError(err).kind).toBe('network');
+  });
+});
+
+describe('shouldRetry', () => {
+  it('retries network, server, rateLimit', () => {
+    expect(shouldRetry({ kind: 'network', message: '' })).toBe(true);
+    expect(shouldRetry({ kind: 'server', message: '', status: 500 })).toBe(true);
+    expect(shouldRetry({ kind: 'rateLimit', message: '' })).toBe(true);
+  });
+
+  it('does not retry auth, validation, permission, business, faceAnalysis, notFound, unknown', () => {
+    expect(shouldRetry({ kind: 'auth', message: '' })).toBe(false);
+    expect(shouldRetry({ kind: 'validation', message: '' })).toBe(false);
+    expect(shouldRetry({ kind: 'permission', message: '' })).toBe(false);
+    expect(shouldRetry({ kind: 'business', message: '', errorCode: '', status: 402 })).toBe(false);
+    expect(shouldRetry({ kind: 'faceAnalysis', message: '', errorCode: 'x' })).toBe(false);
+    expect(shouldRetry({ kind: 'notFound', message: '' })).toBe(false);
+    expect(shouldRetry({ kind: 'unknown', message: '' })).toBe(false);
   });
 });

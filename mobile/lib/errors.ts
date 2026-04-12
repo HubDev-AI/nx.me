@@ -27,7 +27,7 @@ interface BackendErrorBody {
   error?: {
     code?: string;
     message?: string;
-    details?: Record<string, unknown> | Array<unknown>;
+    details?: Record<string, unknown> | unknown[];
   };
 }
 
@@ -40,13 +40,19 @@ function parseBody(body: string): BackendErrorBody | null {
 }
 
 export function parseApiError(err: unknown): AppError {
-  // Network-level failures (fetch throws TypeError)
-  if (err instanceof TypeError && /network/i.test(err.message)) {
-    return {
-      kind: 'network',
-      message: "You seem to be offline. We'll keep trying.",
-      cause: err,
-    };
+  // Network-level failures (fetch throws TypeError; aborts throw DOMException or TypeError)
+  if (err instanceof Error) {
+    const isAbort = err.name === 'AbortError' || /abort|timeout/i.test(err.message);
+    const isNetwork =
+      err instanceof TypeError &&
+      /network request failed|failed to fetch|networkerror/i.test(err.message);
+    if (isAbort || isNetwork) {
+      return {
+        kind: 'network',
+        message: "You seem to be offline. We'll keep trying.",
+        cause: err,
+      };
+    }
   }
 
   if (!(err instanceof ApiError)) {
@@ -91,7 +97,7 @@ export function parseApiError(err: unknown): AppError {
       };
     }
     case 429: {
-      const retryAfter = extractRetryAfter(body);
+      const retryAfter = extractRetryAfter(body, err.headers);
       return {
         kind: 'rateLimit',
         message: retryAfter
@@ -139,7 +145,20 @@ function extractFieldErrors(body: BackendErrorBody | null): Record<string, strin
   if (!Array.isArray(details)) return undefined;
   const fieldErrors: Record<string, string> = {};
   for (const d of details) {
-    if (d && typeof d === 'object' && 'field' in d && 'message' in d) {
+    if (!d || typeof d !== 'object') continue;
+    // Pydantic shape: { loc: [...], msg, type }
+    if ('loc' in d && 'msg' in d) {
+      const { loc, msg } = d as { loc: unknown[]; msg: string };
+      const field = loc
+        .filter((x) => x !== 'body' && x !== 'query' && x !== 'path')
+        .join('.');
+      if (field && typeof msg === 'string') {
+        fieldErrors[field] = msg;
+      }
+      continue;
+    }
+    // Legacy shape: { field, message }
+    if ('field' in d && 'message' in d) {
       const { field, message } = d as { field: string; message: string };
       fieldErrors[field] = message;
     }
@@ -147,11 +166,32 @@ function extractFieldErrors(body: BackendErrorBody | null): Record<string, strin
   return Object.keys(fieldErrors).length ? fieldErrors : undefined;
 }
 
-function extractRetryAfter(body: BackendErrorBody | null): number | undefined {
+function extractRetryAfter(
+  body: BackendErrorBody | null,
+  headers: Headers | null,
+): number | undefined {
+  // 1. HTTP Retry-After header (canonical)
+  const headerValue = headers?.get('Retry-After');
+  if (headerValue) {
+    const asNumber = Number(headerValue);
+    if (Number.isFinite(asNumber) && asNumber > 0) return asNumber;
+    // HTTP date form: parse and compute diff
+    const asDate = Date.parse(headerValue);
+    if (!Number.isNaN(asDate)) {
+      return Math.max(0, Math.round((asDate - Date.now()) / 1000));
+    }
+  }
+  // 2. Body details.retry_after (number or ISO string)
   const details = body?.error?.details;
   if (details && typeof details === 'object' && !Array.isArray(details)) {
     const v = (details as Record<string, unknown>).retry_after;
-    if (typeof v === 'number') return v;
+    if (typeof v === 'number' && v > 0) return v;
+    if (typeof v === 'string') {
+      const asDate = Date.parse(v);
+      if (!Number.isNaN(asDate)) {
+        return Math.max(0, Math.round((asDate - Date.now()) / 1000));
+      }
+    }
   }
   return undefined;
 }
