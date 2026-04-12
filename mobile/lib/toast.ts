@@ -1,11 +1,37 @@
-// mobile/lib/toast.ts - stub, full impl in Task 5
+import { toast } from 'burnt';
+
 export type ToastKind = 'success' | 'warning' | 'error';
 
-export function showToast(_args: {
+interface ShowToastArgs {
   kind: ToastKind;
   message: string;
   title?: string;
   duration?: number;
-}): void {
-  // Task 5 will replace this with Burnt integration
+}
+
+const PRESET_BY_KIND: Record<ToastKind, 'done' | 'error' | 'none'> = {
+  success: 'done',
+  warning: 'none',
+  error: 'error',
+};
+
+export function showToast({ kind, message, title, duration = 3 }: ShowToastArgs): void {
+  toast({
+    title: title ?? defaultTitle(kind),
+    message,
+    preset: PRESET_BY_KIND[kind],
+    duration,
+    haptic: kind === 'error' ? 'error' : kind === 'success' ? 'success' : 'warning',
+  });
+}
+
+function defaultTitle(kind: ToastKind): string {
+  switch (kind) {
+    case 'success':
+      return 'Done';
+    case 'warning':
+      return 'Heads up';
+    case 'error':
+      return 'Something went wrong';
+  }
 }
