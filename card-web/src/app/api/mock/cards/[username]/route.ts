@@ -11,10 +11,9 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 import { type CardData } from '@/lib/api';
 
-// ── Guard: dev only ────────────────────────────────────────────────────
-if (process.env.NODE_ENV === 'production') {
-  throw new Error('Mock card API must not be loaded in production');
-}
+// Dev-only endpoint. In production this route returns 404 so the mock
+// never serves real traffic — checked per-request instead of at module
+// import so `next build` (which sets NODE_ENV=production) can bundle it.
 
 // ── Deterministic hash from a string ───────────────────────────────────
 function hash(s: string): number {
@@ -26,7 +25,12 @@ function hash(s: string): number {
 }
 
 function pickSeeded<T>(arr: T[], seed: number, offset = 0): T {
-  return arr[(seed + offset) % arr.length]!;
+  // Callers supply non-empty tuples; the modulo index is always in bounds.
+  const picked = arr[(seed + offset) % arr.length];
+  if (picked === undefined) {
+    throw new Error("pickSeeded called with empty array");
+  }
+  return picked;
 }
 
 // ── Before/after image pairs (from public/images/) ─────────────────────
@@ -92,6 +96,9 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ username: string }> },
 ) {
+  if (process.env.NODE_ENV === 'production') {
+    return new NextResponse('Not found', { status: 404 });
+  }
   const { username } = await params;
   const h = hash(username);
 
@@ -104,15 +111,17 @@ export async function GET(
   const used = new Set<number>();
   for (let i = 0; recs.length < recCount; i++) {
     const idx = (h + i * 7) % RECOMMENDATIONS.length;
-    if (!used.has(idx)) {
+    const rec = RECOMMENDATIONS[idx];
+    if (!used.has(idx) && rec !== undefined) {
       used.add(idx);
-      recs.push({ rank: recs.length + 1, ...RECOMMENDATIONS[idx]! });
+      recs.push({ rank: recs.length + 1, ...rec });
     }
   }
 
   const card: CardData = {
     username,
     display_name: displayName,
+    share_hash: h.toString(36),
     before_image_url: pair.before,
     after_image_url: pair.after,
     recommendations: recs,

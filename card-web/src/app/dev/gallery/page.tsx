@@ -5,6 +5,7 @@
  * Visit /dev/gallery in development to see all variations at once.
  */
 import { type Metadata } from 'next';
+import { notFound } from 'next/navigation';
 
 import { CardView } from '@/components/card-view';
 import { buildTheme } from '@/components/theme-provider';
@@ -17,11 +18,6 @@ export const metadata: Metadata = {
   robots: 'noindex',
 };
 
-// ── Production guard ───────────────────────────────────────────────────
-if (process.env.NODE_ENV === 'production') {
-  throw new Error('Dev gallery must not be loaded in production');
-}
-
 // ── Demo usernames to display ──────────────────────────────────────────
 const DEMO_USERNAMES = [
   'sophia', 'marcus', 'aisha', 'liam', 'yuki', 'zara',
@@ -30,6 +26,12 @@ const DEMO_USERNAMES = [
 
 // ── Page ───────────────────────────────────────────────────────────────
 export default async function GalleryPage() {
+  // Dev-only surface. In production it 404s instead of rendering — checked
+  // per-request so `next build` can bundle it.
+  if (process.env.NODE_ENV === 'production') {
+    notFound();
+  }
+
   const cards = await Promise.all(
     DEMO_USERNAMES.map(async (username) => {
       const card = await getCardData(username);

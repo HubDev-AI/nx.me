@@ -2,6 +2,11 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
 
+# Multipart form-data parsing — required by FastAPI file-upload endpoints
+# (e.g. /v1/analyses). FastAPI raises "Form data requires python-multipart"
+# at collection time without this, breaking CI test discovery.
+python-multipart==0.0.22
+
 # Config
 pydantic-settings==2.9.1
 
