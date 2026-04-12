@@ -5,6 +5,8 @@ export interface QueuedMutation {
   mutationKey: readonly unknown[];
   variables: unknown;
   createdAt: number;
+  /** Incremented on each failed replay attempt. Capped by the replay worker. */
+  replayAttempts: number;
 }
 
 const QUEUE_KEY = 'queue';

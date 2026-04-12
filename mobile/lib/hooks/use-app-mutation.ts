@@ -65,6 +65,7 @@ export function useAppMutation<TData, TVariables>(
           mutationKey,
           variables,
           createdAt: Date.now(),
+          replayAttempts: 0,
         };
         mutationQueue.enqueue(queued);
         onEnqueue?.(queued);

@@ -45,6 +45,7 @@ describe('OfflineMutationQueue', () => {
       mutationKey: ['reportPost'],
       variables: { postId: 'p1' },
       createdAt: Date.now(),
+      replayAttempts: 0,
     };
     queue.enqueue(mut);
     const items = queue.list();
@@ -53,8 +54,8 @@ describe('OfflineMutationQueue', () => {
   });
 
   it('dequeues by id', () => {
-    queue.enqueue({ id: 'm1', mutationKey: ['a'], variables: {}, createdAt: 1 });
-    queue.enqueue({ id: 'm2', mutationKey: ['b'], variables: {}, createdAt: 2 });
+    queue.enqueue({ id: 'm1', mutationKey: ['a'], variables: {}, createdAt: 1, replayAttempts: 0 });
+    queue.enqueue({ id: 'm2', mutationKey: ['b'], variables: {}, createdAt: 2, replayAttempts: 0 });
     queue.dequeue('m1');
     const items = queue.list();
     expect(items).toHaveLength(1);
@@ -62,14 +63,14 @@ describe('OfflineMutationQueue', () => {
   });
 
   it('preserves FIFO order', () => {
-    queue.enqueue({ id: 'm1', mutationKey: ['a'], variables: {}, createdAt: 1 });
-    queue.enqueue({ id: 'm2', mutationKey: ['b'], variables: {}, createdAt: 2 });
-    queue.enqueue({ id: 'm3', mutationKey: ['c'], variables: {}, createdAt: 3 });
+    queue.enqueue({ id: 'm1', mutationKey: ['a'], variables: {}, createdAt: 1, replayAttempts: 0 });
+    queue.enqueue({ id: 'm2', mutationKey: ['b'], variables: {}, createdAt: 2, replayAttempts: 0 });
+    queue.enqueue({ id: 'm3', mutationKey: ['c'], variables: {}, createdAt: 3, replayAttempts: 0 });
     expect(queue.list().map((m) => m.id)).toEqual(['m1', 'm2', 'm3']);
   });
 
   it('persists across instances (same storage id)', () => {
-    queue.enqueue({ id: 'm1', mutationKey: ['a'], variables: {}, createdAt: 1 });
+    queue.enqueue({ id: 'm1', mutationKey: ['a'], variables: {}, createdAt: 1, replayAttempts: 0 });
     const queue2 = new OfflineMutationQueue('test-queue');
     expect(queue2.list()).toHaveLength(1);
   });
