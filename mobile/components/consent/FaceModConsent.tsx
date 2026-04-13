@@ -8,42 +8,56 @@
  * The modal is informational — one required action (Accept) + escape (Cancel /
  * dismiss). Per UX rule: Accept button always visible, never hidden.
  */
-import { useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
-  View,
-  Text,
+  Animated,
   Modal,
   Pressable,
-  StyleSheet,
-  Animated,
   ScrollView,
+  StyleSheet,
+  View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
-import {
-  CTA_PRIMARY,
-  TEXT_SECONDARY,
-  OVERLAY_MEDIUM,
-} from "../../constants/colors";
+import { OVERLAY_MEDIUM } from "../../constants/colors";
 import { hapticLight, hapticMedium } from "../../lib/haptics";
-import { MIN_TOUCH_TARGET } from "../../constants/config";
+import { useTheme } from "../../lib/theme-context";
+import { Body, Caption, Heading } from "../ui/Text";
+import { Button } from "../ui/Button";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Modal entry/exit animation duration (ms). */
 const ENTER_DURATION_MS = 280;
 const EXIT_DURATION_MS = 220;
-
-/** Scrim opacity when modal is visible. */
 const SCRIM_OPACITY = 0.6;
-
-/** Height of the bottom inset to respect safe area. */
 const BOTTOM_SHEET_RADIUS = THEME.radius.xl;
+const ICON_SIZE = 56;
+const CLOSE_HIT_SLOP = 16;
+
+// ---------------------------------------------------------------------------
+// Copy
+// ---------------------------------------------------------------------------
+
+const TITLE = "Transform Your Photo with AI";
+const SUBTITLE =
+  "Your photo powers a personalized AI glow-up. Here is exactly what happens next.";
+
+const CONSENT_BULLETS: readonly string[] = [
+  "Detect and analyze facial features",
+  "Apply AI style enhancements",
+  "Auto-delete results after 7 days (unless saved)",
+];
+
+const PRIVACY_HEADLINE = "Private & secure";
+const PRIVACY_DETAIL =
+  "Photos are processed on secure servers and never sold or shared with third parties.";
+
+const DISCLAIMER =
+  "Results are AI-generated and do not represent a real photograph.";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -63,6 +77,7 @@ export interface FaceModConsentProps {
 
 export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentProps) {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
 
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(300)).current;
@@ -116,20 +131,17 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
       onRequestClose={handleDismiss}
       statusBarTranslucent
     >
-      {/* Scrim */}
       <Animated.View
         style={[styles.scrim, { opacity: backdropOpacity }]}
         pointerEvents="none"
       />
 
-      {/* Tap-outside-to-dismiss */}
       <Pressable
         style={styles.dismissArea}
         onPress={handleDismiss}
         accessible={false}
       />
 
-      {/* Bottom sheet */}
       <Animated.View
         style={[
           styles.sheet,
@@ -139,16 +151,14 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
           },
         ]}
       >
-        {/* Drag indicator */}
         <View style={styles.dragIndicator} />
 
-        {/* Close button */}
         <Pressable
           onPress={handleDismiss}
           style={styles.closeButton}
           accessibilityLabel="Close"
           accessibilityRole="button"
-          hitSlop={12}
+          hitSlop={CLOSE_HIT_SLOP}
         >
           <Ionicons name="close" size={22} color={THEME.colors.textSecondary} />
         </Pressable>
@@ -156,77 +166,84 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
-          bounces={false}
+          bounces={true}
         >
-          {/* Icon */}
-          <View style={styles.iconContainer}>
-            <Ionicons name="shield-checkmark-outline" size={40} color={CTA_PRIMARY} />
+          <View style={styles.iconWrap}>
+            <View style={[styles.iconRing, { borderColor: theme.accent + "66" }]}>
+              <Ionicons
+                name="sparkles"
+                size={ICON_SIZE}
+                color={theme.accent}
+              />
+            </View>
           </View>
 
-          {/* Title */}
-          <Text style={styles.title}>AI Face Modification</Text>
+          <Heading size="lg" color="primary" style={styles.title}>
+            {TITLE}
+          </Heading>
 
-          {/* Body */}
-          <Text style={styles.body}>
-            nxme uses AI to analyze and apply enhancements to your facial photo. By
-            continuing, you allow nxme to:
-          </Text>
+          <Body color="secondary" style={styles.subtitle}>
+            {SUBTITLE}
+          </Body>
 
-          {/* Bullet points */}
+          <View style={[styles.privacyCard, { borderColor: theme.accent + "33" }]}>
+            <View style={styles.privacyHeader}>
+              <Ionicons
+                name="shield-checkmark"
+                size={18}
+                color={theme.accent}
+              />
+              <Body weight="semibold" color="primary">
+                {PRIVACY_HEADLINE}
+              </Body>
+            </View>
+            <Caption color="secondary">{PRIVACY_DETAIL}</Caption>
+          </View>
+
           <View style={styles.bulletList}>
             {CONSENT_BULLETS.map((bullet) => (
               <View key={bullet} style={styles.bulletRow}>
                 <Ionicons
                   name="checkmark-circle"
                   size={16}
-                  color={CTA_PRIMARY}
+                  color={theme.accent}
                   style={styles.bulletIcon}
                 />
-                <Text style={styles.bulletText}>{bullet}</Text>
+                <Body color="primary" style={styles.bulletText}>
+                  {bullet}
+                </Body>
               </View>
             ))}
           </View>
 
-          {/* Footnote */}
-          <Text style={styles.footnote}>
-            Results are AI-generated and do not represent a real photograph.
-            Your photo is processed securely and not shared with third parties.
-          </Text>
+          <Caption color="muted" style={styles.disclaimer}>
+            {DISCLAIMER}
+          </Caption>
 
-          {/* Accept CTA */}
-          <Pressable
+          <Button
+            title="Accept and Continue"
             onPress={handleAccept}
-            style={styles.acceptButton}
+            variant="primary"
+            size="lg"
+            block
+            haptic="none"
+            accentColor={theme.accent}
             accessibilityLabel="Accept and continue"
-            accessibilityRole="button"
-          >
-            <Text style={styles.acceptButtonText}>Accept and Continue</Text>
-          </Pressable>
+          />
 
-          {/* Cancel link */}
-          <Pressable
+          <Button
+            title="Not now"
             onPress={handleDismiss}
-            style={styles.cancelButton}
-            accessibilityLabel="Cancel"
-            accessibilityRole="button"
-          >
-            <Text style={styles.cancelText}>Not now</Text>
-          </Pressable>
+            variant="ghost"
+            size="md"
+            block
+            haptic="none"
+          />
         </ScrollView>
       </Animated.View>
     </Modal>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Data
-// ---------------------------------------------------------------------------
-
-const CONSENT_BULLETS: string[] = [
-  "Detect and analyze your facial features",
-  "Apply AI-generated style enhancements to your photo",
-  "Temporarily store the processed result (auto-deleted after 7 days unless saved)",
-];
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -244,6 +261,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.surfaceElevated,
     borderTopLeftRadius: BOTTOM_SHEET_RADIUS,
     borderTopRightRadius: BOTTOM_SHEET_RADIUS,
+    borderCurve: "continuous",
     borderTopWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingTop: THEME.spacing.sm,
@@ -260,10 +278,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: THEME.spacing.lg,
     right: THEME.spacing.xl,
-    minWidth: MIN_TOUCH_TARGET,
-    minHeight: MIN_TOUCH_TARGET,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 1,
   },
   content: {
     paddingHorizontal: THEME.spacing.xxl,
@@ -271,26 +290,39 @@ const styles = StyleSheet.create({
     paddingBottom: THEME.spacing.lg,
     gap: THEME.spacing.lg,
   },
-  iconContainer: {
+  iconWrap: {
     alignItems: "center",
     paddingTop: THEME.spacing.sm,
   },
-  title: {
-    fontFamily: FONTS.display,
-    fontSize: 24,
-    color: THEME.colors.textPrimary,
-    textAlign: "center",
-    letterSpacing: -0.3,
+  iconRing: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  body: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: TEXT_SECONDARY,
-    lineHeight: 22,
+  title: {
     textAlign: "center",
+  },
+  subtitle: {
+    textAlign: "center",
+  },
+  privacyCard: {
+    backgroundColor: THEME.colors.surface,
+    borderRadius: THEME.radius.md,
+    borderCurve: "continuous",
+    borderWidth: 1,
+    padding: THEME.spacing.md,
+    gap: THEME.spacing.xs,
+  },
+  privacyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.sm,
   },
   bulletList: {
-    gap: THEME.spacing.sm,
+    gap: THEME.spacing.md,
   },
   bulletRow: {
     flexDirection: "row",
@@ -298,48 +330,14 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   bulletIcon: {
-    marginTop: 1,
+    marginTop: 2,
     flexShrink: 0,
   },
   bulletText: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.textPrimary,
-    lineHeight: 20,
     flex: 1,
   },
-  footnote: {
-    fontFamily: FONTS.body,
-    fontSize: 12,
-    color: TEXT_SECONDARY,
-    lineHeight: 17,
+  disclaimer: {
     textAlign: "center",
     opacity: 0.8,
-  },
-  acceptButton: {
-    backgroundColor: CTA_PRIMARY,
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET + 4,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: THEME.spacing.md,
-    paddingHorizontal: THEME.spacing.xxl,
-  },
-  acceptButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.bg,
-    letterSpacing: 0.3,
-  },
-  cancelButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  cancelText: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    letterSpacing: 0.1,
   },
 });
