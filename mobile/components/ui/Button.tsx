@@ -1,6 +1,8 @@
 /**
- * Unified Button — absorbs GlowButton (pulse glow) and AuthButton (social-login)
- * behavior behind a single API. Prefer this over raw Pressable for CTAs.
+ * Unified Button — single API for every CTA in the app. Supports pulsing
+ * glow, haptics, leading/trailing icons, loading state, and five variants
+ * (primary / secondary / destructive / outline / ghost). Prefer this over
+ * raw Pressable for any tappable call-to-action.
  *
  * Variants:
  *   primary     — filled with session accent (optionally glowing)
