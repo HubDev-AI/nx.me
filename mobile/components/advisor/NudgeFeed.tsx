@@ -279,7 +279,7 @@ export function NudgeFeed() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.bg,
+    backgroundColor: "transparent",
   },
   listContent: {
     flexGrow: 1,
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: THEME.spacing.xxxl,
     gap: THEME.spacing.sm,
-    backgroundColor: THEME.colors.bg,
+    backgroundColor: "transparent",
   },
   errorTitle: {
     marginTop: THEME.spacing.md,
