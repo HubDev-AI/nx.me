@@ -9,15 +9,13 @@
  *   GET  /v1/users/blocked          -> BlockedListResponse
  *   DELETE /v1/users/{id}/block      -> 204 (unblock)
  */
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
   ActivityIndicator,
   Alert,
+  ScrollView,
   StyleSheet,
+  View,
 } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -27,6 +25,8 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
+import { Button } from "../components/ui/Button";
+import { Body, Caption, Heading } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useEntering } from "../lib/hooks/use-entering";
 import { FONTS } from "../hooks/useFonts";
@@ -180,7 +180,9 @@ export default function BlockedUsersScreen() {
               style={styles.centered}
             >
               <ActivityIndicator color={theme.accent} size="large" />
-              <Text style={styles.loadingText}>Loading blocked users...</Text>
+              <Caption color="secondary" style={styles.loadingText}>
+                Loading blocked users…
+              </Caption>
             </Animated.View>
           ) : error ? (
             /* Error state */
@@ -193,16 +195,21 @@ export default function BlockedUsersScreen() {
                 size={48}
                 color={THEME.colors.textSecondary}
               />
-              <Text style={styles.errorText}>{error}</Text>
-              <Pressable
+              <Caption color="destructive" style={styles.errorText}>
+                {error}
+              </Caption>
+              <Button
+                title="Try Again"
                 onPress={loadBlockedUsers}
-                style={[styles.retryButton, { backgroundColor: theme.accent }]}
+                variant="primary"
+                size="md"
+                accentColor={theme.accent}
+                leftIcon={
+                  <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
+                }
                 accessibilityLabel="Retry loading blocked users"
-                accessibilityRole="button"
-              >
-                <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-                <Text style={styles.retryButtonText}>Try Again</Text>
-              </Pressable>
+                style={styles.retryButton}
+              />
             </Animated.View>
           ) : blockedUsers.length === 0 ? (
             /* Empty state */
@@ -217,10 +224,12 @@ export default function BlockedUsersScreen() {
                   color={THEME.colors.textMuted}
                 />
               </View>
-              <Text style={styles.emptyTitle}>No blocked users</Text>
-              <Text style={styles.emptySubtitle}>
+              <Heading size="md" display={false} color="primary">
+                No blocked users
+              </Heading>
+              <Body color="secondary" style={styles.emptySubtitle}>
                 Users you block will appear here
-              </Text>
+              </Body>
             </Animated.View>
           ) : (
             /* Blocked users list */
@@ -250,14 +259,14 @@ export default function BlockedUsersScreen() {
 
                         {/* User info */}
                         <View style={styles.userInfo}>
-                          <Text style={styles.userName} numberOfLines={1}>
+                          <Body weight="medium" color="primary" numberOfLines={1}>
                             {user.display_name || "Blocked User"}
-                          </Text>
-                          <Text style={styles.userMeta} numberOfLines={1}>
+                          </Body>
+                          <Caption color="secondary" numberOfLines={1}>
                             {user.username
                               ? `@${user.username}`
-                              : `ID: ${user.blocked_id.slice(0, 8)}...`}
-                          </Text>
+                              : `ID: ${user.blocked_id.slice(0, 8)}…`}
+                          </Caption>
                         </View>
 
                         {/* Unblock button */}
@@ -278,14 +287,9 @@ export default function BlockedUsersScreen() {
                               size="small"
                             />
                           ) : (
-                            <Text
-                              style={[
-                                styles.unblockButtonText,
-                                { color: theme.accent },
-                              ]}
-                            >
+                            <Caption weight="medium" color={theme.accent}>
                               Unblock
-                            </Text>
+                            </Caption>
                           )}
                         </PressableScale>
                       </View>
@@ -328,32 +332,14 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.md,
   },
   loadingText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     marginTop: THEME.spacing.sm,
   },
   errorText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.destructive,
     textAlign: "center",
     marginTop: THEME.spacing.sm,
   },
   retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
     marginTop: THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.xxl,
-    paddingVertical: THEME.spacing.md,
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  retryButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
-    color: THEME.colors.bg,
   },
 
   // Empty state
@@ -368,15 +354,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: THEME.spacing.lg,
   },
-  emptyTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    ...THEME.typography.heading,
-    color: THEME.colors.textPrimary,
-  },
   emptySubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
 
@@ -389,6 +367,7 @@ const styles = StyleSheet.create({
   glassCard: {
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.lg,
@@ -418,20 +397,11 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  userName: {
-    fontFamily: FONTS.bodyMedium,
-    ...THEME.typography.body,
-    color: THEME.colors.textPrimary,
-  },
-  userMeta: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-  },
 
   // Unblock button (pill outline)
   unblockButton: {
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -441,9 +411,5 @@ const styles = StyleSheet.create({
   },
   unblockButtonDisabled: {
     opacity: 0.5,
-  },
-  unblockButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 14,
   },
 });
