@@ -9,41 +9,57 @@
  * flow -- the backend handles account creation on first login.
  */
 import { useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
-import { useEntering } from "../../lib/hooks/use-entering";
 
+import { useEntering } from "../../lib/hooks/use-entering";
 import { THEME } from "../../constants/theme";
-import {
-  TEXT_INVERSE,
-  TEXT_PRIMARY,
-  TEXT_SHADOW_DARK,
-  ERROR_BG,
-} from "../../constants/colors";
+import { ERROR_BG, TEXT_SHADOW_DARK } from "../../constants/colors";
 import { SocialLoginButtons } from "../../components/auth/SocialLoginButtons";
 import { useSocialAuth } from "../../hooks/useSocialAuth";
 import { useEnabledProviders } from "../../hooks/useEnabledProviders";
-
 import { HeroBackground } from "../../components/ui/HeroBackground";
 import { BrandLabel } from "../../components/ui/BrandLabel";
-import { GlowButton } from "../../components/ui/GlowButton";
-import { useTheme } from "../../lib/theme-context";
+import { Button } from "../../components/ui/Button";
+import { Body, Heading } from "../../components/ui/Text";
 import { FONTS } from "../../hooks/useFonts";
+import { useTheme } from "../../lib/theme-context";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Shared text-shadow values used on hero headlines (readable over image bg). */
+const HERO_TEXT_SHADOW = {
+  textShadowColor: TEXT_SHADOW_DARK,
+  textShadowOffset: { width: 0, height: 3 },
+  textShadowRadius: 12,
+} as const;
+
+const SUBTITLE_TEXT_SHADOW = {
+  textShadowColor: "rgba(0, 0, 0, 0.7)",
+  textShadowOffset: { width: 0, height: 1 },
+  textShadowRadius: 4,
+} as const;
+
+const HERO_FONT_SIZE = 48;
+const HERO_LINE_HEIGHT = 52;
+const CONTENT_HORIZONTAL_PADDING = THEME.spacing.xxl;
+const TOP_INSET_EXTRA = THEME.spacing.lg;
+const BOTTOM_INSET_EXTRA = THEME.spacing.xxl;
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { fadeInDown } = useEntering();
 
-  // Fetch enabled providers from backend
   const {
     providers,
     isLoading: isLoadingProviders,
@@ -51,7 +67,6 @@ export default function AuthScreen() {
     retry: retryProviders,
   } = useEnabledProviders();
 
-  // Social auth
   const {
     isSocialLoading,
     socialError,
@@ -61,7 +76,6 @@ export default function AuthScreen() {
     clearSocialError,
   } = useSocialAuth();
 
-  // Clear social error when navigating away (safety valve)
   useEffect(() => {
     return clearSocialError;
   }, [clearSocialError]);
@@ -77,13 +91,17 @@ export default function AuthScreen() {
             <ActivityIndicator size="large" color={theme.accent} />
           ) : (
             <View style={styles.providerErrorContainer}>
-              <Ionicons name="cloud-offline-outline" size={32} color={TEXT_PRIMARY} />
-              <Text style={styles.providerErrorText}>{providersError}</Text>
-              <GlowButton
+              <Ionicons name="cloud-offline-outline" size={32} color={THEME.colors.textPrimary} />
+              <Body color="primary" style={styles.providerErrorText}>
+                {providersError}
+              </Body>
+              <Button
                 title="Retry"
                 onPress={retryProviders}
-                glowColor={theme.accent}
-                size="large"
+                variant="primary"
+                size="lg"
+                glow
+                accentColor={theme.accent}
               />
             </View>
           )}
@@ -103,8 +121,8 @@ export default function AuthScreen() {
         style={[
           styles.content,
           {
-            paddingTop: insets.top + 16,
-            paddingBottom: insets.bottom + 24,
+            paddingTop: insets.top + TOP_INSET_EXTRA,
+            paddingBottom: insets.bottom + BOTTOM_INSET_EXTRA,
           },
         ]}
       >
@@ -113,30 +131,53 @@ export default function AuthScreen() {
 
         {/* Hero headline */}
         <Animated.View entering={fadeInDown(0, 300)}>
-          <Text style={styles.heroTitle} maxFontSizeMultiplier={1.3}>{"Your style,\nelevated"}</Text>
-          <Text
-            style={[styles.heroAccent, { color: theme.accent }]}
+          <Heading
+            color={THEME.colors.white}
             maxFontSizeMultiplier={1.3}
+            style={styles.heroTitle}
+          >
+            {"Your style,\nelevated"}
+          </Heading>
+          <Heading
+            color={theme.accent}
+            maxFontSizeMultiplier={1.3}
+            style={styles.heroAccent}
           >
             start your glow-up
-          </Text>
+          </Heading>
         </Animated.View>
 
         <Animated.View entering={fadeInDown(60, 300)}>
-          <Text style={styles.subtitle} maxFontSizeMultiplier={1.4}>
+          <Body
+            color={THEME.colors.textPrimary}
+            maxFontSizeMultiplier={1.4}
+            style={styles.subtitle}
+          >
             Sign in or create an account to continue
-          </Text>
+          </Body>
         </Animated.View>
 
-        {/* Social login buttons (config-driven) — error renders inline above the button group so it sits next to the action */}
+        {/* Social login buttons (config-driven) */}
         {socialProviders.length > 0 && (
           <Animated.View entering={fadeInDown(120, 300)}>
             {socialError ? (
-              <View style={styles.inlineError} accessibilityRole="alert" accessibilityLiveRegion="polite">
-                <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
-                <Text style={styles.inlineErrorText} maxFontSizeMultiplier={1.4}>
+              <View
+                style={styles.inlineError}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                <Ionicons
+                  name="alert-circle"
+                  size={18}
+                  color={THEME.colors.destructive}
+                />
+                <Body
+                  color="destructive"
+                  maxFontSizeMultiplier={1.4}
+                  style={styles.inlineErrorText}
+                >
                   {socialError.message}
-                </Text>
+                </Body>
               </View>
             ) : null}
             <SocialLoginButtons
@@ -153,6 +194,10 @@ export default function AuthScreen() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -165,14 +210,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.xxl,
   },
   providerErrorText: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: TEXT_PRIMARY,
     textAlign: "center",
   },
   content: {
     ...StyleSheet.absoluteFillObject,
-    paddingHorizontal: THEME.spacing.xxl,
+    paddingHorizontal: CONTENT_HORIZONTAL_PADDING,
     justifyContent: "flex-end",
   },
   spacer: {
@@ -181,32 +223,22 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: FONTS.display,
-    fontSize: 48,
-    lineHeight: 52,
-    color: TEXT_INVERSE,
+    fontSize: HERO_FONT_SIZE,
+    lineHeight: HERO_LINE_HEIGHT,
     letterSpacing: -0.5,
-    textShadowColor: TEXT_SHADOW_DARK,
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 12,
+    ...HERO_TEXT_SHADOW,
   },
   heroAccent: {
     fontFamily: FONTS.displayItalic,
-    fontSize: 48,
-    lineHeight: 52,
+    fontSize: HERO_FONT_SIZE,
+    lineHeight: HERO_LINE_HEIGHT,
     letterSpacing: -0.5,
     marginBottom: THEME.spacing.md,
-    textShadowColor: TEXT_SHADOW_DARK,
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 12,
+    ...HERO_TEXT_SHADOW,
   },
   subtitle: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: TEXT_PRIMARY,
     marginBottom: THEME.spacing.xxl,
-    textShadowColor: "rgba(0, 0, 0, 0.7)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    ...SUBTITLE_TEXT_SHADOW,
   },
   inlineError: {
     flexDirection: "row",
@@ -214,13 +246,11 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
     backgroundColor: ERROR_BG,
     borderRadius: THEME.radius.md,
+    borderCurve: "continuous",
     padding: THEME.spacing.md,
     marginBottom: THEME.spacing.md,
   },
   inlineErrorText: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.destructive,
     flex: 1,
   },
 });

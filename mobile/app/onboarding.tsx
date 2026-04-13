@@ -1,10 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { AuthButton } from "../components/auth/AuthButton";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { registerForPushNotifications } from "../lib/notifications";
@@ -12,9 +11,9 @@ import { setItem } from "../lib/secure-storage";
 import { THEME } from "../constants/theme";
 import { SUCCESS_DARK } from "../constants/colors";
 import { PageBackground } from "../components/ui/PageBackground";
-import { PressableScale } from "../components/ui/PressableScale";
+import { Button } from "../components/ui/Button";
+import { Body, Caption, Heading } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
-import { FONTS } from "../hooks/useFonts";
 
 /** Entitlement response shape from GET /v1/entitlement */
 interface EntitlementSnapshot {
@@ -43,6 +42,10 @@ const FEATURES = [
   },
 ] as const;
 
+const LOGO_DIAMETER = 72;
+const FEATURE_ICON_DIAMETER = 48;
+const FEATURE_ROW_MIN_HEIGHT = 48;
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -54,7 +57,6 @@ export default function OnboardingScreen() {
   const [isRequestingPush, setIsRequestingPush] = useState(false);
   const [pushCompleted, setPushCompleted] = useState(false);
 
-  // Fetch entitlement on mount
   useEffect(() => {
     let cancelled = false;
 
@@ -91,18 +93,18 @@ export default function OnboardingScreen() {
   const handleEnablePush = useCallback(async () => {
     setIsRequestingPush(true);
     try {
-      const token = await registerForPushNotifications();
+      await registerForPushNotifications();
       setPushCompleted(true);
-      if (token) {
-        // Token stored by registerForPushNotifications
-      }
-      // Whether granted or declined, don't block the user
     } catch {
       // Non-blocking — push is optional
       setPushCompleted(true);
     } finally {
       setIsRequestingPush(false);
     }
+  }, []);
+
+  const handleSkipPush = useCallback(() => {
+    setPushCompleted(true);
   }, []);
 
   const trialText = isLoadingEntitlement
@@ -123,52 +125,47 @@ export default function OnboardingScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View style={styles.logoCircle}>
-            <Ionicons
-              name="sparkles"
-              size={32}
-              color={theme.accent}
-            />
+            <Ionicons name="sparkles" size={32} color={theme.accent} />
           </View>
-          <Text style={styles.title}>Your Glow-Up Starts Here</Text>
-          <Text style={styles.subtitle}>{trialText}</Text>
+          <Heading size="lg" color="primary" style={styles.title}>
+            Your Glow-Up Starts Here
+          </Heading>
+          <Body color="secondary" style={styles.subtitle}>
+            {trialText}
+          </Body>
         </View>
 
-        {/* Trial count badge */}
-        {!isLoadingEntitlement && !entitlementError && trialRemaining !== null && trialRemaining > 0 && (
+        {!isLoadingEntitlement &&
+        !entitlementError &&
+        trialRemaining !== null &&
+        trialRemaining > 0 ? (
           <View style={styles.trialBadge}>
             <Ionicons name="gift-outline" size={20} color={SUCCESS_DARK} />
-            <Text style={styles.trialBadgeText}>
+            <Body weight="semibold" color={SUCCESS_DARK}>
               {trialRemaining} free {trialRemaining === 1 ? "trial" : "trials"} included
-            </Text>
+            </Body>
           </View>
-        )}
+        ) : null}
 
-        {/* Feature list */}
         <View style={styles.featureList}>
           {FEATURES.map((feature) => (
             <View key={feature.title} style={styles.featureRow}>
               <View style={styles.featureIconCircle}>
-                <Ionicons
-                  name={feature.icon}
-                  size={24}
-                  color={theme.accent}
-                />
+                <Ionicons name={feature.icon} size={24} color={theme.accent} />
               </View>
               <View style={styles.featureTextContainer}>
-                <Text style={styles.featureTitle}>{feature.title}</Text>
-                <Text style={styles.featureDescription}>
-                  {feature.description}
-                </Text>
+                <Body weight="semibold" color="primary">
+                  {feature.title}
+                </Body>
+                <Caption color="secondary">{feature.description}</Caption>
               </View>
             </View>
           ))}
         </View>
 
-        {/* Push notification opt-in */}
-        {!pushCompleted && (
+        {!pushCompleted ? (
           <View style={styles.pushCard}>
             <View style={styles.pushHeader}>
               <Ionicons
@@ -176,39 +173,49 @@ export default function OnboardingScreen() {
                 size={24}
                 color={THEME.colors.textPrimary}
               />
-              <Text style={styles.pushTitle}>Stay in the Loop</Text>
+              <Body weight="semibold" color="primary">
+                Stay in the Loop
+              </Body>
             </View>
-            <Text style={styles.pushDescription}>
+            <Body color="secondary" style={styles.pushDescription}>
               Get notified when your glow-up is ready and discover new styles.
-            </Text>
-            <AuthButton
+            </Body>
+            <Button
               title="Enable Notifications"
               onPress={handleEnablePush}
+              variant="primary"
+              size="md"
+              block
               isLoading={isRequestingPush}
+              accentColor={theme.accent}
+              haptic="light"
             />
-            <PressableScale
-              scale={0.97}
-              onPress={() => setPushCompleted(true)}
-              accessibilityLabel="Skip push notifications"
-              accessibilityRole="button"
-              style={styles.skipButton}
-            >
-              <Text style={styles.skipText}>Not now</Text>
-            </PressableScale>
+            <Button
+              title="Not now"
+              onPress={handleSkipPush}
+              variant="ghost"
+              size="sm"
+              block
+              haptic="none"
+            />
           </View>
-        )}
+        ) : null}
 
-        {/* Primary CTA */}
         <View style={styles.ctaContainer}>
-          <AuthButton
+          <Button
             title="Analyze My Style"
             onPress={handleAnalyzeCTA}
+            variant="primary"
+            size="lg"
+            block
+            glow
             disabled={isLoadingEntitlement && !entitlementError}
             isLoading={isLoadingEntitlement && !entitlementError}
+            accentColor={theme.accent}
           />
-          <Text style={styles.ctaHint}>
+          <Caption color="secondary" style={styles.ctaHint}>
             Upload a photo and let AI do the rest
-          </Text>
+          </Caption>
         </View>
       </ScrollView>
     </View>
@@ -229,9 +236,9 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.xxxl,
   },
   logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: LOGO_DIAMETER,
+    height: LOGO_DIAMETER,
+    borderRadius: LOGO_DIAMETER / 2,
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
@@ -240,18 +247,11 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.lg,
   },
   title: {
-    fontFamily: FONTS.display,
-    ...THEME.typography.headingLg,
-    color: THEME.colors.textPrimary,
     textAlign: "center",
     marginBottom: THEME.spacing.sm,
   },
   subtitle: {
-    fontFamily: FONTS.body,
-    fontSize: 16,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
-    letterSpacing: THEME.typography.body.letterSpacing,
   },
   trialBadge: {
     flexDirection: "row",
@@ -260,16 +260,12 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
+    borderRadius: THEME.radius.md,
+    borderCurve: "continuous",
     paddingVertical: THEME.spacing.md,
     paddingHorizontal: THEME.spacing.lg,
-    borderRadius: THEME.radius.md,
     gap: THEME.spacing.sm,
     marginBottom: THEME.spacing.xxxl,
-  },
-  trialBadgeText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 15,
-    color: SUCCESS_DARK,
   },
   featureList: {
     gap: THEME.spacing.lg,
@@ -280,15 +276,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.md,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.lg,
-    minHeight: 44,
+    minHeight: FEATURE_ROW_MIN_HEIGHT,
     gap: THEME.spacing.lg,
   },
   featureIconCircle: {
-    width: 48,
-    height: 48,
+    width: FEATURE_ICON_DIAMETER,
+    height: FEATURE_ICON_DIAMETER,
     borderRadius: THEME.radius.pill,
     backgroundColor: THEME.colors.surfaceElevated,
     alignItems: "center",
@@ -296,67 +293,31 @@ const styles = StyleSheet.create({
   },
   featureTextContainer: {
     flex: 1,
-  },
-  featureTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 17,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    marginBottom: 2,
-  },
-  featureDescription: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
+    gap: THEME.spacing.xs,
   },
   pushCard: {
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.xxl,
     marginBottom: THEME.spacing.xxxl,
+    gap: THEME.spacing.md,
   },
   pushHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.sm,
-    marginBottom: THEME.spacing.sm,
-  },
-  pushTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
   },
   pushDescription: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
-    marginBottom: THEME.spacing.lg,
-    lineHeight: 20,
-  },
-  skipButton: {
-    marginTop: THEME.spacing.md,
-    paddingVertical: THEME.spacing.sm,
-    minHeight: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  skipText: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
+    marginBottom: THEME.spacing.xs,
   },
   ctaContainer: {
     marginBottom: THEME.spacing.lg,
+    gap: THEME.spacing.sm,
   },
   ctaHint: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
-    marginTop: THEME.spacing.sm,
   },
 });

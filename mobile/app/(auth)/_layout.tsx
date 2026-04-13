@@ -3,8 +3,9 @@ import { Stack } from "expo-router";
 import { THEME } from "../../constants/theme";
 
 /**
- * Auth group layout -- no tab bar, clean auth flow with back navigation.
- * headerShown: false on the group so individual screens control their own header.
+ * Auth group layout — no tab bar, clean auth flow with back navigation.
+ * Per `expo:building-native-ui` skill: minimal back button, no header
+ * shadow, theme-background, individual screens control headerShown.
  */
 export default function AuthLayout() {
   return (
@@ -14,6 +15,7 @@ export default function AuthLayout() {
         headerTintColor: THEME.colors.textPrimary,
         headerShadowVisible: false,
         headerTitle: "",
+        headerBackButtonDisplayMode: "minimal",
         contentStyle: { backgroundColor: THEME.colors.bg },
       }}
     />
