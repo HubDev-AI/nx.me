@@ -4,14 +4,12 @@
  * Route: /settings (Stack.Screen)
  * Auth: required — fetches /v1/auth/me for account details.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
   Alert,
+  ScrollView,
   StyleSheet,
+  View,
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,6 +24,8 @@ import { THEME } from "../constants/theme";
 import { ERROR_BORDER } from "../constants/colors";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
+import { Button } from "../components/ui/Button";
+import { Body, Caption, Label } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { FONTS } from "../hooks/useFonts";
@@ -163,12 +163,9 @@ export default function SettingsScreen() {
         >
           {/* ─── Account Section ──────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(0, 240)}>
-            <Text
-              style={styles.sectionLabel}
-              maxFontSizeMultiplier={1.3}
-            >
+            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
               ACCOUNT
-            </Text>
+            </Label>
             <View style={styles.glassCard}>
               {isLoading ? (
                 <View style={styles.accountSkeleton}>
@@ -177,7 +174,7 @@ export default function SettingsScreen() {
                   <LoadingSkeleton height={18} width="70%" />
                 </View>
               ) : error ? (
-                <Text style={styles.errorText}>{error}</Text>
+                <Caption color="destructive" style={styles.errorText}>{error}</Caption>
               ) : me ? (
                 <>
                   <SettingsRow
@@ -204,12 +201,9 @@ export default function SettingsScreen() {
 
           {/* ─── Subscription Section ─────────────────────────────────── */}
           <Animated.View entering={fadeInDown(40, 240)}>
-            <Text
-              style={styles.sectionLabel}
-              maxFontSizeMultiplier={1.3}
-            >
+            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
               SUBSCRIPTION
-            </Text>
+            </Label>
             <PressableScale
               style={styles.glassCard}
               onPress={() => router.push("/subscription")}
@@ -223,7 +217,7 @@ export default function SettingsScreen() {
                     size={20}
                     color={theme.accent}
                   />
-                  <Text style={styles.navRowLabel}>Manage Subscription</Text>
+                  <Body weight="medium" color="primary">Manage Subscription</Body>
                 </View>
                 <Ionicons
                   name="chevron-forward"
@@ -236,12 +230,9 @@ export default function SettingsScreen() {
 
           {/* ─── Privacy Section ──────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(80, 240)}>
-            <Text
-              style={styles.sectionLabel}
-              maxFontSizeMultiplier={1.3}
-            >
+            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
               PRIVACY
-            </Text>
+            </Label>
             <PressableScale
               style={styles.glassCard}
               onPress={() => router.push("/blocked-users")}
@@ -255,7 +246,7 @@ export default function SettingsScreen() {
                     size={20}
                     color={theme.accent}
                   />
-                  <Text style={styles.navRowLabel}>Blocked Users</Text>
+                  <Body weight="medium" color="primary">Blocked Users</Body>
                 </View>
                 <Ionicons
                   name="chevron-forward"
@@ -268,12 +259,9 @@ export default function SettingsScreen() {
 
           {/* ─── About Section ────────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(120, 240)}>
-            <Text
-              style={styles.sectionLabel}
-              maxFontSizeMultiplier={1.3}
-            >
+            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
               ABOUT
-            </Text>
+            </Label>
             <View style={styles.glassCard}>
               <SettingsRow
                 icon="information-circle-outline"
@@ -285,40 +273,30 @@ export default function SettingsScreen() {
 
           {/* ─── Danger Zone ──────────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(160, 240)}>
-            <Text
-              style={[styles.sectionLabel, { color: THEME.colors.destructive }]}
-              maxFontSizeMultiplier={1.3}
-            >
+            <Label color="destructive" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
               DANGER ZONE
-            </Text>
+            </Label>
             <View style={[styles.glassCard, styles.dangerCard]}>
-              <Text style={styles.dangerText}>
+              <Body color="secondary" style={styles.dangerText}>
                 Permanently delete your account and all associated data. This
                 action cannot be undone.
-              </Text>
-              <PressableScale
+              </Body>
+              <Button
+                title="Delete Account"
                 onPress={handleDeleteAccount}
-                disabled={isDeleting}
-                style={[
-                  styles.deleteButton,
-                  isDeleting && styles.deleteButtonDisabled,
-                ]}
+                variant="destructive"
+                size="md"
+                block
+                isLoading={isDeleting}
+                leftIcon={
+                  <Ionicons
+                    name="trash-outline"
+                    size={18}
+                    color={THEME.colors.white}
+                  />
+                }
                 accessibilityLabel="Delete account"
-                accessibilityRole="button"
-              >
-                {isDeleting ? (
-                  <ActivityIndicator color={THEME.colors.white} size="small" />
-                ) : (
-                  <>
-                    <Ionicons
-                      name="trash-outline"
-                      size={18}
-                      color={THEME.colors.white}
-                    />
-                    <Text style={styles.deleteButtonText}>Delete Account</Text>
-                  </>
-                )}
-              </PressableScale>
+              />
             </View>
           </Animated.View>
         </ScrollView>
@@ -342,11 +320,11 @@ function SettingsRow({ icon, label, value }: SettingsRowProps) {
     <View style={styles.settingsRow}>
       <View style={styles.settingsRowLeft}>
         <Ionicons name={icon} size={18} color={THEME.colors.textSecondary} />
-        <Text style={styles.settingsRowLabel}>{label}</Text>
+        <Body weight="medium" color="secondary">{label}</Body>
       </View>
-      <Text style={styles.settingsRowValue} numberOfLines={1}>
+      <Body color="primary" numberOfLines={1} style={styles.settingsRowValue}>
         {value}
-      </Text>
+      </Body>
     </View>
   );
 }
@@ -370,11 +348,6 @@ const styles = StyleSheet.create({
 
   // Section label
   sectionLabel: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 11,
-    color: THEME.colors.textSecondary,
-    letterSpacing: 1,
-    textTransform: "uppercase",
     marginTop: THEME.spacing.xxl,
     marginBottom: THEME.spacing.sm,
     marginLeft: THEME.spacing.xs,
@@ -384,6 +357,7 @@ const styles = StyleSheet.create({
   glassCard: {
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.lg,
@@ -410,15 +384,7 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.md,
     flexShrink: 0,
   },
-  settingsRowLabel: {
-    fontFamily: FONTS.bodyMedium,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
-  },
   settingsRowValue: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textPrimary,
     textAlign: "right",
     flexShrink: 1,
     marginLeft: THEME.spacing.lg,
@@ -433,9 +399,6 @@ const styles = StyleSheet.create({
 
   // Error
   errorText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.destructive,
     textAlign: "center",
   },
 
@@ -451,39 +414,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: THEME.spacing.md,
   },
-  navRowLabel: {
-    fontFamily: FONTS.bodyMedium,
-    ...THEME.typography.body,
-    color: THEME.colors.textPrimary,
-  },
 
   // Danger zone
   dangerCard: {
     borderColor: ERROR_BORDER,
   },
   dangerText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     marginBottom: THEME.spacing.lg,
     lineHeight: 20,
-  },
-  deleteButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: THEME.spacing.sm,
-    backgroundColor: THEME.colors.destructive,
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET,
-    paddingHorizontal: THEME.spacing.xxl,
-  },
-  deleteButtonDisabled: {
-    opacity: 0.5,
-  },
-  deleteButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
-    color: THEME.colors.white,
   },
 });
