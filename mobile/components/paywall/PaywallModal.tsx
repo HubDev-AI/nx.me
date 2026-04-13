@@ -172,18 +172,8 @@ export function PaywallModal({
   );
 
   // ---------------------------------------------------------------------------
-  // Fetch entitlement on open + accessibility announcement
+  // Load entitlement
   // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (visible) {
-      animateIn();
-      loadEntitlement();
-      AccessibilityInfo.announceForAccessibility("Dialog opened");
-      // Move focus to close button so screen readers enter the modal
-      closeButtonRef.current?.focus();
-    }
-  }, [visible, animateIn, loadEntitlement]);
-
   const loadEntitlement = useCallback(async () => {
     setIsFetching(true);
     setFetchError(null);
@@ -198,6 +188,19 @@ export function PaywallModal({
       setIsFetching(false);
     }
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Fetch entitlement on open + accessibility announcement
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (visible) {
+      animateIn();
+      loadEntitlement();
+      AccessibilityInfo.announceForAccessibility("Dialog opened");
+      // Move focus to close button so screen readers enter the modal
+      closeButtonRef.current?.focus();
+    }
+  }, [visible, animateIn, loadEntitlement]);
 
   // ---------------------------------------------------------------------------
   // Close handler
@@ -485,10 +488,11 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.glass,
     borderTopLeftRadius: THEME.radius.xl,
     borderTopRightRadius: THEME.radius.xl,
+    borderCurve: "continuous",
     borderTopWidth: 1,
     borderTopColor: THEME.colors.glassBorder,
     paddingTop: THEME.spacing.sm,
-    paddingBottom: 40,
+    paddingBottom: THEME.spacing.xxxl + THEME.spacing.sm,
   },
   handleBar: {
     width: 36,

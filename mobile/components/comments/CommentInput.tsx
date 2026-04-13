@@ -1,16 +1,15 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
-  View,
-  TextInput,
-  Pressable,
-  Text,
   ActivityIndicator,
-  StyleSheet,
   Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
 } from "react-native";
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +18,7 @@ import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { COMMENTS_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
+import { Caption } from "../ui/Text";
 
 interface CommentInputProps {
   isAuthenticated: boolean;
@@ -87,9 +87,9 @@ export function CommentInput({
               accessibilityHint="Type your comment here"
             />
             {text.length > 0 && (
-              <Text style={styles.charCount}>
+              <Caption color="muted">
                 {text.length}/{COMMENTS_CONFIG.MAX_COMMENT_LENGTH}
-              </Text>
+              </Caption>
             )}
             <Animated.View style={sendPressStyle}>
               <Pressable
@@ -137,7 +137,7 @@ export function CommentInput({
                 size={16}
                 color={THEME.colors.textDisabled}
               />
-              <Text style={styles.guestText}>Sign in to comment</Text>
+              <Caption color="secondary">Sign in to comment</Caption>
             </Pressable>
           </Animated.View>
         )}
@@ -167,6 +167,7 @@ const styles = StyleSheet.create({
     maxHeight: 100,
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingHorizontal: THEME.spacing.lg,
@@ -176,11 +177,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.body,
     textAlignVertical: "center",
     ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}),
-  },
-  charCount: {
-    fontSize: 11,
-    fontFamily: FONTS.body,
-    color: THEME.colors.textMuted,
   },
   sendButton: {
     width: 40,
@@ -203,13 +199,9 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingHorizontal: THEME.spacing.lg,
-  },
-  guestText: {
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
-    fontFamily: FONTS.body,
   },
 });
