@@ -40,6 +40,7 @@ import {
 import { THEME } from "../constants/theme";
 import { Button } from "../components/ui/Button";
 import { FaceErrorCard } from "../components/ui/FaceErrorCard";
+import { HeaderBackButton } from "../components/ui/HeaderBackButton";
 import { PageBackground } from "../components/ui/PageBackground";
 import { Body, Caption, Label } from "../components/ui/Text";
 import { hapticError, hapticMedium } from "../lib/haptics";
@@ -87,6 +88,14 @@ export default function UploadScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isActivelyProcessing = PROCESSING_PHASES.has(phase);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/create");
+    }
+  }, [router]);
 
   // Fetch entitlement on mount
   useEffect(() => {
@@ -267,6 +276,8 @@ export default function UploadScreen() {
           headerStyle: { backgroundColor: THEME.colors.bg },
           headerTintColor: THEME.colors.textPrimary,
           headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => <HeaderBackButton onPress={handleBack} />,
         }}
       />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
