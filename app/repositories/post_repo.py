@@ -58,7 +58,7 @@ class PostRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_post_with_ownership(self, post_id: str) -> dict | None:
         """Fetch post id, user_id, is_deleted fields for ownership checks."""
@@ -69,7 +69,7 @@ class PostRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_active_post(self, post_id: str) -> dict | None:
         """Fetch post id only, filtering out deleted posts."""
@@ -81,7 +81,7 @@ class PostRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     # ------------------------------------------------------------------
     # posts table — writes
@@ -218,4 +218,4 @@ class PostRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None

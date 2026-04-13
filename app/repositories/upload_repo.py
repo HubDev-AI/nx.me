@@ -49,7 +49,7 @@ class UploadRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_by_id_for_owner_check(self, upload_id: str, user_id: str) -> dict | None:
         """Fetch upload by ID + user_id in one query. Resets last_accessed_at.
@@ -70,7 +70,7 @@ class UploadRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def list_for_user(
         self,

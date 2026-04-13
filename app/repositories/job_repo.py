@@ -223,7 +223,7 @@ class JobRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def claim(self, job_id: str) -> list[dict]:
         """Conditionally transition job from queued → processing.

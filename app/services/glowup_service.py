@@ -188,4 +188,4 @@ class GlowupService:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None

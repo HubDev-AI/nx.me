@@ -32,7 +32,7 @@ class ImageRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_by_id_with_fields(self, image_id: str, fields: str) -> dict | None:
         """Fetch an image by ID selecting specific fields. Returns None if not found."""
@@ -43,7 +43,7 @@ class ImageRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_by_id_single(self, image_id: str) -> dict:
         """Fetch a single image row using .single() (raises if not found)."""

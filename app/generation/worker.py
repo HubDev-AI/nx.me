@@ -396,7 +396,8 @@ async def _generate_and_validate(
                 .execute()
             )
             if (
-                tier_row.data
+                tier_row
+                and tier_row.data
                 and tier_row.data.get("tiers", {}).get("identity_similarity_threshold")
                 is not None
             ):
