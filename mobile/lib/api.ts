@@ -17,6 +17,9 @@ type RequestOptions = Omit<RequestInit, "headers"> & {
 /** Coalesced refresh promise — all concurrent 401 handlers share this */
 let refreshPromise: Promise<string | null> | null = null;
 
+/** Coalesced guest-token rotation promise — mirrors refreshPromise for the guest path. */
+let guestRotatePromise: Promise<string | null> | null = null;
+
 /** Callback invoked when the refresh token is expired / revoked */
 let onSessionExpired: (() => void) | null = null;
 
@@ -121,16 +124,26 @@ async function resolveGuestToken(): Promise<string | null> {
  * Clear the stored guest token and provision a fresh one. Used when the
  * backend rejects a stored guest token (e.g., after a local DB reset wipes
  * the `users` row the token pointed at).
+ *
+ * Coalesces concurrent rotations so a burst of 401s issues one
+ * `POST /v1/auth/guest`, not N.
  */
 async function rotateGuestToken(): Promise<string | null> {
-  await deleteItem(SECURE_STORE_KEYS.GUEST_TOKEN);
-  if (getAuthRequired()) return null;
-  try {
-    return await getOrCreateGuestToken();
-  } catch (err) {
-    if (__DEV__) console.warn("Guest token rotation failed:", err);
-    return null;
+  if (!guestRotatePromise) {
+    guestRotatePromise = (async () => {
+      await deleteItem(SECURE_STORE_KEYS.GUEST_TOKEN);
+      if (getAuthRequired()) return null;
+      try {
+        return await getOrCreateGuestToken();
+      } catch (err) {
+        if (__DEV__) console.warn("Guest token rotation failed:", err);
+        return null;
+      }
+    })().finally(() => {
+      guestRotatePromise = null;
+    });
   }
+  return guestRotatePromise;
 }
 
 export async function apiFetch<T = unknown>(

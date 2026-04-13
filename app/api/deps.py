@@ -444,6 +444,10 @@ def require_feature(feature: str):
     """
 
     async def _check(
+        # Mirrors the route's own auth dep on purpose. FastAPI dedupes
+        # `Depends(...)` per request, so this resolves once per call — the
+        # repetition just lets `_check` access claims without forcing every
+        # route to plumb them in.
         claims: UserClaims = Depends(get_user_or_guest),
         svc: "EntitlementService" = Depends(get_entitlement_service),
     ) -> None:

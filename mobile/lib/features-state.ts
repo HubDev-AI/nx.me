@@ -7,6 +7,10 @@
  *
  * Default is `true` (prod-safe) — guest-token provisioning stays off until
  * the backend explicitly reports `auth_required=false`.
+ *
+ * NOTE FOR TESTS: this is a process-wide singleton. Tests that depend on
+ * the value MUST reset it in `beforeEach` (see `lib/api.test.ts`) to avoid
+ * leaking state across cases.
  */
 
 let authRequired = true;
