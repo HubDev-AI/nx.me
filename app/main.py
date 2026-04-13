@@ -148,32 +148,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ARQ pool for enqueuing generation jobs
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
 
-    # Dev guest user — upsert so the fixed guest ID is always present for
-    # legacy dev flows. Per-session guests (created via POST /auth/guest) get
-    # their own user rows and don't collide with this one.
-    if settings.APP_ENV == "development" and not settings.FEATURE_AUTH_REQUIRED:
-        from app.db.async_helpers import run_sync
-
-        guest_id = settings.DEV_GUEST_USER_ID
-        await run_sync(
-            lambda: (
-                app.state.supabase.table("users")
-                .upsert(
-                    {
-                        "id": guest_id,
-                        "username": "dev_guest",
-                        "display_name": "Dev Guest",
-                        "email": "dev-guest@nxme.internal",
-                        "is_guest": True,
-                        "tier_id": "a0000000-0000-0000-0000-000000000001",  # free tier
-                    },
-                    on_conflict="id",
-                )
-                .execute()
-            )
-        )
-        logger.info("Dev guest user seeded (id=%s)", guest_id)
-
     logger.info("Supabase, Redis, and ARQ pool initialised")
 
     yield

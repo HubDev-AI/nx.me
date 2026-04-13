@@ -21,6 +21,7 @@ import {
   applyDevOverrides,
   type FeatureFlags,
 } from "../constants/features";
+import { setAuthRequired } from "./features-state";
 
 interface FeaturesContextValue {
   features: FeatureFlags;
@@ -48,7 +49,11 @@ export function FeaturesProvider({ children }: { children: ReactNode }) {
         const resp = await fetch(`${API_BASE_URL}${FEATURES_ENDPOINT}`);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = (await resp.json()) as FeatureFlags;
-        if (!cancelled) setFeatures(applyDevOverrides(data));
+        if (!cancelled) {
+          const resolved = applyDevOverrides(data);
+          setFeatures(resolved);
+          setAuthRequired(resolved.auth_required);
+        }
       } catch (err) {
         if (__DEV__) {
           console.warn("Feature flags fetch failed, using defaults:", err);

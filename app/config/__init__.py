@@ -222,9 +222,10 @@ class Settings(BaseSettings):
     FEATURE_ONBOARDING_ENABLED: bool = True
     # Note: the advisor flag is the existing ADVISOR_ENABLED setting above.
 
-    # Fixed user ID used as a fallback when auth is fully disabled (legacy dev guest).
-    # Per-session guest users (users.is_guest=true) coexist with this one.
-    DEV_GUEST_USER_ID: str = "00000000-0000-0000-0000-000000000001"
+    # Bypass all per-tier `require_feature` gates. Default False (prod-safe).
+    # Set to True only in dev/staging to exercise premium-gated endpoints
+    # (e.g., POST /v1/advisor/messages) with guest or free-tier accounts.
+    FEATURE_PREMIUM_BYPASS: bool = False
 
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""

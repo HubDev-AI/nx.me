@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.analytics import events
-from app.api.deps import get_analysis_user, get_upload_service
+from app.api.deps import get_user_or_guest, get_upload_service
 from app.api.middleware.auth import UserClaims
 from app.services.upload_service import UploadService
 
@@ -48,7 +48,7 @@ class UploadResponse(BaseModel):
 async def create_upload(
     request: Request,
     file: UploadFile,
-    claims: UserClaims = Depends(get_analysis_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     upload_svc: UploadService = Depends(get_upload_service),
 ) -> JSONResponse:
     """Upload a selfie image.

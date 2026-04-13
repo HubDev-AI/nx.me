@@ -38,6 +38,7 @@ from app.api.deps import (
     get_current_user,
     get_redis,
     get_supabase,
+    get_user_or_guest,
     require_app_feature,
     require_feature,
 )
@@ -86,7 +87,7 @@ def get_advisor_service(
 async def send_advisor_message(
     body: MessageRequest,
     _: None = Depends(require_feature("advisor_chat")),
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Send a message to Ada (premium tier only).
@@ -145,7 +146,7 @@ async def get_advisor_messages(
         None, description="Cursor ({created_at}|{id} composite)"
     ),
     limit: int = Query(50, ge=1, le=100),
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> ConversationHistoryPageResponse:
     """Return the active conversation history for the current user (paginated)."""
@@ -206,7 +207,7 @@ async def get_nudges(
     unread: bool = Query(
         False, description="When true, return only unread nudges (read_at IS NULL)"
     ),
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> NudgeFeedResponse:
     """Return the nudge feed for the current user (all tiers, paginated)."""
@@ -351,7 +352,7 @@ async def list_memories(
         None, description="Cursor ({created_at}|{id} composite)"
     ),
     limit: int = Query(50, ge=1, le=100),
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> MemoryListPageResponse:
     """List memories for the current user (paginated). All tiers."""

@@ -181,7 +181,7 @@ async def get_current_user(
     return claims
 
 
-async def get_analysis_user(
+async def get_user_or_guest(
     authorization: Annotated[str | None, Header()] = None,
     x_guest_token: Annotated[str | None, Header(alias="X-Guest-Token")] = None,
     supabase: Client = Depends(get_supabase),
@@ -432,6 +432,10 @@ def require_entitlement(action: str):
 def require_feature(feature: str):
     """FastAPI dependency: check feature flag on user's tier (A-5).
 
+    When ``FEATURE_PREMIUM_BYPASS`` is enabled (dev/staging only), this
+    dependency short-circuits and allows every caller through — useful for
+    exercising premium routes as a guest during local testing.
+
     Usage:
         @router.post("/advisor/messages")
         async def send_message(
@@ -440,10 +444,15 @@ def require_feature(feature: str):
     """
 
     async def _check(
-        claims: UserClaims = Depends(get_current_user),
+        claims: UserClaims = Depends(get_user_or_guest),
         svc: "EntitlementService" = Depends(get_entitlement_service),
     ) -> None:
         from uuid import UUID
+
+        from app.config import settings
+
+        if settings.FEATURE_PREMIUM_BYPASS:
+            return
 
         user_id = UUID(claims["sub"])
         if not await svc.has_feature(user_id, feature):

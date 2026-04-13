@@ -206,7 +206,14 @@ function HeaderCreditBadge() {
 
 function TabLayoutInner() {
   const { theme } = useTheme();
-  const { features } = useFeatures();
+  const { features, isLoading: featuresLoading } = useFeatures();
+
+  // Block the tab stack until feature flags resolve. Rendering with defaults
+  // first causes a flash of the home tab before we know social is off, and
+  // expo-router commits `initialRouteName` on the first render only.
+  if (featuresLoading) {
+    return <View style={styles.splash} />;
+  }
 
   const socialOn = features.social_enabled;
   const advisorOn = features.advisor_enabled;
@@ -313,6 +320,10 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    backgroundColor: BG_PAGE,
+  },
   headerRight: {
     marginRight: THEME.spacing.lg,
   },

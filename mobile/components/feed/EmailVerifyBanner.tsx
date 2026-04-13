@@ -22,7 +22,9 @@ import { SECURE_STORE_KEYS, MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchEntitlement } from "../../lib/entitlement";
 
 export function EmailVerifyBanner() {
-  const { isAuthenticated } = useAuth();
+  // Email verification only applies to real (JWT) users — guests have no email.
+  const { session } = useAuth();
+  const isAuthenticated = session.isUser;
   const { theme } = useTheme();
   const [showBanner, setShowBanner] = useState(false);
 

@@ -25,6 +25,8 @@ import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import { useFeatures } from "../../lib/features-context";
+import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import {
   fetchMessages,
   sendMessage,
@@ -34,6 +36,9 @@ import type { AdvisorMessage } from "../../lib/advisor";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { PaywallModal } from "../paywall/PaywallModal";
+
+/** The floating tab bar renders whenever at least two tabs are visible. */
+const MIN_TABS_FOR_FLOATING_BAR = 2;
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -81,6 +86,18 @@ const skeletonStyles = StyleSheet.create({
 export function ChatView() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const { features } = useFeatures();
+  // The floating tab bar renders on advisor + create (or more). When it's
+  // visible we must lift the input above it, otherwise paddingBottom only
+  // covers the home-indicator inset and the bar clips the TextInput.
+  const visibleTabCount =
+    1 /* create */ +
+    (features.social_enabled ? 2 : 0) +
+    (features.advisor_enabled ? 1 : 0);
+  const floatingTabBarVisible = visibleTabCount >= MIN_TABS_FOR_FLOATING_BAR;
+  const inputBottomPadding =
+    Math.max(insets.bottom, THEME.spacing.sm) +
+    (floatingTabBarVisible ? TAB_BAR_HEIGHT : 0);
   // -------------------------------------------------------------------------
   // State
   // -------------------------------------------------------------------------
@@ -292,7 +309,7 @@ export function ChatView() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 + (floatingTabBarVisible ? TAB_BAR_HEIGHT : 0) : 0}
     >
       {/* Message list */}
       <FlatList
@@ -336,7 +353,7 @@ export function ChatView() {
       )}
 
       {/* Input bar */}
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, THEME.spacing.sm) }]}>
+      <View style={[styles.inputBar, { paddingBottom: inputBottomPadding }]}>
         <TextInput
           style={styles.textInput}
           value={inputText}

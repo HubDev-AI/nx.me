@@ -17,7 +17,7 @@ from fastapi import status as http_status
 from pydantic import BaseModel
 
 from app.analytics import events
-from app.api.deps import get_analysis_user
+from app.api.deps import get_user_or_guest
 from app.api.middleware.auth import UserClaims
 from app.db.async_helpers import run_sync
 
@@ -47,7 +47,7 @@ class FaceModConsentResponse(BaseModel):
 )
 async def grant_face_mod_consent(
     request: Request,
-    claims: UserClaims = Depends(get_analysis_user),
+    claims: UserClaims = Depends(get_user_or_guest),
 ) -> FaceModConsentResponse:
     """Grant face modification consent for the current user.
 

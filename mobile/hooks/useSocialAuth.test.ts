@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react-native";
 
-const mockSetAuthenticated = jest.fn();
+const mockSetSessionMode = jest.fn();
 const mockSetUsername = jest.fn();
 
 jest.mock("../lib/api", () => ({
@@ -24,7 +24,7 @@ jest.mock("../lib/errors", () => ({
 
 jest.mock("../lib/auth-context", () => ({
   useAuth: () => ({
-    setAuthenticated: mockSetAuthenticated,
+    setSessionMode: mockSetSessionMode,
     setUsername: mockSetUsername,
   }),
 }));
@@ -64,7 +64,7 @@ describe("useSocialAuth", () => {
 
     expect(storeJwt).toHaveBeenCalledWith("at-123");
     expect(storeRefreshToken).toHaveBeenCalledWith("rt-456");
-    expect(mockSetAuthenticated).toHaveBeenCalledWith(true);
+    expect(mockSetSessionMode).toHaveBeenCalledWith("user");
     expect(mockSetUsername).toHaveBeenCalledWith("alice");
   });
 });
