@@ -225,6 +225,11 @@ function TabLayoutInner() {
   const initialRoute = socialOn ? "index" : "create";
   const showTabBar = visibleTabs >= MIN_TABS_FOR_BAR;
 
+  // We use `Tabs.Protected` to conditionally mount route screens rather than
+  // `href: null`. Our custom tab bar iterates `state.routes` directly, which
+  // `href: null` does not filter — it only hides the default tab button.
+  // `Tabs.Protected` removes the route from navigator state entirely, so the
+  // icon disappears and the path becomes unreachable.
   return (
     <>
       <Tabs
@@ -242,22 +247,23 @@ function TabLayoutInner() {
           headerTitle: () => <HeaderBrandLabel />,
         }}
       >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: "Home",
-            href: socialOn ? "/(tabs)" : null,
-            headerRight: () => <HeaderCreditBadge />,
-            tabBarIcon: ({ color, focused }) => (
-              <TabIcon
-                name={focused ? "home" : "home-outline"}
-                color={color}
-                focused={focused}
-                accentColor={theme.accent}
-              />
-            ),
-          }}
-        />
+        <Tabs.Protected guard={socialOn}>
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: "Home",
+              headerRight: () => <HeaderCreditBadge />,
+              tabBarIcon: ({ color, focused }) => (
+                <TabIcon
+                  name={focused ? "home" : "home-outline"}
+                  color={color}
+                  focused={focused}
+                  accentColor={theme.accent}
+                />
+              ),
+            }}
+          />
+        </Tabs.Protected>
         <Tabs.Screen
           name="create"
           options={{
@@ -275,36 +281,38 @@ function TabLayoutInner() {
             ),
           }}
         />
-        <Tabs.Screen
-          name="advisor"
-          options={{
-            title: "Advisor",
-            href: advisorOn ? "/advisor" : null,
-            tabBarIcon: ({ color, focused }) => (
-              <TabIcon
-                name={focused ? "sparkles" : "sparkles-outline"}
-                color={color}
-                focused={focused}
-                accentColor={theme.accent}
-              />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: "Profile",
-            href: socialOn ? "/(tabs)/profile" : null,
-            tabBarIcon: ({ color, focused }) => (
-              <TabIcon
-                name={focused ? "person" : "person-outline"}
-                color={color}
-                focused={focused}
-                accentColor={theme.accent}
-              />
-            ),
-          }}
-        />
+        <Tabs.Protected guard={advisorOn}>
+          <Tabs.Screen
+            name="advisor"
+            options={{
+              title: "Advisor",
+              tabBarIcon: ({ color, focused }) => (
+                <TabIcon
+                  name={focused ? "sparkles" : "sparkles-outline"}
+                  color={color}
+                  focused={focused}
+                  accentColor={theme.accent}
+                />
+              ),
+            }}
+          />
+        </Tabs.Protected>
+        <Tabs.Protected guard={socialOn}>
+          <Tabs.Screen
+            name="profile"
+            options={{
+              title: "Profile",
+              tabBarIcon: ({ color, focused }) => (
+                <TabIcon
+                  name={focused ? "person" : "person-outline"}
+                  color={color}
+                  focused={focused}
+                  accentColor={theme.accent}
+                />
+              ),
+            }}
+          />
+        </Tabs.Protected>
       </Tabs>
       {showTabBar && <ScrollToTopPill />}
     </>
