@@ -12,6 +12,7 @@ import {
   TextInput,
   Pressable,
   Text,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -95,9 +96,28 @@ export function ChatView() {
     (features.social_enabled ? 2 : 0) +
     (features.advisor_enabled ? 1 : 0);
   const floatingTabBarVisible = visibleTabCount >= MIN_TABS_FOR_FLOATING_BAR;
+  // Track keyboard so we drop the TAB_BAR_HEIGHT offset while it's open — the
+  // floating tab bar hides itself on keyboard show, so keeping the offset
+  // would leave a visible gap between the input and the keyboard (BUG 3).
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setIsKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setIsKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+  const effectiveTabBarOffset =
+    floatingTabBarVisible && !isKeyboardVisible ? TAB_BAR_HEIGHT : 0;
   const inputBottomPadding =
-    Math.max(insets.bottom, THEME.spacing.sm) +
-    (floatingTabBarVisible ? TAB_BAR_HEIGHT : 0);
+    Math.max(insets.bottom, THEME.spacing.sm) + effectiveTabBarOffset;
   // -------------------------------------------------------------------------
   // State
   // -------------------------------------------------------------------------
@@ -309,7 +329,7 @@ export function ChatView() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 + (floatingTabBarVisible ? TAB_BAR_HEIGHT : 0) : 0}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       {/* Message list */}
       <FlatList
@@ -407,7 +427,7 @@ export function ChatView() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.bg,
+    backgroundColor: "transparent",
   },
   listContent: {
     flexGrow: 1,
@@ -444,7 +464,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: THEME.spacing.xxxl,
     gap: THEME.spacing.sm,
-    backgroundColor: THEME.colors.bg,
+    backgroundColor: "transparent",
   },
   errorTitle: {
     fontFamily: FONTS.bodySemiBold,

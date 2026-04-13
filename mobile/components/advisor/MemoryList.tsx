@@ -26,6 +26,8 @@ import { showToast } from "../../lib/toast";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
+import { PressableScale } from "../ui/PressableScale";
+import { Caption } from "../ui/Text";
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
@@ -258,6 +260,7 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
   const { theme } = useTheme();
   const [content, setContent] = useState("");
   const [selectedType, setSelectedType] = useState<MemoryType>("goal");
+  const [isInputFocused, setIsInputFocused] = useState(false);
 
   const types: { value: MemoryType; label: string }[] = [
     { value: "goal", label: "Goal" },
@@ -271,40 +274,59 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
     setContent("");
   }, [content, selectedType, onAdd]);
 
+  const canAdd = content.trim().length > 0 && !isAdding;
+
   return (
     <View style={formStyles.container}>
-      {/* Type selector */}
+      {/* Type selector — mirrors the top tab-pill aesthetic */}
       <View style={formStyles.typeRow}>
-        {types.map((t) => (
-          <Pressable
-            key={t.value}
-            onPress={() => setSelectedType(t.value)}
-            style={[
-              formStyles.typeChip,
-              selectedType === t.value && [formStyles.typeChipActive, { backgroundColor: theme.accent }],
-            ]}
-            accessibilityLabel={`Memory type: ${t.label}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: selectedType === t.value }}
-          >
-            <Text
+        {types.map((t) => {
+          const isActive = selectedType === t.value;
+          return (
+            <PressableScale
+              key={t.value}
+              scale={0.94}
+              haptic={false}
+              onPress={() => setSelectedType(t.value)}
               style={[
-                formStyles.typeChipText,
-                selectedType === t.value && formStyles.typeChipTextActive,
+                formStyles.typeChip,
+                isActive && {
+                  backgroundColor: theme.accent + "1A",
+                  borderColor: theme.accent,
+                  ...THEME.shadow.glow(theme.accent),
+                },
               ]}
+              accessibilityLabel={`Memory type: ${t.label}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
             >
-              {t.label}
-            </Text>
-          </Pressable>
-        ))}
+              <Ionicons
+                name={memoryTypeIcon(t.value)}
+                size={18}
+                color={isActive ? theme.accent : THEME.colors.textSecondary}
+              />
+              <Caption
+                weight={isActive ? "semibold" : "medium"}
+                color={isActive ? theme.accent : "secondary"}
+              >
+                {t.label}
+              </Caption>
+            </PressableScale>
+          );
+        })}
       </View>
 
       {/* Input row */}
       <View style={formStyles.inputRow}>
         <TextInput
-          style={formStyles.input}
+          style={[
+            formStyles.input,
+            isInputFocused && { borderColor: theme.accent },
+          ]}
           value={content}
           onChangeText={setContent}
+          onFocus={() => setIsInputFocused(true)}
+          onBlur={() => setIsInputFocused(false)}
           placeholder={
             selectedType === "goal"
               ? "e.g. Grow out my hair to shoulder length"
@@ -315,13 +337,18 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
           maxLength={500}
           accessibilityLabel="Memory content"
         />
-        <Pressable
+        <PressableScale
+          scale={0.92}
+          haptic={false}
           onPress={handleAdd}
-          disabled={!content.trim() || isAdding}
-          style={({ pressed }) => [
+          disabled={!canAdd}
+          style={[
             formStyles.addButton,
-            content.trim() && !isAdding && [formStyles.addButtonActive, { backgroundColor: theme.accent }],
-            pressed && content.trim() && !isAdding && formStyles.addButtonPressed,
+            canAdd && {
+              backgroundColor: theme.accent,
+              borderWidth: 0,
+              ...THEME.shadow.glow(theme.accent),
+            },
           ]}
           accessibilityLabel="Add memory"
           accessibilityRole="button"
@@ -332,10 +359,10 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
             <Ionicons
               name="add"
               size={24}
-              color={content.trim() ? THEME.colors.bg : THEME.colors.textDisabled}
+              color={canAdd ? THEME.colors.bg : THEME.colors.textDisabled}
             />
           )}
-        </Pressable>
+        </PressableScale>
       </View>
     </View>
   );
@@ -345,35 +372,26 @@ const formStyles = StyleSheet.create({
   container: {
     paddingHorizontal: THEME.spacing.lg,
     paddingBottom: THEME.spacing.md,
-    gap: THEME.spacing.md - 2,
+    gap: THEME.spacing.md,
   },
   typeRow: {
     flexDirection: "row",
     gap: THEME.spacing.sm,
   },
   typeChip: {
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: THEME.spacing.sm,
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.sm + 2,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    minHeight: 44,
-    justifyContent: "center",
+    minHeight: MIN_TOUCH_TARGET,
     ...THEME.shadow.glass,
-  },
-  typeChipActive: {
-    borderColor: "transparent",
-    // backgroundColor applied dynamically via inline style
-  },
-  typeChipText: {
-    fontFamily: FONTS.bodyMedium,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-  },
-  typeChipTextActive: {
-    color: THEME.colors.bg,
-    fontFamily: FONTS.bodySemiBold,
   },
   inputRow: {
     flexDirection: "row",
@@ -384,32 +402,30 @@ const formStyles = StyleSheet.create({
     flex: 1,
     fontFamily: FONTS.body,
     backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
+    borderRadius: THEME.radius.xl,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingHorizontal: THEME.spacing.lg,
-    paddingTop: THEME.spacing.md - 2,
-    paddingBottom: THEME.spacing.md - 2,
-    fontSize: 14,
+    paddingTop: THEME.spacing.md,
+    paddingBottom: THEME.spacing.md,
+    ...THEME.typography.body,
     color: THEME.colors.textPrimary,
-    maxHeight: 80,
+    maxHeight: 96,
     minHeight: MIN_TOUCH_TARGET,
+    ...THEME.shadow.glass,
   },
   addButton: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
     borderRadius: MIN_TOUCH_TARGET / 2,
+    borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-  },
-  addButtonActive: {
-    borderWidth: 0,
-  },
-  addButtonPressed: {
-    opacity: 0.85,
+    ...THEME.shadow.glass,
   },
 });
 
@@ -630,7 +646,7 @@ export function MemoryList() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.colors.bg,
+    backgroundColor: "transparent",
     paddingTop: THEME.spacing.md,
   },
   listContent: {
