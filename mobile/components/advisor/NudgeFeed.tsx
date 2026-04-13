@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
-import { Body, Caption, Heading } from "../ui/Text";
+import { Body, Heading } from "../ui/Text";
 import { Button } from "../ui/Button";
 import { ADVISOR_CONFIG } from "../../constants/config";
 import { fetchNudges, markNudgeRead } from "../../lib/advisor";

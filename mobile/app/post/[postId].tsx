@@ -2,21 +2,31 @@
  * Post detail — full-screen before/after view with larger images.
  * Reuses ReactionButton and CommentsSheet components.
  */
-import { useState, useCallback } from "react";
-import { View, Text, Image, ScrollView, StyleSheet, Pressable, Share, Alert, ActivityIndicator, Platform } from "react-native";
-import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+} from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 
 import { THEME } from "../../constants/theme";
 import { OVERLAY_LIGHT, OVERLAY_MEDIUM } from "../../constants/colors";
-import { FEED_ENDPOINTS, UNIVERSAL_LINK_ORIGIN, MIN_TOUCH_TARGET } from "../../constants/config";
-import { FONTS } from "../../hooks/useFonts";
+import { Body, Caption, Label } from "../../components/ui/Text";
+import { FEED_ENDPOINTS, MIN_TOUCH_TARGET, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { useTheme } from "../../lib/theme-context";
 import { apiFetch } from "../../lib/api";
 import { parseApiError } from "../../lib/errors";
@@ -36,7 +46,6 @@ export default function PostDetailScreen() {
     afterImage,
     caption,
     displayName,
-    username,
     userId,
     reactionCount: initialReactionCount,
     commentCount: initialCommentCount,
@@ -272,7 +281,7 @@ export default function PostDetailScreen() {
           <View>
             <View style={styles.beforeLabelWrap}>
               <View style={styles.beforeLabel}>
-                <Text style={styles.labelText}>BEFORE</Text>
+                <Label color={THEME.colors.white}>BEFORE</Label>
               </View>
             </View>
             <Image
@@ -290,7 +299,7 @@ export default function PostDetailScreen() {
           <View>
             <View style={styles.afterLabelWrap}>
               <View style={[styles.afterLabel, { backgroundColor: theme.accent }]}>
-                <Text style={styles.labelText}>AFTER</Text>
+                <Label color={THEME.colors.white}>AFTER</Label>
               </View>
             </View>
             <Image
@@ -321,17 +330,17 @@ export default function PostDetailScreen() {
                     accessibilityRole="button"
                   >
                     <Ionicons name="chatbubble-outline" size={18} color={THEME.colors.textSecondary} />
-                    <Text style={styles.commentCountText}>{commentCount}</Text>
+                    <Caption weight="medium" color="secondary">{commentCount}</Caption>
                   </Pressable>
                 </Animated.View>
               </View>
 
-              <Text style={styles.timeAgo}>{timeAgo || ""}</Text>
+              <Caption color="secondary">{timeAgo || ""}</Caption>
             </View>
 
             {/* Caption */}
             {caption ? (
-              <Text style={styles.caption}>{caption}</Text>
+              <Body color="primary" style={styles.caption}>{caption}</Body>
             ) : null}
           </View>
         </ScrollView>
@@ -393,7 +402,7 @@ export default function PostDetailScreen() {
       {isDeleting && (
         <View style={styles.deletingOverlay}>
           <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
-          <Text style={styles.deletingText}>Deleting...</Text>
+          <Body weight="medium" color="primary">Deleting...</Body>
         </View>
       )}
 
@@ -460,6 +469,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: THEME.radius.sm,
+    borderCurve: "continuous",
     backgroundColor: OVERLAY_LIGHT,
   },
   afterLabelWrap: {
@@ -472,14 +482,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: THEME.radius.sm,
+    borderCurve: "continuous",
     // backgroundColor set dynamically via theme.accent in render
-  },
-  labelText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 10,
-    color: THEME.colors.white,
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
 
   // ─── Footer ─────────────────────────────────────────────────────────────
@@ -505,21 +509,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.xs,
     paddingVertical: THEME.spacing.sm,
   },
-  commentCountText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
-  },
-  timeAgo: {
-    fontFamily: FONTS.body,
-    fontSize: 13,
-    color: THEME.colors.textSecondary,
-  },
   caption: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    lineHeight: 23,
-    color: THEME.colors.textPrimary,
     marginTop: THEME.spacing.sm,
   },
 
@@ -531,10 +521,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 100,
     gap: THEME.spacing.md,
-  },
-  deletingText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.textPrimary,
   },
 });
