@@ -5,20 +5,16 @@
  * Nudges: Ada's tips and check-ins, available to all tiers.
  * Memories: user memories that Ada uses for personalisation.
  */
-import { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-} from "react-native";
+import { useCallback, useState } from "react";
+import { StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { PressableScale } from "../../components/ui/PressableScale";
+import { Caption } from "../../components/ui/Text";
 import { useTheme } from "../../lib/theme-context";
 import { hapticLight } from "../../lib/haptics";
-import { FONTS } from "../../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { ChatView } from "../../components/advisor/ChatView";
 import { NudgeFeed } from "../../components/advisor/NudgeFeed";
@@ -94,9 +90,12 @@ export default function AdvisorScreen() {
                 size={18}
                 color={isActive ? theme.accent : THEME.colors.textSecondary}
               />
-              <Text style={[styles.tabLabel, isActive && { color: theme.accent, fontFamily: FONTS.bodySemiBold }]}>
+              <Caption
+                weight={isActive ? "semibold" : "medium"}
+                color={isActive ? theme.accent : "secondary"}
+              >
                 {tab.label}
-              </Text>
+              </Caption>
             </PressableScale>
           );
         })}
@@ -134,16 +133,12 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
     paddingVertical: THEME.spacing.sm + 2,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     minHeight: MIN_TOUCH_TARGET,
     ...THEME.shadow.glass,
-  },
-  tabLabel: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
   },
   content: {
     flex: 1,

@@ -4,23 +4,22 @@
  * Available to all tiers. Supports pull-to-refresh and pagination.
  * Tapping an unread nudge fires POST /advisor/nudges/{id}/read.
  */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  FlatList,
-  RefreshControl,
-  Text,
-  Pressable,
   ActivityIndicator,
-  StyleSheet,
+  FlatList,
   Platform,
+  RefreshControl,
+  StyleSheet,
+  View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
-import { FONTS } from "../../hooks/useFonts";
-import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import { Body, Caption, Heading } from "../ui/Text";
+import { Button } from "../ui/Button";
+import { ADVISOR_CONFIG } from "../../constants/config";
 import { fetchNudges, markNudgeRead } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
 import { NudgeCard } from "./NudgeCard";
@@ -214,17 +213,24 @@ export function NudgeFeed() {
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
-        <Text style={styles.errorTitle}>Could not load nudges</Text>
-        <Text style={styles.errorSubtitle}>{error}</Text>
-        <Pressable
+        <Heading size="md" display={false} color="primary" style={styles.errorTitle}>
+          Could not load nudges
+        </Heading>
+        <Body color="secondary" style={styles.errorSubtitle}>
+          {error}
+        </Body>
+        <Button
+          title="Try Again"
           onPress={loadNudges}
-          style={[styles.retryButton, { backgroundColor: theme.accent }]}
+          variant="primary"
+          size="md"
+          accentColor={theme.accent}
+          leftIcon={
+            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
+          }
           accessibilityLabel="Retry loading nudges"
-          accessibilityRole="button"
-        >
-          <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </Pressable>
+          style={styles.retryButton}
+        />
       </View>
     );
   }
@@ -239,10 +245,12 @@ export function NudgeFeed() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Ionicons name="sparkles-outline" size={48} color={THEME.colors.textSecondary} />
-            <Text style={styles.emptyTitle}>No nudges yet</Text>
-            <Text style={styles.emptySubtitle}>
+            <Heading size="md" display={false} color="primary" style={styles.emptyTitle}>
+              No nudges yet
+            </Heading>
+            <Body color="secondary" style={styles.emptySubtitle}>
               Ada will send you tips and check-ins as she gets to know you
-            </Text>
+            </Body>
           </View>
         }
         onEndReached={loadMore}
@@ -293,16 +301,10 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
     marginTop: THEME.spacing.md,
+    textAlign: "center",
   },
   emptySubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   errorContainer: {
@@ -314,31 +316,13 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.bg,
   },
   errorTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
     marginTop: THEME.spacing.md,
+    textAlign: "center",
   },
   errorSubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
     marginTop: THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.xl,
-    paddingVertical: THEME.spacing.md - 2,
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  retryButtonText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 14,
-    color: THEME.colors.bg,
   },
 });
