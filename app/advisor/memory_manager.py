@@ -310,7 +310,11 @@ class MemoryManager:
                 .maybe_single()
                 .execute()
             )
-            if image_data.data and image_data.data.get("user_id") != str(user_id):
+            if (
+                image_data
+                and image_data.data
+                and image_data.data.get("user_id") != str(user_id)
+            ):
                 logger.warning(
                     "Image %s does not belong to user %s, skipping insight",
                     image_id,

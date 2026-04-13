@@ -125,7 +125,7 @@ class FeedRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     # ------------------------------------------------------------------
     # RPCs — reaction persistence

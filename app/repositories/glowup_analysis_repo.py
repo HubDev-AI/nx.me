@@ -39,7 +39,7 @@ class GlowupAnalysisRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_by_upload_id(self, upload_id: str) -> dict | None:
         """Fetch the glowup analysis for a given upload (at most one). Returns None if not found."""
@@ -50,7 +50,7 @@ class GlowupAnalysisRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def get_for_worker(self, analysis_id: str) -> dict | None:
         """Fetch fields needed by the generation worker.
@@ -65,7 +65,7 @@ class GlowupAnalysisRepository:
             .single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     # ------------------------------------------------------------------
     # Write

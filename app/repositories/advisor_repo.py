@@ -209,7 +209,7 @@ class AdvisorRepository:
             .maybe_single()
             .execute()
         )
-        return result.data or None
+        return result.data if result else None
 
     def mark_nudge_read(self, nudge_id: str) -> None:
         """Set read_at to now on a nudge."""
