@@ -3,62 +3,48 @@
  *
  * Tier-3 two-step flow (R7 progressive auto-upload):
  * 1. Photo picked → immediately call POST /v1/uploads (auto-trigger)
- * 2. Phase `uploading` → spinner; on success → phase `uploaded`, store uploadId
+ * 2. Phase `uploading` → ProcessingHUD; on success → phase `uploaded`, store uploadId
  * 3. "Analyze" button is disabled during `uploading`; enabled when `uploaded`
  * 4. Tap Analyze → check consent → call POST /v1/uploads/{id}/glowup/analyze
  * 5. On analyze success → call POST /v1/uploads/{id}/glowup/generate
  * 6. On generate success → navigate to result/[jobId]
  * 7. On 428 FACE_MOD_CONSENT_REQUIRED → show consent modal (via ConsentContext)
- * 8. On FACE_NOT_DETECTED → show face_error state
+ * 8. On FACE_NOT_DETECTED → show FaceErrorCard
  * 9. Cancel aborts in-flight requests
  */
-import { useState, useEffect, useRef, useCallback } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  ActivityIndicator,
-} from "react-native";
-import { useRouter, Stack } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
+import { Stack, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeOut,
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
 
-import PhotoPicker, {
-  type SelectedPhoto,
-} from "../components/upload/PhotoPicker";
+import PhotoPicker, { type SelectedPhoto } from "../components/upload/PhotoPicker";
+import ProcessingHUD, {
+  type ProcessingPhase,
+} from "../components/upload/ProcessingHUD";
 import {
-  createUpload,
   analyzeGlowup,
-  generateGlowup,
   cancelJob,
+  createUpload,
+  generateGlowup,
   getEntitlement,
   type EntitlementInfo,
 } from "../lib/analysis";
 import { ApiError } from "../lib/api";
-import { THEME } from "../constants/theme";
-import { PageBackground } from "../components/ui/PageBackground";
-import { useTheme } from "../lib/theme-context";
 import {
-  ANALYSIS_POLLING,
   HTTP_FACE_MOD_CONSENT_REQUIRED,
   RETENTION_DISCLOSURE,
 } from "../constants/config";
-import { FONTS } from "../hooks/useFonts";
+import { THEME } from "../constants/theme";
+import { Button } from "../components/ui/Button";
 import { FaceErrorCard } from "../components/ui/FaceErrorCard";
-import { useConsent, ConsentDismissedError } from "../lib/consent-context";
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { PageBackground } from "../components/ui/PageBackground";
+import { Body, Caption, Label } from "../components/ui/Text";
+import { hapticError, hapticMedium } from "../lib/haptics";
+import { useTheme } from "../lib/theme-context";
+import { ConsentDismissedError, useConsent } from "../lib/consent-context";
 
 // ---------------------------------------------------------------------------
 // Upload phase state machine
@@ -73,6 +59,12 @@ type UploadPhase =
   | "generating"
   | "error";
 
+const PROCESSING_PHASES: ReadonlySet<UploadPhase> = new Set([
+  "uploading",
+  "analyzing",
+  "generating",
+]);
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -82,17 +74,6 @@ export default function UploadScreen() {
   const { theme } = useTheme();
   const { requestConsentIfNeeded } = useConsent();
 
-  // Press scale animations
-  const analyzeScale = useSharedValue(1);
-  const cancelScale = useSharedValue(1);
-  const analyzePressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: analyzeScale.value }],
-  }));
-  const cancelPressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: cancelScale.value }],
-  }));
-
-  // State
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [uploadId, setUploadId] = useState<string | null>(null);
@@ -102,9 +83,10 @@ export default function UploadScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFaceError, setIsFaceError] = useState(false);
 
-  // Refs
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isActivelyProcessing = PROCESSING_PHASES.has(phase);
 
   // Fetch entitlement on mount
   useEffect(() => {
@@ -115,24 +97,21 @@ export default function UploadScreen() {
       });
   }, []);
 
-  // Elapsed timer during analyze/generating phases
-  const isProcessing = phase === "analyzing" || phase === "generating" || phase === "uploading";
+  // Elapsed timer during any active processing phase
   useEffect(() => {
-    if (isProcessing) {
+    if (isActivelyProcessing) {
       setElapsedSeconds(0);
       timerRef.current = setInterval(() => {
         setElapsedSeconds((prev) => prev + 1);
       }, 1000);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [isProcessing]);
+  }, [isActivelyProcessing]);
 
   // Cleanup abort controller on unmount
   useEffect(() => {
@@ -170,6 +149,7 @@ export default function UploadScreen() {
       } catch (err) {
         if (controller.signal.aborted) return;
         if (err instanceof Error && err.name === "AbortError") return;
+        hapticError();
         const msg =
           err instanceof ApiError && err.status >= 400 && err.status < 500
             ? "Upload failed. Try a different photo."
@@ -180,10 +160,6 @@ export default function UploadScreen() {
     },
     [],
   );
-
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
 
   const handlePhotoClear = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -197,19 +173,16 @@ export default function UploadScreen() {
   }, []);
 
   const handleAnalyze = useCallback(async () => {
-    if (!uploadId) return;
-    if (phase !== "uploaded") return;
+    if (!uploadId || phase !== "uploaded") return;
 
-    // Gate on consent — shows modal if needed, resolves when granted.
     try {
       await requestConsentIfNeeded();
     } catch (err) {
-      if (err instanceof ConsentDismissedError) {
-        // User dismissed consent modal — stay on upload screen, do nothing.
-        return;
-      }
+      if (err instanceof ConsentDismissedError) return;
       throw err;
     }
+
+    hapticMedium();
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -218,16 +191,12 @@ export default function UploadScreen() {
     setIsFaceError(false);
 
     try {
-      // Step 1: analyze
       await analyzeGlowup(uploadId);
-
       if (controller.signal.aborted) return;
 
-      // Step 2: generate
       setPhase("generating");
       const idempotencyKey = Crypto.randomUUID();
       const { job_id } = await generateGlowup(uploadId, idempotencyKey);
-
       if (controller.signal.aborted) return;
 
       setCurrentJobId(job_id);
@@ -238,21 +207,22 @@ export default function UploadScreen() {
 
       if (err instanceof ApiError) {
         if (err.status === HTTP_FACE_MOD_CONSENT_REQUIRED) {
-          // Should not happen (consent was granted above), but handle defensively.
+          // Defensive — consent was granted above, but tolerate races.
           setPhase("uploaded");
           return;
         }
-        // Check for face-not-detected error code in body
         try {
           const body = JSON.parse(err.body) as { error?: { code?: string } };
           if (body?.error?.code === "face_not_detected") {
+            hapticError();
             setIsFaceError(true);
             setPhase("face_error");
             return;
           }
         } catch {
-          // Ignore parse failures
+          // Ignore parse failures — fall through to generic handling
         }
+        hapticError();
         const msg =
           err.status === 402
             ? "You're out of credits. Top up to continue."
@@ -264,17 +234,17 @@ export default function UploadScreen() {
         return;
       }
 
+      hapticError();
       setErrorMessage("Something unexpected happened. Give it another try.");
       setPhase("error");
     }
   }, [uploadId, phase, requestConsentIfNeeded, router]);
 
-  const handleCancel = useCallback(async () => {
+  const handleCancel = useCallback(() => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setPhase(uploadId ? "uploaded" : "idle");
     setElapsedSeconds(0);
-
     if (currentJobId) {
       cancelJob(currentJobId).catch(() => {});
       setCurrentJobId(null);
@@ -287,31 +257,7 @@ export default function UploadScreen() {
     setIsFaceError(false);
   }, [uploadId]);
 
-  // ---------------------------------------------------------------------------
-  // Derived
-  // ---------------------------------------------------------------------------
-
   const isAnalyzeDisabled = phase !== "uploaded";
-  const showTrialCount = entitlement !== null;
-  const isActivelyProcessing =
-    phase === "uploading" || phase === "analyzing" || phase === "generating";
-
-  function processingLabel(): string {
-    switch (phase) {
-      case "uploading":
-        return "Uploading photo…";
-      case "analyzing":
-        return "Analyzing your photo…";
-      case "generating":
-        return "Generating glow-up…";
-      default:
-        return "Processing…";
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
 
   return (
     <>
@@ -325,31 +271,27 @@ export default function UploadScreen() {
       />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
         <PageBackground overlayOpacity={0.88} />
+
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
+          contentInsetAdjustmentBehavior="automatic"
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          {/* Trial count badge */}
-          {showTrialCount && (
+          {entitlement ? (
             <Animated.View
               entering={FadeIn.duration(200)}
               style={styles.trialBadge}
               accessibilityLabel={`${entitlement.remaining_trials} of ${entitlement.total_trials} free trials remaining`}
             >
-              <Ionicons
-                name="flash-outline"
-                size={16}
-                color={theme.accent}
-              />
-              <Text style={styles.trialText}>
-                {entitlement.remaining_trials} / {entitlement.total_trials}{" "}
-                trials remaining
-              </Text>
+              <Ionicons name="flash-outline" size={16} color={theme.accent} />
+              <Caption weight="semibold" color="secondary">
+                {entitlement.remaining_trials} / {entitlement.total_trials} trials remaining
+              </Caption>
             </Animated.View>
-          )}
+          ) : null}
 
-          {/* Photo picker */}
           <Animated.View
             entering={FadeInDown.duration(THEME.animation.duration.normal).delay(50)}
             style={styles.pickerSection}
@@ -362,20 +304,19 @@ export default function UploadScreen() {
             />
           </Animated.View>
 
-          {/* Face error */}
-          {phase === "face_error" && isFaceError && (
+          {phase === "face_error" && isFaceError ? (
             <FaceErrorCard
               error={{
                 kind: "faceAnalysis",
-                message: "No face detected. Please upload a clear, front-facing selfie.",
+                message:
+                  "No face detected. Please upload a clear, front-facing selfie.",
                 errorCode: "face_not_detected",
               }}
               onTryAgain={handleRetry}
             />
-          )}
+          ) : null}
 
-          {/* Generic error */}
-          {phase === "error" && errorMessage && (
+          {phase === "error" && errorMessage ? (
             <Animated.View
               entering={FadeIn.duration(200)}
               exiting={FadeOut.duration(150)}
@@ -388,130 +329,79 @@ export default function UploadScreen() {
                   size={20}
                   color={THEME.colors.destructive}
                 />
-                <Text style={styles.errorTitle}>Error</Text>
+                <Label color="destructive">Something went wrong</Label>
               </View>
-              <Text style={styles.errorGuidance}>{errorMessage}</Text>
-              <Pressable
-                onPress={handleRetry}
-                style={styles.retryButton}
-                accessibilityRole="button"
-                accessibilityLabel="Try again"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.retryText}>Try again</Text>
-              </Pressable>
+              <Body color="secondary">{errorMessage}</Body>
+              <View style={styles.errorActions}>
+                <Button
+                  title="Try again"
+                  onPress={handleRetry}
+                  variant="secondary"
+                  size="sm"
+                />
+              </View>
             </Animated.View>
-          )}
-
-          {/* Loading state with elapsed timer */}
-          {isActivelyProcessing && (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              style={styles.loadingCard}
-              accessibilityLabel={`${processingLabel()} ${elapsedSeconds} seconds elapsed`}
-              accessibilityRole="progressbar"
-            >
-              <ActivityIndicator size="large" color={theme.accent} />
-              <Text style={styles.loadingTitle}>{processingLabel()}</Text>
-              {(phase === "analyzing" || phase === "generating") && (
-                <Text style={[styles.elapsedText, { color: theme.accent }]}>
-                  {formatElapsed(elapsedSeconds)}
-                </Text>
-              )}
-              {elapsedSeconds * 1000 > ANALYSIS_POLLING.TIMEOUT_HINT_MS && (
-                <Text style={styles.hintText}>
-                  Taking longer than usual. Hang tight...
-                </Text>
-              )}
-            </Animated.View>
-          )}
-
-          {/* Retention disclosure */}
-          <Text style={styles.retentionDisclosure}>{RETENTION_DISCLOSURE}</Text>
-        </ScrollView>
-
-        {/* Bottom action area — glass bar with glowing top border */}
-        <View style={styles.bottomBar}>
-          {/* Subtle glowing top accent line */}
-          <View style={[
-            styles.bottomBarGlow,
-            { backgroundColor: theme.accent + "1A" },
-          ]} />
-          <View style={[
-            styles.bottomBarAccentLine,
-            { backgroundColor: theme.accent + "33" },
-          ]} />
+          ) : null}
 
           {isActivelyProcessing ? (
-            <AnimatedPressable
+            <ProcessingHUD
+              phase={phase as ProcessingPhase}
+              elapsedSeconds={elapsedSeconds}
+            />
+          ) : null}
+
+          <Caption color="muted" style={styles.retentionDisclosure}>
+            {RETENTION_DISCLOSURE}
+          </Caption>
+        </ScrollView>
+
+        {/* Sticky bottom action */}
+        <View style={styles.bottomBar}>
+          {isActivelyProcessing ? (
+            <Button
+              title="Cancel"
               onPress={handleCancel}
-              onPressIn={() => { cancelScale.value = withSpring(0.97, THEME.animation.press); }}
-              onPressOut={() => { cancelScale.value = withSpring(1, THEME.animation.press); }}
-              style={[styles.cancelButton, cancelPressStyle]}
+              variant="outline"
+              size="md"
+              block
+              leftIcon={
+                <Ionicons
+                  name="close-circle-outline"
+                  size={20}
+                  color={THEME.colors.textPrimary}
+                />
+              }
               accessibilityLabel="Cancel"
-              accessibilityRole="button"
-            >
-              <Ionicons
-                name="close-circle-outline"
-                size={20}
-                color={THEME.colors.textPrimary}
-              />
-              <Text style={styles.cancelText}>Cancel</Text>
-            </AnimatedPressable>
+            />
           ) : (
-            <AnimatedPressable
+            <Button
+              title="Analyze"
               onPress={handleAnalyze}
-              onPressIn={() => {
-                if (!isAnalyzeDisabled) analyzeScale.value = withSpring(0.97, THEME.animation.press);
-              }}
-              onPressOut={() => {
-                analyzeScale.value = withSpring(1, THEME.animation.press);
-              }}
+              variant="primary"
+              size="lg"
+              block
+              glow={!isAnalyzeDisabled}
+              haptic="none"
               disabled={isAnalyzeDisabled}
-              style={[
-                styles.analyzeButton,
-                isAnalyzeDisabled
-                  ? styles.analyzeButtonDisabled
-                  : [
-                      { backgroundColor: theme.accent },
-                      THEME.shadow.glow(theme.accent),
-                    ],
-                analyzePressStyle,
-              ]}
+              accentColor={theme.accent}
+              leftIcon={
+                <Ionicons
+                  name="sparkles"
+                  size={20}
+                  color={
+                    isAnalyzeDisabled
+                      ? THEME.colors.textDisabled
+                      : THEME.colors.bg
+                  }
+                />
+              }
               accessibilityLabel="Analyze photo"
-              accessibilityRole="button"
-              accessibilityState={{ disabled: isAnalyzeDisabled }}
-            >
-              <Ionicons
-                name="sparkles"
-                size={20}
-                color={isAnalyzeDisabled ? THEME.colors.textDisabled : THEME.colors.white}
-              />
-              <Text
-                style={[
-                  styles.analyzeText,
-                  isAnalyzeDisabled && styles.analyzeTextDisabled,
-                ]}
-              >
-                Analyze
-              </Text>
-            </AnimatedPressable>
+            />
           )}
         </View>
       </SafeAreaView>
     </>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function formatElapsed(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (mins === 0) return `${secs}s`;
-  return `${mins}m ${secs.toString().padStart(2, "0")}s`;
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +419,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: THEME.spacing.xl,
     paddingBottom: THEME.spacing.xxxl,
+    gap: THEME.spacing.lg,
   },
   // Trial badge
   trialBadge: {
@@ -537,160 +428,47 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.sm,
-    marginBottom: THEME.spacing.lg,
     gap: THEME.spacing.sm,
-  },
-  trialText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 13,
-    color: THEME.colors.textSecondary,
   },
   // Photo picker section
   pickerSection: {
     alignItems: "center",
-    marginBottom: THEME.spacing.xxl,
   },
   // Error card
   errorCard: {
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.md,
+    borderCurve: "continuous",
     padding: THEME.spacing.lg,
-    marginBottom: THEME.spacing.lg,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
+    gap: THEME.spacing.md,
   },
   errorHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.sm,
-    marginBottom: THEME.spacing.sm,
   },
-  errorTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 15,
-    color: THEME.colors.destructive,
-  },
-  errorGuidance: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
-  },
-  retryButton: {
-    marginTop: THEME.spacing.md,
-    paddingVertical: THEME.spacing.sm,
-    paddingHorizontal: THEME.spacing.lg,
-    borderRadius: THEME.radius.pill,
-    backgroundColor: THEME.colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
-    alignSelf: "flex-start",
-  },
-  retryText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 14,
-    color: THEME.colors.textPrimary,
-  },
-  // Loading card
-  loadingCard: {
-    alignItems: "center",
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.xxxl,
-    gap: THEME.spacing.md,
-  },
-  loadingTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-  },
-  elapsedText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 24,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    fontVariant: ["tabular-nums"],
-  },
-  hintText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textMuted,
-    textAlign: "center",
+  errorActions: {
+    flexDirection: "row",
   },
   // Retention disclosure
   retentionDisclosure: {
-    fontFamily: FONTS.body,
-    fontSize: 12,
-    color: THEME.colors.textMuted,
     textAlign: "center",
-    marginTop: THEME.spacing.lg,
+    marginTop: THEME.spacing.md,
     opacity: 0.7,
   },
-  // Bottom bar
+  // Bottom bar — sticky footer with hairline top border
   bottomBar: {
     paddingHorizontal: THEME.spacing.xl,
     paddingVertical: THEME.spacing.md,
     backgroundColor: THEME.colors.glass,
-    position: "relative",
-  },
-  bottomBarGlow: {
-    position: "absolute",
-    top: -4,
-    left: 0,
-    right: 0,
-    height: 4,
-  },
-  bottomBarAccentLine: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: StyleSheet.hairlineWidth * 2,
-  },
-  analyzeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: THEME.radius.pill,
-    paddingVertical: THEME.spacing.lg,
-    gap: THEME.spacing.sm,
-    minHeight: 52,
-  },
-  analyzeButtonDisabled: {
-    backgroundColor: THEME.colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: THEME.colors.border,
-    borderRadius: THEME.radius.pill,
-  },
-  analyzeText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.bg,
-  },
-  analyzeTextDisabled: {
-    color: THEME.colors.textDisabled,
-  },
-  cancelButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.pill,
-    paddingVertical: THEME.spacing.lg,
-    gap: THEME.spacing.sm,
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-  },
-  cancelText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.textPrimary,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: THEME.colors.glassBorder,
   },
 });
