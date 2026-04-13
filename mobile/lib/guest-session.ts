@@ -17,8 +17,9 @@ interface GuestResponse {
  * - Provisions a `users.is_guest=true` row and a 64-hex session token.
  * - Returns 403 `FEATURE_DISABLED` when `FEATURE_AUTH_REQUIRED=true`.
  *
- * Callers must only invoke this in guest mode (features.auth_required=false);
- * the token is persisted to SecureStore so subsequent calls skip the network.
+ * Callers must only invoke this in guest mode (`useSession().isGuest` or
+ * `getAuthRequired() === false`); the token is persisted to SecureStore so
+ * subsequent calls skip the network.
  */
 export async function getOrCreateGuestToken(): Promise<string> {
   const existing = await getItem(SECURE_STORE_KEYS.GUEST_TOKEN);

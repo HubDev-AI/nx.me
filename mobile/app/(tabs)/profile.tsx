@@ -35,7 +35,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const toggleMenuRef = useRef<() => void>(() => {});
-  const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth, setUsername: setAuthUsername } = useAuth();
+  const { session, username: authUsername, setSessionMode, setUsername: setAuthUsername } = useAuth();
+  const isAuthenticated = session.isUser;
   const { theme } = useTheme();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -91,8 +92,8 @@ export default function ProfileScreen() {
       // Network error or server unreachable — proceed with local logout
     }
     await clearAllTokens();
-    setGlobalAuth(false);
-  }, [setGlobalAuth]);
+    setSessionMode("anon");
+  }, [setSessionMode]);
 
   const handleSaveProfile = useCallback(
     async (payload: UpdateProfilePayload): Promise<boolean> => {

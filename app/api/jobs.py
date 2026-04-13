@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from app.analytics import events
 from app.api.deps import (
-    get_analysis_user,
+    get_user_or_guest,
     get_credit_ledger,
     get_current_user,
     get_job_repo,
@@ -88,7 +88,7 @@ class RefundResponse(BaseModel):
 async def get_job(
     job_id: UUID,
     request: Request,
-    claims: UserClaims = Depends(get_analysis_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
 ) -> JobStatusResponse:
@@ -209,7 +209,7 @@ async def get_job(
 )
 async def save_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_analysis_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     job_repo: JobRepository = Depends(get_job_repo),
 ) -> SaveResponse:
     """Mark a completed generation job as saved (indefinite retention, Q12).
@@ -248,7 +248,7 @@ async def save_job(
 )
 async def cancel_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_analysis_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     job_repo: JobRepository = Depends(get_job_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> CancelResponse:

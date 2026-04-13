@@ -17,11 +17,13 @@ import { useAuth } from "../../lib/auth-context";
 
 export function FeedCreditBadge() {
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  // Entitlement endpoint accepts JWT or guest token — show badge for both.
+  const { session } = useAuth();
+  const hasSession = !session.isAnon;
   const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!hasSession) return;
 
     let cancelled = false;
 
@@ -38,14 +40,14 @@ export function FeedCreditBadge() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated]);
+  }, [hasSession]);
 
   const handlePress = useCallback(() => {
     router.push("/subscription");
   }, [router]);
 
   // Don't render anything if not authenticated or data not loaded
-  if (!isAuthenticated || !entitlement) return null;
+  if (!hasSession || !entitlement) return null;
 
   // Determine which count to display:
   // - If user has trial analyses remaining, show that

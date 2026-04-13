@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.deps import (
-    get_analysis_user,
+    get_user_or_guest,
     get_current_user,
     get_entitlement_service,
     get_payment_adapter,
@@ -89,7 +89,7 @@ def _build_purchase_options(svc: EntitlementService) -> PurchaseOptions | None:
 
 @router.get("/entitlement", response_model=EntitlementResponse)
 async def get_entitlement(
-    claims: UserClaims = Depends(get_analysis_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: EntitlementService = Depends(get_entitlement_service),
 ) -> EntitlementResponse:
     """Return the authenticated user's current entitlement snapshot.

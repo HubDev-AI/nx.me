@@ -15,6 +15,7 @@ import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
 import { restoreStoredSession } from "../lib/api";
 import { AuthProvider, useAuth } from "../lib/auth-context";
+import type { SessionMode } from "../lib/session";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
 import { ConsentProvider } from "../lib/consent-context";
 import { registerForPushNotifications } from "../lib/notifications";
@@ -41,29 +42,36 @@ initSentry();
 SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { isAuthenticated, setAuthenticated } = useAuth();
+  const { session, setSessionMode, markSessionReady } = useAuth();
   const { features, isLoading: featuresLoading } = useFeatures();
   const router = useRouter();
   const segments = useSegments();
   const guestInitRef = useRef(false);
 
-  // In guest mode, provision the backend guest token once and mark the
-  // session as authenticated so downstream auth-gated UI works unchanged.
+  // In guest mode, provision the backend guest token once and promote the
+  // session to "guest" so downstream UI knows it can talk to guest-friendly
+  // endpoints (entitlement, uploads, advisor reads).
   useEffect(() => {
     if (featuresLoading) return;
-    if (features.auth_required) return;
+    if (features.auth_required) {
+      // Real-auth mode — bootstrap is done once we know the JWT result.
+      markSessionReady();
+      return;
+    }
     if (guestInitRef.current) return;
     guestInitRef.current = true;
     getOrCreateGuestToken()
-      .then(() => setAuthenticated(true))
+      .then(() => {
+        setSessionMode("guest");
+        markSessionReady();
+      })
       .catch((err) => {
         if (__DEV__) console.warn("Guest session init failed:", err);
-        // Allow the session to proceed unauthenticated; guest-gated endpoints
-        // will fail gracefully. We still clear the init lock so a later
-        // connectivity recovery can retry.
+        // Leave session as anon; allow retry on the next connectivity recovery.
         guestInitRef.current = false;
+        markSessionReady();
       });
-  }, [featuresLoading, features.auth_required, setAuthenticated]);
+  }, [featuresLoading, features.auth_required, setSessionMode, markSessionReady]);
 
   useEffect(() => {
     if (featuresLoading) return;
@@ -86,7 +94,7 @@ function AuthGuard() {
       return;
     }
 
-    if (!isAuthenticated) {
+    if (!session.isUser) {
       if (!inAuthGroup) router.replace("/(auth)/login");
       return;
     }
@@ -105,7 +113,7 @@ function AuthGuard() {
     featuresLoading,
     features.auth_required,
     features.onboarding_enabled,
-    isAuthenticated,
+    session.isUser,
     segments,
     router,
   ]);
@@ -116,7 +124,7 @@ function AuthGuard() {
 export default function RootLayout() {
   const [isReady, setIsReady] = useState(false);
   const [initError, setInitError] = useState<Error | null>(null);
-  const [initialAuth, setInitialAuth] = useState(false);
+  const [initialMode, setInitialMode] = useState<SessionMode>("anon");
   const { fontsLoaded, fontError } = useAppFonts();
   // Mutex guarding the offline-replay drain. NetInfo can fire back-to-back
   // during a network flap; without this, we'd double-execute queued mutations.
@@ -156,7 +164,7 @@ export default function RootLayout() {
       //    avoid hitting POST /auth/guest when auth is required.
       registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });
 
-      setInitialAuth(authed);
+      setInitialMode(authed ? "user" : "anon");
     }
 
     initialize()
@@ -253,7 +261,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <FeaturesProvider>
-            <AuthProvider initialAuth={initialAuth}>
+            <AuthProvider initialMode={initialMode}>
               <ConsentProvider>
                 {StripeProvider ? (
                   <StripeProvider

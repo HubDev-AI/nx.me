@@ -64,7 +64,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { setAuthenticated } = useAuth();
+  const { setSessionMode } = useAuth();
   const { fadeInDown } = useEntering();
 
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -119,7 +119,7 @@ export default function SettingsScreen() {
             try {
               await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
               await clearAllTokens();
-              setAuthenticated(false);
+              setSessionMode("anon");
             } catch (err) {
               const appError = parseApiError(err);
               showToast({ kind: 'error', message: appError.message });
@@ -130,7 +130,7 @@ export default function SettingsScreen() {
         },
       ],
     );
-  }, [setAuthenticated]);
+  }, [setSessionMode]);
 
   // -------------------------------------------------------------------------
   // Render
