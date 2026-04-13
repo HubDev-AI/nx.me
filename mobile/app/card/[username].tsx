@@ -9,27 +9,26 @@
  * Route: /card/[username]
  * Auth: none required — calls the public cards API
  */
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
+  View,
 } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
 import SuggestionPills from "../../components/result/SuggestionPills";
 import { PageBackground } from "../../components/ui/PageBackground";
+import { Body, Caption, Heading } from "../../components/ui/Text";
+import { Button } from "../../components/ui/Button";
 import { AUTH_VALIDATION, CARD_ENDPOINTS } from "../../constants/config";
 import { apiFetch } from "../../lib/api";
 import { parseApiError } from "../../lib/errors";
 import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 
 // ---------------------------------------------------------------------------
@@ -50,14 +49,14 @@ interface PublicCard {
 // ---------------------------------------------------------------------------
 
 /** Use the canonical username pattern from config (starts with letter, alphanumeric + underscores) */
-const _USERNAME_RE = AUTH_VALIDATION.USERNAME_PATTERN;
+const USERNAME_RE = AUTH_VALIDATION.USERNAME_PATTERN;
 
 // ---------------------------------------------------------------------------
 // API helper (no auth — public endpoint)
 // ---------------------------------------------------------------------------
 
 async function fetchPublicCard(username: string): Promise<PublicCard> {
-  if (!_USERNAME_RE.test(username)) {
+  if (!USERNAME_RE.test(username)) {
     throw new Error("Invalid username format");
   }
   return apiFetch<PublicCard>(CARD_ENDPOINTS.PUBLIC(encodeURIComponent(username)));
@@ -76,58 +75,48 @@ export default function CardDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [revealComplete, setRevealComplete] = useState(false);
 
-  useEffect(() => {
-    if (!username) return;
-    let cancelled = false;
+  const load = useCallback(
+    (onResult?: (cancelled: () => boolean) => void) => {
+      if (!username) return () => {};
+      let cancelled = false;
 
-    setLoading(true);
-    setError(null);
+      setLoading(true);
+      setError(null);
 
-    fetchPublicCard(username)
-      .then((data) => {
-        if (!cancelled) {
+      fetchPublicCard(username)
+        .then((data) => {
+          if (cancelled) return;
           setCard(data);
           setLoading(false);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
+          onResult?.(() => cancelled);
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
           const appError = parseApiError(err);
-          setError(appError.kind === 'notFound'
-            ? "This card is no longer available."
-            : appError.message);
+          setError(
+            appError.kind === "notFound"
+              ? "This card is no longer available."
+              : appError.message,
+          );
           setLoading(false);
-        }
-      });
+        });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [username]);
+      return () => {
+        cancelled = true;
+      };
+    },
+    [username],
+  );
+
+  useEffect(() => load(), [load]);
 
   const handleRevealComplete = useCallback(() => {
     setRevealComplete(true);
   }, []);
 
   const handleRetry = useCallback(() => {
-    if (!username) return;
-
-    setLoading(true);
-    setError(null);
-
-    fetchPublicCard(username)
-      .then((data) => {
-        setCard(data);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        const appError = parseApiError(err);
-        setError(appError.kind === 'notFound'
-          ? "This card is no longer available."
-          : appError.message);
-        setLoading(false);
-      });
-  }, [username]);
+    load();
+  }, [load]);
 
   const screenOptions = {
     title: username ? `@${username}` : "Card",
@@ -147,7 +136,7 @@ export default function CardDetailScreen() {
         <View style={styles.centered}>
           <PageBackground overlayOpacity={0.88} />
           <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={styles.loadingText}>Loading card...</Text>
+          <Body color="secondary">Loading card…</Body>
         </View>
       </>
     );
@@ -164,15 +153,18 @@ export default function CardDetailScreen() {
         <View style={styles.centered}>
           <PageBackground overlayOpacity={0.88} />
           <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.destructive} />
-          <Text style={styles.errorText}>{error ?? "Card not available."}</Text>
-          <Pressable
+          <Body color="secondary" style={styles.errorText}>
+            {error ?? "Card not available."}
+          </Body>
+          <Button
+            title="Try Again"
             onPress={handleRetry}
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
+            variant="primary"
+            size="md"
+            accentColor={theme.accent}
             accessibilityLabel="Retry loading card"
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>Try Again</Text>
-          </Pressable>
+            style={styles.retryButton}
+          />
         </View>
       </>
     );
@@ -192,7 +184,9 @@ export default function CardDetailScreen() {
           contentContainerStyle={styles.scrollContent}
         >
           {/* Username heading */}
-          <Text style={styles.usernameHeading}>@{card.username}</Text>
+          <Heading size="md" color="primary" style={styles.usernameHeading}>
+            @{card.username}
+          </Heading>
 
           {/* Before / After reveal */}
           <BeforeAfterSlider
@@ -211,9 +205,9 @@ export default function CardDetailScreen() {
                 color={THEME.colors.textSecondary}
                 style={styles.statIcon}
               />
-              <Text style={styles.statText}>
+              <Caption weight="semibold" color="secondary">
                 {card.reaction_count.toLocaleString()}
-              </Text>
+              </Caption>
             </View>
             <View style={styles.stat}>
               <Ionicons
@@ -222,9 +216,9 @@ export default function CardDetailScreen() {
                 color={THEME.colors.textSecondary}
                 style={styles.statIcon}
               />
-              <Text style={styles.statText}>
+              <Caption weight="semibold" color="secondary">
                 {card.comment_count.toLocaleString()}
-              </Text>
+              </Caption>
             </View>
           </View>
 
@@ -262,36 +256,13 @@ const styles = StyleSheet.create({
     padding: THEME.spacing.xxxl,
     gap: THEME.spacing.lg,
   },
-  loadingText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
-  },
   errorText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
   },
   retryButton: {
-    borderRadius: THEME.radius.pill,
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingVertical: THEME.spacing.md,
     marginTop: THEME.spacing.sm,
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  retryText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 15,
-    color: THEME.colors.bg,
   },
   usernameHeading: {
-    fontFamily: FONTS.display,
-    ...THEME.typography.heading,
-    color: THEME.colors.textPrimary,
     textAlign: "center",
     paddingTop: THEME.spacing.xxl,
     paddingHorizontal: THEME.spacing.lg,
@@ -312,15 +283,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.sm,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
   },
   statIcon: {
     marginRight: 2,
-  },
-  statText: {
-    fontFamily: FONTS.bodySemiBold,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
   },
 });

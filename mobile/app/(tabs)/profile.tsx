@@ -14,7 +14,7 @@ import { TAB_BAR_HEIGHT } from "./_layout";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { Button } from "../../components/ui/Button";
 import { Body, Caption, Heading } from "../../components/ui/Text";
-import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../../constants/config";
+import { AUTH_ENDPOINTS } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
 import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";

@@ -4,12 +4,12 @@
  * Unread nudges show a coral dot indicator. Tapping marks as read.
  */
 import { memo, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
-import { FONTS } from "../../hooks/useFonts";
+import { Body, Caption } from "../ui/Text";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import type { Nudge } from "../../lib/advisor";
@@ -77,18 +77,22 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
       {/* Content */}
       <View style={styles.content}>
         <View style={styles.titleRow}>
-          <Text
-            style={[styles.title, !isRead && styles.unreadTitle]}
+          <Body
+            weight={isRead ? "semibold" : "bold"}
+            color="primary"
             numberOfLines={1}
+            style={styles.title}
           >
             {nudgeLabel(nudge.trigger)}
-          </Text>
+          </Body>
           {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
         </View>
-        <Text style={styles.body} numberOfLines={3}>
+        <Caption color="secondary" numberOfLines={3} style={styles.body}>
           {nudge.content}
-        </Text>
-        <Text style={styles.time}>{formatTimeAgo(nudge.created_at)}</Text>
+        </Caption>
+        <Caption color="muted" style={styles.time}>
+          {formatTimeAgo(nudge.created_at)}
+        </Caption>
       </View>
     </Pressable>
   );
@@ -101,6 +105,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.lg,
@@ -133,14 +138,8 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   title: {
-    fontFamily: FONTS.bodySemiBold,
-    ...THEME.typography.body,
-    color: THEME.colors.textPrimary,
     textTransform: "capitalize",
     flex: 1,
-  },
-  unreadTitle: {
-    fontFamily: FONTS.bodyBold,
   },
   unreadDot: {
     width: 8,
@@ -148,16 +147,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   body: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    fontSize: 14,
     lineHeight: 20,
-    color: THEME.colors.textSecondary,
   },
   time: {
-    fontFamily: FONTS.body,
-    fontSize: 12,
-    color: THEME.colors.textMuted,
     marginTop: THEME.spacing.xs / 2,
   },
 });
