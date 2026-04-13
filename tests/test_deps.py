@@ -70,6 +70,48 @@ class TestGetClientIP:
 
         assert result == "198.51.100.10"
 
+    def test_skips_trusted_proxy_hops_in_forwarded_chain(self):
+        """Real client precedes an internal LB hop; skip the LB and return the client."""
+        from app.api.deps import get_client_ip
+
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.headers = {"x-forwarded-for": "203.0.113.50, 10.0.0.5"}
+
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.TRUST_PROXY_HEADERS = True
+            result = get_client_ip(request)
+
+        assert result == "203.0.113.50"
+
+    def test_walks_past_multiple_trusted_proxy_hops(self):
+        """Chain of internal proxies must not mask the real client."""
+        from app.api.deps import get_client_ip
+
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.headers = {"x-forwarded-for": "203.0.113.50, 10.0.0.5, 192.168.1.1"}
+
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.TRUST_PROXY_HEADERS = True
+            result = get_client_ip(request)
+
+        assert result == "203.0.113.50"
+
+    def test_ignores_loopback_entries_in_forwarded_chain(self):
+        """Loopback / link-local entries can never be a real client."""
+        from app.api.deps import get_client_ip
+
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.headers = {"x-forwarded-for": "127.0.0.1, 169.254.1.1"}
+
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.TRUST_PROXY_HEADERS = True
+            result = get_client_ip(request)
+
+        assert result == "127.0.0.1"
+
     def test_returns_empty_when_no_client(self):
         from app.api.deps import get_client_ip
 

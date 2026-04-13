@@ -994,9 +994,14 @@ async def tiktok_login(
 
         session = session_response.session
         logger.info("TikTok login successful for existing user %s", existing_user["id"])
+        existing_username = await _resolve_login_username(
+            user_repo,
+            existing_user["id"],
+            fallback=existing_user.get("username"),
+        )
         return LoginResponse(
             user_id=existing_user["id"],
-            username=existing_user["username"],
+            username=existing_username,
             access_token=session.access_token,
             refresh_token=session.refresh_token,
             expires_at=int(session.expires_at) if session.expires_at else 0,
@@ -1097,9 +1102,14 @@ async def tiktok_login(
                         {"email": synthetic_email, "password": derived_password},
                     )
                     if session_response.session:
+                        race_username = await _resolve_login_username(
+                            user_repo,
+                            race_winner["id"],
+                            fallback=race_winner.get("username"),
+                        )
                         return LoginResponse(
                             user_id=race_winner["id"],
-                            username=race_winner["username"],
+                            username=race_username,
                             access_token=session_response.session.access_token,
                             refresh_token=session_response.session.refresh_token,
                             expires_at=int(session_response.session.expires_at)
@@ -1165,10 +1175,13 @@ async def tiktok_login(
         user_id,
         open_id,
     )
+    new_username = await _resolve_login_username(
+        user_repo, user_id, fallback=auto_username
+    )
 
     return LoginResponse(
         user_id=user_id,
-        username=auto_username,
+        username=new_username,
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         expires_at=int(session.expires_at) if session.expires_at else 0,

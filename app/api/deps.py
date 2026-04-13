@@ -68,14 +68,20 @@ def _is_trusted_proxy_host(host: str) -> bool:
 
 
 def _get_forwarded_ip(forwarded_for: str) -> str | None:
-    # Walk from right to left so we trust the last hop inserted by the
-    # immediate trusted proxy rather than a client-supplied leftmost value.
+    # Walk right-to-left and skip entries that are themselves trusted proxies;
+    # the first public IP we encounter is the real client. This prevents an
+    # attacker-controlled leftmost entry from winning, and stops CDN/LB hop
+    # addresses from being attributed as the client.
     for candidate in reversed([part.strip() for part in forwarded_for.split(",")]):
         if not candidate:
             continue
         try:
-            ipaddress.ip_address(candidate)
+            parsed = ipaddress.ip_address(candidate)
         except ValueError:
+            continue
+        if _is_trusted_proxy_host(candidate):
+            continue
+        if parsed.is_loopback or parsed.is_link_local or parsed.is_unspecified:
             continue
         return candidate
     return None

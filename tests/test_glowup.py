@@ -380,3 +380,61 @@ class TestGenerateGlowupHandler:
             )
 
         redis_client.decr.assert_awaited_once_with(f"concurrent:{user_id}")
+
+    @pytest.mark.asyncio
+    async def test_preflight_failure_releases_concurrent_slot(self, monkeypatch):
+        """If preflight raises after entitlement acquired the slot, it must be freed."""
+        from fastapi import HTTPException
+
+        user_id = str(uuid4())
+        upload_id = uuid4()
+        claims = _make_claims(user_id)
+
+        supabase = MockSupabase()
+        supabase.set_table_data(
+            "users", [{"face_mod_consent_at": "2026-01-01T00:00:00+00:00"}]
+        )
+        supabase.set_table_data("glowup_analyses", [{"id": "analysis-1"}])
+        supabase.set_table_data(
+            "uploads",
+            [{"id": str(upload_id), "user_id": user_id, "image_url": "raw/key.jpg"}],
+        )
+
+        request = MagicMock()
+        request.app.state.supabase = supabase
+
+        redis_client = AsyncMock()
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.glowup.run_sync", fake_run_sync)
+        monkeypatch.setattr(
+            "app.api.glowup._check_entitlement", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._check_idempotency", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._preflight_checks",
+            AsyncMock(side_effect=HTTPException(status_code=503)),
+        )
+
+        ledger = MagicMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await generate_glowup(
+                upload_id=upload_id,
+                body=GenerateRequest(idempotency_key="job-pf"),
+                request=request,
+                idempotency_key_header=None,
+                claims=claims,
+                redis_client=redis_client,
+                ent_svc=AsyncMock(),
+                job_repo=MagicMock(),
+                ledger=ledger,
+            )
+
+        assert exc_info.value.status_code == 503
+        redis_client.decr.assert_awaited_once_with(f"concurrent:{user_id}")
+        ledger.reserve.assert_not_called()
