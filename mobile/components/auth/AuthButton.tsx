@@ -1,3 +1,8 @@
+/**
+ * @deprecated Prefer the unified `<Button>` from `../ui/Button`. AuthButton
+ *   stays only to avoid churn in social-login screens. Migrate to
+ *   `<Button variant="primary" block />` with `accentColor={theme.accent}`.
+ */
 import { useRef, useCallback } from "react";
 import {
   Pressable,

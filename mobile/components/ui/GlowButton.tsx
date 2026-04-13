@@ -1,6 +1,10 @@
 /**
  * GlowButton — CTA button with pulsing glow shadow effect.
  * The glow pulses subtly to draw attention without being distracting.
+ *
+ * @deprecated Prefer the unified `<Button glow>` from `./Button`. New code
+ *   should use Button with `variant="primary" glow={true}`. This shim stays
+ *   until all callers are migrated (see Phase 6 of mobile polish plan).
  */
 import { useEffect, useCallback } from "react";
 import {
