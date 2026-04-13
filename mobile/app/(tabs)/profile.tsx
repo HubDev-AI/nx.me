@@ -37,6 +37,7 @@ export default function ProfileScreen() {
   const toggleMenuRef = useRef<() => void>(() => {});
   const { session, username: authUsername, setSessionMode, setUsername: setAuthUsername } = useAuth();
   const isAuthenticated = session.isUser;
+  const isGuest = session.isGuest;
   const { theme } = useTheme();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -117,12 +118,26 @@ export default function ProfileScreen() {
     setMenuVisible(false);
   }, []);
 
-  const menuItems: RadialMenuItem[] = [
-    { label: "Edit Profile", icon: "create-outline", onPress: handleEditProfile },
-    { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
-    { label: "Settings", icon: "settings-outline", onPress: () => router.push("/settings") },
-    { label: "Log Out", icon: "log-out-outline", onPress: handleLogout, destructive: true },
-  ];
+  const handleSignIn = useCallback(() => {
+    router.push("/(auth)/login");
+  }, [router]);
+
+  // Menu items depend on session state. Guests get a reduced set (no account
+  // actions, since those require a real JWT) but still see Subscription and a
+  // secondary Sign In entry point. Anons see only Sign In.
+  const menuItems: RadialMenuItem[] = isAuthenticated
+    ? [
+        { label: "Edit Profile", icon: "create-outline", onPress: handleEditProfile },
+        { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
+        { label: "Settings", icon: "settings-outline", onPress: () => router.push("/settings") },
+        { label: "Log Out", icon: "log-out-outline", onPress: handleLogout, destructive: true },
+      ]
+    : isGuest
+      ? [
+          { label: "Sign In", icon: "log-in-outline", onPress: handleSignIn },
+          { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
+        ]
+      : [{ label: "Sign In", icon: "log-in-outline", onPress: handleSignIn }];
 
   // Keep ref in sync so headerRight button can call it
   toggleMenuRef.current = toggleMenu;
@@ -144,30 +159,51 @@ export default function ProfileScreen() {
     });
   }, [navigation]);
 
-  // Not signed in
+  // Not a real user (guest or anon) — render a centered sign-in CTA.
+  // The tab header already owns the top safe-area inset, so we only reserve
+  // room for the floating tab bar at the bottom. Flex centering in the
+  // remaining space keeps the CTA anchored both axes.
+  //
+  // IMPORTANT: RadialMenu is rendered here too so the headerRight 3-dot
+  // button (installed unconditionally via useLayoutEffect below) stays wired.
   if (!isAuthenticated) {
+    const title = isGuest
+      ? "Sign in to save your glow-ups"
+      : "Sign in to see your profile";
+    const subtitle = isGuest
+      ? "Keep your history, reactions, and streaks across devices."
+      : "Track your glow-ups and reactions";
     return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <Ionicons
-          name="person-circle-outline"
-          size={64}
-          color={THEME.colors.textMuted}
-        />
-        <Heading size="md" color="primary" style={styles.signInTitle}>
-          Sign in to see your profile
-        </Heading>
-        <Body color="secondary" style={styles.signInSubtitle}>
-          Track your glow-ups and reactions
-        </Body>
-        <Button
-          title="Sign In"
-          onPress={() => router.push("/(auth)/login")}
-          variant="primary"
-          size="md"
+      <View style={styles.emptyStateScreen}>
+        <PageBackground overlayOpacity={0.85} />
+        <RadialMenu
+          visible={menuVisible}
+          onClose={closeMenu}
+          items={menuItems}
           accentColor={theme.accent}
-          accessibilityLabel="Sign in"
-          style={styles.signInButton}
         />
+        <View style={styles.emptyStateContent}>
+          <Ionicons
+            name="person-circle-outline"
+            size={96}
+            color={THEME.colors.textMuted}
+          />
+          <Heading size="md" color="primary" style={styles.signInTitle}>
+            {title}
+          </Heading>
+          <Body color="secondary" style={styles.signInSubtitle}>
+            {subtitle}
+          </Body>
+          <Button
+            title="Sign In"
+            onPress={handleSignIn}
+            variant="primary"
+            size="md"
+            accentColor={theme.accent}
+            accessibilityLabel="Sign in"
+            style={styles.signInButton}
+          />
+        </View>
       </View>
     );
   }
@@ -324,16 +360,32 @@ const styles = StyleSheet.create({
     padding: THEME.spacing.xxl,
     paddingBottom: TAB_BAR_HEIGHT,
   },
+  /* Guest/anon empty-state — tab header owns top safe area; we just reserve
+     room for the floating tab bar and center content in what's left. */
+  emptyStateScreen: {
+    flex: 1,
+    backgroundColor: THEME.colors.bg,
+  },
+  emptyStateContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: THEME.spacing.xxl,
+    paddingBottom: TAB_BAR_HEIGHT,
+    gap: THEME.spacing.md,
+  },
   signInTitle: {
     marginTop: THEME.spacing.lg,
-    marginBottom: THEME.spacing.sm,
+    marginBottom: THEME.spacing.xs,
     textAlign: "center",
   },
   signInSubtitle: {
     textAlign: "center",
+    maxWidth: 320,
   },
   signInButton: {
     marginTop: THEME.spacing.xl,
+    minWidth: 200,
   },
   loadingText: {
     marginTop: THEME.spacing.md,
