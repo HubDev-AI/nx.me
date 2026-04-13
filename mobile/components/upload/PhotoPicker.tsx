@@ -5,14 +5,15 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
-  Text,
   Pressable,
   Image,
   Alert,
   StyleSheet,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import Animated, {
+  FadeIn,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -21,10 +22,11 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import { IMAGE_PICKER } from "../../constants/config";
 import { showToast } from "../../lib/toast";
+import { hapticLight } from "../../lib/haptics";
+import { Body, Caption } from "../ui/Text";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,6 +80,11 @@ export default function PhotoPicker({
   disabled = false,
 }: PhotoPickerProps) {
   const { theme } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const previewSize = Math.min(
+    PREVIEW_SIZE_MAX,
+    Math.max(PREVIEW_SIZE_MIN, windowWidth - PREVIEW_HORIZONTAL_INSET),
+  );
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [openingSource, setOpeningSource] = useState<"camera" | "gallery" | null>(null);
   const galleryPermission = useRef<boolean | null>(null);
@@ -119,6 +126,7 @@ export default function PhotoPicker({
         return;
       }
 
+      hapticLight();
       onPhotoSelected({
         uri: asset.uri,
         fileName: extractFileName(asset),
@@ -195,7 +203,10 @@ export default function PhotoPicker({
       <View style={styles.previewContainer}>
         <Image
           source={{ uri: photo.uri }}
-          style={styles.previewImage}
+          style={[
+            styles.previewImage,
+            { width: previewSize, height: previewSize },
+          ]}
           accessibilityLabel="Selected photo preview"
         />
         {/* Change photo overlay button */}
@@ -207,10 +218,10 @@ export default function PhotoPicker({
             style={styles.changeButton}
             accessibilityLabel="Change selected photo"
             accessibilityRole="button"
-            hitSlop={8}
+            hitSlop={12}
           >
             <Ionicons name="camera-reverse-outline" size={16} color={THEME.colors.textPrimary} />
-            <Text style={styles.changeButtonText}>Change</Text>
+            <Caption weight="medium" color="primary">Change photo</Caption>
           </Pressable>
         </Animated.View>
       </View>
@@ -219,10 +230,12 @@ export default function PhotoPicker({
 
   // --- Render: no photo selected — large dashed border area ---
   return (
-    <View style={[
-      styles.pickerContainer,
-      { borderColor: theme.accent + "40" },
-    ]}>
+    <View
+      style={[
+        styles.pickerContainer,
+        { borderColor: theme.accent + "66", minWidth: previewSize },
+      ]}
+    >
       {/* Central icon + text prompt */}
       <Ionicons
         name="camera-outline"
@@ -230,12 +243,13 @@ export default function PhotoPicker({
         color={disabled ? THEME.colors.textDisabled : theme.accent}
         style={styles.centerIcon}
       />
-      <Text style={[
-        styles.promptText,
-        disabled && styles.promptTextDisabled,
-      ]}>
-        Tap to select a photo
-      </Text>
+      <Body
+        weight="medium"
+        color={disabled ? "disabled" : "secondary"}
+        style={styles.promptText}
+      >
+        Take a selfie or upload a clear photo of your face
+      </Body>
 
       {/* Camera / Gallery option pills */}
       <View style={styles.optionRow}>
@@ -248,10 +262,7 @@ export default function PhotoPicker({
             onPressOut={() => {
               cameraScale.value = withSpring(1, THEME.animation.press);
             }}
-            style={[
-              styles.optionPill,
-              disabled && styles.optionPillDisabled,
-            ]}
+            style={[styles.optionPill, disabled && styles.optionPillDisabled]}
             disabled={disabled}
             accessibilityLabel="Take a photo with camera"
             accessibilityRole="button"
@@ -265,11 +276,9 @@ export default function PhotoPicker({
                 color={disabled ? THEME.colors.textDisabled : theme.accent}
               />
             )}
-            <Text
-              style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
-            >
+            <Caption weight="medium" color={disabled ? "disabled" : "primary"}>
               Camera
-            </Text>
+            </Caption>
           </Pressable>
         </Animated.View>
 
@@ -282,10 +291,7 @@ export default function PhotoPicker({
             onPressOut={() => {
               galleryScale.value = withSpring(1, THEME.animation.press);
             }}
-            style={[
-              styles.optionPill,
-              disabled && styles.optionPillDisabled,
-            ]}
+            style={[styles.optionPill, disabled && styles.optionPillDisabled]}
             disabled={disabled}
             accessibilityLabel="Choose a photo from gallery"
             accessibilityRole="button"
@@ -299,14 +305,30 @@ export default function PhotoPicker({
                 color={disabled ? THEME.colors.textDisabled : theme.accent}
               />
             )}
-            <Text
-              style={[styles.optionLabel, disabled && styles.optionLabelDisabled]}
-            >
+            <Caption weight="medium" color={disabled ? "disabled" : "primary"}>
               Gallery
-            </Text>
+            </Caption>
           </Pressable>
         </Animated.View>
       </View>
+
+      {disabled ? (
+        <Animated.View
+          entering={FadeIn.duration(180)}
+          style={styles.disabledOverlay}
+          pointerEvents="none"
+          accessibilityLiveRegion="polite"
+        >
+          <Ionicons
+            name="lock-closed"
+            size={20}
+            color={THEME.colors.textSecondary}
+          />
+          <Caption weight="medium" color="secondary">
+            Uploading photo…
+          </Caption>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -315,7 +337,14 @@ export default function PhotoPicker({
 // Styles
 // ---------------------------------------------------------------------------
 
-const PREVIEW_SIZE = 280;
+const PREVIEW_SIZE_MIN = 240;
+const PREVIEW_SIZE_MAX = 320;
+/**
+ * Horizontal inset to subtract from the window width when computing the
+ * responsive preview size — accounts for the outer page padding on both
+ * sides of the picker.
+ */
+const PREVIEW_HORIZONTAL_INSET = 80;
 
 const styles = StyleSheet.create({
   /* ---- Empty state: dashed border area ---- */
@@ -323,23 +352,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 2,
     borderStyle: "dashed",
-    paddingVertical: THEME.spacing.xxxl + 8,
+    paddingVertical: THEME.spacing.xxxl,
     paddingHorizontal: THEME.spacing.xxl,
-    minWidth: PREVIEW_SIZE,
+    overflow: "hidden",
   },
   centerIcon: {
     marginBottom: THEME.spacing.md,
   },
   promptText: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: THEME.colors.textSecondary,
+    textAlign: "center",
     marginBottom: THEME.spacing.xxl,
-  },
-  promptTextDisabled: {
-    color: THEME.colors.textDisabled,
   },
 
   /* Option pills — glass style, side by side */
@@ -353,6 +378,7 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingVertical: THEME.spacing.sm + 2,
@@ -361,14 +387,6 @@ const styles = StyleSheet.create({
   optionPillDisabled: {
     opacity: 0.5,
   },
-  optionLabel: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 14,
-    color: THEME.colors.textPrimary,
-  },
-  optionLabelDisabled: {
-    color: THEME.colors.textDisabled,
-  },
 
   /* ---- Photo selected: preview with change overlay ---- */
   previewContainer: {
@@ -376,9 +394,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   previewImage: {
-    width: PREVIEW_SIZE,
-    height: PREVIEW_SIZE,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     backgroundColor: THEME.colors.surface,
@@ -394,14 +411,20 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.xs,
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     paddingVertical: THEME.spacing.xs + 2,
     paddingHorizontal: THEME.spacing.md,
   },
-  changeButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 12,
-    color: THEME.colors.textPrimary,
+
+  /* ---- Disabled overlay ---- */
+  disabledOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(10, 10, 10, 0.72)",
+    borderRadius: THEME.radius.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: THEME.spacing.sm,
   },
 });
