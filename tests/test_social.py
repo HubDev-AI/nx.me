@@ -94,48 +94,68 @@ class TestValidateGuestToken:
         redis_mock.expire = AsyncMock(return_value=True)
         return redis_mock
 
-    def test_first_reaction_allowed(self):
+    def test_first_reaction_allowed(self, monkeypatch):
         """First reaction for a new token must be allowed (count == 1)."""
         from app.api.social import validate_guest_token
 
+        async def fake_run_sync(fn, *args, **kwargs):
+            return "guest-user-1"
+
+        monkeypatch.setattr("app.api.social.run_sync", fake_run_sync)
         redis_mock = self._make_redis(incr_return=1)
+        supabase = object()
         result = asyncio.get_event_loop().run_until_complete(
-            validate_guest_token(redis_mock, "a" * 64)
+            validate_guest_token(redis_mock, supabase, "a" * 64)
         )
         assert result is True
 
-    def test_reaction_at_limit_allowed(self):
+    def test_reaction_at_limit_allowed(self, monkeypatch):
         """Reaction exactly at GUEST_REACTION_LIMIT must still be allowed."""
         from app.api.social import validate_guest_token
         from app.config import settings
 
+        async def fake_run_sync(fn, *args, **kwargs):
+            return "guest-user-1"
+
+        monkeypatch.setattr("app.api.social.run_sync", fake_run_sync)
         redis_mock = self._make_redis(incr_return=settings.GUEST_REACTION_LIMIT)
+        supabase = object()
         result = asyncio.get_event_loop().run_until_complete(
-            validate_guest_token(redis_mock, "b" * 64)
+            validate_guest_token(redis_mock, supabase, "b" * 64)
         )
         assert result is True
 
-    def test_reaction_over_limit_rejected(self):
+    def test_reaction_over_limit_rejected(self, monkeypatch):
         """Reaction exceeding GUEST_REACTION_LIMIT must be rejected."""
         from app.api.social import validate_guest_token
         from app.config import settings
 
+        async def fake_run_sync(fn, *args, **kwargs):
+            return "guest-user-1"
+
+        monkeypatch.setattr("app.api.social.run_sync", fake_run_sync)
         redis_mock = self._make_redis(incr_return=settings.GUEST_REACTION_LIMIT + 1)
+        supabase = object()
         result = asyncio.get_event_loop().run_until_complete(
-            validate_guest_token(redis_mock, "c" * 64)
+            validate_guest_token(redis_mock, supabase, "c" * 64)
         )
         assert result is False
 
-    def test_token_registered_with_hash(self):
+    def test_token_registered_with_hash(self, monkeypatch):
         """Token registration key must use a SHA-256 hash, not the raw token."""
         import hashlib
         from app.api.social import validate_guest_token
         from app.config import settings
 
+        async def fake_run_sync(fn, *args, **kwargs):
+            return "guest-user-1"
+
+        monkeypatch.setattr("app.api.social.run_sync", fake_run_sync)
         token = "d" * 64
         redis_mock = self._make_redis(incr_return=1)
+        supabase = object()
         asyncio.get_event_loop().run_until_complete(
-            validate_guest_token(redis_mock, token)
+            validate_guest_token(redis_mock, supabase, token)
         )
 
         expected_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -149,16 +169,39 @@ class TestValidateGuestToken:
             nx=True,
         )
 
-    def test_expire_called_only_on_first_reaction(self):
+    def test_expire_called_only_on_first_reaction(self, monkeypatch):
         """EXPIRE must only be set when count == 1 (first reaction for this token)."""
         from app.api.social import validate_guest_token
 
+        async def fake_run_sync(fn, *args, **kwargs):
+            return "guest-user-1"
+
+        monkeypatch.setattr("app.api.social.run_sync", fake_run_sync)
         # count > 1 → expire must NOT be called
         redis_mock = self._make_redis(incr_return=5)
+        supabase = object()
         asyncio.get_event_loop().run_until_complete(
-            validate_guest_token(redis_mock, "e" * 64)
+            validate_guest_token(redis_mock, supabase, "e" * 64)
         )
         redis_mock.expire.assert_not_called()
+
+    def test_unregistered_guest_token_is_rejected(self, monkeypatch):
+        """A random 64-hex string must not count as a valid guest identity."""
+        from app.api.social import validate_guest_token
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return None
+
+        monkeypatch.setattr("app.api.social.run_sync", fake_run_sync)
+
+        redis_mock = self._make_redis(incr_return=1)
+        result = asyncio.get_event_loop().run_until_complete(
+            validate_guest_token(redis_mock, object(), "f" * 64)
+        )
+
+        assert result is False
+        redis_mock.set.assert_not_called()
+        redis_mock.incr.assert_not_called()
 
     def test_config_constants_exist(self):
         """GUEST_TOKEN_TTL_SECONDS and GUEST_REACTION_LIMIT must be defined in settings."""

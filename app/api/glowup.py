@@ -401,38 +401,40 @@ async def generate_glowup(
             detail="Upload not found",
         )
 
-    await _check_entitlement(ent_svc, user_id)
-
-    cost_tracker = CostTracker(redis_client)
-    tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
-
     idempotency_response = await _check_idempotency(
         job_repo, idempotency_key, user_id_str
     )
     if idempotency_response:
         return idempotency_response
 
-    queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
-    tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
-    raw_position = await redis_client.llen(f"arq:queue:{queue_lane}")
-    if raw_position <= 5:
-        queue_position = raw_position
-    elif raw_position <= 50:
-        queue_position = (raw_position // 10) * 10
-    else:
-        queue_position = (raw_position // 50) * 50
-
-    # Reserve credit and enqueue.
+    # _check_entitlement atomically acquires a concurrent slot on success.
+    # Every downstream failure path (preflight, reservation, enqueue) must
+    # release the slot; otherwise users can leak slots up to the TTL.
+    await _check_entitlement(ent_svc, user_id)
 
     reservation_id: UUID | None = None
-    if tier.credits_based:
-        reservation_id = ledger.reserve(user_id)
-
-    job_id = uuid4()
-    now_utc = datetime.now(tz=timezone.utc).isoformat()
-    usage_status = "reserved" if tier.credits_based else "committed"
-
     try:
+        cost_tracker = CostTracker(redis_client)
+        tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
+
+        queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
+        tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
+        raw_position = await redis_client.llen(f"arq:queue:{queue_lane}")
+        if raw_position <= 5:
+            queue_position = raw_position
+        elif raw_position <= 50:
+            queue_position = (raw_position // 10) * 10
+        else:
+            queue_position = (raw_position // 50) * 50
+
+        # Reserve credit and enqueue.
+        if tier.credits_based:
+            reservation_id = ledger.reserve(user_id)
+
+        job_id = uuid4()
+        now_utc = datetime.now(tz=timezone.utc).isoformat()
+        usage_status = "reserved" if tier.credits_based else "committed"
+
         await run_sync(
             job_repo.create,
             {
@@ -468,6 +470,7 @@ async def generate_glowup(
             str(job_id),
         )
     except Exception:
+        await redis_client.decr(f"concurrent:{user_id_str}")
         if reservation_id:
             try:
                 ledger.release(reservation_id)

@@ -13,6 +13,7 @@ import { deleteItem, getItem } from "../lib/secure-storage";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
 import { getStoredJwt } from "../lib/auth";
+import { restoreStoredSession } from "../lib/api";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
 import { ConsentProvider } from "../lib/consent-context";
@@ -140,11 +141,17 @@ export default function RootLayout() {
           }
         }
       } catch {
-        // Corrupted JWT — clear it, user will re-login
+        // Corrupted JWT — clear it and fall back to refresh-token restore
         try { await deleteItem(SECURE_STORE_KEYS.JWT); } catch {}
       }
 
-      // 2. Non-critical init — never blocks auth. Guest token provisioning
+      // 2. If the access token is missing/expired, attempt a silent restore
+      //    from the persisted refresh token before treating the user as logged out.
+      if (!authed) {
+        authed = Boolean(await restoreStoredSession());
+      }
+
+      // 3. Non-critical init — never blocks auth. Guest token provisioning
       //    now happens inside AuthGuard once feature flags resolve, so we
       //    avoid hitting POST /auth/guest when auth is required.
       registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });

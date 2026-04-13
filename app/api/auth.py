@@ -566,6 +566,7 @@ class LoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     user_id: str
+    username: str
     access_token: str
     refresh_token: str
     expires_at: int  # Unix timestamp
@@ -575,6 +576,27 @@ class RefreshRequest(BaseModel):
     """Refresh an expired session using a refresh_token."""
 
     refresh_token: str = Field(min_length=1, strip_whitespace=True)
+
+
+async def _resolve_login_username(
+    user_repo: UserRepository,
+    user_id: str,
+    *,
+    fallback: str | None = None,
+) -> str:
+    """Return the canonical username for login responses."""
+    row = await run_sync(user_repo.get_profile_by_id, user_id)
+    username = row.get("username") if row else None
+    if isinstance(username, str) and username:
+        return username
+    if fallback:
+        logger.warning("Falling back to derived username for user %s", user_id)
+        return fallback
+    logger.error("No username found for authenticated user %s", user_id)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="User profile is incomplete.",
+    )
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -634,8 +656,13 @@ async def social_login(
     if body.nonce is not None:
         credentials["nonce"] = body.nonce
 
+    from app.db.client import get_supabase_service
+
+    login_client = get_supabase_service()
     try:
-        auth_response = await run_sync(supabase.auth.sign_in_with_id_token, credentials)
+        auth_response = await run_sync(
+            login_client.auth.sign_in_with_id_token, credentials
+        )
     except Exception as exc:
         logger.warning(
             "sign_in_with_id_token failed for provider %s: %s", body.provider, exc
@@ -732,11 +759,14 @@ async def social_login(
                 detail="Failed to create user profile. Please try again.",
             ) from exc
 
+    username = await _resolve_login_username(user_repo, user_id, fallback=auto_username)
+
     logger.info(
         "Social login successful for user %s (provider=%s)", user_id, body.provider
     )
     return LoginResponse(
         user_id=user_id,
+        username=username,
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         expires_at=int(session.expires_at) if session.expires_at else 0,
@@ -765,6 +795,7 @@ async def email_login(
     body: EmailLoginRequest,
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> LoginResponse:
     """Authenticate with email and password.
 
@@ -794,9 +825,12 @@ async def email_login(
         )
 
     # Sign in with Supabase email/password auth
+    from app.db.client import get_supabase_service
+
+    login_client = get_supabase_service()
     try:
         auth_response = await run_sync(
-            supabase.auth.sign_in_with_password,
+            login_client.auth.sign_in_with_password,
             {"email": str(body.email), "password": body.password},
         )
     except Exception as exc:
@@ -825,10 +859,12 @@ async def email_login(
 
     session = auth_response.session
     user_id = str(auth_response.user.id)
+    username = await _resolve_login_username(user_repo, user_id)
 
     logger.info("Email login successful for user %s", user_id)
     return LoginResponse(
         user_id=user_id,
+        username=username,
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         expires_at=int(session.expires_at) if session.expires_at else 0,
@@ -958,8 +994,14 @@ async def tiktok_login(
 
         session = session_response.session
         logger.info("TikTok login successful for existing user %s", existing_user["id"])
+        existing_username = await _resolve_login_username(
+            user_repo,
+            existing_user["id"],
+            fallback=existing_user.get("username"),
+        )
         return LoginResponse(
             user_id=existing_user["id"],
+            username=existing_username,
             access_token=session.access_token,
             refresh_token=session.refresh_token,
             expires_at=int(session.expires_at) if session.expires_at else 0,
@@ -1060,8 +1102,14 @@ async def tiktok_login(
                         {"email": synthetic_email, "password": derived_password},
                     )
                     if session_response.session:
+                        race_username = await _resolve_login_username(
+                            user_repo,
+                            race_winner["id"],
+                            fallback=race_winner.get("username"),
+                        )
                         return LoginResponse(
                             user_id=race_winner["id"],
+                            username=race_username,
                             access_token=session_response.session.access_token,
                             refresh_token=session_response.session.refresh_token,
                             expires_at=int(session_response.session.expires_at)
@@ -1127,9 +1175,13 @@ async def tiktok_login(
         user_id,
         open_id,
     )
+    new_username = await _resolve_login_username(
+        user_repo, user_id, fallback=auto_username
+    )
 
     return LoginResponse(
         user_id=user_id,
+        username=new_username,
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         expires_at=int(session.expires_at) if session.expires_at else 0,
@@ -1145,6 +1197,7 @@ async def tiktok_login(
 async def refresh_token(
     body: RefreshRequest,
     supabase: Client = Depends(get_supabase),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> LoginResponse:
     """Exchange a refresh_token for a new session (access + refresh tokens).
 
@@ -1152,9 +1205,12 @@ async def refresh_token(
     because their access token has expired.  The refresh_token itself is
     validated by Supabase GoTrue.
     """
+    from app.db.client import get_supabase_service
+
+    refresh_client = get_supabase_service()
     try:
         auth_response = await run_sync(
-            supabase.auth.refresh_session, body.refresh_token
+            refresh_client.auth.refresh_session, body.refresh_token
         )
     except Exception as exc:
         logger.warning("refresh_session failed: %s", exc)
@@ -1176,10 +1232,12 @@ async def refresh_token(
 
     session = auth_response.session
     user_id = str(auth_response.user.id)
+    username = await _resolve_login_username(user_repo, user_id)
 
     logger.info("Token refreshed for user %s", user_id)
     return LoginResponse(
         user_id=user_id,
+        username=username,
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         expires_at=int(session.expires_at) if session.expires_at else 0,

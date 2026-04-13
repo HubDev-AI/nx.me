@@ -26,6 +26,7 @@
 ## Patterns That Work
 - Read only the specific skill files that apply, then proceed with the smallest useful action.
 - ChatGPT share pages can embed the full conversation in the first `window.__reactRouterContext.streamController.enqueue(...)` payload; `linear_conversation` is enough to reconstruct visible turns.
+- When code-review-graph MCP tools are unavailable but `.code-review-graph/graph.db` exists, query it directly with `sqlite3` for node/risk/community context before falling back to broad file reads.
 
 ## Patterns That Don't Work
 - Proceeding before checking for required session skills creates avoidable cleanup.

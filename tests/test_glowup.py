@@ -10,12 +10,21 @@ from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
 from uuid import uuid4
 
 
 try:
-    from app.api.glowup import AnalyzeResponse, SuggestionResponse, analyze_glowup
+    from app.api.glowup import (
+        AnalyzeResponse,
+        SuggestionResponse,
+        GenerateRequest,
+        GenerateResponse,
+        analyze_glowup,
+        generate_glowup,
+    )
     from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
+    from tests.conftest import MockSupabase
 
     _AVAILABLE = True
 except (ImportError, AttributeError):
@@ -250,3 +259,182 @@ class TestAnalyzeGlowupHandler:
             )
 
         assert exc_info.value.status_code == 422
+
+
+class TestGenerateGlowupHandler:
+    """Handler-level tests for POST /uploads/{id}/glowup/generate."""
+
+    @pytest.mark.asyncio
+    async def test_duplicate_request_short_circuits_before_entitlement(
+        self, monkeypatch
+    ):
+        user_id = str(uuid4())
+        upload_id = uuid4()
+        claims = _make_claims(user_id)
+
+        supabase = MockSupabase()
+        supabase.set_table_data(
+            "users", [{"face_mod_consent_at": "2026-01-01T00:00:00+00:00"}]
+        )
+        supabase.set_table_data("glowup_analyses", [{"id": "analysis-1"}])
+        supabase.set_table_data(
+            "uploads",
+            [{"id": str(upload_id), "user_id": user_id, "image_url": "raw/key.jpg"}],
+        )
+
+        request = MagicMock()
+        request.app.state.supabase = supabase
+        request.app.state.arq_pool = MagicMock()
+
+        duplicate = GenerateResponse(
+            job_id="job-existing",
+            status="queued",
+            estimated_wait_seconds=0,
+            queue_position=0,
+        )
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.glowup.run_sync", fake_run_sync)
+        monkeypatch.setattr(
+            "app.api.glowup._check_entitlement",
+            AsyncMock(side_effect=AssertionError("entitlement should not run")),
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._check_idempotency", AsyncMock(return_value=duplicate)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._preflight_checks",
+            AsyncMock(side_effect=AssertionError("preflight should not run")),
+        )
+
+        result = await generate_glowup(
+            upload_id=upload_id,
+            body=GenerateRequest(idempotency_key="dup-123"),
+            request=request,
+            idempotency_key_header=None,
+            claims=claims,
+            redis_client=AsyncMock(),
+            ent_svc=AsyncMock(),
+            job_repo=MagicMock(),
+            ledger=MagicMock(),
+        )
+
+        assert result.job_id == "job-existing"
+
+    @pytest.mark.asyncio
+    async def test_enqueue_failure_releases_concurrent_slot(self, monkeypatch):
+        user_id = str(uuid4())
+        upload_id = uuid4()
+        claims = _make_claims(user_id)
+
+        supabase = MockSupabase()
+        supabase.set_table_data(
+            "users", [{"face_mod_consent_at": "2026-01-01T00:00:00+00:00"}]
+        )
+        supabase.set_table_data("glowup_analyses", [{"id": "analysis-1"}])
+        supabase.set_table_data(
+            "uploads",
+            [{"id": str(upload_id), "user_id": user_id, "image_url": "raw/key.jpg"}],
+        )
+
+        request = MagicMock()
+        request.app.state.supabase = supabase
+        request.app.state.arq_pool.enqueue_job = AsyncMock(
+            side_effect=RuntimeError("queue unavailable")
+        )
+
+        redis_client = AsyncMock()
+        redis_client.llen.return_value = 0
+        job_repo = MagicMock()
+        job_repo.create.return_value = {"id": "job-1"}
+        job_repo.insert_usage_event.return_value = {"id": "usage-1"}
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.glowup.run_sync", fake_run_sync)
+        monkeypatch.setattr(
+            "app.api.glowup._check_entitlement", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._check_idempotency", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._preflight_checks",
+            AsyncMock(return_value=SimpleNamespace(slug="free", credits_based=False)),
+        )
+
+        with pytest.raises(RuntimeError, match="queue unavailable"):
+            await generate_glowup(
+                upload_id=upload_id,
+                body=GenerateRequest(idempotency_key="job-123"),
+                request=request,
+                idempotency_key_header=None,
+                claims=claims,
+                redis_client=redis_client,
+                ent_svc=AsyncMock(),
+                job_repo=job_repo,
+                ledger=MagicMock(),
+            )
+
+        redis_client.decr.assert_awaited_once_with(f"concurrent:{user_id}")
+
+    @pytest.mark.asyncio
+    async def test_preflight_failure_releases_concurrent_slot(self, monkeypatch):
+        """If preflight raises after entitlement acquired the slot, it must be freed."""
+        from fastapi import HTTPException
+
+        user_id = str(uuid4())
+        upload_id = uuid4()
+        claims = _make_claims(user_id)
+
+        supabase = MockSupabase()
+        supabase.set_table_data(
+            "users", [{"face_mod_consent_at": "2026-01-01T00:00:00+00:00"}]
+        )
+        supabase.set_table_data("glowup_analyses", [{"id": "analysis-1"}])
+        supabase.set_table_data(
+            "uploads",
+            [{"id": str(upload_id), "user_id": user_id, "image_url": "raw/key.jpg"}],
+        )
+
+        request = MagicMock()
+        request.app.state.supabase = supabase
+
+        redis_client = AsyncMock()
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.glowup.run_sync", fake_run_sync)
+        monkeypatch.setattr(
+            "app.api.glowup._check_entitlement", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._check_idempotency", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            "app.api.glowup._preflight_checks",
+            AsyncMock(side_effect=HTTPException(status_code=503)),
+        )
+
+        ledger = MagicMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await generate_glowup(
+                upload_id=upload_id,
+                body=GenerateRequest(idempotency_key="job-pf"),
+                request=request,
+                idempotency_key_header=None,
+                claims=claims,
+                redis_client=redis_client,
+                ent_svc=AsyncMock(),
+                job_repo=MagicMock(),
+                ledger=ledger,
+            )
+
+        assert exc_info.value.status_code == 503
+        redis_client.decr.assert_awaited_once_with(f"concurrent:{user_id}")
+        ledger.reserve.assert_not_called()
