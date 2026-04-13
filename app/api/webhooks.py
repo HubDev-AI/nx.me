@@ -6,6 +6,7 @@ Story 4-4:
 No JWT auth — authenticates via stripe-signature header.
 Registered outside /v1 prefix (per architecture router table).
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,7 +48,12 @@ async def stripe_webhook(
         logger.warning("Invalid Stripe webhook signature")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "INVALID_WEBHOOK_SIGNATURE", "message": "Invalid webhook signature"}},
+            detail={
+                "error": {
+                    "code": "INVALID_WEBHOOK_SIGNATURE",
+                    "message": "Invalid webhook signature",
+                }
+            },
         )
 
     event_id = event.event_id
@@ -82,7 +88,12 @@ async def stripe_webhook(
         logger.warning("Transient error processing webhook %s: %s", event_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error": {"code": "TRANSIENT_ERROR", "message": "Temporary processing error"}},
+            detail={
+                "error": {
+                    "code": "TRANSIENT_ERROR",
+                    "message": "Temporary processing error",
+                }
+            },
         ) from exc
 
     # Record idempotency AFTER successful processing
@@ -95,7 +106,9 @@ async def stripe_webhook(
 # ---------------------------------------------------------------------------
 
 
-async def _handle_checkout_completed(sub_repo: SubscriptionRepository, session: dict, event_id: str) -> None:
+async def _handle_checkout_completed(
+    sub_repo: SubscriptionRepository, session: dict, event_id: str
+) -> None:
     """Handle checkout.session.completed — credit purchase or subscription."""
     mode = session.get("mode")
     metadata = session.get("metadata", {})
@@ -116,11 +129,17 @@ async def _handle_checkout_completed(sub_repo: SubscriptionRepository, session: 
         try:
             credits = int(credits_str)
         except (ValueError, TypeError):
-            logger.error("checkout.session.completed: invalid credits value '%s' in event %s", credits_str, event_id)
+            logger.error(
+                "checkout.session.completed: invalid credits value '%s' in event %s",
+                credits_str,
+                event_id,
+            )
             return
 
         if credits <= 0:
-            logger.warning("checkout.session.completed with invalid credits=%s", credits_str)
+            logger.warning(
+                "checkout.session.completed with invalid credits=%s", credits_str
+            )
             return
 
         # Atomic: insert ledger entry + conditional tier upgrade
@@ -135,7 +154,10 @@ async def _handle_checkout_completed(sub_repo: SubscriptionRepository, session: 
         tier_upgraded = rpc_result.get("tier_upgraded", False)
         logger.info(
             "Credit purchase: user=%s, credits=%d, event=%s, tier_upgraded=%s",
-            user_id, credits, event_id, tier_upgraded,
+            user_id,
+            credits,
+            event_id,
+            tier_upgraded,
         )
 
     elif mode == "subscription":
@@ -143,14 +165,18 @@ async def _handle_checkout_completed(sub_repo: SubscriptionRepository, session: 
         logger.info("Subscription checkout completed for user=%s", user_id)
 
 
-def _handle_subscription_created(sub_repo: SubscriptionRepository, subscription: dict) -> None:
+def _handle_subscription_created(
+    sub_repo: SubscriptionRepository, subscription: dict
+) -> None:
     """Handle customer.subscription.created — insert subscription row."""
     sub_id = subscription.get("id", "")
     metadata = subscription.get("metadata", {})
     user_id = metadata.get("user_id")
 
     if not user_id:
-        logger.warning("subscription.created missing user_id in metadata (sub=%s)", sub_id)
+        logger.warning(
+            "subscription.created missing user_id in metadata (sub=%s)", sub_id
+        )
         return
     try:
         UUID(user_id)
@@ -163,19 +189,29 @@ def _handle_subscription_created(sub_repo: SubscriptionRepository, subscription:
     period_end = subscription.get("current_period_end")
 
     # Convert Unix timestamps to ISO
-    start_iso = datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat() if period_start else now_utc
-    end_iso = datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat() if period_end else now_utc
+    start_iso = (
+        datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
+        if period_start
+        else now_utc
+    )
+    end_iso = (
+        datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+        if period_end
+        else now_utc
+    )
 
-    sub_repo.insert_subscription({
-        "user_id": user_id,
-        "provider": "stripe",
-        "provider_subscription_id": sub_id,
-        "status": "active",
-        "billing_period_start": start_iso,
-        "billing_period_end": end_iso,
-        "created_at": now_utc,
-        "updated_at": now_utc,
-    })
+    sub_repo.insert_subscription(
+        {
+            "user_id": user_id,
+            "provider": "stripe",
+            "provider_subscription_id": sub_id,
+            "status": "active",
+            "billing_period_start": start_iso,
+            "billing_period_end": end_iso,
+            "created_at": now_utc,
+            "updated_at": now_utc,
+        }
+    )
 
     # Upgrade tier to premium
     sub_repo.update_user_tier(user_id, TIER_ID_PREMIUM)
@@ -183,7 +219,9 @@ def _handle_subscription_created(sub_repo: SubscriptionRepository, subscription:
     logger.info("Subscription created: user=%s, sub=%s", user_id, sub_id)
 
 
-def _handle_subscription_updated(sub_repo: SubscriptionRepository, subscription: dict) -> None:
+def _handle_subscription_updated(
+    sub_repo: SubscriptionRepository, subscription: dict
+) -> None:
     """Handle customer.subscription.updated — cancel_at_period_end or plan change."""
     sub_id = subscription.get("id", "")
     cancel_at_period_end = subscription.get("cancel_at_period_end", False)
@@ -211,7 +249,9 @@ def _handle_subscription_updated(sub_repo: SubscriptionRepository, subscription:
     sub_repo.update_subscription_by_provider_id(sub_id, update_data)
 
 
-def _handle_subscription_deleted(sub_repo: SubscriptionRepository, subscription: dict) -> None:
+def _handle_subscription_deleted(
+    sub_repo: SubscriptionRepository, subscription: dict
+) -> None:
     """Handle customer.subscription.deleted — expire and recompute tier.
 
     AC-3: subscriptions.status = 'expired'; EntitlementService recomputes tier.
@@ -226,10 +266,13 @@ def _handle_subscription_deleted(sub_repo: SubscriptionRepository, subscription:
         return
 
     # Mark subscription expired
-    sub_repo.update_subscription_by_provider_id(sub_id, {
-        "status": "expired",
-        "updated_at": now_utc,
-    })
+    sub_repo.update_subscription_by_provider_id(
+        sub_id,
+        {
+            "status": "expired",
+            "updated_at": now_utc,
+        },
+    )
 
     # Recompute tier based on credit balance
     new_tier_id = sub_repo.recompute_tier_after_subscription_deleted(
@@ -240,7 +283,9 @@ def _handle_subscription_deleted(sub_repo: SubscriptionRepository, subscription:
 
     logger.info(
         "Subscription deleted: user=%s, sub=%s, new_tier=%s",
-        user_id, sub_id, new_tier_id,
+        user_id,
+        sub_id,
+        new_tier_id,
     )
 
 
@@ -253,9 +298,12 @@ def _handle_payment_failed(sub_repo: SubscriptionRepository, invoice: dict) -> N
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-    sub_repo.update_subscription_by_provider_id(sub_id, {
-        "status": "past_due",
-        "updated_at": now_utc,
-    })
+    sub_repo.update_subscription_by_provider_id(
+        sub_id,
+        {
+            "status": "past_due",
+            "updated_at": now_utc,
+        },
+    )
 
     logger.warning("Payment failed for subscription %s — set to past_due", sub_id)

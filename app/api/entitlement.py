@@ -5,6 +5,7 @@ All entitlement logic routes through EntitlementService.
 
 Story 4-4 adds: POST /credits/purchase, POST /subscriptions, DELETE /subscriptions.
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,7 +14,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.api.deps import get_analysis_user, get_current_user, get_entitlement_service, get_payment_adapter, get_subscription_repo
+from app.api.deps import (
+    get_analysis_user,
+    get_current_user,
+    get_entitlement_service,
+    get_payment_adapter,
+    get_subscription_repo,
+)
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.constants.tiers import SLUG_TO_TIER_NAME
@@ -61,10 +68,18 @@ def _build_purchase_options(svc: EntitlementService) -> PurchaseOptions | None:
     for pack_id, credit_count in _CREDIT_PACKS.items():
         price_id = getattr(settings, f"STRIPE_PRICE_CREDITS_{credit_count}", "")
         if price_id:
-            packs.append(CreditPackOption(pack_id=pack_id, credits=credit_count, price_id=price_id))
+            packs.append(
+                CreditPackOption(
+                    pack_id=pack_id, credits=credit_count, price_id=price_id
+                )
+            )
 
     premium_price_id = svc.get_tier_stripe_price_id("premium")
-    premium = PremiumOption(price_id=premium_price_id, name="Premium") if premium_price_id else None
+    premium = (
+        PremiumOption(price_id=premium_price_id, name="Premium")
+        if premium_price_id
+        else None
+    )
 
     if not packs and not premium:
         return None
@@ -132,7 +147,11 @@ class CheckoutResponse(BaseModel):
     checkout_url: str
 
 
-@router.post("/credit-purchases", response_model=CheckoutResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/credit-purchases",
+    response_model=CheckoutResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_credit_purchase(
     body: CreditPurchaseRequest,
     claims: UserClaims = Depends(get_current_user),
@@ -148,7 +167,12 @@ async def create_credit_purchase(
     if credit_count is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": {"code": "INVALID_CREDIT_PACK", "message": f"Unknown credit pack: {body.credit_pack_id}"}},
+            detail={
+                "error": {
+                    "code": "INVALID_CREDIT_PACK",
+                    "message": f"Unknown credit pack: {body.credit_pack_id}",
+                }
+            },
         )
 
     # Credit pack price_id from Stripe product configuration.
@@ -157,7 +181,12 @@ async def create_credit_purchase(
     if not price_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": {"code": "CREDIT_PACK_NOT_CONFIGURED", "message": "Credit pack pricing not configured."}},
+            detail={
+                "error": {
+                    "code": "CREDIT_PACK_NOT_CONFIGURED",
+                    "message": "Credit pack pricing not configured.",
+                }
+            },
         )
 
     checkout_url = await payment.create_checkout_session(
@@ -172,7 +201,11 @@ async def create_credit_purchase(
         },
     )
 
-    logger.info("Credit purchase checkout created: user=%s, pack=%s", user_id, body.credit_pack_id)
+    logger.info(
+        "Credit purchase checkout created: user=%s, pack=%s",
+        user_id,
+        body.credit_pack_id,
+    )
 
     return CheckoutResponse(checkout_url=checkout_url)
 
@@ -206,7 +239,11 @@ class CancelSubscriptionResponse(BaseModel):
     message: str
 
 
-@router.post("/subscriptions", response_model=CreateSubscriptionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/subscriptions",
+    response_model=CreateSubscriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_subscription(
     claims: UserClaims = Depends(get_current_user),
     payment: PaymentPort = Depends(get_payment_adapter),
@@ -220,7 +257,12 @@ async def create_subscription(
     if entitlement_state.has_active_subscription:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error": {"code": "ALREADY_SUBSCRIBED", "message": "You already have an active subscription."}},
+            detail={
+                "error": {
+                    "code": "ALREADY_SUBSCRIBED",
+                    "message": "You already have an active subscription.",
+                }
+            },
         )
 
     # Look up the premium tier's stripe_price_id
@@ -228,7 +270,12 @@ async def create_subscription(
     if not price_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": {"code": "SUBSCRIPTION_NOT_CONFIGURED", "message": "Subscription not available."}},
+            detail={
+                "error": {
+                    "code": "SUBSCRIPTION_NOT_CONFIGURED",
+                    "message": "Subscription not available.",
+                }
+            },
         )
 
     checkout_url = await payment.create_checkout_session(
@@ -263,7 +310,12 @@ async def cancel_subscription(
     if not active_sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": {"code": "NO_ACTIVE_SUBSCRIPTION", "message": "No active subscription found."}},
+            detail={
+                "error": {
+                    "code": "NO_ACTIVE_SUBSCRIPTION",
+                    "message": "No active subscription found.",
+                }
+            },
         )
 
     provider_sub_id = active_sub["provider_subscription_id"]
@@ -271,7 +323,9 @@ async def cancel_subscription(
     # Cancel at period end via Stripe
     await payment.cancel_subscription(provider_sub_id)
 
-    logger.info("Subscription cancellation requested: user=%s, sub=%s", user_id, provider_sub_id)
+    logger.info(
+        "Subscription cancellation requested: user=%s, sub=%s", user_id, provider_sub_id
+    )
 
     return CancelSubscriptionResponse(
         status="cancelling",

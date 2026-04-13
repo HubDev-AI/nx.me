@@ -3,6 +3,7 @@
 AC-1: Reject files whose magic bytes do not match JPEG/PNG/HEIF.
 AC-2: Reject files exceeding MAX_UPLOAD_SIZE_MB or MAX_IMAGE_DIMENSION_PX.
 """
+
 from __future__ import annotations
 
 import io
@@ -18,7 +19,9 @@ from app.image_pipeline.models import IMAGE_FORMAT_REJECTED, IMAGE_TOO_LARGE
 logger = logging.getLogger(__name__)
 
 # Align Pillow's decompression bomb guard with our configured max dimension.
-PIL.Image.MAX_IMAGE_PIXELS = settings.MAX_IMAGE_DIMENSION_PX * settings.MAX_IMAGE_DIMENSION_PX
+PIL.Image.MAX_IMAGE_PIXELS = (
+    settings.MAX_IMAGE_DIMENSION_PX * settings.MAX_IMAGE_DIMENSION_PX
+)
 
 # ---------------------------------------------------------------------------
 # Magic bytes signatures

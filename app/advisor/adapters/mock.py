@@ -3,6 +3,7 @@
 Returns canned responses. No Anthropic API calls. Deterministic non-zero
 embedding vectors seeded from input text.
 """
+
 from __future__ import annotations
 
 import hashlib

@@ -5,6 +5,7 @@ AC-1: Returns face_shape from {oval, round, square, heart, oblong}.
 Classification uses jaw/forehead/cheekbone width ratios derived from
 MediaPipe FaceMesh landmark coordinates.
 """
+
 from __future__ import annotations
 
 import logging

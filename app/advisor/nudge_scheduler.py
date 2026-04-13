@@ -11,6 +11,7 @@ Jobs:
 See nudge_policy.py, nudge_templates.py, nudge_eligibility.py for the
 extracted concerns.
 """
+
 from __future__ import annotations
 
 import logging
@@ -67,6 +68,7 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
 
     # Entitlement check (spec Section 7.3, A-5)
     from app.entitlement.service import EntitlementService
+
     ent_svc = EntitlementService(supabase=supabase, redis_client=redis)
     try:
         result = await ent_svc.check(uid, "advisor_nudge")
@@ -100,20 +102,28 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
         )
         nudge_content = response.content.strip()
     except Exception as exc:
-        logger.error("LLM call failed for nudge (user=%s, trigger=%s): %s", user_id, trigger, exc)
+        logger.error(
+            "LLM call failed for nudge (user=%s, trigger=%s): %s", user_id, trigger, exc
+        )
         return
 
     if not nudge_content:
-        logger.warning("Empty nudge content from LLM — skipping (user=%s, trigger=%s)", user_id, trigger)
+        logger.warning(
+            "Empty nudge content from LLM — skipping (user=%s, trigger=%s)",
+            user_id,
+            trigger,
+        )
         return
 
     # Persist to advisor_nudges
     try:
-        advisor_repo.insert_nudge({
-            "user_id": user_id,
-            "trigger": trigger,
-            "content": nudge_content,
-        })
+        advisor_repo.insert_nudge(
+            {
+                "user_id": user_id,
+                "trigger": trigger,
+                "content": nudge_content,
+            }
+        )
     except Exception as exc:
         logger.error("Failed to save nudge for user %s: %s", user_id, exc)
         return
@@ -145,7 +155,9 @@ async def schedule_post_analysis_nudge(ctx: dict, user_id: str) -> None:
     arq_pool: ArqRedis = ctx.get("arq_pool")
     if arq_pool is None:
         # Fallback: run inline if no pool is available in context (e.g. tests)
-        logger.debug("No arq_pool in ctx — running generate_nudge inline for user %s", user_id)
+        logger.debug(
+            "No arq_pool in ctx — running generate_nudge inline for user %s", user_id
+        )
         await generate_nudge(ctx, user_id, TRIGGER_POST_ANALYSIS)
         return
 

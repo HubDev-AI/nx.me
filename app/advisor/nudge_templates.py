@@ -2,6 +2,7 @@
 
 Spec Section 7.3: inline for MVP, will move to prompts/*.txt files later.
 """
+
 from __future__ import annotations
 
 from app.advisor.nudge_policy import (

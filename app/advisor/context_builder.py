@@ -3,6 +3,7 @@
 Spec Section 6: SOUL.md + user_data + memories + conversation + user message.
 No prefixes. No labels. No structure.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,14 @@ from app.advisor.memory_manager import summarize_memory_content
 logger = logging.getLogger(__name__)
 
 # A-14: Visual context trigger keywords extracted as module-level constant (spec Section 6.4)
-VISUAL_TRIGGER_KEYWORDS: tuple[str, ...] = ("look at", "see my", "compare", "photo", "this picture", "my image")
+VISUAL_TRIGGER_KEYWORDS: tuple[str, ...] = (
+    "look at",
+    "see my",
+    "compare",
+    "photo",
+    "this picture",
+    "my image",
+)
 
 # Trajectory hint chance (spec Section 6.3)
 _TRAJECTORY_CHANCE = 0.15
@@ -45,9 +53,7 @@ def build_context(
     enhanced_memories = maybe_add_trajectory(memories, rng=rng)
 
     if enhanced_memories:
-        memory_text = "\n".join(
-            format_memory(m) for m in enhanced_memories
-        )
+        memory_text = "\n".join(format_memory(m) for m in enhanced_memories)
         messages.append({"role": "system", "content": memory_text})
 
     messages.extend(conversation)
@@ -77,7 +83,9 @@ def build_user_data_block(
     if symmetry_score is not None:
         parts.append(f"symmetry {symmetry_score:.2f}")
     if analysis_count > 0:
-        parts.append(f"{analysis_count} {'analysis' if analysis_count == 1 else 'analyses'}")
+        parts.append(
+            f"{analysis_count} {'analysis' if analysis_count == 1 else 'analyses'}"
+        )
 
     return ", ".join(parts) if parts else ""
 
@@ -116,7 +124,9 @@ def _detect_area(texts: list[str]) -> str | None:
     """
     combined = " ".join(texts).lower()
 
-    if any(w in combined for w in ("hair", "haircut", "bangs", "fringe", "bun", "fade")):
+    if any(
+        w in combined for w in ("hair", "haircut", "bangs", "fringe", "bun", "fade")
+    ):
         return "going cleaner with hair"
     if any(w in combined for w in ("beard", "stubble", "shave", "mustache")):
         return "keeping facial hair neat"

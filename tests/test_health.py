@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/api/health.py (health, readiness)
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,7 @@ from fastapi import HTTPException
 # Check if router imports work (FastAPI/Pydantic compat)
 try:
     from app.api.health import health as _health_check  # noqa: F401
+
     _HEALTH_AVAILABLE = True
 except (ImportError, AttributeError):
     _HEALTH_AVAILABLE = False
@@ -29,6 +31,7 @@ class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_returns_ok(self):
         from app.api.health import health
+
         result = await health()
         assert result == {"status": "ok"}
 

@@ -8,6 +8,7 @@ is validated server-side by looking up the matching users row.
 The fixed dev guest (00000000-...-0001) remains for legacy DEV_FEATURE_FOCUS
 flows; new per-session guests get random UUIDs and guest_session_tokens.
 """
+
 from __future__ import annotations
 
 import logging

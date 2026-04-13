@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/api/admin.py (models, list_reports, update_report_status, ban/unban, post visibility)
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,13 +16,12 @@ from pydantic import ValidationError
 
 try:
     from app.api.admin import ReportStatusUpdate, BanRequest, PostVisibilityUpdate  # noqa: F401
+
     _ADMIN_AVAILABLE = True
 except (ImportError, AttributeError):
     _ADMIN_AVAILABLE = False
 
-pytestmark = pytest.mark.skipif(
-    not _ADMIN_AVAILABLE, reason="admin module unavailable"
-)
+pytestmark = pytest.mark.skipif(not _ADMIN_AVAILABLE, reason="admin module unavailable")
 
 
 async def _run_sync(fn, *args, **kwargs):
@@ -80,7 +80,9 @@ class TestListReports:
 
         mock_sb = MagicMock()
         mock_data = [{"id": "r-1", "post_id": "p-1", "status": "pending"}]
-        mock_sb.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(data=mock_data)
+        mock_sb.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=mock_data
+        )
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
             result = await list_reports(report_status=None, limit=50, supabase=mock_sb)
@@ -97,7 +99,9 @@ class TestListReports:
         chain.execute.return_value = MagicMock(data=[])
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
-            result = await list_reports(report_status="pending", limit=50, supabase=mock_sb)
+            result = await list_reports(
+                report_status="pending", limit=50, supabase=mock_sb
+            )
 
         assert isinstance(result, list)
 
@@ -110,13 +114,17 @@ class TestUpdateReportStatus:
         from app.api.admin import update_report_status
 
         mock_sb = MagicMock()
-        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
 
         body = ReportStatusUpdate(status="reviewed")
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
             with pytest.raises(HTTPException) as exc_info:
-                await update_report_status(report_id=uuid4(), body=body, supabase=mock_sb)
+                await update_report_status(
+                    report_id=uuid4(), body=body, supabase=mock_sb
+                )
         assert exc_info.value.status_code == 404
 
 
@@ -129,13 +137,17 @@ class TestBanUser:
 
         user_id = uuid4()
         mock_sb = MagicMock()
-        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{}])
+        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{}]
+        )
         mock_redis = AsyncMock()
 
         body = BanRequest(reason="Spam")
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
-            result = await ban_user(user_id=user_id, body=body, supabase=mock_sb, redis_client=mock_redis)
+            result = await ban_user(
+                user_id=user_id, body=body, supabase=mock_sb, redis_client=mock_redis
+            )
 
         assert result["banned"] is True
         mock_redis.delete.assert_called_once_with(f"ban:{user_id}")
@@ -150,12 +162,18 @@ class TestUnbanUser:
 
         user_id = uuid4()
         mock_sb = MagicMock()
-        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{}])
-        mock_sb.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(data=[])
+        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{}]
+        )
+        mock_sb.table.return_value.update.return_value.eq.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
         mock_redis = AsyncMock()
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
-            result = await unban_user(user_id=user_id, supabase=mock_sb, redis_client=mock_redis)
+            result = await unban_user(
+                user_id=user_id, supabase=mock_sb, redis_client=mock_redis
+            )
 
         assert result.status_code == 204
         mock_redis.delete.assert_called_once_with(f"ban:{user_id}")
@@ -170,12 +188,16 @@ class TestPostVisibility:
 
         post_id = uuid4()
         mock_sb = MagicMock()
-        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{}])
+        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{}]
+        )
 
         body = PostVisibilityUpdate(is_hidden=True)
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
-            result = await update_post_visibility(post_id=post_id, body=body, supabase=mock_sb)
+            result = await update_post_visibility(
+                post_id=post_id, body=body, supabase=mock_sb
+            )
 
         assert result["is_hidden"] is True
 
@@ -185,11 +207,15 @@ class TestPostVisibility:
 
         post_id = uuid4()
         mock_sb = MagicMock()
-        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{}])
+        mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{}]
+        )
 
         body = PostVisibilityUpdate(is_hidden=False)
 
         with patch("app.api.admin.run_sync", side_effect=_run_sync):
-            result = await update_post_visibility(post_id=post_id, body=body, supabase=mock_sb)
+            result = await update_post_visibility(
+                post_id=post_id, body=body, supabase=mock_sb
+            )
 
         assert result["is_hidden"] is False

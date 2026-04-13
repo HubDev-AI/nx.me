@@ -10,6 +10,7 @@ These invariants are verified by unit tests in tests/test_credit_ledger_invarian
 CS-1 L-1/L-2: All mutations use RPC only (atomic). No fallback two-write paths.
 If an RPC is unavailable, the operation fails — the RPC exists for atomicity.
 """
+
 from __future__ import annotations
 
 import logging
@@ -71,12 +72,17 @@ class CreditLedger:
         user_id_str = str(user_id)
         reservation_id = uuid4()
 
-        self._sb.rpc("credit_reserve", {
-            "p_user_id": user_id_str,
-            "p_reservation_id": str(reservation_id),
-        }).execute()
+        self._sb.rpc(
+            "credit_reserve",
+            {
+                "p_user_id": user_id_str,
+                "p_reservation_id": str(reservation_id),
+            },
+        ).execute()
 
-        logger.info("Credit reserved for user %s: reservation %s", user_id_str, reservation_id)
+        logger.info(
+            "Credit reserved for user %s: reservation %s", user_id_str, reservation_id
+        )
         return reservation_id
 
     def release(self, reservation_id: UUID) -> None:
@@ -90,14 +96,19 @@ class CreditLedger:
         """
         res_id_str = str(reservation_id)
 
-        result = self._sb.rpc("credit_release", {
-            "p_reservation_id": res_id_str,
-        }).execute()
+        result = self._sb.rpc(
+            "credit_release",
+            {
+                "p_reservation_id": res_id_str,
+            },
+        ).execute()
 
         # RPC uses UPDATE ... WHERE status = 'reserved' RETURNING *
         # Empty result means reservation was already resolved
         if not result.data:
-            raise ValueError(f"Reservation {reservation_id} not found or already resolved")
+            raise ValueError(
+                f"Reservation {reservation_id} not found or already resolved"
+            )
 
         logger.info("Credit released: reservation %s", reservation_id)
 
@@ -113,14 +124,19 @@ class CreditLedger:
         """
         res_id_str = str(reservation_id)
 
-        result = self._sb.rpc("credit_refund", {
-            "p_reservation_id": res_id_str,
-        }).execute()
+        result = self._sb.rpc(
+            "credit_refund",
+            {
+                "p_reservation_id": res_id_str,
+            },
+        ).execute()
 
         # RPC uses UPDATE ... WHERE status = 'committed' RETURNING *
         # Empty result means reservation was not in committed state
         if not result.data:
-            raise ValueError(f"Reservation {reservation_id} not found or not in committed state")
+            raise ValueError(
+                f"Reservation {reservation_id} not found or not in committed state"
+            )
 
         logger.info("Credit refunded: reservation %s", reservation_id)
 
@@ -135,11 +151,16 @@ class CreditLedger:
         """
         res_id_str = str(reservation_id)
 
-        result = self._sb.rpc("credit_commit", {
-            "p_reservation_id": res_id_str,
-        }).execute()
+        result = self._sb.rpc(
+            "credit_commit",
+            {
+                "p_reservation_id": res_id_str,
+            },
+        ).execute()
 
         if not result.data:
-            raise ValueError(f"Reservation {reservation_id} not found or already resolved")
+            raise ValueError(
+                f"Reservation {reservation_id} not found or already resolved"
+            )
 
         logger.info("Credit committed: reservation %s", reservation_id)

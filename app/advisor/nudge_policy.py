@@ -2,6 +2,7 @@
 
 Spec Section 7.1: trigger types, eligibility windows, milestone counts.
 """
+
 from __future__ import annotations
 
 from app.config import settings

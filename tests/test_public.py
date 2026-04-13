@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/api/public.py (RecommendationItem, CardResponse)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 
 try:
     from app.api.public import RecommendationItem, CardResponse  # noqa: F401
+
     _PUBLIC_AVAILABLE = True
 except (ImportError, AttributeError):
     _PUBLIC_AVAILABLE = False
@@ -29,7 +31,9 @@ class TestPublicModels:
 
     def test_recommendation_item_with_rationale(self):
         item = RecommendationItem(
-            rank=1, category="hair", suggestion="Try layers",
+            rank=1,
+            category="hair",
+            suggestion="Try layers",
             rationale="Adds dimension to your face shape",
         )
         assert item.rationale is not None
@@ -42,7 +46,9 @@ class TestPublicModels:
             before_image_url="https://cdn.example.com/before.jpg",
             after_image_url="https://cdn.example.com/after.jpg",
             recommendations=[
-                RecommendationItem(rank=1, category="style", suggestion="Bold accessories"),
+                RecommendationItem(
+                    rank=1, category="style", suggestion="Bold accessories"
+                ),
             ],
             reaction_count=42,
             comment_count=7,

@@ -4,6 +4,7 @@ AC-1: Returns symmetry_score in [0.0, 1.0].
 Score = mean of bilateral pair distance ratios (min/max per pair).
 Perfect symmetry = 1.0, maximum asymmetry = 0.0.
 """
+
 from __future__ import annotations
 
 import numpy as np

@@ -1,49 +1,51 @@
 /**
  * BeforeAfterSlider — draggable split-view comparison slider.
  *
- * Entrance: spring from 0 → 0.5 on mount (~600ms).
- * Interaction: PanResponder drag to reposition the split anywhere 0–1.
+ * Entrance: spring from 0 → initialSplit on mount (~600ms).
+ * Interaction: PanResponder drag + tap-to-jump. Tap anywhere on the slider
+ *   and the divider springs to that x position; dragging then continues
+ *   from the new position.
  * Accessibility: VoiceOver custom action fires onAccessibilityToggle.
  * Brand: glow-ring handle uses session accent colour from useTheme().
  */
-import { useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
-  View,
   Image,
   PanResponder,
   StyleSheet,
-  Dimensions,
-  Text,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
   clamp,
   runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
 } from "react-native-reanimated";
+import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
+import { hapticLight } from "../../lib/haptics";
+import { Label } from "../ui/Text";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-/** Horizontal padding applied on each side (matches BeforeAfterReveal). */
-const H_PADDING = THEME.spacing.xl * 2;
-
-/** Full-width slider: stretches edge-to-edge within the parent container. */
-const SLIDER_WIDTH = SCREEN_WIDTH - H_PADDING;
+/**
+ * Total horizontal padding reserved around the slider (sum of left + right).
+ * Matches the page padding in upload/result screens so the slider aligns
+ * with surrounding content.
+ */
+const TOTAL_H_PADDING = THEME.spacing.xl * 2;
 
 /** Aspect ratio: portrait 3:4 (same as existing image cards). */
-const SLIDER_HEIGHT = (SLIDER_WIDTH * 4) / 3;
+const ASPECT_RATIO_H_OVER_W = 4 / 3;
 
-/** Width of the draggable divider line. */
-const DIVIDER_WIDTH = 2;
+/** Width of the draggable divider line (bumped from 2 → 3 for visibility). */
+const DIVIDER_WIDTH = 3;
 
 /** Diameter of the circular drag handle. */
 const HANDLE_SIZE = 36;
@@ -51,16 +53,21 @@ const HANDLE_SIZE = 36;
 /** Thickness of the glow-ring on the handle (brand accent). */
 const GLOW_RING_WIDTH = 2;
 
-/** Spring config for entrance animation (~600ms with these values). */
+/** Extra touch area around the handle so the divider is easy to grab. */
+const HANDLE_HIT_PADDING = 24;
+
+/** Spring config for entrance + tap-to-jump animations. */
+const TOUCH_SPRING = {
+  damping: 18,
+  stiffness: 240,
+  mass: 1,
+} as const;
+
 const ENTRANCE_SPRING = {
   damping: 15,
   stiffness: 150,
   mass: 1,
 } as const;
-
-/** Label strip height for BEFORE / right label badges. */
-const LABEL_BADGE_PADDING_H = THEME.spacing.md;
-const LABEL_BADGE_PADDING_V = THEME.spacing.xs + 2;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,10 +80,6 @@ interface BeforeAfterSliderProps {
   rightLabel: string;
   /** Default split position (0–1). Default 0.5. */
   initialSplit?: number;
-  /** Entrance spring duration hint (ms). Default 600. The spring physics
-   * control the actual timing; this parameter is stored for documentation
-   * purposes but the spring constants above govern the motion. */
-  entranceDurationMs?: number;
   /** Called by VoiceOver accessibility action (toggles between 0.25 and 0.75). */
   onAccessibilityToggle?: () => void;
 }
@@ -90,74 +93,95 @@ export default function BeforeAfterSlider({
   afterUrl,
   rightLabel,
   initialSplit = 0.5,
-  entranceDurationMs: _entranceDurationMs = 600,
   onAccessibilityToggle,
 }: BeforeAfterSliderProps) {
   const { theme } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const sliderWidth = windowWidth - TOTAL_H_PADDING;
+  const sliderHeight = sliderWidth * ASPECT_RATIO_H_OVER_W;
 
-  // splitPosition: 0 = all before, 1 = all after.
-  // Starts at 0, springs to initialSplit on mount (entrance animation).
   const splitPosition = useSharedValue(0);
-
-  // Track the split at gesture start so we can add delta on top.
   const gestureStartSplit = useRef(0);
 
-  // Kick off entrance animation.
-  // useSharedValue initial value is 0; withSpring to initialSplit on first render.
-  // This runs once — the ref guards against repeat calls.
-  const entranceStarted = useRef(false);
-  if (!entranceStarted.current) {
-    entranceStarted.current = true;
+  // Kick off entrance animation once after mount. Reanimated shared-value
+  // writes during render are not safe under concurrent rendering.
+  useEffect(() => {
     splitPosition.value = withSpring(initialSplit, ENTRANCE_SPRING);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Dead-zone half-width, in normalized slider units (0–1). When the user
+   * taps within this radius of the current divider position, treat it as a
+   * drag grab (no spring jump). Taps outside the dead-zone spring the
+   * divider to the tap position — "tap-to-jump".
+   */
+  const DEAD_ZONE_RATIO =
+    (HANDLE_SIZE + HANDLE_HIT_PADDING) / 2 / sliderWidth;
 
   const handleAccessibilityToggle = useCallback(() => {
-    // Toggle between 0.25 (mostly before) and 0.75 (mostly after).
     const current = splitPosition.value;
-    splitPosition.value = withSpring(current > 0.5 ? 0.25 : 0.75, ENTRANCE_SPRING);
+    splitPosition.value = withSpring(
+      current > 0.5 ? 0.25 : 0.75,
+      ENTRANCE_SPRING,
+    );
     onAccessibilityToggle?.();
   }, [splitPosition, onAccessibilityToggle]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
-        gestureStartSplit.current = splitPosition.value;
-      },
-      onPanResponderMove: (_evt, gestureState) => {
-        const delta = gestureState.dx / SLIDER_WIDTH;
-        splitPosition.value = clamp(
-          gestureStartSplit.current + delta,
-          0,
-          1,
-        );
-      },
-      onPanResponderRelease: () => {
-        // No snap — leave at current position.
-      },
-    }),
-  ).current;
+  // PanResponder on the whole container: tap-to-jump + drag.
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          const tapX = evt.nativeEvent.locationX;
+          const tapRatio = clamp(tapX / sliderWidth, 0, 1);
+          const current = splitPosition.value;
+          const withinHandle =
+            Math.abs(tapRatio - current) <= DEAD_ZONE_RATIO;
+          if (withinHandle) {
+            // Touch near the handle — treat as drag grab (no jump).
+            gestureStartSplit.current = current;
+          } else {
+            // Tap away from the handle — jump to the tap position.
+            gestureStartSplit.current = tapRatio;
+            splitPosition.value = withSpring(tapRatio, TOUCH_SPRING);
+          }
+          hapticLight();
+        },
+        onPanResponderMove: (_evt, gestureState) => {
+          const delta = gestureState.dx / sliderWidth;
+          splitPosition.value = clamp(
+            gestureStartSplit.current + delta,
+            0,
+            1,
+          );
+        },
+        onPanResponderRelease: () => {
+          // No snap — leave at current position.
+        },
+      }),
+    [sliderWidth, splitPosition, DEAD_ZONE_RATIO],
+  );
 
-  // Animated style for the right (after) image overlay: clips width to 1-split.
   const afterOverlayStyle = useAnimatedStyle(() => ({
-    width: splitPosition.value * SLIDER_WIDTH,
+    width: splitPosition.value * sliderWidth,
   }));
 
-  // Animated style for the divider + handle: moves left edge to split position.
   const dividerStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: splitPosition.value * SLIDER_WIDTH - DIVIDER_WIDTH / 2 },
+      { translateX: splitPosition.value * sliderWidth - DIVIDER_WIDTH / 2 },
     ],
   }));
 
   return (
     <View
-      style={styles.container}
+      style={[styles.container, { width: sliderWidth, height: sliderHeight }]}
       accessible={true}
       accessibilityRole="adjustable"
-      accessibilityLabel={`Before and after comparison. ${rightLabel} result on the right. Drag to compare.`}
-      accessibilityHint="Drag left or right to reveal before and after images. Activate to toggle."
+      accessibilityLabel={`Before and after comparison. ${rightLabel} on the right. Drag to compare.`}
+      accessibilityHint="Drag or tap to reveal before and after. Activate to toggle."
       accessibilityActions={[
         { name: "activate", label: "Toggle between before and after" },
       ]}
@@ -166,37 +190,42 @@ export default function BeforeAfterSlider({
           runOnJS(handleAccessibilityToggle)();
         }
       }}
+      {...panResponder.panHandlers}
     >
-      {/* Before image — full width base layer */}
       <Image
         source={{ uri: beforeUrl }}
-        style={styles.image}
+        style={[styles.image, { width: sliderWidth, height: sliderHeight }]}
         resizeMode="cover"
         accessibilityLabel="Before photo"
       />
 
-      {/* After image — clipped to left portion via overflow:hidden wrapper */}
-      <Animated.View style={[styles.afterClip, afterOverlayStyle]} pointerEvents="none">
+      <Animated.View
+        style={[styles.afterClip, { height: sliderHeight }, afterOverlayStyle]}
+        pointerEvents="none"
+      >
         <Image
           source={{ uri: afterUrl }}
-          style={[styles.image, styles.afterImage]}
+          style={[styles.image, { width: sliderWidth, height: sliderHeight }]}
           resizeMode="cover"
           accessibilityLabel={`${rightLabel} result photo`}
         />
-        {/* Right (after) label badge */}
-        <View style={[styles.labelBadge, styles.labelBadgeRight, { backgroundColor: theme.accent + "CC" }]}>
-          <Text style={[styles.labelText, styles.labelTextAfter]}>
-            {rightLabel.toUpperCase()}
-          </Text>
+        <View
+          style={[
+            styles.labelBadge,
+            styles.labelBadgeRight,
+            { backgroundColor: theme.accent + "CC" },
+          ]}
+        >
+          <Label color={THEME.colors.white}>{rightLabel.toUpperCase()}</Label>
         </View>
       </Animated.View>
 
-      {/* Draggable divider + handle — sits on top, receives touch */}
-      <Animated.View style={[styles.dividerContainer, dividerStyle]} {...panResponder.panHandlers}>
-        {/* Vertical divider line */}
+      <Animated.View
+        style={[styles.dividerContainer, dividerStyle]}
+        pointerEvents="none"
+      >
         <View style={styles.dividerLine} />
 
-        {/* Drag handle */}
         <View
           style={[
             styles.handle,
@@ -206,16 +235,21 @@ export default function BeforeAfterSlider({
             },
           ]}
         >
-          {/* Left arrow */}
-          <Text style={[styles.handleArrow, { color: theme.accent }]}>‹</Text>
-          {/* Right arrow */}
-          <Text style={[styles.handleArrow, { color: theme.accent }]}>›</Text>
+          <Ionicons
+            name="chevron-back"
+            size={14}
+            color={theme.accent}
+          />
+          <Ionicons
+            name="chevron-forward"
+            size={14}
+            color={theme.accent}
+          />
         </View>
       </Animated.View>
 
-      {/* Before label badge — always visible in bottom-left */}
       <View style={[styles.labelBadge, styles.labelBadgeLeft]}>
-        <Text style={styles.labelText}>BEFORE</Text>
+        <Label color="primary">BEFORE</Label>
       </View>
     </View>
   );
@@ -227,15 +261,12 @@ export default function BeforeAfterSlider({
 
 const styles = StyleSheet.create({
   container: {
-    width: SLIDER_WIDTH,
-    height: SLIDER_HEIGHT,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     overflow: "hidden",
     alignSelf: "center",
   },
   image: {
-    width: SLIDER_WIDTH,
-    height: SLIDER_HEIGHT,
     position: "absolute",
     top: 0,
     left: 0,
@@ -244,17 +275,13 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     left: 0,
-    height: SLIDER_HEIGHT,
     overflow: "hidden",
-  },
-  afterImage: {
-    // Same absolute position within the clipped container.
   },
   dividerContainer: {
     position: "absolute",
     top: 0,
     bottom: 0,
-    width: HANDLE_SIZE + 24, // extended hit area for touch
+    width: HANDLE_SIZE + HANDLE_HIT_PADDING,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -269,7 +296,7 @@ const styles = StyleSheet.create({
   handle: {
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
-    borderRadius: THEME.radius.pill,
+    borderRadius: HANDLE_SIZE / 2,
     borderWidth: GLOW_RING_WIDTH,
     backgroundColor: THEME.colors.glass,
     alignItems: "center",
@@ -277,39 +304,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 2,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 6,
-  },
-  handleArrow: {
-    fontSize: 16,
-    fontFamily: FONTS.bodyBold,
-    lineHeight: 18,
-    includeFontPadding: false,
   },
   labelBadge: {
     position: "absolute",
     bottom: THEME.spacing.md,
     backgroundColor: "rgba(0,0,0,0.55)",
-    paddingHorizontal: LABEL_BADGE_PADDING_H,
-    paddingVertical: LABEL_BADGE_PADDING_V,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.xs + 2,
     borderRadius: THEME.radius.sm,
+    borderCurve: "continuous",
   },
   labelBadgeLeft: {
     left: THEME.spacing.md,
   },
   labelBadgeRight: {
-    // Stays at bottom-right within the after clip — but clip overflows so we
-    // pin it to right edge of full container with pointerEvents="none" on parent.
     right: THEME.spacing.md,
-  },
-  labelText: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 13,
-    color: THEME.colors.textPrimary,
-    letterSpacing: 1,
-  },
-  labelTextAfter: {
-    color: THEME.colors.white,
   },
 });

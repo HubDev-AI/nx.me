@@ -7,6 +7,7 @@ Approach: Open the image, extract raw pixel data, create a fresh image from
 those pixels, and re-encode. The original byte stream (and all its metadata
 chunks) is discarded entirely.
 """
+
 from __future__ import annotations
 
 import io

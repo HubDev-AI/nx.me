@@ -1,4 +1,5 @@
 """Block repository — all queries for user blocking."""
+
 from __future__ import annotations
 
 import logging
@@ -17,10 +18,14 @@ class BlockRepository:
 
     def block(self, blocker_id: str, blocked_id: str) -> dict[str, Any]:
         """Create a block relationship (idempotent via upsert)."""
-        result = self._sb.table("blocked_users").upsert(
-            {"blocker_id": blocker_id, "blocked_id": blocked_id},
-            on_conflict="blocker_id,blocked_id",
-        ).execute()
+        result = (
+            self._sb.table("blocked_users")
+            .upsert(
+                {"blocker_id": blocker_id, "blocked_id": blocked_id},
+                on_conflict="blocker_id,blocked_id",
+            )
+            .execute()
+        )
         return (result.data or [{}])[0]
 
     def unblock(self, blocker_id: str, blocked_id: str) -> bool:

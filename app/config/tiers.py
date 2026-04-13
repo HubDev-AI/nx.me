@@ -3,6 +3,7 @@
 NEVER import this module at runtime (from app startup, services, or API handlers).
 Runtime tier data comes from the database, not from this file.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,10 +19,10 @@ class TierSeed:
     display_name: str
     is_default: bool
     is_active: bool
-    generation_type: str          # LimitType value
+    generation_type: str  # LimitType value
     generation_limit: Optional[int]
     generation_period_seconds: Optional[int]
-    advisor_nudges_type: str      # LimitType value
+    advisor_nudges_type: str  # LimitType value
     advisor_nudges_limit: Optional[int]
     advisor_nudges_period_seconds: Optional[int]
     max_concurrent_generations: int

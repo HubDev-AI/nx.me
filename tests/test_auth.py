@@ -7,6 +7,7 @@ Exercises production code in:
   - app/entitlement/trial_grantor.py (TrialGrantor)
   - app/api/auth.py (_handle_supabase_auth_error) — guarded by import check
 """
+
 from __future__ import annotations
 
 import time
@@ -27,6 +28,7 @@ from tests.conftest import make_jwt, MockSupabase, MockRedis
 _AUTH_AVAILABLE = False
 try:
     from app.api.auth import _handle_supabase_auth_error
+
     _AUTH_AVAILABLE = True
 except (ImportError, AttributeError):
     pass
@@ -50,6 +52,7 @@ class TestValidateJwt:
     def test_expired_token_raises_401(self):
         token = make_jwt(expired=True)
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401
@@ -64,6 +67,7 @@ class TestValidateJwt:
         }
         token = pyjwt.encode(payload, "wrong-secret", algorithm="HS256")
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401
@@ -76,6 +80,7 @@ class TestValidateJwt:
         }
         token = pyjwt.encode(payload, settings.SUPABASE_JWT_SECRET, algorithm="HS256")
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401
@@ -89,6 +94,7 @@ class TestValidateJwt:
         }
         token = pyjwt.encode(payload, settings.SUPABASE_JWT_SECRET, algorithm="HS256")
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401
@@ -102,12 +108,14 @@ class TestValidateJwt:
         }
         token = pyjwt.encode(payload, settings.SUPABASE_JWT_SECRET, algorithm="HS256")
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401
 
     def test_garbage_token_raises_401(self):
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt("not.a.real.jwt.token")
         assert exc_info.value.status_code == 401
@@ -145,24 +153,29 @@ class TestDisposableEmail:
 # ===========================================================================
 
 
-@pytest.mark.skipif(not _AUTH_AVAILABLE, reason="app.api.auth not importable on this FastAPI version")
+@pytest.mark.skipif(
+    not _AUTH_AVAILABLE, reason="app.api.auth not importable on this FastAPI version"
+)
 class TestAuthErrorMapping:
     """Tests for _handle_supabase_auth_error — exercises app/api/auth.py."""
 
     def test_duplicate_email_maps_to_409(self):
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(Exception("User already registered"))
         assert exc_info.value.status_code == 409
 
     def test_weak_password_maps_to_422(self):
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(Exception("Password is too weak"))
         assert exc_info.value.status_code == 422
 
     def test_unknown_error_maps_to_500(self):
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(Exception("Something unexpected"))
         assert exc_info.value.status_code == 500
@@ -185,7 +198,9 @@ class TestTrialGrantor:
 
     def test_grant_is_idempotent_when_already_granted(self):
         sb = MockSupabase()
-        sb.set_table_data("credit_ledger", [{"id": str(uuid4()), "type": "trial_grant"}])
+        sb.set_table_data(
+            "credit_ledger", [{"id": str(uuid4()), "type": "trial_grant"}]
+        )
         grantor = TrialGrantor(sb)
         uid = uuid4()
         grantor.grant(uid)

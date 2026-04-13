@@ -1,4 +1,5 @@
 """Generation data models, enums, and constants."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -44,10 +45,12 @@ FAILURE_CANCELLED = "CANCELLED"
 # Failure reasons caused by the provider/system (not the user).
 # Worker auto-releases credits for these. User-caused failures (NSFW, IDENTITY)
 # require the client to initiate the "Report issue" → refund flow.
-NON_USER_FAILURE_REASONS: frozenset[str] = frozenset([
-    FAILURE_TIMEOUT,
-    FAILURE_PROVIDER,
-])
+NON_USER_FAILURE_REASONS: frozenset[str] = frozenset(
+    [
+        FAILURE_TIMEOUT,
+        FAILURE_PROVIDER,
+    ]
+)
 
 
 # ---------------------------------------------------------------------------

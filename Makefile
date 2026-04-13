@@ -1,4 +1,4 @@
-.PHONY: up down reset nuke nuke-keep migrate worker test lint format
+.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-android mobile-start mobile-lint
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv app/.env
@@ -53,6 +53,19 @@ lint:
 
 format:
 	.venv/bin/ruff format app/ tests/
+
+# ── Mobile ────────────────────────────────────────────────────────────────────
+mobile-ios:
+	cd mobile && npx expo run:ios
+
+mobile-android:
+	cd mobile && npx expo run:android
+
+mobile-start:
+	cd mobile && npx expo start
+
+mobile-lint:
+	cd mobile && npx expo lint
 
 # ── Internal targets ──────────────────────────────────────────────────────────
 .venv:

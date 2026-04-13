@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/entitlement/models.py (EntitlementResult, PAYMENT_REQUIRED_CODES, etc.)
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

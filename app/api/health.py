@@ -3,6 +3,7 @@
 GET /health   — liveness probe: app is running
 GET /readiness — readiness probe: app can serve traffic (Redis + Supabase reachable)
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status

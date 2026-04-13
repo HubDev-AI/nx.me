@@ -3,6 +3,7 @@
 Implements GlowUpGeneratorPort. Lazy-imports fal_client to avoid
 dependency when using MockGeneratorAdapter.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -71,9 +72,13 @@ class FalAiAdapter:
         if "flux-2" in options.model or "flux2" in options.model:
             request = self._build_flux2_edit_request(source_image_url, prompt, options)
         elif "nano-banana-pro" in options.model:
-            request = self._build_nano_banana_pro_request(source_image_url, prompt, options)
+            request = self._build_nano_banana_pro_request(
+                source_image_url, prompt, options
+            )
         elif "nano-banana-2" in options.model:
-            request = self._build_nano_banana_2_request(source_image_url, prompt, options)
+            request = self._build_nano_banana_2_request(
+                source_image_url, prompt, options
+            )
         elif "nano-banana" in options.model:
             request = self._build_nano_banana_request(source_image_url, prompt, options)
         elif "kontext" in options.model:
@@ -100,7 +105,8 @@ class FalAiAdapter:
 
         logger.info(
             "fal.ai generation complete: model=%s, time=%dms",
-            options.model, elapsed_ms,
+            options.model,
+            elapsed_ms,
         )
 
         return GenerationResult(
@@ -110,7 +116,9 @@ class FalAiAdapter:
             estimated_cost_usd=self._estimate_cost(options.model),
         )
 
-    def _build_flux2_edit_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_flux2_edit_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         """FLUX.2 [flex] Edit — tunable guidance + steps for portrait glow-ups.
 
         Optimal settings for identity-preserving portrait edits:
@@ -127,7 +135,9 @@ class FalAiAdapter:
             "output_format": "jpeg",
         }
 
-    def _build_nano_banana_pro_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_nano_banana_pro_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         """Nano Banana Pro (Gemini 3 Pro Image) — top-tier reasoning-guided identity edits.
 
         4x more expensive than v1 ($0.15/image) but strongest semantic reasoning
@@ -141,7 +151,9 @@ class FalAiAdapter:
             "resolution": "1K",
         }
 
-    def _build_nano_banana_2_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_nano_banana_2_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         """Nano Banana 2 (Gemini 3.1 Flash Image) — reasoning-guided identity-preserving edits.
 
         Supports 1K/2K/4K resolution and thinking_level for better results.
@@ -155,7 +167,9 @@ class FalAiAdapter:
             "thinking_level": "high",
         }
 
-    def _build_nano_banana_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_nano_banana_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         """Nano Banana (Gemini 2.5 Flash Image) — best identity preservation + natural edits."""
         return {
             "prompt": prompt,
@@ -164,7 +178,9 @@ class FalAiAdapter:
             "output_format": "jpeg",
         }
 
-    def _build_kontext_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_kontext_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         """FLUX Kontext — iterative editing that preserves identity naturally."""
         return {
             "prompt": prompt,
@@ -175,7 +191,9 @@ class FalAiAdapter:
             "output_format": "jpeg",
         }
 
-    def _build_pulid_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_pulid_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         return {
             "prompt": prompt,
             "reference_image_url": source_url,
@@ -188,7 +206,9 @@ class FalAiAdapter:
             "max_sequence_length": opts.max_sequence_length,
         }
 
-    def _build_flux_dev_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_flux_dev_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         request: dict = {
             "prompt": prompt,
             "image_url": source_url,
@@ -199,14 +219,18 @@ class FalAiAdapter:
             "image_size": opts.image_size,
         }
         if opts.ip_adapter_scale:
-            request["ip_adapters"] = [{
-                "path": "h94/IP-Adapter-FaceID",
-                "image_url": source_url,
-                "scale": opts.ip_adapter_scale,
-            }]
+            request["ip_adapters"] = [
+                {
+                    "path": "h94/IP-Adapter-FaceID",
+                    "image_url": source_url,
+                    "scale": opts.ip_adapter_scale,
+                }
+            ]
         return request
 
-    def _build_instantid_request(self, source_url: str, prompt: str, opts: GenerationOptions) -> dict:
+    def _build_instantid_request(
+        self, source_url: str, prompt: str, opts: GenerationOptions
+    ) -> dict:
         return {
             "prompt": prompt,
             "face_image_url": source_url,
@@ -227,7 +251,9 @@ class FalAiAdapter:
             return result["image"]["url"]
         if "image" in result and isinstance(result["image"], str):
             return result["image"]
-        raise ValueError(f"Could not extract image URL from fal.ai response: {list(result.keys())}")
+        raise ValueError(
+            f"Could not extract image URL from fal.ai response: {list(result.keys())}"
+        )
 
     def _estimate_cost(self, model: str) -> float:
         """Estimate cost per generation by model (from config)."""

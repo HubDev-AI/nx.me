@@ -1,4 +1,5 @@
 """Tests for display_name XSS prevention (QF-8)."""
+
 from __future__ import annotations
 
 import pytest
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 _AUTH_IMPORT_ERROR = None
 try:
     from app.api.auth import RegisterRequest  # noqa: F401 — availability check
+
     _AUTH_AVAILABLE = True
 except (ImportError, AttributeError) as exc:
     _AUTH_AVAILABLE = False

@@ -1,4 +1,5 @@
 """Image pipeline data models and error codes."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

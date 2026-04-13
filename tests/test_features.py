@@ -7,6 +7,7 @@ Exercises:
   - app/db/guest.py — create_guest_user, resolve_guest_by_token
   - app/api/auth.py — POST /auth/guest endpoint (config gating)
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -32,13 +33,19 @@ class TestGetFeatures:
 
     def test_all_five_flags_present(self):
         features = get_features()
-        for flag in ("auth_required", "social_enabled", "share_enabled",
-                     "onboarding_enabled", "advisor_enabled"):
+        for flag in (
+            "auth_required",
+            "social_enabled",
+            "share_enabled",
+            "onboarding_enabled",
+            "advisor_enabled",
+        ):
             assert hasattr(features, flag), f"missing {flag}"
             assert isinstance(getattr(features, flag), bool)
 
     def test_reads_auth_required_from_settings(self):
         from app.config import settings as real_settings
+
         with patch.object(real_settings, "FEATURE_AUTH_REQUIRED", False):
             features = get_features()
         assert features.auth_required is False
@@ -46,6 +53,7 @@ class TestGetFeatures:
     def test_reads_advisor_from_legacy_setting(self):
         """advisor_enabled maps to the pre-existing ADVISOR_ENABLED setting."""
         from app.config import settings as real_settings
+
         with patch.object(real_settings, "ADVISOR_ENABLED", False):
             features = get_features()
         assert features.advisor_enabled is False

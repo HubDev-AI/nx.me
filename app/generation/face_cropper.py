@@ -3,6 +3,7 @@
 When face occupies < threshold of image area, crop before generation
 and composite back after. Color-matched blending at edges.
 """
+
 from __future__ import annotations
 
 import numpy as np

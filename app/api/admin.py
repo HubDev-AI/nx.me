@@ -2,6 +2,7 @@
 
 All endpoints require X-Admin-Key header matching ADMIN_API_KEY.
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,6 +52,7 @@ async def list_reports(
     supabase: Client = Depends(get_supabase),
 ):
     """List reports with optional status filter, ordered newest-first."""
+
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     def _query():
         query = (
@@ -62,6 +64,7 @@ async def list_reports(
         if report_status:
             query = query.eq("status", report_status)
         return query.execute().data or []
+
     return await run_sync(_query)
 
 
@@ -74,13 +77,17 @@ async def update_report_status(
     """Update a report's status. If dismissed and no other active reports remain, un-hide the post."""
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     result = await run_sync(
-        lambda: supabase.table("reports")
-        .update({"status": body.status})
-        .eq("id", str(report_id))
-        .execute()
+        lambda: (
+            supabase.table("reports")
+            .update({"status": body.status})
+            .eq("id", str(report_id))
+            .execute()
+        )
     )
     if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Report not found"
+        )
 
     # If dismissed, check whether the post can be un-hidden
     if body.status == "dismissed":
@@ -88,19 +95,28 @@ async def update_report_status(
         post_id = report["post_id"]
         # Only un-hide if no other pending/actioned reports exist for this post
         other_reports = await run_sync(
-            lambda: supabase.table("reports")
-            .select("id")
-            .eq("post_id", post_id)
-            .in_("status", ["pending", "actioned"])
-            .neq("id", str(report_id))
-            .limit(1)
-            .execute()
+            lambda: (
+                supabase.table("reports")
+                .select("id")
+                .eq("post_id", post_id)
+                .in_("status", ["pending", "actioned"])
+                .neq("id", str(report_id))
+                .limit(1)
+                .execute()
+            )
         )
         if not other_reports.data:
             await run_sync(
-                lambda: supabase.table("posts").update({"is_hidden": False}).eq("id", post_id).execute()
+                lambda: (
+                    supabase.table("posts")
+                    .update({"is_hidden": False})
+                    .eq("id", post_id)
+                    .execute()
+                )
             )
-            logger.info("Post %s un-hidden after report %s dismissed", post_id, report_id)
+            logger.info(
+                "Post %s un-hidden after report %s dismissed", post_id, report_id
+            )
 
     logger.info("Report %s updated to status '%s'", report_id, body.status)
     return {"report_id": str(report_id), "status": body.status}
@@ -111,7 +127,11 @@ async def update_report_status(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/users/{user_id}/ban", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])
+@router.post(
+    "/users/{user_id}/ban",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
 async def ban_user(
     user_id: UUID,
     body: BanRequest,
@@ -122,11 +142,18 @@ async def ban_user(
     now = datetime.now(tz=timezone.utc).isoformat()
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     await run_sync(
-        lambda: supabase.table("users").update({
-            "is_banned": True,
-            "banned_at": now,
-            "ban_reason": body.reason,
-        }).eq("id", str(user_id)).execute()
+        lambda: (
+            supabase.table("users")
+            .update(
+                {
+                    "is_banned": True,
+                    "banned_at": now,
+                    "ban_reason": body.reason,
+                }
+            )
+            .eq("id", str(user_id))
+            .execute()
+        )
     )
 
     # Invalidate cached ban status so next request sees the ban immediately
@@ -134,9 +161,16 @@ async def ban_user(
 
     # Hide all posts by the banned user
     await run_sync(
-        lambda: supabase.table("posts").update({
-            "is_hidden": True,
-        }).eq("user_id", str(user_id)).execute()
+        lambda: (
+            supabase.table("posts")
+            .update(
+                {
+                    "is_hidden": True,
+                }
+            )
+            .eq("user_id", str(user_id))
+            .execute()
+        )
     )
 
     logger.warning("User %s banned: %s", user_id, body.reason)
@@ -157,11 +191,18 @@ async def unban_user(
     """Unban a user and restore visibility for posts without active reports."""
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     await run_sync(
-        lambda: supabase.table("users").update({
-            "is_banned": False,
-            "banned_at": None,
-            "ban_reason": None,
-        }).eq("id", str(user_id)).execute()
+        lambda: (
+            supabase.table("users")
+            .update(
+                {
+                    "is_banned": False,
+                    "banned_at": None,
+                    "ban_reason": None,
+                }
+            )
+            .eq("id", str(user_id))
+            .execute()
+        )
     )
 
     # Invalidate cached ban status so next request sees the unban immediately
@@ -174,9 +215,17 @@ async def unban_user(
     # un-hides all hidden posts for the user. A schema migration adding
     # `hidden_reason` to posts is needed for full correctness.
     await run_sync(
-        lambda: supabase.table("posts").update({
-            "is_hidden": False,
-        }).eq("user_id", str(user_id)).eq("is_hidden", True).execute()
+        lambda: (
+            supabase.table("posts")
+            .update(
+                {
+                    "is_hidden": False,
+                }
+            )
+            .eq("user_id", str(user_id))
+            .eq("is_hidden", True)
+            .execute()
+        )
     )
 
     logger.info("User %s unbanned", user_id)
@@ -192,12 +241,14 @@ async def list_banned_users(
     """List users filtered by ban status."""
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     result = await run_sync(
-        lambda: supabase.table("users")
-        .select("id, username, is_banned, banned_at, ban_reason")
-        .eq("is_banned", banned)
-        .order("banned_at", desc=True)
-        .limit(limit)
-        .execute()
+        lambda: (
+            supabase.table("users")
+            .select("id, username, is_banned, banned_at, ban_reason")
+            .eq("is_banned", banned)
+            .order("banned_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
     )
     return result.data or []
 
@@ -216,9 +267,16 @@ async def update_post_visibility(
     """Manually show or hide a post."""
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     await run_sync(
-        lambda: supabase.table("posts").update({
-            "is_hidden": body.is_hidden,
-        }).eq("id", str(post_id)).execute()
+        lambda: (
+            supabase.table("posts")
+            .update(
+                {
+                    "is_hidden": body.is_hidden,
+                }
+            )
+            .eq("id", str(post_id))
+            .execute()
+        )
     )
 
     action = "hidden" if body.is_hidden else "un-hidden"

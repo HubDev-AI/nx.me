@@ -8,6 +8,7 @@ Port/Adapter pattern:
   - SupabaseStorageAdapter: real Supabase Storage (local CLI + staging/prod)
   - LocalStorageAdapter: filesystem fallback for offline dev
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,11 +29,13 @@ logger = logging.getLogger(__name__)
 class StoragePort(Protocol):
     """Interface for image storage adapters."""
 
-    async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:
-        ...
+    async def upload(
+        self, bucket: str, key: str, data: bytes, content_type: str
+    ) -> str: ...
 
-    async def create_signed_url(self, bucket: str, key: str, expires_in: int) -> str:
-        ...
+    async def create_signed_url(
+        self, bucket: str, key: str, expires_in: int
+    ) -> str: ...
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +55,9 @@ class SupabaseStorageAdapter:
     def __init__(self, image_repo: ImageRepository) -> None:
         self._image_repo = image_repo
 
-    async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:
+    async def upload(
+        self, bucket: str, key: str, data: bytes, content_type: str
+    ) -> str:
         self._image_repo.upload(bucket, key, data, content_type)
         return key
 
@@ -76,7 +81,9 @@ class LocalStorageAdapter:
             raise ValueError(f"Path traversal detected: {key}")
         return path
 
-    async def upload(self, bucket: str, key: str, data: bytes, content_type: str) -> str:  # noqa: ARG002
+    async def upload(
+        self, bucket: str, key: str, data: bytes, content_type: str
+    ) -> str:  # noqa: ARG002
         path = self._safe_path(bucket, key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)

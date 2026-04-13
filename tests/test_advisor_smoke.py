@@ -1,4 +1,5 @@
 """Smoke tests for advisor pipeline — validates sanitization, content filter, and post-check."""
+
 from __future__ import annotations
 
 

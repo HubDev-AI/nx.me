@@ -5,6 +5,7 @@ GET /v1/features — return the current feature flag registry. Public endpoint
 in. Flags are read from server config on every request — no caching on the
 server side, mobile caches in-memory for the session.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter

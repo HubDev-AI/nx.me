@@ -4,6 +4,7 @@ Selects mode based on keyword count, delegates prompt/negative/params
 construction to active transformation modules, and applies cross-module
 identity phrase rotation with deterministic seeding.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -22,7 +23,9 @@ _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 # Load keyword_allowlist from absolute path so the import is independent of cwd.
 _allowlist_path = _PROMPTS_DIR / "keyword_allowlist.py"
-_allowlist_spec = importlib.util.spec_from_file_location("prompts.keyword_allowlist", _allowlist_path)
+_allowlist_spec = importlib.util.spec_from_file_location(
+    "prompts.keyword_allowlist", _allowlist_path
+)
 _allowlist_module = importlib.util.module_from_spec(_allowlist_spec)  # type: ignore[arg-type]
 _allowlist_spec.loader.exec_module(_allowlist_module)  # type: ignore[union-attr]
 sys.modules.setdefault("prompts.keyword_allowlist", _allowlist_module)

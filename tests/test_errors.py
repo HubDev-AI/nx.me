@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/api/errors.py (ApiError, RateLimitExceeded, handlers, _status_to_code)
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -14,11 +15,16 @@ from fastapi.exceptions import RequestValidationError
 
 try:
     from app.api.errors import (
-        ApiError, RateLimitExceeded, raise_api_error,
-        api_error_handler, http_exception_handler,
-        validation_error_handler, rate_limit_handler,
+        ApiError,
+        RateLimitExceeded,
+        raise_api_error,
+        api_error_handler,
+        http_exception_handler,
+        validation_error_handler,
+        rate_limit_handler,
         _status_to_code,
     )
+
     _ERRORS_AVAILABLE = True
 except (ImportError, AttributeError):
     _ERRORS_AVAILABLE = False
@@ -36,10 +42,17 @@ class TestApiError:
         assert err.status_code == 400
         assert err.code == "BAD_REQUEST"
         assert err.message == "Invalid input"
-        assert err.detail == {"error": {"code": "BAD_REQUEST", "message": "Invalid input"}}
+        assert err.detail == {
+            "error": {"code": "BAD_REQUEST", "message": "Invalid input"}
+        }
 
     def test_api_error_with_headers(self):
-        err = ApiError(status_code=429, code="RATE_LIMIT", message="Too fast", headers={"Retry-After": "60"})
+        err = ApiError(
+            status_code=429,
+            code="RATE_LIMIT",
+            message="Too fast",
+            headers={"Retry-After": "60"},
+        )
         assert err.headers == {"Retry-After": "60"}
 
     def test_api_error_is_http_exception(self):
@@ -83,7 +96,12 @@ class TestApiErrorHandler:
     @pytest.mark.asyncio
     async def test_includes_headers(self):
         request = MagicMock()
-        exc = ApiError(status_code=429, code="RATE_LIMIT", message="Slow down", headers={"Retry-After": "30"})
+        exc = ApiError(
+            status_code=429,
+            code="RATE_LIMIT",
+            message="Slow down",
+            headers={"Retry-After": "30"},
+        )
         resp = await api_error_handler(request, exc)
         assert resp.status_code == 429
 
@@ -94,7 +112,10 @@ class TestHttpExceptionHandler:
     @pytest.mark.asyncio
     async def test_structured_detail_passthrough(self):
         request = MagicMock()
-        exc = HTTPException(status_code=403, detail={"error": {"code": "FORBIDDEN", "message": "No access"}})
+        exc = HTTPException(
+            status_code=403,
+            detail={"error": {"code": "FORBIDDEN", "message": "No access"}},
+        )
         resp = await http_exception_handler(request, exc)
         assert resp.status_code == 403
 
@@ -126,9 +147,11 @@ class TestValidationErrorHandler:
     @pytest.mark.asyncio
     async def test_returns_422(self):
         request = MagicMock()
-        exc = RequestValidationError(errors=[
-            {"loc": ["body", "email"], "msg": "field required", "type": "missing"}
-        ])
+        exc = RequestValidationError(
+            errors=[
+                {"loc": ["body", "email"], "msg": "field required", "type": "missing"}
+            ]
+        )
         resp = await validation_error_handler(request, exc)
         assert resp.status_code == 422
 

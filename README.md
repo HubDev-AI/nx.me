@@ -26,7 +26,26 @@ In a second terminal, start the background worker:
 make worker
 ```
 
+## Mobile
+
+**iOS Simulator:**
+```bash
+cd mobile && npx expo run:ios      # first build (native — required for Sign-In, TikTok)
+cd mobile && npx expo start        # JS-only reload after initial build
+```
+
+**Physical device:**
+1. Set `API_BASE_URL=http://<your-LAN-IP>:8000` in `mobile/.env`
+2. `cd mobile && npx expo run:ios` (or `run:android`)
+
+**Android:**
+```bash
+cd mobile && npx expo run:android
+```
+
 ## Commands
+
+### Backend
 
 | Command | What it does |
 |---------|-------------|
@@ -36,6 +55,15 @@ make worker
 | `make migrate` | Run DB migrations |
 | `make worker` | Start ARQ background worker |
 | `make test` | Run tests |
+
+### Mobile
+
+| Command | What it does |
+|---------|-------------|
+| `make mobile-ios` | Native build + run on iOS Simulator |
+| `make mobile-android` | Native build + run on Android emulator |
+| `make mobile-start` | JS-only dev server (after initial native build) |
+| `make mobile-lint` | ESLint mobile code |
 
 ## Configuration
 

@@ -6,6 +6,7 @@ is not installed (should not happen in production).
 
 CS-1 T-1: Replaces the original ~60-domain hardcoded list.
 """
+
 from __future__ import annotations
 
 import logging
@@ -21,9 +22,12 @@ try:
             "Expected 100+. Check disposable-email-domains package."
         )
     else:
-        logger.info("Loaded disposable email blocklist: %d domains", len(_DISPOSABLE_DOMAINS))
+        logger.info(
+            "Loaded disposable email blocklist: %d domains", len(_DISPOSABLE_DOMAINS)
+        )
 except ImportError:
     from app.config import settings as _settings
+
     if _settings.APP_ENV not in ("development", "test"):
         raise RuntimeError(
             "disposable-email-domains package required in non-development environments. "
@@ -33,9 +37,15 @@ except ImportError:
         "disposable-email-domains package not installed — using minimal fallback blocklist."
     )
     _DISPOSABLE_DOMAINS: set[str] = {
-        "mailinator.com", "guerrillamail.com", "yopmail.com",
-        "tempmail.com", "throwaway.email", "sharklasers.com",
-        "10minutemail.com", "maildrop.cc", "trashmail.com",
+        "mailinator.com",
+        "guerrillamail.com",
+        "yopmail.com",
+        "tempmail.com",
+        "throwaway.email",
+        "sharklasers.com",
+        "10minutemail.com",
+        "maildrop.cc",
+        "trashmail.com",
     }
 
 

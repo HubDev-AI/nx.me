@@ -9,6 +9,7 @@ Spec Section 5.3 message flow:
   6. Extract memory signals (async, Haiku)
   7. Return response
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,7 +50,9 @@ _SOUL_MD_PATH = Path(__file__).parent / "SOUL.md"
 try:
     _SOUL_MD: str = _SOUL_MD_PATH.read_text(encoding="utf-8")
 except FileNotFoundError:
-    raise RuntimeError(f"SOUL.md not found at {_SOUL_MD_PATH}. Advisor service cannot start.")
+    raise RuntimeError(
+        f"SOUL.md not found at {_SOUL_MD_PATH}. Advisor service cannot start."
+    )
 
 _background_tasks: weakref.WeakSet = weakref.WeakSet()
 
@@ -75,7 +78,9 @@ class AdvisorService:
         self._repo = advisor_repo
         self._redis = redis_client
         self._llm = llm_adapter
-        self._memory_manager = MemoryManager(advisor_repo=advisor_repo, llm_adapter=llm_adapter)
+        self._memory_manager = MemoryManager(
+            advisor_repo=advisor_repo, llm_adapter=llm_adapter
+        )
 
     # -----------------------------------------------------------------------
     # Chat
@@ -131,9 +136,14 @@ class AdvisorService:
                             self._summarize_conversation(conversation_id, history),
                             timeout=10.0,
                         )
-                        history = await run_sync(self._load_conversation_history, conversation_id)
+                        history = await run_sync(
+                            self._load_conversation_history, conversation_id
+                        )
                     except asyncio.TimeoutError:
-                        logger.warning("Summarization timed out for conversation %s", conversation_id)
+                        logger.warning(
+                            "Summarization timed out for conversation %s",
+                            conversation_id,
+                        )
                     finally:
                         await self._redis.delete(lock_key)
 
@@ -175,7 +185,9 @@ class AdvisorService:
 
         # Step 9: Persist messages
         await run_sync(self._save_message, conversation_id, "user", message)
-        advisor_msg_row = await run_sync(self._save_message, conversation_id, "advisor", advisor_response)
+        advisor_msg_row = await run_sync(
+            self._save_message, conversation_id, "advisor", advisor_response
+        )
 
         # Update conversation updated_at
         await run_sync(self._repo.update_conversation_timestamp, conversation_id)
@@ -195,7 +207,10 @@ class AdvisorService:
                     "Memory extraction failed for user %s. Will retry on next message.",
                     str(user_id),
                     exc_info=True,
-                    extra={"metric": "advisor.memory_extraction_failure", "user_id": str(user_id)},
+                    extra={
+                        "metric": "advisor.memory_extraction_failure",
+                        "user_id": str(user_id),
+                    },
                 )
 
         task = asyncio.create_task(_extract_with_logging())
@@ -236,9 +251,7 @@ class AdvisorService:
             hint = _post_check(text, recent_responses)
             if hint and attempt == 0:
                 # Append instruction and retry
-                messages = list(messages) + [
-                    {"role": "user", "content": hint}
-                ]
+                messages = list(messages) + [{"role": "user", "content": hint}]
                 continue
 
             return text
@@ -251,11 +264,16 @@ class AdvisorService:
         Spec Section 10: >50 messages/day → degrade to Haiku to cap costs.
         """
         from datetime import datetime, timezone
+
         daily_key = f"advisor_daily_msgs:{user_id}:{datetime.now(tz=timezone.utc).strftime('%Y%m%d')}"
         count = int(await self._redis.get(daily_key) or 0)
         if count > settings.ADVISOR_DEGRADATION_THRESHOLD:
-            logger.info("User %s exceeded daily threshold (%d > %d) — using Haiku",
-                         user_id, count, settings.ADVISOR_DEGRADATION_THRESHOLD)
+            logger.info(
+                "User %s exceeded daily threshold (%d > %d) — using Haiku",
+                user_id,
+                count,
+                settings.ADVISOR_DEGRADATION_THRESHOLD,
+            )
             return settings.ADVISOR_MODEL_HAIKU
         return settings.ADVISOR_MODEL_SONNET
 
@@ -302,9 +320,7 @@ class AdvisorService:
         # Assumes (created_at, id) is unique. The id tiebreaker prevents skipped records
         # when multiple messages share the same created_at timestamp.
         next_cursor = (
-            f"{rows[-1]['created_at']}|{rows[-1]['id']}"
-            if has_more and rows
-            else None
+            f"{rows[-1]['created_at']}|{rows[-1]['id']}" if has_more and rows else None
         )
         return {
             "conversation_id": conversation["id"],
@@ -349,9 +365,7 @@ class AdvisorService:
         if has_more:
             rows = rows[:limit]
         next_cursor = (
-            f"{rows[-1]['created_at']}|{rows[-1]['id']}"
-            if has_more and rows
-            else None
+            f"{rows[-1]['created_at']}|{rows[-1]['id']}" if has_more and rows else None
         )
         return {
             "nudges": rows,
@@ -361,7 +375,9 @@ class AdvisorService:
 
     async def mark_nudge_read(self, user_id: UUID, nudge_id: UUID) -> bool:
         """Mark a nudge as read. Returns True if found and updated."""
-        existing = await run_sync(self._repo.get_nudge_by_id, str(nudge_id), str(user_id))
+        existing = await run_sync(
+            self._repo.get_nudge_by_id, str(nudge_id), str(user_id)
+        )
         if not existing:
             return False
 
@@ -408,9 +424,7 @@ class AdvisorService:
         if has_more:
             rows = rows[:limit]
         next_cursor = (
-            f"{rows[-1]['created_at']}|{rows[-1]['id']}"
-            if has_more and rows
-            else None
+            f"{rows[-1]['created_at']}|{rows[-1]['id']}" if has_more and rows else None
         )
         return {
             "memories": rows,
@@ -437,7 +451,9 @@ class AdvisorService:
 
         if existing:
             # Check if inactive
-            updated_at_str = existing.get("updated_at") or existing.get("created_at", "")
+            updated_at_str = existing.get("updated_at") or existing.get(
+                "created_at", ""
+            )
             try:
                 updated_at = datetime.fromisoformat(updated_at_str)
                 if updated_at.tzinfo is None:
@@ -457,7 +473,9 @@ class AdvisorService:
         # reused or replaced on next inactive-days check). A true fix requires an
         # RPC function wrapping both INSERTs in a single PostgreSQL transaction.
         created = self._repo.create_conversation(str(user_id))
-        logger.info("New conversation created: user=%s id=%s", user_id, created.get("id"))
+        logger.info(
+            "New conversation created: user=%s id=%s", user_id, created.get("id")
+        )
         return created
 
     def _load_conversation_history(self, conversation_id: str) -> list[dict[str, Any]]:
@@ -509,16 +527,22 @@ class AdvisorService:
                     )
                     url = signed.get("signedURL") or signed.get("signedUrl", "")
                     if url:
-                        blocks.append({
-                            "type": "image",
-                            "source": {"type": "url", "url": url},
-                        })
+                        blocks.append(
+                            {
+                                "type": "image",
+                                "source": {"type": "url", "url": url},
+                            }
+                        )
                 except Exception as exc:
-                    logger.warning("Failed to create signed URL for image %s: %s", row["id"], exc)
+                    logger.warning(
+                        "Failed to create signed URL for image %s: %s", row["id"], exc
+                    )
 
             return blocks if blocks else None
         except Exception as exc:
-            logger.warning("Failed to fetch vision content for user %s: %s", user_id, exc)
+            logger.warning(
+                "Failed to fetch vision content for user %s: %s", user_id, exc
+            )
             return None
 
     async def _summarize_conversation(
@@ -531,9 +555,7 @@ class AdvisorService:
         Uses Haiku. In mock mode, the mock adapter returns a short canned response.
         After summarization, deletes old messages and stores summary on the conversation.
         """
-        history_text = "\n".join(
-            f"{m['role']}: {m['content']}" for m in history
-        )
+        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
         try:
             response = await self._llm.create_message(
                 model=settings.ADVISOR_MODEL_HAIKU,
@@ -578,7 +600,7 @@ def _post_check(response: str, recent_messages: list[str]) -> str | None:
         if last_sentence and last_sentence == this_sentence:
             return "Start differently."
 
-    sentence_count = len(re.split(r'(?<=[.!?])\s+', response.strip()))
+    sentence_count = len(re.split(r"(?<=[.!?])\s+", response.strip()))
     if sentence_count > 3:
         return "Shorter. Say less."
     if sentence_count == 3:

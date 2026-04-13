@@ -3,6 +3,7 @@
 A-3: All external payment services accessed through this Protocol.
 Concrete implementations: StripePaymentAdapter, MockPaymentAdapter.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,8 +15,8 @@ class WebhookEvent:
     """Typed webhook event returned by construct_webhook_event."""
 
     event_type: str  # e.g. "checkout.session.completed"
-    event_id: str    # provider event ID for idempotency
-    data: dict       # the full event payload (provider-specific)
+    event_id: str  # provider event ID for idempotency
+    data: dict  # the full event payload (provider-specific)
 
 
 class PaymentPort(Protocol):

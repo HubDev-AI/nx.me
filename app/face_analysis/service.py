@@ -11,6 +11,7 @@ Pipeline steps:
   5. Generate recommendations
   6. Discard landmarks, return AnalysisResult
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -73,7 +74,11 @@ class _MediaPipeAdapter:
         recommendations = self._recommender.recommend(face_shape)
 
         # Landmarks are discarded here (ADR-1) — only derived values returned
-        logger.info("Face analysis complete: shape=%s, symmetry=%.3f", face_shape, symmetry_score)
+        logger.info(
+            "Face analysis complete: shape=%s, symmetry=%.3f",
+            face_shape,
+            symmetry_score,
+        )
 
         return AnalysisResult(
             face_shape=face_shape,

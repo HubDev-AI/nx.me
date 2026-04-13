@@ -2,6 +2,7 @@
 
 All fixtures use mocks to avoid requiring a live Supabase or Redis connection.
 """
+
 from __future__ import annotations
 
 import time
@@ -22,9 +23,11 @@ from app.config import settings
 # dependency resolution which fails on some FastAPI/Pydantic combos
 # (FieldInfo.in_ AttributeError). Detect this once and expose a skip marker.
 
+
 def _can_import_routers() -> bool:
     try:
         import app.api.users  # noqa: F401
+
         return True
     except (AttributeError, ImportError):
         return False

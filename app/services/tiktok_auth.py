@@ -10,6 +10,7 @@ Refs:
 - https://developers.tiktok.com/doc/login-kit-manage-user-access-tokens/
 - https://developers.tiktok.com/doc/tiktok-api-v2-get-user-info/
 """
+
 from __future__ import annotations
 
 import logging

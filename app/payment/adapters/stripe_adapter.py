@@ -4,6 +4,7 @@ Lazy-imports stripe SDK to avoid dependency when using MockPaymentAdapter.
 PCI-DSS SAQ-A: No card data flows through this adapter — all card collection
 via Stripe hosted payment sheet (mobile SDK).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -55,12 +56,15 @@ class StripePaymentAdapter:
                 ),
             )
         except self._stripe.StripeError as exc:
-            logger.exception("Stripe API error during checkout session creation: %s", exc)
+            logger.exception(
+                "Stripe API error during checkout session creation: %s", exc
+            )
             raise
 
         logger.info(
             "Stripe checkout session created: mode=%s, user=%s",
-            mode, user_id,
+            mode,
+            user_id,
         )
 
         return session.url
@@ -81,7 +85,9 @@ class StripePaymentAdapter:
             logger.exception("Stripe API error during subscription cancel: %s", exc)
             raise
 
-        logger.info("Stripe subscription %s set to cancel at period end", subscription_id)
+        logger.info(
+            "Stripe subscription %s set to cancel at period end", subscription_id
+        )
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Verify Stripe webhook signature and return a typed WebhookEvent.

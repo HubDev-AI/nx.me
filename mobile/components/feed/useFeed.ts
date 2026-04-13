@@ -103,18 +103,18 @@ export function useFeed(): UseFeedReturn {
   // ---------------------------------------------------------------------------
 
   const loadFeed = useCallback(async () => {
-    await query.refetch();
-  }, [query]);
+    await queryClient.refetchQueries({ queryKey: ["feed", activeSort] });
+  }, [queryClient, activeSort]);
 
   const loadMore = useCallback(async () => {
     if (query.hasNextPage && !query.isFetchingNextPage) {
       await query.fetchNextPage();
     }
-  }, [query]);
+  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
 
   const refresh = useCallback(async () => {
-    await query.refetch();
-  }, [query]);
+    await queryClient.refetchQueries({ queryKey: ["feed", activeSort] });
+  }, [queryClient, activeSort]);
 
   const changeSort = useCallback(
     (sort: FeedSortValue) => {

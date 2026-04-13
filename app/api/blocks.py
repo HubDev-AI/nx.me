@@ -1,4 +1,5 @@
 """Block API — user-to-user blocking."""
+
 from __future__ import annotations
 
 import logging
@@ -116,9 +117,7 @@ def list_blocked_users(
         rows = rows[:limit]
 
     next_cursor = (
-        f"{rows[-1]['created_at']}|{rows[-1]['id']}"
-        if has_more and rows
-        else None
+        f"{rows[-1]['created_at']}|{rows[-1]['id']}" if has_more and rows else None
     )
 
     return BlockedListResponse(

@@ -10,6 +10,7 @@ Buckets:
   post-images        — PUBLIC  (both before + after, copied on post creation)
   avatars            — PRIVATE (owner-only signed URLs)
 """
+
 from __future__ import annotations
 
 import logging
@@ -59,7 +60,9 @@ def publish_post_images(
         (before_image, before_public_key),
         (after_image, after_public_key),
     ]:
-        raw_bytes = image_repo.download(src_img.get("bucket", "raw-selfies"), src_img["storage_key"])
+        raw_bytes = image_repo.download(
+            src_img.get("bucket", "raw-selfies"), src_img["storage_key"]
+        )
         image_repo.upload_public(
             PUBLIC_BUCKET,
             public_key,
@@ -90,4 +93,6 @@ def build_avatar_url(supabase: Client, avatar_storage_key: str | None) -> str | 
     if not avatar_storage_key:
         return None
     image_repo = ImageRepository(supabase)
-    return image_repo.build_avatar_signed_url(avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS)
+    return image_repo.build_avatar_signed_url(
+        avatar_storage_key, settings.SIGNED_URL_EXPIRY_SECONDS
+    )

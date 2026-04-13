@@ -3,6 +3,7 @@
 The worker calls GlowUpGeneratorPort.generate() — never fal.ai directly.
 Adapters: FalAiAdapter (real), MockGeneratorAdapter (testing).
 """
+
 from __future__ import annotations
 
 from typing import Protocol

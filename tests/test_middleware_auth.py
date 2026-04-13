@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/api/middleware/auth.py (UserClaims, validate_jwt, _status_to_code)
 """
+
 from __future__ import annotations
 
 import time
@@ -16,6 +17,7 @@ from app.config import settings
 
 try:
     from app.api.middleware.auth import validate_jwt, UserClaims  # noqa: F401
+
     _AUTH_MW_AVAILABLE = True
 except (ImportError, AttributeError):
     _AUTH_MW_AVAILABLE = False
@@ -97,10 +99,14 @@ class TestValidateJwt:
     def test_wrong_secret_raises_401(self):
         now = int(time.time())
         payload = {
-            "sub": "user-1", "exp": now + 3600,
-            "aud": "authenticated", "iss": _ISSUER,
+            "sub": "user-1",
+            "exp": now + 3600,
+            "aud": "authenticated",
+            "iss": _ISSUER,
         }
-        token = jwt.encode(payload, "wrong-secret-key-that-is-long-enough", algorithm="HS256")
+        token = jwt.encode(
+            payload, "wrong-secret-key-that-is-long-enough", algorithm="HS256"
+        )
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401

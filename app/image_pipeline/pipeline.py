@@ -12,6 +12,7 @@ Pipeline steps (synchronous, every upload):
   5. StorageAdapter — write clean bytes to raw-selfies bucket
   6. Write images row to database
 """
+
 from __future__ import annotations
 
 import logging
@@ -46,6 +47,7 @@ def _get_nsfw_screener() -> NSFWScreenerPort:
     if settings.ADAPTER__NSFW_ADAPTER == "rekognition":
         try:
             from app.image_pipeline.nsfw_screener import RekognitionAdapter
+
             return RekognitionAdapter()
         except ImportError:
             logger.warning(
@@ -53,6 +55,7 @@ def _get_nsfw_screener() -> NSFWScreenerPort:
                 "This is expected in development but NOT in production."
             )
     from app.image_pipeline.nsfw_screener import MockNSFWAdapter
+
     return MockNSFWAdapter()
 
 
@@ -60,8 +63,10 @@ def _get_storage_adapter(image_repo: ImageRepository) -> StoragePort:
     """Resolve storage adapter from config (lazy import)."""
     if settings.ADAPTER__STORAGE_ADAPTER == "supabase":
         from app.image_pipeline.storage import SupabaseStorageAdapter
+
         return SupabaseStorageAdapter(image_repo)
     from app.image_pipeline.storage import LocalStorageAdapter
+
     return LocalStorageAdapter()
 
 
@@ -118,18 +123,24 @@ class ImagePipeline:
         if nsfw_result.is_explicit:
             # Write quarantined images row — no file written to storage
             try:
-                self._image_repo.create({
-                    "id": str(image_id),
-                    "user_id": user_id,
-                    "storage_key": None,
-                    "bucket": None,
-                    "image_type": "selfie",
-                    "status": "quarantined",
-                    "screened_at": now_utc,
-                })
+                self._image_repo.create(
+                    {
+                        "id": str(image_id),
+                        "user_id": user_id,
+                        "storage_key": None,
+                        "bucket": None,
+                        "image_type": "selfie",
+                        "status": "quarantined",
+                        "screened_at": now_utc,
+                    }
+                )
             except Exception as exc:
                 # DB failure must not mask the quarantine decision — fail closed
-                logger.error("Failed to insert quarantined images row for user %s: %s", user_id, exc)
+                logger.error(
+                    "Failed to insert quarantined images row for user %s: %s",
+                    user_id,
+                    exc,
+                )
                 raise  # Fail closed — do not allow unrecorded quarantined images
 
             logger.info(
@@ -162,25 +173,36 @@ class ImagePipeline:
         if content_type in ("image/heif", "image/heic"):
             store_content_type = "image/jpeg"
 
-        await self._storage.upload(self.BUCKET, storage_key, clean_bytes, store_content_type)
+        await self._storage.upload(
+            self.BUCKET, storage_key, clean_bytes, store_content_type
+        )
 
         # Step 6: Write images row — delete uploaded file on DB failure
         try:
-            self._image_repo.create({
-                "id": str(image_id),
-                "user_id": user_id,
-                "storage_key": storage_key,
-                "bucket": self.BUCKET,
-                "image_type": "selfie",
-                "status": "cleared",
-                "screened_at": now_utc,
-            })
+            self._image_repo.create(
+                {
+                    "id": str(image_id),
+                    "user_id": user_id,
+                    "storage_key": storage_key,
+                    "bucket": self.BUCKET,
+                    "image_type": "selfie",
+                    "status": "cleared",
+                    "screened_at": now_utc,
+                }
+            )
         except Exception as exc:
-            logger.error("images INSERT failed for %s — deleting orphaned file %s: %s", user_id, storage_key, exc)
+            logger.error(
+                "images INSERT failed for %s — deleting orphaned file %s: %s",
+                user_id,
+                storage_key,
+                exc,
+            )
             try:
                 self._image_repo.remove(self.BUCKET, [storage_key])
             except Exception:  # noqa: BLE001
-                logger.exception("Failed to delete orphaned file %s/%s", self.BUCKET, storage_key)
+                logger.exception(
+                    "Failed to delete orphaned file %s/%s", self.BUCKET, storage_key
+                )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Image processing failed.",

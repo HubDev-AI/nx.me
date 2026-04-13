@@ -8,6 +8,7 @@ MediaPipe Tasks API (0.10.x+): FaceLandmarker replaces the removed mp.solutions
 legacy API. Each request creates a new FaceLandmarker instance; model weights
 are cached on disk after the first call to preload_model().
 """
+
 from __future__ import annotations
 
 import io
@@ -57,8 +58,7 @@ class Landmarks:
 class FaceAnalysisPort(Protocol):
     """Interface for face analysis adapters."""
 
-    async def analyze(self, image_bytes: bytes) -> AnalysisResult:
-        ...
+    async def analyze(self, image_bytes: bytes) -> AnalysisResult: ...
 
 
 # ---------------------------------------------------------------------------
@@ -233,22 +233,26 @@ class MockFaceAnalysisAdapter:
             symmetry_score=0.85,
             recommendations=[
                 Suggestion(
-                    rank=1, category="hair",
+                    rank=1,
+                    category="hair",
                     suggestion_text="Try layers that add volume at the crown to complement your oval face shape.",
                     rationale="Oval faces are well-balanced; layers enhance natural proportions.",
                 ),
                 Suggestion(
-                    rank=2, category="eyebrows",
+                    rank=2,
+                    category="eyebrows",
                     suggestion_text="A soft arch following your natural brow bone suits your face proportions.",
                     rationale="Your forehead-to-jaw ratio indicates a balanced oval structure.",
                 ),
                 Suggestion(
-                    rank=3, category="accessories",
+                    rank=3,
+                    category="accessories",
                     suggestion_text="Rectangular or geometric frames will complement your rounded jawline.",
                     rationale="Angular frames create visual contrast with oval face curves.",
                 ),
                 Suggestion(
-                    rank=4, category="skincare",
+                    rank=4,
+                    category="skincare",
                     suggestion_text=(
                         "Highlight your cheekbones with a subtle contour "
                         "to enhance your natural structure."
@@ -256,7 +260,8 @@ class MockFaceAnalysisAdapter:
                     rationale="Your cheekbone width is proportional to your face length.",
                 ),
                 Suggestion(
-                    rank=5, category="grooming",
+                    rank=5,
+                    category="grooming",
                     suggestion_text="Keep facial hair trimmed close to maintain your face shape definition.",
                     rationale="Your jaw-to-forehead ratio is well-balanced for a clean look.",
                 ),

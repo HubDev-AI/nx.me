@@ -3,6 +3,7 @@
 Follows the same pattern as UserRepository: constructor takes a Client,
 methods are synchronous (callers use run_sync for async handlers).
 """
+
 from __future__ import annotations
 
 import logging
@@ -93,10 +94,12 @@ class PostRepository:
 
     def soft_delete_post(self, post_id: str, now_utc: str) -> None:
         """Soft-delete a post by setting is_deleted=True."""
-        self._sb.table("posts").update({
-            "is_deleted": True,
-            "updated_at": now_utc,
-        }).eq("id", post_id).execute()
+        self._sb.table("posts").update(
+            {
+                "is_deleted": True,
+                "updated_at": now_utc,
+            }
+        ).eq("id", post_id).execute()
 
     # ------------------------------------------------------------------
     # comments table
@@ -119,7 +122,9 @@ class PostRepository:
         desc = sort == "newest"
         query = (
             self._sb.table("comments")
-            .select("id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)")
+            .select(
+                "id, post_id, user_id, content, is_deleted, created_at, users(display_name, avatar_storage_key)"
+            )
             .eq("post_id", post_id)
             .eq("is_deleted", False)
             .order("created_at", desc=desc)
@@ -143,29 +148,42 @@ class PostRepository:
         result = query.execute()
         return result.data or []
 
-    def insert_comment_atomic(self, p_post_id: str, p_user_id: str, p_content: str) -> dict:
+    def insert_comment_atomic(
+        self, p_post_id: str, p_user_id: str, p_content: str
+    ) -> dict:
         """Atomically insert a comment and increment the post comment count.
 
         Calls the insert_comment_atomic RPC and returns the created comment row.
         """
-        result = self._sb.rpc("insert_comment_atomic", {
-            "p_post_id": p_post_id,
-            "p_user_id": p_user_id,
-            "p_content": p_content,
-        }).execute()
+        result = self._sb.rpc(
+            "insert_comment_atomic",
+            {
+                "p_post_id": p_post_id,
+                "p_user_id": p_user_id,
+                "p_content": p_content,
+            },
+        ).execute()
         return result.data[0]
 
     # ------------------------------------------------------------------
     # reports table
     # ------------------------------------------------------------------
 
-    def insert_report(self, post_id: str, reporter_user_id: str, reason: str | None) -> dict:
+    def insert_report(
+        self, post_id: str, reporter_user_id: str, reason: str | None
+    ) -> dict:
         """Insert a report row and return the created row."""
-        result = self._sb.table("reports").insert({
-            "post_id": post_id,
-            "reporter_user_id": reporter_user_id,
-            "reason": reason,
-        }).execute()
+        result = (
+            self._sb.table("reports")
+            .insert(
+                {
+                    "post_id": post_id,
+                    "reporter_user_id": reporter_user_id,
+                    "reason": reason,
+                }
+            )
+            .execute()
+        )
         return result.data[0]
 
     def count_unique_reporters(self, post_id: str) -> int:

@@ -5,6 +5,7 @@ POST /v1/analyses/{job_id}/refund
 Idempotent: returns 200 {refunded: true, new_balance: N} on first successful
 refund of a failed/cancelled job.
 """
+
 from __future__ import annotations
 
 import logging
