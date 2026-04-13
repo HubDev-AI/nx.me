@@ -8,7 +8,7 @@
  * Accessibility: VoiceOver custom action fires onAccessibilityToggle.
  * Brand: glow-ring handle uses session accent colour from useTheme().
  */
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Image,
   PanResponder,
@@ -34,8 +34,12 @@ import { Label } from "../ui/Text";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Horizontal padding applied on each side (matches BeforeAfterReveal). */
-const H_PADDING = THEME.spacing.xl * 2;
+/**
+ * Total horizontal padding reserved around the slider (sum of left + right).
+ * Matches the page padding in upload/result screens so the slider aligns
+ * with surrounding content.
+ */
+const TOTAL_H_PADDING = THEME.spacing.xl * 2;
 
 /** Aspect ratio: portrait 3:4 (same as existing image cards). */
 const ASPECT_RATIO_H_OVER_W = 4 / 3;
@@ -48,6 +52,9 @@ const HANDLE_SIZE = 36;
 
 /** Thickness of the glow-ring on the handle (brand accent). */
 const GLOW_RING_WIDTH = 2;
+
+/** Extra touch area around the handle so the divider is easy to grab. */
+const HANDLE_HIT_PADDING = 24;
 
 /** Spring config for entrance + tap-to-jump animations. */
 const TOUCH_SPRING = {
@@ -90,18 +97,27 @@ export default function BeforeAfterSlider({
 }: BeforeAfterSliderProps) {
   const { theme } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
-  const sliderWidth = windowWidth - H_PADDING;
+  const sliderWidth = windowWidth - TOTAL_H_PADDING;
   const sliderHeight = sliderWidth * ASPECT_RATIO_H_OVER_W;
 
   const splitPosition = useSharedValue(0);
   const gestureStartSplit = useRef(0);
 
-  // Kick off entrance animation on first render.
-  const entranceStarted = useRef(false);
-  if (!entranceStarted.current) {
-    entranceStarted.current = true;
+  // Kick off entrance animation once after mount. Reanimated shared-value
+  // writes during render are not safe under concurrent rendering.
+  useEffect(() => {
     splitPosition.value = withSpring(initialSplit, ENTRANCE_SPRING);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Dead-zone half-width, in normalized slider units (0–1). When the user
+   * taps within this radius of the current divider position, treat it as a
+   * drag grab (no spring jump). Taps outside the dead-zone spring the
+   * divider to the tap position — "tap-to-jump".
+   */
+  const DEAD_ZONE_RATIO =
+    (HANDLE_SIZE + HANDLE_HIT_PADDING) / 2 / sliderWidth;
 
   const handleAccessibilityToggle = useCallback(() => {
     const current = splitPosition.value;
@@ -120,9 +136,18 @@ export default function BeforeAfterSlider({
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (evt) => {
           const tapX = evt.nativeEvent.locationX;
-          const target = clamp(tapX / sliderWidth, 0, 1);
-          gestureStartSplit.current = target;
-          splitPosition.value = withSpring(target, TOUCH_SPRING);
+          const tapRatio = clamp(tapX / sliderWidth, 0, 1);
+          const current = splitPosition.value;
+          const withinHandle =
+            Math.abs(tapRatio - current) <= DEAD_ZONE_RATIO;
+          if (withinHandle) {
+            // Touch near the handle — treat as drag grab (no jump).
+            gestureStartSplit.current = current;
+          } else {
+            // Tap away from the handle — jump to the tap position.
+            gestureStartSplit.current = tapRatio;
+            splitPosition.value = withSpring(tapRatio, TOUCH_SPRING);
+          }
           hapticLight();
         },
         onPanResponderMove: (_evt, gestureState) => {
@@ -137,7 +162,7 @@ export default function BeforeAfterSlider({
           // No snap — leave at current position.
         },
       }),
-    [sliderWidth, splitPosition],
+    [sliderWidth, splitPosition, DEAD_ZONE_RATIO],
   );
 
   const afterOverlayStyle = useAnimatedStyle(() => ({
@@ -256,7 +281,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     bottom: 0,
-    width: HANDLE_SIZE + 24,
+    width: HANDLE_SIZE + HANDLE_HIT_PADDING,
     alignItems: "center",
     justifyContent: "center",
   },

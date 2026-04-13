@@ -8,7 +8,7 @@
  * The modal is informational — one required action (Accept) + escape (Cancel /
  * dismiss). Per UX rule: Accept button always visible, never hidden.
  */
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Modal,
@@ -37,6 +37,11 @@ const SCRIM_OPACITY = 0.6;
 const BOTTOM_SHEET_RADIUS = THEME.radius.xl;
 const ICON_SIZE = 56;
 const CLOSE_HIT_SLOP = 16;
+/**
+ * translateY starting / exit position (off-screen). Large enough to keep
+ * the sheet hidden for tall device viewports without measuring.
+ */
+const SHEET_OFFSCREEN_Y = 600;
 
 // ---------------------------------------------------------------------------
 // Copy
@@ -79,11 +84,16 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
+  // Keep the Modal mounted through the exit animation — otherwise
+  // Modal unmounts on visible=false before the exit anim can play.
+  const [mounted, setMounted] = useState(visible);
+
   const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const sheetTranslateY = useRef(new Animated.Value(300)).current;
+  const sheetTranslateY = useRef(new Animated.Value(SHEET_OFFSCREEN_Y)).current;
 
   useEffect(() => {
     if (visible) {
+      setMounted(true);
       Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: SCRIM_OPACITY,
@@ -105,11 +115,13 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
           useNativeDriver: true,
         }),
         Animated.timing(sheetTranslateY, {
-          toValue: 300,
+          toValue: SHEET_OFFSCREEN_Y,
           duration: EXIT_DURATION_MS,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
     }
   }, [visible, backdropOpacity, sheetTranslateY]);
 
@@ -125,7 +137,7 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
 
   return (
     <Modal
-      visible={visible}
+      visible={mounted}
       transparent
       animationType="none"
       onRequestClose={handleDismiss}
@@ -258,6 +270,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: THEME.colors.surfaceElevated,
     borderTopLeftRadius: BOTTOM_SHEET_RADIUS,
     borderTopRightRadius: BOTTOM_SHEET_RADIUS,
