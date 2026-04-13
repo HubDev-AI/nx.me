@@ -1,13 +1,12 @@
 import { useEffect, useCallback, useState, useRef } from "react";
 import {
-  View,
-  FlatList,
-  RefreshControl,
-  Text,
   ActivityIndicator,
   Alert,
-  StyleSheet,
+  FlatList,
   Platform,
+  RefreshControl,
+  StyleSheet,
+  View,
 } from "react-native";
 import Animated from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,7 +28,7 @@ import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
 import { hapticLight } from "../../lib/haptics";
 import { showToast } from "../../lib/toast";
-import { FONTS } from "../../hooks/useFonts";
+import { Body, Heading } from "../../components/ui/Text";
 import { useTabBar } from "../../lib/tab-bar-context";
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<FeedPost>);
@@ -181,10 +180,12 @@ export default function HomeScreen() {
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="images-outline" size={48} color={THEME.colors.textSecondary} />
-        <Text style={styles.emptyTitle}>No posts yet</Text>
-        <Text style={styles.emptySubtitle}>
+        <Heading size="md" display={false} color="primary" style={styles.emptyTitle}>
+          No posts yet
+        </Heading>
+        <Body color="secondary" style={styles.emptySubtitle}>
           Be the first to share your glow-up
-        </Text>
+        </Body>
       </View>
     );
   }, [isLoading]);
@@ -281,17 +282,11 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   emptyTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    ...THEME.typography.heading,
-    color: THEME.colors.textPrimary,
     marginTop: THEME.spacing.lg,
+    textAlign: "center",
   },
   emptySubtitle: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
   },
   // retryButton and retryText removed — handled by QueryStateView
 });

@@ -23,6 +23,9 @@ import { useFeatures } from "../../lib/features-context";
 /** Height of the floating tab bar + bottom inset — used for paddingBottom in scroll views */
 export const TAB_BAR_HEIGHT = 90;
 
+/** Inner pill height (used for borderRadius too). */
+const TAB_BAR_PILL_HEIGHT = 64;
+
 /** Minimum visible tabs before we render the floating tab bar at all. */
 const MIN_TABS_FOR_BAR = 2;
 
@@ -317,8 +320,9 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: THEME.spacing.xxl,
     right: THEME.spacing.xxl,
-    height: 64,
-    borderRadius: 32,
+    height: TAB_BAR_PILL_HEIGHT,
+    borderRadius: TAB_BAR_PILL_HEIGHT / 2,
+    borderCurve: "continuous",
     backgroundColor: TAB_BAR_BG,
     borderWidth: 1,
     borderColor: TAB_BAR_BORDER,
@@ -362,6 +366,7 @@ const styles = StyleSheet.create({
     height: 40,
     paddingHorizontal: THEME.spacing.lg,
     borderRadius: THEME.radius.xl,
+    borderCurve: "continuous",
     ...THEME.shadow.glass,
   },
   scrollToTopText: {

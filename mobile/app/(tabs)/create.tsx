@@ -1,9 +1,9 @@
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,13 +11,20 @@ import { TAB_BAR_HEIGHT } from "./_layout";
 
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
+import { Body, Caption, Heading, Label } from "../../components/ui/Text";
 import { useTheme } from "../../lib/theme-context";
 import { useEntering } from "../../lib/hooks/use-entering";
-import { FONTS } from "../../hooks/useFonts";
 
 /* ------------------------------------------------------------------ */
 /*  Feature definitions                                                */
 /* ------------------------------------------------------------------ */
+
+/**
+ * Route targets for active features. Expo Router typed-routes require a
+ * concrete union here (not a bare `string`) for `router.push` to type-check.
+ * Expand as more features ship.
+ */
+type FeatureRoute = "/upload";
 
 interface Feature {
   key: string;
@@ -25,15 +32,18 @@ interface Feature {
   name: string;
   description: string;
   active: boolean;
-  route?: string;
+  route?: FeatureRoute;
 }
+
+const GRID_COLUMN_GAP = THEME.spacing.md;
+const INACTIVE_ICON_BG = "rgba(255, 255, 255, 0.04)";
 
 const FEATURES: Feature[] = [
   {
     key: "glow-up",
     icon: "sparkles",
     name: "Glow Up",
-    description: "AI-powered style transformation",
+    description: "Upload a selfie — get an AI glow-up",
     active: true,
     route: "/upload",
   },
@@ -119,12 +129,14 @@ function FeatureCard({
           accessibilityState={{ disabled: !isActive }}
         >
           {/* Icon wrapper with accent tint background for active */}
-          <View style={[
-            styles.iconWrapper,
-            isActive
-              ? { backgroundColor: accent + "1A" }
-              : { backgroundColor: THEME.colors.surfaceElevated },
-          ]}>
+          <View
+            style={[
+              styles.iconWrapper,
+              isActive
+                ? { backgroundColor: accent + "1A" }
+                : { backgroundColor: INACTIVE_ICON_BG },
+            ]}
+          >
             <Ionicons
               name={feature.icon}
               size={32}
@@ -132,27 +144,26 @@ function FeatureCard({
             />
           </View>
 
-          <Text
-            style={[
-              styles.featureName,
-              !isActive && styles.featureNameInactive,
-            ]}
+          <Body
+            weight="semibold"
+            color={isActive ? "primary" : "muted"}
+            style={styles.featureName}
           >
             {feature.name}
-          </Text>
+          </Body>
 
-          <Text
-            style={[
-              styles.featureDesc,
-              !isActive && styles.featureDescInactive,
-            ]}
+          <Caption
+            color={isActive ? "secondary" : "disabled"}
+            style={styles.featureDesc}
           >
             {feature.description}
-          </Text>
+          </Caption>
 
           {!isActive && (
             <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoon}>COMING SOON</Text>
+              <Label color="muted" style={styles.comingSoonLabel}>
+                Coming soon
+              </Label>
             </View>
           )}
         </Pressable>
@@ -173,7 +184,7 @@ export default function CreateScreen() {
 
   const handleFeaturePress = (feature: Feature) => {
     if (feature.active && feature.route) {
-      router.push(feature.route as `/${string}`);
+      router.push(feature.route);
     }
   };
 
@@ -188,20 +199,16 @@ export default function CreateScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <Animated.Text
-          entering={fadeInDown(80, THEME.animation.duration.fast)}
-          style={styles.title}
-          maxFontSizeMultiplier={1.3}
-        >
-          Create
-        </Animated.Text>
-        <Animated.Text
-          entering={fadeInDown(160, THEME.animation.duration.fast)}
-          style={styles.subtitle}
-          maxFontSizeMultiplier={1.3}
-        >
-          What would you like to do?
-        </Animated.Text>
+        <Animated.View entering={fadeInDown(80, THEME.animation.duration.fast)}>
+          <Heading size="lg" color="primary" style={styles.title} maxFontSizeMultiplier={1.3}>
+            Create
+          </Heading>
+        </Animated.View>
+        <Animated.View entering={fadeInDown(160, THEME.animation.duration.fast)}>
+          <Body color="secondary" style={styles.subtitle} maxFontSizeMultiplier={1.3}>
+            What would you like to do?
+          </Body>
+        </Animated.View>
 
         {/* Divider below subtitle */}
         <Animated.View
@@ -241,17 +248,9 @@ const styles = StyleSheet.create({
 
   /* Header */
   title: {
-    fontFamily: FONTS.display,
-    fontSize: 32,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.headingLg.letterSpacing,
     marginBottom: THEME.spacing.xs,
   },
   subtitle: {
-    fontFamily: FONTS.body,
-    fontSize: 15,
-    color: THEME.colors.textSecondary,
-    letterSpacing: THEME.typography.body.letterSpacing,
     marginBottom: THEME.spacing.lg,
   },
 
@@ -262,22 +261,23 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.xl,
   },
 
-  /* Grid */
+  /* Grid — flex-basis + gap instead of negative margin */
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginHorizontal: -6,
+    gap: GRID_COLUMN_GAP,
   },
   gridCell: {
-    width: "50%",
-    paddingHorizontal: 6,
-    marginBottom: THEME.spacing.md,
+    flexBasis: "48%",
+    flexGrow: 1,
+    flexShrink: 0,
   },
 
   /* Box shared */
   box: {
     borderWidth: 1,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     padding: THEME.spacing.lg,
     aspectRatio: 1,
     justifyContent: "flex-start",
@@ -292,6 +292,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: THEME.radius.md,
+    borderCurve: "continuous",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: THEME.spacing.md,
@@ -299,23 +300,10 @@ const styles = StyleSheet.create({
 
   /* Feature text */
   featureName: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 15,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
     marginBottom: THEME.spacing.xs,
   },
-  featureNameInactive: {
-    color: THEME.colors.textMuted,
-  },
   featureDesc: {
-    fontFamily: FONTS.body,
-    fontSize: 12,
-    color: THEME.colors.textSecondary,
     lineHeight: 16,
-  },
-  featureDescInactive: {
-    color: THEME.colors.textDisabled,
   },
 
   /* Coming soon badge */
@@ -324,13 +312,12 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     backgroundColor: THEME.colors.surfaceElevated,
     borderRadius: THEME.radius.sm,
+    borderCurve: "continuous",
     paddingHorizontal: THEME.spacing.sm,
     paddingVertical: THEME.spacing.xs / 2,
   },
-  comingSoon: {
-    fontFamily: FONTS.bodySemiBold,
+  comingSoonLabel: {
     fontSize: 9,
-    color: THEME.colors.textMuted,
     letterSpacing: 1.2,
   },
 });
