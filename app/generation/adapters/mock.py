@@ -1,4 +1,5 @@
 """Mock generation adapter — deterministic results for testing."""
+
 from __future__ import annotations
 
 from app.generation.models import GenerationOptions, GenerationResult

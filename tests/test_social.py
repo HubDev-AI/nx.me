@@ -8,6 +8,7 @@ Note: FeedSort uses StrEnum (Python 3.11+) and the route endpoints use
 FastAPI features requiring 0.115+. We test the importable constants and
 helper logic without importing the route-level symbols that fail on 3.10.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,14 +31,17 @@ class TestFeedSort:
 
     def test_newest_value(self):
         from app.api.social import FeedSort
+
         assert FeedSort.NEWEST == "newest"
 
     def test_trending_value(self):
         from app.api.social import FeedSort
+
         assert FeedSort.TRENDING == "trending"
 
     def test_biggest_improvements_value(self):
         from app.api.social import FeedSort
+
         assert FeedSort.BIGGEST_IMPROVEMENTS == "biggest_improvements"
 
 
@@ -47,6 +51,7 @@ class TestFeedModels:
 
     def test_feed_post_response_model(self):
         from app.api.social import FeedPostResponse
+
         post = FeedPostResponse(
             post_id="p-1",
             user_id="u-1",
@@ -65,12 +70,14 @@ class TestFeedModels:
 
     def test_feed_response_empty_list(self):
         from app.api.social import FeedResponse
+
         resp = FeedResponse(posts=[], next_cursor=None, has_more=False)
         assert len(resp.posts) == 0
         assert resp.has_more is False
 
     def test_reaction_response_model(self):
         from app.api.social import ReactionResponse
+
         resp = ReactionResponse(reaction_count=5)
         assert resp.reaction_count == 5
 
@@ -136,7 +143,8 @@ class TestValidateGuestToken:
 
         # SET was called with the hashed key, correct TTL, and NX flag
         redis_mock.set.assert_called_once_with(
-            registration_key, "1",
+            registration_key,
+            "1",
             ex=settings.GUEST_TOKEN_TTL_SECONDS,
             nx=True,
         )

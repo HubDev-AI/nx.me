@@ -7,6 +7,7 @@ Contains the full keyword extraction, hair-first ordering, style theme
 injection, lighting selection, and adaptive parameter computation that
 were previously spread across prompt_builder.py.
 """
+
 from __future__ import annotations
 
 import random

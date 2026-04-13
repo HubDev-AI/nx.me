@@ -94,8 +94,7 @@ def _discover_migrations() -> list[tuple[str, Path]]:
     """
     pattern = re.compile(r"^\d{4}_.*\.sql$")
     files = sorted(
-        f for f in MIGRATIONS_DIR.iterdir()
-        if f.is_file() and pattern.match(f.name)
+        f for f in MIGRATIONS_DIR.iterdir() if f.is_file() and pattern.match(f.name)
     )
     return [(f.stem, f) for f in files]
 
@@ -177,7 +176,9 @@ def _validate_tiers(conn) -> None:
     for tier in SEED_TIERS:
         row = rows[tier.slug]
         if str(row["id"]) != tier.id:
-            errors.append(f"  {tier.slug}: id mismatch (db={row['id']}, expected={tier.id})")
+            errors.append(
+                f"  {tier.slug}: id mismatch (db={row['id']}, expected={tier.id})"
+            )
         if row["is_default"] != tier.is_default:
             errors.append(
                 f"  {tier.slug}: is_default mismatch (db={row['is_default']}, expected={tier.is_default})"
@@ -237,7 +238,10 @@ def main() -> None:
                     target_idx = i
                     break
             if target_idx is None:
-                print(f"Error: target migration '{args.target}' not found", file=sys.stderr)
+                print(
+                    f"Error: target migration '{args.target}' not found",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
 
             to_revert = [
@@ -265,7 +269,10 @@ def main() -> None:
                     break
 
             if not target_found:
-                print(f"Error: target migration '{args.target}' not found", file=sys.stderr)
+                print(
+                    f"Error: target migration '{args.target}' not found",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
     finally:
         conn.close()

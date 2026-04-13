@@ -10,6 +10,7 @@ When a flag is off:
 Day-one registry: AUTH_REQUIRED, SOCIAL_ENABLED, SHARE_ENABLED,
 ONBOARDING_ENABLED, ADVISOR_ENABLED.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel

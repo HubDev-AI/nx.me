@@ -1,4 +1,5 @@
 """Mock payment adapter — deterministic results for testing."""
+
 from __future__ import annotations
 
 import logging
@@ -25,7 +26,9 @@ class MockPaymentAdapter:
         session_id = str(uuid4())
         logger.info(
             "Mock checkout session: mode=%s, user=%s, session=%s",
-            mode, user_id, session_id,
+            mode,
+            user_id,
+            session_id,
         )
         return f"https://checkout.stripe.com/mock/{session_id}"
 
@@ -44,7 +47,11 @@ class MockPaymentAdapter:
         raw: dict = json.loads(payload)
         # If the payload already has the nested Stripe structure, use as-is.
         # Otherwise, wrap it so event.data["data"]["object"] resolves correctly.
-        if "data" in raw and isinstance(raw.get("data"), dict) and "object" in raw["data"]:
+        if (
+            "data" in raw
+            and isinstance(raw.get("data"), dict)
+            and "object" in raw["data"]
+        ):
             data = raw
         else:
             # Wrap the raw payload so the handler's data["data"]["object"] path works

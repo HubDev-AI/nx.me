@@ -3,6 +3,7 @@
 Follows the same pattern as TierRepository: constructor takes a Client,
 methods are synchronous (callers use run_sync for async handlers).
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,7 +28,9 @@ class UserRepository:
         """Fetch core profile fields for the authenticated user, or None if not found."""
         result = (
             self._sb.table("users")
-            .select("id, username, display_name, email, avatar_storage_key, username_changed_at")
+            .select(
+                "id, username, display_name, email, avatar_storage_key, username_changed_at"
+            )
             .eq("id", user_id)
             .is_("deleted_at", "null")
             .maybe_single()
@@ -41,7 +44,9 @@ class UserRepository:
         """Fetch a non-deleted user by username, or None if not found."""
         result = (
             self._sb.table("users")
-            .select("id, username, display_name, avatar_storage_key, created_at, username_changed_at")
+            .select(
+                "id, username, display_name, avatar_storage_key, created_at, username_changed_at"
+            )
             .eq("username", username)
             .is_("deleted_at", "null")
             .maybe_single()
@@ -61,7 +66,9 @@ class UserRepository:
         )
         return result.data[0] if result.data else None
 
-    def check_username_taken(self, username: str, exclude_user_id: str | None = None) -> dict | None:
+    def check_username_taken(
+        self, username: str, exclude_user_id: str | None = None
+    ) -> dict | None:
         """Return the row if username is taken by an active user other than exclude_user_id, else None."""
         result = (
             self._sb.table("users")
@@ -76,7 +83,9 @@ class UserRepository:
             return None
         return result.data
 
-    def check_username_available_ci(self, username: str, exclude_user_id: str | None = None) -> dict:
+    def check_username_available_ci(
+        self, username: str, exclude_user_id: str | None = None
+    ) -> dict:
         """Check if a username is available (case-insensitive).
 
         Returns { available: bool, reason?: str }.
@@ -151,7 +160,9 @@ class UserRepository:
         """Insert a new user row."""
         self._sb.table("users").insert(user_row).execute()
 
-    def upsert(self, user_row: dict, on_conflict: str = "id", ignore_duplicates: bool = False) -> None:
+    def upsert(
+        self, user_row: dict, on_conflict: str = "id", ignore_duplicates: bool = False
+    ) -> None:
         """Upsert a user row."""
         self._sb.table("users").upsert(
             user_row,
@@ -161,7 +172,9 @@ class UserRepository:
 
     def set_email_verified(self, user_id: str) -> None:
         """Mark a user's email as verified."""
-        self._sb.table("users").update({"email_verified": True}).eq("id", user_id).execute()
+        self._sb.table("users").update({"email_verified": True}).eq(
+            "id", user_id
+        ).execute()
 
     def update_profile(self, user_id: str, updates: dict) -> None:
         """Apply arbitrary field updates to a user row."""
@@ -178,7 +191,9 @@ class UserRepository:
             }
         ).eq("id", user_id).execute()
 
-    def soft_delete(self, user_id: str, now_utc: datetime, reserved_until: datetime) -> list[dict]:
+    def soft_delete(
+        self, user_id: str, now_utc: datetime, reserved_until: datetime
+    ) -> list[dict]:
         """Soft-delete a user row; returns the updated rows (empty if already deleted).
 
         Atomicity note (M-12): both ``deleted_at`` and ``username_reserved_until``

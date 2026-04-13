@@ -3,6 +3,7 @@
 Follows the same pattern as UserRepository: constructor takes a Client,
 methods are synchronous (callers use run_sync for async handlers).
 """
+
 from __future__ import annotations
 
 import logging
@@ -112,7 +113,9 @@ class ImageRepository:
         )
         logger.info("Uploaded %s/%s (%d bytes)", bucket, key, len(data))
 
-    def update_file(self, bucket: str, key: str, data: bytes, content_type: str) -> None:
+    def update_file(
+        self, bucket: str, key: str, data: bytes, content_type: str
+    ) -> None:
         """Overwrite an existing file in storage."""
         self._sb.storage.from_(bucket).update(
             path=key,
@@ -158,7 +161,9 @@ class ImageRepository:
         )
         logger.info("Uploaded (public) %s/%s (%d bytes)", bucket, key, len(data))
 
-    def build_avatar_signed_url(self, avatar_storage_key: str, expires_in: int) -> str | None:
+    def build_avatar_signed_url(
+        self, avatar_storage_key: str, expires_in: int
+    ) -> str | None:
         """Generate a signed URL for an avatar in the private avatars bucket.
 
         Returns None if the signed URL request fails.
@@ -166,5 +171,7 @@ class ImageRepository:
         try:
             return self.create_signed_url("avatars", avatar_storage_key, expires_in)
         except Exception:
-            logger.warning("Failed to generate signed URL for avatar key: %s", avatar_storage_key)
+            logger.warning(
+                "Failed to generate signed URL for avatar key: %s", avatar_storage_key
+            )
             return None

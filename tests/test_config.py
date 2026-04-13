@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/config/__init__.py (Settings class, settings singleton)
 """
+
 from __future__ import annotations
 
 
@@ -31,7 +32,9 @@ class TestSettings:
         assert settings.REGISTRATION_FINGERPRINT_WINDOW_SECONDS == 86_400
 
     def test_registration_ip_limit(self):
-        assert settings.REGISTRATION_IP_LIMIT >= 1  # env-configurable; just verify it's positive
+        assert (
+            settings.REGISTRATION_IP_LIMIT >= 1
+        )  # env-configurable; just verify it's positive
 
     def test_registration_ip_window_1h(self):
         assert settings.REGISTRATION_IP_WINDOW_SECONDS == 3_600
@@ -49,7 +52,9 @@ class TestSettings:
         assert settings.GENERATION_TIMEOUT_SECONDS == 180
 
     def test_image_gen_cost_ceiling(self):
-        assert settings.IMAGE_GEN_COST_CEILING_USD <= 0.10  # Must stay under cost ceiling
+        assert (
+            settings.IMAGE_GEN_COST_CEILING_USD <= 0.10
+        )  # Must stay under cost ceiling
 
     def test_min_age_constant_not_in_settings(self):
         """Age gate is a code constant, not a settings value (intentional)."""

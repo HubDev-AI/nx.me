@@ -3,6 +3,7 @@
 Adds security-related HTTP response headers to every response as
 recommended by OWASP and modern browser security best practices.
 """
+
 from __future__ import annotations
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,7 +22,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Disabled per OWASP recommendation — modern browsers handle XSS natively;
         # the legacy header can introduce new vulnerabilities.
         response.headers["X-XSS-Protection"] = "0"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'"
+        )
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
         return response

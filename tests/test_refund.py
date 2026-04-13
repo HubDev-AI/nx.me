@@ -5,6 +5,7 @@ Exercises production code in app/api/refund.py.
 Pattern: tests call the handler function directly with mock dependencies,
 consistent with the rest of the test suite (no HTTP integration tests).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,6 +16,7 @@ from uuid import uuid4
 try:
     from app.api.refund import refund_analysis_job, RefundJobResponse
     from app.api.errors import ApiError
+
     _REFUND_AVAILABLE = True
 except (ImportError, AttributeError):
     _REFUND_AVAILABLE = False
@@ -103,7 +105,9 @@ class TestRefundEndpoint:
         user_id = str(uuid4())
         reservation_id = str(uuid4())
 
-        job = _make_job(job_id, user_id, status="failed", credit_reservation_id=reservation_id)
+        job = _make_job(
+            job_id, user_id, status="failed", credit_reservation_id=reservation_id
+        )
         job_repo = _make_job_repo(job, usage_status="committed")
         ledger = _make_ledger(balance=5)
 
@@ -114,7 +118,9 @@ class TestRefundEndpoint:
         assert result.refunded is True
         assert result.new_balance == 5
         ledger.refund.assert_called_once()
-        job_repo.update_usage_event.assert_called_once_with(job_id, {"status": "refunded"})
+        job_repo.update_usage_event.assert_called_once_with(
+            job_id, {"status": "refunded"}
+        )
 
     @pytest.mark.asyncio
     async def test_refund_cancelled_job_returns_200(self):
@@ -259,7 +265,9 @@ class TestRefundEndpoint:
         user_id = str(uuid4())
         reservation_id = str(uuid4())
 
-        job = _make_job(job_id, user_id, status="failed", credit_reservation_id=reservation_id)
+        job = _make_job(
+            job_id, user_id, status="failed", credit_reservation_id=reservation_id
+        )
         job_repo = _make_job_repo(job, usage_status="reserved")
         ledger = _make_ledger(balance=1)
         ledger.refund.side_effect = ValueError("not committed")

@@ -11,6 +11,7 @@ Endpoints:
   GET  /v1/memories                   — list memories
   DELETE /v1/memories/{id}            — delete memory
 """
+
 from __future__ import annotations
 
 import logging
@@ -33,7 +34,13 @@ from app.advisor.models import (
     NudgeResponse,
 )
 from app.advisor.service import AdvisorService
-from app.api.deps import get_current_user, get_redis, get_supabase, require_app_feature, require_feature
+from app.api.deps import (
+    get_current_user,
+    get_redis,
+    get_supabase,
+    require_app_feature,
+    require_feature,
+)
 from app.api.middleware.auth import UserClaims
 from app.repositories.advisor_repo import AdvisorRepository
 
@@ -134,7 +141,9 @@ async def send_advisor_message(
 
 @router.get("/advisor/messages", response_model=ConversationHistoryPageResponse)
 async def get_advisor_messages(
-    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    cursor: str | None = Query(
+        None, description="Cursor ({created_at}|{id} composite)"
+    ),
     limit: int = Query(50, ge=1, le=100),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
@@ -142,15 +151,29 @@ async def get_advisor_messages(
     """Return the active conversation history for the current user (paginated)."""
     user_id = UUID(claims["sub"])
     try:
-        result = await svc.get_conversation_history_page(user_id, limit=limit, cursor=cursor)
+        result = await svc.get_conversation_history_page(
+            user_id, limit=limit, cursor=cursor
+        )
     except ValueError as exc:
         # A-7: Malformed cursor returns 400
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     except Exception as exc:
-        logger.error("Failed to fetch advisor messages for user %s: %s", user_id, exc, exc_info=True)
+        logger.error(
+            "Failed to fetch advisor messages for user %s: %s",
+            user_id,
+            exc,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": {"code": "ADVISOR_ERROR", "message": "Failed to load conversation history"}},
+            detail={
+                "error": {
+                    "code": "ADVISOR_ERROR",
+                    "message": "Failed to load conversation history",
+                }
+            },
         ) from exc
 
     return ConversationHistoryPageResponse(
@@ -176,18 +199,26 @@ async def get_advisor_messages(
 
 @router.get("/advisor/nudges", response_model=NudgeFeedResponse)
 async def get_nudges(
-    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    cursor: str | None = Query(
+        None, description="Cursor ({created_at}|{id} composite)"
+    ),
     limit: int = Query(50, ge=1, le=100),
-    unread: bool = Query(False, description="When true, return only unread nudges (read_at IS NULL)"),
+    unread: bool = Query(
+        False, description="When true, return only unread nudges (read_at IS NULL)"
+    ),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> NudgeFeedResponse:
     """Return the nudge feed for the current user (all tiers, paginated)."""
     user_id = UUID(claims["sub"])
     try:
-        result = await svc.get_nudges_page(user_id, limit=limit, cursor=cursor, unread_only=unread)
+        result = await svc.get_nudges_page(
+            user_id, limit=limit, cursor=cursor, unread_only=unread
+        )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
     return NudgeFeedResponse(
         nudges=[
@@ -264,7 +295,9 @@ async def mark_nudge_read(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/memories", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/memories", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED
+)
 async def add_memory(
     body: MemoryCreateRequest,
     claims: UserClaims = Depends(get_current_user),
@@ -289,7 +322,9 @@ async def add_memory(
         )
 
     user_id = UUID(claims["sub"])
-    row = await svc.add_memory(user_id=user_id, memory_type=body.type, content=body.content)
+    row = await svc.add_memory(
+        user_id=user_id, memory_type=body.type, content=body.content
+    )
 
     memory_id = row.get("id", "")
     payload = MemoryResponse(
@@ -312,7 +347,9 @@ async def add_memory(
 
 @router.get("/memories", response_model=MemoryListPageResponse)
 async def list_memories(
-    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    cursor: str | None = Query(
+        None, description="Cursor ({created_at}|{id} composite)"
+    ),
     limit: int = Query(50, ge=1, le=100),
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
@@ -322,7 +359,9 @@ async def list_memories(
     try:
         result = await svc.list_memories_page(user_id, limit=limit, cursor=cursor)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
     return MemoryListPageResponse(
         memories=[
@@ -344,7 +383,9 @@ async def list_memories(
 # ---------------------------------------------------------------------------
 
 
-@router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+@router.delete(
+    "/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None
+)
 async def delete_memory(
     memory_id: UUID,
     claims: UserClaims = Depends(get_current_user),

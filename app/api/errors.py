@@ -2,6 +2,7 @@
 
 All API errors return: {"error": {"code": "...", "message": "..."}}
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,7 +57,13 @@ def raise_api_error(
     details: dict | None = None,
 ) -> None:
     """Convenience function to raise a structured API error."""
-    raise ApiError(status_code=status_code, code=code, message=message, headers=headers, details=details)
+    raise ApiError(
+        status_code=status_code,
+        code=code,
+        message=message,
+        headers=headers,
+        details=details,
+    )
 
 
 async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
@@ -99,7 +106,9 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     """Handle Pydantic validation errors — return structured format."""
     errors = exc.errors()
     # Build a human-readable message from the first error
@@ -130,7 +139,9 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRe
         headers["Retry-After"] = str(exc.retry_after)
     return JSONResponse(
         status_code=429,
-        content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Rate limit exceeded"}},
+        content={
+            "error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Rate limit exceeded"}
+        },
         headers=headers or None,
     )
 

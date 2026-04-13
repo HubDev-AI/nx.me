@@ -6,6 +6,7 @@ Handles:
 - Memory extraction from conversation turns (async, Haiku)
 - Deduplication before storage
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -101,7 +102,9 @@ def summarize_memory_content(content: dict[str, Any]) -> str:
             return str(content[key])
 
     # Fallback: serialize known string values
-    return " ".join(str(v) for v in content.values() if isinstance(v, (str, int, float)))
+    return " ".join(
+        str(v) for v in content.values() if isinstance(v, (str, int, float))
+    )
 
 
 class MemoryManager:
@@ -156,7 +159,9 @@ class MemoryManager:
 
         embedding = await self._llm_adapter.compute_embedding(query)
 
-        candidates = self._repo.match_memories(str(user_id), embedding, _CANDIDATE_LIMIT)
+        candidates = self._repo.match_memories(
+            str(user_id), embedding, _CANDIDATE_LIMIT
+        )
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for row in candidates:
@@ -220,8 +225,8 @@ class MemoryManager:
             "accepted suggestions (user confirmed trying/doing something), "
             "dismissed suggestions (user rejected), "
             "or notes. "
-            "Respond with JSON: {\"goals\": [...], \"accepted\": [...], "
-            "\"dismissed\": [...], \"notes\": [...]}. "
+            'Respond with JSON: {"goals": [...], "accepted": [...], '
+            '"dismissed": [...], "notes": [...]}. '
             "Empty arrays if nothing to extract."
         )
 
@@ -238,7 +243,9 @@ class MemoryManager:
             return
 
         # Fetch recent same-type memories for dedup check (last 7 days)
-        recent_rows = self._repo.get_recent_memories(str(user_id), _seven_days_ago_iso())
+        recent_rows = self._repo.get_recent_memories(
+            str(user_id), _seven_days_ago_iso()
+        )
         recent_by_type: dict[str, list[str]] = {}
         for row in recent_rows:
             t = row["type"]
@@ -258,14 +265,22 @@ class MemoryManager:
             markers = ("tried", "did", "got", "went", "bought", "used", "wore", "cut")
             if not any(m in acc_text.lower() for m in markers):
                 continue
-            if _is_duplicate(acc_text, recent_by_type.get(MemoryType.ACCEPTED_SUGGESTION, [])):
+            if _is_duplicate(
+                acc_text, recent_by_type.get(MemoryType.ACCEPTED_SUGGESTION, [])
+            ):
                 continue
-            await self.write_memory(user_id, MemoryType.ACCEPTED_SUGGESTION, {"text": acc_text})
+            await self.write_memory(
+                user_id, MemoryType.ACCEPTED_SUGGESTION, {"text": acc_text}
+            )
 
         for dis_text in extracted.get("dismissed", []):
-            if _is_duplicate(dis_text, recent_by_type.get(MemoryType.DISMISSED_SUGGESTION, [])):
+            if _is_duplicate(
+                dis_text, recent_by_type.get(MemoryType.DISMISSED_SUGGESTION, [])
+            ):
                 continue
-            await self.write_memory(user_id, MemoryType.DISMISSED_SUGGESTION, {"text": dis_text})
+            await self.write_memory(
+                user_id, MemoryType.DISMISSED_SUGGESTION, {"text": dis_text}
+            )
 
         for note_text in extracted.get("notes", []):
             if _is_duplicate(note_text, recent_by_type.get(MemoryType.USER_NOTE, [])):
@@ -296,13 +311,18 @@ class MemoryManager:
                 .execute()
             )
             if image_data.data and image_data.data.get("user_id") != str(user_id):
-                logger.warning("Image %s does not belong to user %s, skipping insight", image_id, user_id)
+                logger.warning(
+                    "Image %s does not belong to user %s, skipping insight",
+                    image_id,
+                    user_id,
+                )
                 return
         except Exception as exc:
             # A-8: Log and skip instead of proceeding with unverified data
             logger.warning(
                 "Could not verify image ownership for %s — skipping insight storage: %s",
-                image_id, exc,
+                image_id,
+                exc,
             )
             return
 

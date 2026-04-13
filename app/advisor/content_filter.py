@@ -3,6 +3,7 @@
 Input: strip prompt injection, enforce max length, rate-limit.
 Output: scan for C-2 violations (forbidden terms from SOUL.md).
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,19 +33,21 @@ _FORBIDDEN_OUTPUT_TERMS: tuple[str, ...] = (
 
 # Pre-compiled patterns for word-boundary matching (single words)
 _FORBIDDEN_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(rf'\b{re.escape(term)}\b', re.IGNORECASE)
+    re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
     for term in _FORBIDDEN_OUTPUT_TERMS
     if " " not in term and "/" not in term
 )
 # Multi-word and special terms use simple containment (word boundaries are natural)
 _FORBIDDEN_EXACT: tuple[str, ...] = tuple(
-    term for term in _FORBIDDEN_OUTPUT_TERMS
-    if " " in term or "/" in term
+    term for term in _FORBIDDEN_OUTPUT_TERMS if " " in term or "/" in term
 )
 
 # Prompt injection patterns (AC-SEC: block system-override attempts)
 _INJECTION_PATTERNS: list[re.Pattern[str]] = [
-    re.compile(r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts?)", re.IGNORECASE),
+    re.compile(
+        r"ignore\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts?)",
+        re.IGNORECASE,
+    ),
     re.compile(r"you\s+are\s+now\s+a", re.IGNORECASE),
     re.compile(r"act\s+as\s+(if\s+you\s+are|a)\s+", re.IGNORECASE),
     re.compile(r"forget\s+everything", re.IGNORECASE),
@@ -55,9 +58,14 @@ _INJECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"new\s+instructions?\s*:", re.IGNORECASE),
     re.compile(r"override\s+(previous|system)\s+", re.IGNORECASE),
     re.compile(r"reveal\s+(your|the)\s+(system|prompt|instructions?)", re.IGNORECASE),
-    re.compile(r"what\s+(are|is)\s+your\s+(system|initial)\s+(prompt|instructions?)", re.IGNORECASE),
+    re.compile(
+        r"what\s+(are|is)\s+your\s+(system|initial)\s+(prompt|instructions?)",
+        re.IGNORECASE,
+    ),
     re.compile(r"repeat\s+(your|the)\s+(system|initial)\s+", re.IGNORECASE),
-    re.compile(r"(print|output|show|display)\s+(your|the)\s+(system|initial)\s+", re.IGNORECASE),
+    re.compile(
+        r"(print|output|show|display)\s+(your|the)\s+(system|initial)\s+", re.IGNORECASE
+    ),
     re.compile(r"bypass\s+(safety|content|filter)", re.IGNORECASE),
     re.compile(r"do\s+not\s+follow\s+(your|any)\s+", re.IGNORECASE),
     re.compile(r"base64\s*:", re.IGNORECASE),
@@ -117,12 +125,15 @@ async def check_rate_limit(user_id: str, redis_client: aioredis.Redis) -> None:
         # A-12: Log rate limit hits for visibility
         logger.warning(
             "Rate limit hit for user %s: %d messages (limit %d)",
-            user_id, new_count, settings.ADVISOR_CHAT_RATE_LIMIT,
+            user_id,
+            new_count,
+            settings.ADVISOR_CHAT_RATE_LIMIT,
         )
         raise RateLimitExceeded(retry_after=max(ttl, 0))
 
     # H-4: Track daily message count for model degradation (separate from hourly rate limit)
     from datetime import datetime, timezone
+
     daily_key = f"advisor_daily_msgs:{user_id}:{datetime.now(tz=timezone.utc).strftime('%Y%m%d')}"
     daily_count = await redis_client.incr(daily_key)
     if daily_count == 1:
@@ -134,7 +145,9 @@ def scan_output(text: str) -> bool:
     lower = text.lower()
     for pattern in _FORBIDDEN_PATTERNS:
         if pattern.search(lower):
-            logger.warning("C-2 violation detected: forbidden pattern '%s'", pattern.pattern)
+            logger.warning(
+                "C-2 violation detected: forbidden pattern '%s'", pattern.pattern
+            )
             return True
     for term in _FORBIDDEN_EXACT:
         if term in lower:

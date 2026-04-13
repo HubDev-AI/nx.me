@@ -3,6 +3,7 @@
 Exercises production code in:
   - app/api/entitlement.py (models, credit purchase validation, subscription logic)
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
@@ -14,10 +15,15 @@ from fastapi import HTTPException
 
 try:
     from app.api.entitlement import (
-        CreditPackOption, PremiumOption, PurchaseOptions,
-        EntitlementResponse, CreditPurchaseRequest, CheckoutResponse,
+        CreditPackOption,
+        PremiumOption,
+        PurchaseOptions,
+        EntitlementResponse,
+        CreditPurchaseRequest,
+        CheckoutResponse,
         CancelSubscriptionResponse,
     )
+
     _ENTITLEMENT_AVAILABLE = True
 except (ImportError, AttributeError):
     _ENTITLEMENT_AVAILABLE = False
@@ -76,7 +82,9 @@ class TestEntitlementModels:
         assert "stripe.com" in resp.checkout_url
 
     def test_cancel_subscription_response(self):
-        resp = CancelSubscriptionResponse(status="cancelling", message="Will cancel at period end")
+        resp = CancelSubscriptionResponse(
+            status="cancelling", message="Will cancel at period end"
+        )
         assert resp.status == "cancelling"
 
 
@@ -136,6 +144,8 @@ class TestCancelSubscription:
         }
         payment = AsyncMock()
 
-        result = await cancel_subscription(claims=claims, sub_repo=sub_repo, payment=payment)
+        result = await cancel_subscription(
+            claims=claims, sub_repo=sub_repo, payment=payment
+        )
         assert result.status == "cancelling"
         payment.cancel_subscription.assert_called_once_with("sub_123")

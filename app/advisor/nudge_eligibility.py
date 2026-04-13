@@ -2,6 +2,7 @@
 
 Each function returns a list of user-ID strings eligible for that trigger type.
 """
+
 from __future__ import annotations
 
 import logging
@@ -65,16 +66,16 @@ async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
 
     for milestone_count in MILESTONE_COUNTS:
         milestone_users = [
-            uid_str
-            for uid_str, cnt in count_per_user.items()
-            if cnt == milestone_count
+            uid_str for uid_str, cnt in count_per_user.items() if cnt == milestone_count
         ]
 
         for uid_str in milestone_users:
             # Avoid duplicate milestone nudges within dedup window
             recent = await run_sync(
                 advisor_repo.find_recent_nudges,
-                uid_str, TRIGGER_MILESTONE, recent_milestone_cutoff,
+                uid_str,
+                TRIGGER_MILESTONE,
+                recent_milestone_cutoff,
             )
             if not recent:
                 eligible.append(uid_str)
@@ -91,9 +92,7 @@ async def find_re_engagement_eligible(advisor_repo: AdvisorRepository) -> list[s
         List of user-ID strings eligible for a re-engagement nudge.
     """
     now_utc = datetime.now(tz=timezone.utc)
-    re_engagement_cutoff = (
-        now_utc - timedelta(days=RE_ENGAGEMENT_DAYS)
-    ).isoformat()
+    re_engagement_cutoff = (now_utc - timedelta(days=RE_ENGAGEMENT_DAYS)).isoformat()
     last_re_engagement_nudge_cutoff = (
         now_utc - timedelta(days=RE_ENGAGEMENT_DAYS)
     ).isoformat()
@@ -120,7 +119,9 @@ async def find_re_engagement_eligible(advisor_repo: AdvisorRepository) -> list[s
         # Avoid spamming: skip if a re-engagement nudge was sent recently
         recent = await run_sync(
             advisor_repo.find_recent_nudges,
-            uid_str, TRIGGER_RE_ENGAGEMENT, last_re_engagement_nudge_cutoff,
+            uid_str,
+            TRIGGER_RE_ENGAGEMENT,
+            last_re_engagement_nudge_cutoff,
         )
         if not recent:
             eligible.append(uid_str)

@@ -3,6 +3,7 @@
 Follows the same pattern as UserRepository: constructor takes a Client,
 methods are synchronous (callers use run_sync for async handlers).
 """
+
 from __future__ import annotations
 
 import logging
@@ -64,9 +65,12 @@ class SubscriptionRepository:
         updates: dict,
     ) -> None:
         """Apply field updates to a subscription row identified by provider ID."""
-        result = self._sb.table("subscriptions").update(updates).eq(
-            "provider_subscription_id", provider_subscription_id
-        ).execute()
+        result = (
+            self._sb.table("subscriptions")
+            .update(updates)
+            .eq("provider_subscription_id", provider_subscription_id)
+            .execute()
+        )
         if not result.data:
             logger.warning(
                 "Subscription update affected 0 rows for provider_subscription_id=%s",
@@ -115,9 +119,11 @@ class SubscriptionRepository:
 
     def update_user_tier(self, user_id: str | UUID, tier_id: str | UUID) -> None:
         """Update a user's tier_id."""
-        self._sb.table("users").update({
-            "tier_id": str(tier_id),
-        }).eq("id", str(user_id)).execute()
+        self._sb.table("users").update(
+            {
+                "tier_id": str(tier_id),
+            }
+        ).eq("id", str(user_id)).execute()
 
     # ------------------------------------------------------------------
     # Tier recomputation via credit balance
@@ -152,11 +158,14 @@ class SubscriptionRepository:
         credit_holder_tier_id: str,
     ) -> dict:
         """Call the handle_checkout_credit_atomic RPC and return the first row."""
-        result = self._sb.rpc("handle_checkout_credit_atomic", {
-            "p_user_id": user_id,
-            "p_credits": credits,
-            "p_event_id": event_id,
-            "p_trial_tier_id": trial_tier_id,
-            "p_credit_holder_tier_id": credit_holder_tier_id,
-        }).execute()
+        result = self._sb.rpc(
+            "handle_checkout_credit_atomic",
+            {
+                "p_user_id": user_id,
+                "p_credits": credits,
+                "p_event_id": event_id,
+                "p_trial_tier_id": trial_tier_id,
+                "p_credit_holder_tier_id": credit_holder_tier_id,
+            },
+        ).execute()
         return result.data[0] if result.data else {}

@@ -4,6 +4,7 @@ Each transformation (styling, teeth, eyes, etc.) is a module that
 contributes prompt fragments and parameter adjustments. Adding a new
 feature = new module file + config flag. No pipeline changes.
 """
+
 from __future__ import annotations
 
 import random
@@ -25,34 +26,27 @@ class TransformationModule(Protocol):
     """A pluggable transformation type."""
 
     @property
-    def slug(self) -> str:
-        ...
+    def slug(self) -> str: ...
 
     @property
-    def display_name(self) -> str:
-        ...
+    def display_name(self) -> str: ...
 
-    def is_applicable(self, analysis_result) -> bool:
-        ...
+    def is_applicable(self, analysis_result) -> bool: ...
 
     def build_output(
         self,
         analysis_result,
         mode: str,
         rng: random.Random | None = None,
-    ) -> TransformationOutput:
-        ...
+    ) -> TransformationOutput: ...
 
-    def get_allowed_keywords(self) -> frozenset[str]:
-        ...
+    def get_allowed_keywords(self) -> frozenset[str]: ...
 
-    def get_blocked_keywords(self) -> frozenset[str]:
-        ...
+    def get_blocked_keywords(self) -> frozenset[str]: ...
 
     def adjust_params(
         self,
         face_ratio: float,
         symmetry_score: float,
         keyword_count: int,
-    ) -> dict:
-        ...
+    ) -> dict: ...

@@ -8,6 +8,7 @@ Port/Adapter pattern:
   - RekognitionAdapter: real AWS Rekognition (staging/prod)
   - MockNSFWAdapter: always passes (local dev, testing non-NSFW features)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,8 +47,7 @@ class NSFWResult:
 class NSFWScreenerPort(Protocol):
     """Interface for NSFW content screening adapters."""
 
-    async def screen(self, image_bytes: bytes) -> NSFWResult:
-        ...
+    async def screen(self, image_bytes: bytes) -> NSFWResult: ...
 
 
 # ---------------------------------------------------------------------------
@@ -78,13 +78,20 @@ class RekognitionAdapter:
         try:
             response = await loop.run_in_executor(
                 None,
-                lambda: self._client.detect_moderation_labels(Image={"Bytes": image_bytes}),
+                lambda: self._client.detect_moderation_labels(
+                    Image={"Bytes": image_bytes}
+                ),
             )
         except Exception as exc:
             # Fail closed — reject the image if Rekognition is unavailable.
             # This prevents NSFW content from slipping through during outages.
             logger.critical("Rekognition unavailable — failing closed: %s", exc)
-            return NSFWResult(is_explicit=True, confidence=0.0, labels=["SCREENING_UNAVAILABLE"], screened=False)
+            return NSFWResult(
+                is_explicit=True,
+                confidence=0.0,
+                labels=["SCREENING_UNAVAILABLE"],
+                screened=False,
+            )
 
         labels = response.get("ModerationLabels", [])
         if not labels:

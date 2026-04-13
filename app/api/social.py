@@ -8,6 +8,7 @@ Story 5-2:
   POST /posts/{id}/react — react with guest token or JWT auth.
   Redis INCR (optimistic) + background DB write via ARQ.
 """
+
 from __future__ import annotations
 
 import logging
@@ -117,8 +118,12 @@ class FeedResponse(BaseModel):
 @router.get("/feed", response_model=FeedResponse)
 async def get_feed(
     sort: FeedSort = Query(FeedSort.NEWEST, description="Sort strategy"),
-    cursor: str | None = Query(None, description="Cursor for pagination (ISO timestamp or composite)"),
-    limit: int = Query(_DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"),
+    cursor: str | None = Query(
+        None, description="Cursor for pagination (ISO timestamp or composite)"
+    ),
+    limit: int = Query(
+        _DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"
+    ),
     authorization: Annotated[str | None, Header()] = None,
     feed_repo: FeedRepository = Depends(get_feed_repo),
     block_repo: BlockRepository = Depends(get_block_repo),
@@ -138,9 +143,12 @@ async def get_feed(
     if authorization and authorization.startswith("Bearer "):
         try:
             from app.api.middleware.auth import validate_jwt
+
             claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
             user_id = claims["sub"]
-            excluded_user_ids = await run_sync(block_repo.get_all_hidden_user_ids, user_id)
+            excluded_user_ids = await run_sync(
+                block_repo.get_all_hidden_user_ids, user_id
+            )
         except Exception:
             # Invalid/expired token on a public endpoint — proceed without filtering
             pass
@@ -150,13 +158,21 @@ async def get_feed(
 
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     if sort == FeedSort.NEWEST:
-        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit, excluded_user_ids)
+        posts = await run_sync(
+            feed_repo.fetch_newest, cursor, fetch_limit, excluded_user_ids
+        )
     elif sort == FeedSort.TRENDING:
-        posts = await run_sync(feed_repo.fetch_trending, cursor, fetch_limit, excluded_user_ids)
+        posts = await run_sync(
+            feed_repo.fetch_trending, cursor, fetch_limit, excluded_user_ids
+        )
     elif sort == FeedSort.BIGGEST_IMPROVEMENTS:
-        posts = await run_sync(feed_repo.fetch_biggest_improvements, cursor, fetch_limit, excluded_user_ids)
+        posts = await run_sync(
+            feed_repo.fetch_biggest_improvements, cursor, fetch_limit, excluded_user_ids
+        )
     else:
-        posts = await run_sync(feed_repo.fetch_newest, cursor, fetch_limit, excluded_user_ids)
+        posts = await run_sync(
+            feed_repo.fetch_newest, cursor, fetch_limit, excluded_user_ids
+        )
 
     has_more = len(posts) > limit
     if has_more:
@@ -233,7 +249,9 @@ async def validate_guest_token(redis_client: aioredis.Redis, token: str) -> bool
 
     # Register token idempotently — NX means "only set if not exists"
     registration_key = f"guest_token:{token_hash}"
-    await redis_client.set(registration_key, "1", ex=settings.GUEST_TOKEN_TTL_SECONDS, nx=True)
+    await redis_client.set(
+        registration_key, "1", ex=settings.GUEST_TOKEN_TTL_SECONDS, nx=True
+    )
 
     # Rate limit counter — expire on first write to align with registration window
     count_key = f"guest_reactions:{token_hash}"
@@ -268,6 +286,7 @@ async def react_to_post(
 
     if authorization and authorization.startswith("Bearer "):
         from app.api.middleware.auth import validate_jwt
+
         claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
         user_id = claims["sub"]
     elif x_guest_token:
@@ -310,7 +329,12 @@ async def react_to_post(
         ttl: int = await redis_client.ttl(rate_key)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many reactions. Please slow down."}},
+            detail={
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Too many reactions. Please slow down.",
+                }
+            },
             headers={"Retry-After": str(max(ttl, 0))},
         )
 
@@ -407,7 +431,9 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
             redis_client = ctx.get("redis")
             if redis_client:
                 await redis_client.decr(f"posts:{post_id}:reactions")
-            logger.info("Duplicate reaction for post %s — Redis counter decremented", post_id)
+            logger.info(
+                "Duplicate reaction for post %s — Redis counter decremented", post_id
+            )
 
     except Exception:
         # Transient failure: undo Redis optimistic increment before retry

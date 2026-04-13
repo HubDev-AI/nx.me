@@ -13,6 +13,7 @@ Story 2-2:
   DELETE /auth/account     — soft delete + 180-day username reservation
   GET  /auth/providers     — list enabled auth providers (for mobile UI)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +30,15 @@ from supabase import Client
 
 import redis.asyncio as aioredis
 
-from app.api.deps import get_client_ip, get_credit_ledger, get_current_user, get_redis, get_supabase, get_tier_repo, get_user_repo
+from app.api.deps import (
+    get_client_ip,
+    get_credit_ledger,
+    get_current_user,
+    get_redis,
+    get_supabase,
+    get_tier_repo,
+    get_user_repo,
+)
 from app.entitlement.ledger import CreditLedger
 from app.api.middleware.auth import UserClaims
 from app.config import settings
@@ -124,7 +133,9 @@ class GuestResponse(BaseModel):
     guest_token: str
 
 
-@router.post("/guest", response_model=GuestResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/guest", response_model=GuestResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_guest(
     supabase: Client = Depends(get_supabase),
 ) -> GuestResponse:
@@ -292,7 +303,9 @@ async def register(
     # --- Create Supabase auth user ----------------------------------------
     logger.info("Creating auth user for %s / %s", body.email, body.username)
     try:
-        auth_response = await run_sync(user_repo.auth_create_user, str(body.email), body.password)
+        auth_response = await run_sync(
+            user_repo.auth_create_user, str(body.email), body.password
+        )
     except Exception as exc:
         logger.error("auth_create_user raised %s: %s", type(exc).__name__, exc)
         _handle_supabase_auth_error(exc)
@@ -326,7 +339,9 @@ async def register(
         try:
             await run_sync(user_repo.auth_delete_user, user_id)
         except Exception:  # noqa: BLE001
-            logger.exception("Failed to roll back auth user %s after users insert failure", user_id)
+            logger.exception(
+                "Failed to roll back auth user %s after users insert failure", user_id
+            )
         logger.error("users INSERT failed for %s: %s", user_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -336,17 +351,21 @@ async def register(
     # --- Grant trial credits immediately (idempotent) --------------------
     try:
         from uuid import UUID
+
         grantor = TrialGrantor(supabase)
         await run_sync(grantor.grant, UUID(user_id))
     except Exception as exc:
         # Non-fatal: user is created, they just won't have trial credits yet
-        logger.warning("Trial grant failed during registration for %s: %s", user_id, exc)
+        logger.warning(
+            "Trial grant failed during registration for %s: %s", user_id, exc
+        )
 
     # --- Auto-login: sign in to get session tokens -----------------------
     # IMPORTANT: use a SEPARATE Supabase client for sign_in_with_password.
     # sign_in_with_password mutates the client's internal auth session,
     # which would corrupt the shared service-role client for all future requests.
     from app.db.client import get_supabase_service
+
     login_client = get_supabase_service()
     try:
         session_response = await run_sync(
@@ -618,7 +637,9 @@ async def social_login(
     try:
         auth_response = await run_sync(supabase.auth.sign_in_with_id_token, credentials)
     except Exception as exc:
-        logger.warning("sign_in_with_id_token failed for provider %s: %s", body.provider, exc)
+        logger.warning(
+            "sign_in_with_id_token failed for provider %s: %s", body.provider, exc
+        )
         if _is_invalid_token_error(exc):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -645,7 +666,9 @@ async def social_login(
     try:
         default_tier = await tier_repo.get_default()
     except ValueError:
-        logger.error("No active default tier found — cannot create social user %s", user_id)
+        logger.error(
+            "No active default tier found — cannot create social user %s", user_id
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Service configuration error.",
@@ -655,7 +678,9 @@ async def social_login(
     # Build a DB-safe username: email prefix slugified to [a-zA-Z0-9_],
     # or fallback to first 20 chars of the UUID (also slugified).
     raw_username = user.email.split("@")[0] if user.email else user_id[:20]
-    auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
+    auto_username = (
+        slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
+    )
 
     # P2-5: Guarantee unique username — retry with random suffix on collision (M-2/M-3)
     from uuid import uuid4
@@ -664,12 +689,14 @@ async def social_login(
     max_retries = 3
     for attempt in range(max_retries):
         # Check if username is taken by another user
-        existing = await run_sync(user_repo.check_username_taken, auto_username, user_id)
+        existing = await run_sync(
+            user_repo.check_username_taken, auto_username, user_id
+        )
         if existing:
             suffix = f"_{uuid4().hex[:6]}"
             # Truncate base to stay within 30-char limit (M-3)
             if len(base_username) + len(suffix) > 30:
-                base_username = base_username[:30 - len(suffix)]
+                base_username = base_username[: 30 - len(suffix)]
             auto_username = f"{base_username}{suffix}"
 
         # Upsert public.users row — new social users won't have a row yet.
@@ -681,7 +708,8 @@ async def social_login(
                     "id": user_id,
                     "email": user.email or "",
                     "username": auto_username,
-                    "display_name": (user.user_metadata or {}).get("full_name", "") or (user.email or user_id),
+                    "display_name": (user.user_metadata or {}).get("full_name", "")
+                    or (user.email or user_id),
                     "email_verified": True,
                     "trial_analyses_remaining": 0,
                     "tier_id": default_tier_id,
@@ -695,7 +723,7 @@ async def social_login(
                 # Username collision on insert, retry with new suffix
                 suffix = f"_{uuid4().hex[:6]}"
                 if len(base_username) + len(suffix) > 30:
-                    base_username = base_username[:30 - len(suffix)]
+                    base_username = base_username[: 30 - len(suffix)]
                 auto_username = f"{base_username}{suffix}"
                 continue
             logger.error("users upsert failed for social user %s: %s", user_id, exc)
@@ -704,7 +732,9 @@ async def social_login(
                 detail="Failed to create user profile. Please try again.",
             ) from exc
 
-    logger.info("Social login successful for user %s (provider=%s)", user_id, body.provider)
+    logger.info(
+        "Social login successful for user %s (provider=%s)", user_id, body.provider
+    )
     return LoginResponse(
         user_id=user_id,
         access_token=session.access_token,
@@ -772,7 +802,12 @@ async def email_login(
     except Exception as exc:
         msg = str(exc).lower()
         logger.warning("sign_in_with_password failed for %s: %s", body.email, exc)
-        if "invalid" in msg or "credentials" in msg or "wrong" in msg or "not confirmed" in msg:
+        if (
+            "invalid" in msg
+            or "credentials" in msg
+            or "wrong" in msg
+            or "not confirmed" in msg
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password.",
@@ -849,7 +884,9 @@ async def tiktok_login(
 
     # --- Credential gate ---
     if not settings.TIKTOK_CLIENT_KEY or not settings.TIKTOK_CLIENT_SECRET:
-        logger.error("TikTok login attempted but TIKTOK_CLIENT_KEY/SECRET not configured")
+        logger.error(
+            "TikTok login attempted but TIKTOK_CLIENT_KEY/SECRET not configured"
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="TikTok login is not configured.",
@@ -903,7 +940,11 @@ async def tiktok_login(
                 {"email": synthetic_email, "password": derived_password},
             )
         except Exception as exc:
-            logger.error("TikTok sign-in failed for existing user %s: %s", existing_user["id"], exc)
+            logger.error(
+                "TikTok sign-in failed for existing user %s: %s",
+                existing_user["id"],
+                exc,
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Authentication service error.",
@@ -943,7 +984,9 @@ async def tiktok_login(
             derived_password,
         )
     except Exception as exc:
-        logger.error("Failed to create Supabase auth user for TikTok %s: %s", open_id, exc)
+        logger.error(
+            "Failed to create Supabase auth user for TikTok %s: %s", open_id, exc
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Account creation failed.",
@@ -959,16 +1002,20 @@ async def tiktok_login(
 
     # Generate a unique username from TikTok display_name
     raw_username = tiktok_user.display_name or f"user_{open_id[:8]}"
-    auto_username = slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
+    auto_username = (
+        slugify(raw_username, separator="_", lowercase=False, max_length=30) or "user"
+    )
 
     base_username = auto_username
     max_retries = 3
     for attempt in range(max_retries):
-        existing = await run_sync(user_repo.check_username_taken, auto_username, user_id)
+        existing = await run_sync(
+            user_repo.check_username_taken, auto_username, user_id
+        )
         if existing:
             suffix = f"_{uuid4().hex[:6]}"
             if len(base_username) + len(suffix) > 30:
-                base_username = base_username[:30 - len(suffix)]
+                base_username = base_username[: 30 - len(suffix)]
             auto_username = f"{base_username}{suffix}"
 
         try:
@@ -990,12 +1037,20 @@ async def tiktok_login(
             exc_msg = str(exc).lower()
             # tiktok_open_id collision → concurrent first-login race.
             # Roll back this auth user and fall through to the existing-user sign-in path.
-            if "tiktok_open_id" in exc_msg or ("unique" in exc_msg and "tiktok" in exc_msg):
+            if "tiktok_open_id" in exc_msg or (
+                "unique" in exc_msg and "tiktok" in exc_msg
+            ):
                 try:
                     await run_sync(user_repo.auth_delete_user, user_id)
                 except Exception:
-                    logger.exception("Failed to roll back auth user %s after tiktok_open_id race", user_id)
-                logger.info("tiktok_open_id race detected for %s, falling back to sign-in", open_id)
+                    logger.exception(
+                        "Failed to roll back auth user %s after tiktok_open_id race",
+                        user_id,
+                    )
+                logger.info(
+                    "tiktok_open_id race detected for %s, falling back to sign-in",
+                    open_id,
+                )
                 # Re-fetch the user that won the race and sign them in
                 race_winner = await run_sync(user_repo.find_by_tiktok_open_id, open_id)
                 if race_winner:
@@ -1009,7 +1064,9 @@ async def tiktok_login(
                             user_id=race_winner["id"],
                             access_token=session_response.session.access_token,
                             refresh_token=session_response.session.refresh_token,
-                            expires_at=int(session_response.session.expires_at) if session_response.session.expires_at else 0,
+                            expires_at=int(session_response.session.expires_at)
+                            if session_response.session.expires_at
+                            else 0,
                         )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1019,7 +1076,7 @@ async def tiktok_login(
             if "unique" in exc_msg and attempt < max_retries - 1:
                 suffix = f"_{uuid4().hex[:6]}"
                 if len(base_username) + len(suffix) > 30:
-                    base_username = base_username[:30 - len(suffix)]
+                    base_username = base_username[: 30 - len(suffix)]
                 auto_username = f"{base_username}{suffix}"
                 continue
             # Roll back auth user
@@ -1036,6 +1093,7 @@ async def tiktok_login(
     # Grant trial credits (non-fatal)
     try:
         from uuid import UUID
+
         grantor = TrialGrantor(supabase)
         await run_sync(grantor.grant, UUID(user_id))
     except Exception as exc:
@@ -1049,7 +1107,9 @@ async def tiktok_login(
             {"email": synthetic_email, "password": derived_password},
         )
     except Exception as exc:
-        logger.error("Auto-login after TikTok registration failed for %s: %s", user_id, exc)
+        logger.error(
+            "Auto-login after TikTok registration failed for %s: %s", user_id, exc
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Account created but login failed. Please try again.",
@@ -1062,7 +1122,11 @@ async def tiktok_login(
         )
 
     session = session_response.session
-    logger.info("TikTok registration + login successful for user %s (open_id=%s)", user_id, open_id)
+    logger.info(
+        "TikTok registration + login successful for user %s (open_id=%s)",
+        user_id,
+        open_id,
+    )
 
     return LoginResponse(
         user_id=user_id,
@@ -1203,9 +1267,15 @@ async def delete_account(
             for res in active_reservations:
                 try:
                     ledger.release(_UUID(res["id"]))
-                    logger.info("Released reservation %s for deleting user %s", res["id"], user_id)
+                    logger.info(
+                        "Released reservation %s for deleting user %s",
+                        res["id"],
+                        user_id,
+                    )
                 except Exception as release_exc:  # noqa: BLE001 — best-effort release during account deletion
-                    logger.warning("Failed to release reservation %s: %s", res["id"], release_exc)
+                    logger.warning(
+                        "Failed to release reservation %s: %s", res["id"], release_exc
+                    )
     except Exception as exc:
         logger.error("Failed to release reservations for %s: %s", user_id, exc)
         raise HTTPException(
@@ -1235,7 +1305,11 @@ async def delete_account(
     # --- Remove Supabase auth identity -----------------------------------
     try:
         user_repo.auth_delete_user(user_id)
-        logger.info("Account deleted for user %s; username reserved until %s", user_id, reserved_until.date())
+        logger.info(
+            "Account deleted for user %s; username reserved until %s",
+            user_id,
+            reserved_until.date(),
+        )
     except Exception as exc:
         logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
         # Soft delete already committed — log the failure, do not surface it.
@@ -1253,7 +1327,11 @@ async def delete_account(
             redis_keys_to_delete.extend(daily_keys)
         if redis_keys_to_delete:
             await redis_client.delete(*redis_keys_to_delete)
-            logger.info("Cleaned up %d Redis keys for deleted user %s", len(redis_keys_to_delete), user_id)
+            logger.info(
+                "Cleaned up %d Redis keys for deleted user %s",
+                len(redis_keys_to_delete),
+                user_id,
+            )
     except Exception as exc:
         logger.warning("Redis cleanup failed for deleted user %s: %s", user_id, exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

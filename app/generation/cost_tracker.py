@@ -3,6 +3,7 @@
 Rolling 24h cost average, per-user daily cap, queue depth limit,
 emergency stop flag, fal.ai health probe.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,10 +32,12 @@ _USER_DAILY_KEY = "gen:user_daily:{user_id}:{date}"
 _QUEUE_DEPTH_KEY = "gen:queue_depth"
 
 # Circuit breaker state keys
-_CB_STATE_KEY = "gen:cb:state"      # "closed" | "open" | "half_open"
+_CB_STATE_KEY = "gen:cb:state"  # "closed" | "open" | "half_open"
 _CB_FAILURES_KEY = "gen:cb:failures"  # sorted set of failure timestamps
 _CB_OPEN_AT_KEY = "gen:cb:open_at"  # float timestamp when circuit was opened
-_CB_HALF_OPEN_SUCCESSES_KEY = "gen:cb:half_open_successes"  # G-7: consecutive success counter
+_CB_HALF_OPEN_SUCCESSES_KEY = (
+    "gen:cb:half_open_successes"  # G-7: consecutive success counter
+)
 
 # G-7: Require this many consecutive successes in HALF_OPEN before closing
 _CB_HYSTERESIS_THRESHOLD = 3
@@ -78,7 +81,9 @@ class CostTracker:
         results = await pipe.execute()
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error("Redis pipeline command %d failed in record_cost: %s", i, result)
+                logger.error(
+                    "Redis pipeline command %d failed in record_cost: %s", i, result
+                )
 
     # ------------------------------------------------------------------
     # Rolling 24h average cost per generation
@@ -114,12 +119,19 @@ class CostTracker:
         avg = await self.get_rolling_24h_avg_cost()
 
         if avg > settings.IMAGE_GEN_COST_CEILING_USD:
-            logger.warning("Cost ceiling exceeded: avg=$%.4f > ceiling=$%.4f — throttling TRIAL",
-                           avg, settings.IMAGE_GEN_COST_CEILING_USD)
+            logger.warning(
+                "Cost ceiling exceeded: avg=$%.4f > ceiling=$%.4f — throttling TRIAL",
+                avg,
+                settings.IMAGE_GEN_COST_CEILING_USD,
+            )
             return True
 
         if avg > settings.CREDIT_COST_ALERT_USD:
-            logger.info("Cost alert: avg=$%.4f > alert=$%.4f", avg, settings.CREDIT_COST_ALERT_USD)
+            logger.info(
+                "Cost alert: avg=$%.4f > alert=$%.4f",
+                avg,
+                settings.CREDIT_COST_ALERT_USD,
+            )
 
         return False
 
@@ -168,7 +180,11 @@ class CostTracker:
         results = await pipe.execute()
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error("Redis pipeline command %d failed in increment_user_daily: %s", i, result)
+                logger.error(
+                    "Redis pipeline command %d failed in increment_user_daily: %s",
+                    i,
+                    result,
+                )
 
     # ------------------------------------------------------------------
     # Circuit breaker (fal.ai failures) — sliding window + half-open state
@@ -195,11 +211,13 @@ class CostTracker:
         results = await pipe.execute()
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                logger.error("Redis pipeline command %d failed in record_failure: %s", i, result)
+                logger.error(
+                    "Redis pipeline command %d failed in record_failure: %s", i, result
+                )
 
         failure_count = await self._redis.zcard(_CB_FAILURES_KEY)
 
-        current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
+        current_state = await self._redis.get(_CB_STATE_KEY) or b"closed"
         if isinstance(current_state, bytes):
             current_state = current_state.decode()
 
@@ -224,14 +242,16 @@ class CostTracker:
         G-7: In HALF_OPEN, require 3 consecutive successes before closing (hysteresis).
         In CLOSED: do not wipe failure history (prevents flap on a single success).
         """
-        current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
+        current_state = await self._redis.get(_CB_STATE_KEY) or b"closed"
         if isinstance(current_state, bytes):
             current_state = current_state.decode()
 
         if current_state == "half_open":
             # G-7: Hysteresis — require multiple consecutive successes to close
             count = await self._redis.incr(_CB_HALF_OPEN_SUCCESSES_KEY)
-            await self._redis.expire(_CB_HALF_OPEN_SUCCESSES_KEY, _CB_COOLDOWN_SECONDS * 3)
+            await self._redis.expire(
+                _CB_HALF_OPEN_SUCCESSES_KEY, _CB_COOLDOWN_SECONDS * 3
+            )
 
             if count >= _CB_HYSTERESIS_THRESHOLD:
                 # Enough consecutive successes — close the circuit
@@ -243,10 +263,20 @@ class CostTracker:
                 results = await pipe.execute()
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
-                        logger.error("Redis pipeline command %d failed in record_success: %s", i, result)
-                logger.info("Circuit breaker CLOSED: %d consecutive probes succeeded", count)
+                        logger.error(
+                            "Redis pipeline command %d failed in record_success: %s",
+                            i,
+                            result,
+                        )
+                logger.info(
+                    "Circuit breaker CLOSED: %d consecutive probes succeeded", count
+                )
             else:
-                logger.info("Circuit breaker HALF_OPEN: probe %d/%d succeeded", count, _CB_HYSTERESIS_THRESHOLD)
+                logger.info(
+                    "Circuit breaker HALF_OPEN: probe %d/%d succeeded",
+                    count,
+                    _CB_HYSTERESIS_THRESHOLD,
+                )
         # In CLOSED state intentionally do nothing — failure history is preserved
         # so a single success cannot mask a genuinely flapping provider.
 
@@ -259,7 +289,7 @@ class CostTracker:
         Side effect: transitions OPEN → HALF_OPEN when cooldown has elapsed,
         using an atomic Lua script to prevent multiple concurrent probes (M-9).
         """
-        current_state = (await self._redis.get(_CB_STATE_KEY) or b"closed")
+        current_state = await self._redis.get(_CB_STATE_KEY) or b"closed"
         if isinstance(current_state, bytes):
             current_state = current_state.decode()
 

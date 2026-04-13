@@ -3,6 +3,7 @@
 Uses claude-3-5-sonnet for chat and claude-3-haiku for memory extraction/nudges.
 Lazy-imports anthropic SDK so tests don't require the package installed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -77,7 +78,8 @@ class AnthropicAdapter:
                 text_content = last["content"]
                 api_messages[-1] = {
                     "role": "user",
-                    "content": [{"type": "text", "text": text_content}] + vision_content,
+                    "content": [{"type": "text", "text": text_content}]
+                    + vision_content,
                 }
 
         response = await self._anthropic.messages.create(
@@ -89,7 +91,11 @@ class AnthropicAdapter:
 
         content = ""
         if response.content:
-            content = response.content[0].text if hasattr(response.content[0], "text") else str(response.content[0])
+            content = (
+                response.content[0].text
+                if hasattr(response.content[0], "text")
+                else str(response.content[0])
+            )
 
         logger.debug(
             "Anthropic response: model=%s, input_tokens=%d, output_tokens=%d",

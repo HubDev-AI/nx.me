@@ -3,6 +3,7 @@
 A-4: Tiers are DB rows. Business logic reads columns, never conditions on slug.
 Redis cache TTL 5 min to avoid per-request DB hits for tier resolution.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,19 +38,23 @@ def _row_to_tier(row: dict) -> TierRecord:
         advisor_nudges_period_seconds=row.get("advisor_nudges_period_seconds"),
         max_concurrent_generations=(
             int(row["max_concurrent_generations"])
-            if row.get("max_concurrent_generations") is not None else 1
+            if row.get("max_concurrent_generations") is not None
+            else 1
         ),
         identity_similarity_threshold=(
             float(row["identity_similarity_threshold"])
-            if row.get("identity_similarity_threshold") is not None else 0.75
+            if row.get("identity_similarity_threshold") is not None
+            else 0.75
         ),
         feature_advisor_chat=(
             bool(row["feature_advisor_chat"])
-            if row.get("feature_advisor_chat") is not None else False
+            if row.get("feature_advisor_chat") is not None
+            else False
         ),
         feature_visual_comparison=(
             bool(row["feature_visual_comparison"])
-            if row.get("feature_visual_comparison") is not None else False
+            if row.get("feature_visual_comparison") is not None
+            else False
         ),
         stripe_price_id=row.get("stripe_price_id"),
         credits_based=row["credits_based"],
@@ -58,25 +63,27 @@ def _row_to_tier(row: dict) -> TierRecord:
 
 def _tier_to_cache(tier: TierRecord) -> str:
     """Serialize TierRecord to JSON for Redis cache."""
-    return json.dumps({
-        "id": str(tier.id),
-        "slug": tier.slug,
-        "display_name": tier.display_name,
-        "is_default": tier.is_default,
-        "is_active": tier.is_active,
-        "generation_type": tier.generation_type,
-        "generation_limit": tier.generation_limit,
-        "generation_period_seconds": tier.generation_period_seconds,
-        "advisor_nudges_type": tier.advisor_nudges_type,
-        "advisor_nudges_limit": tier.advisor_nudges_limit,
-        "advisor_nudges_period_seconds": tier.advisor_nudges_period_seconds,
-        "max_concurrent_generations": tier.max_concurrent_generations,
-        "identity_similarity_threshold": tier.identity_similarity_threshold,
-        "feature_advisor_chat": tier.feature_advisor_chat,
-        "feature_visual_comparison": tier.feature_visual_comparison,
-        "stripe_price_id": tier.stripe_price_id,
-        "credits_based": tier.credits_based,
-    })
+    return json.dumps(
+        {
+            "id": str(tier.id),
+            "slug": tier.slug,
+            "display_name": tier.display_name,
+            "is_default": tier.is_default,
+            "is_active": tier.is_active,
+            "generation_type": tier.generation_type,
+            "generation_limit": tier.generation_limit,
+            "generation_period_seconds": tier.generation_period_seconds,
+            "advisor_nudges_type": tier.advisor_nudges_type,
+            "advisor_nudges_limit": tier.advisor_nudges_limit,
+            "advisor_nudges_period_seconds": tier.advisor_nudges_period_seconds,
+            "max_concurrent_generations": tier.max_concurrent_generations,
+            "identity_similarity_threshold": tier.identity_similarity_threshold,
+            "feature_advisor_chat": tier.feature_advisor_chat,
+            "feature_visual_comparison": tier.feature_visual_comparison,
+            "stripe_price_id": tier.stripe_price_id,
+            "credits_based": tier.credits_based,
+        }
+    )
 
 
 class TierRepository:
@@ -103,11 +110,13 @@ class TierRepository:
         # Fetch from DB
         # C-3: Wrap sync Supabase call to avoid blocking the event loop
         result = await run_sync(
-            lambda: self._sb.table("tiers")
-            .select("*")
-            .eq("id", str(tier_id))
-            .single()
-            .execute()
+            lambda: (
+                self._sb.table("tiers")
+                .select("*")
+                .eq("id", str(tier_id))
+                .single()
+                .execute()
+            )
         )
         if not result.data:
             raise ValueError(f"Tier {tier_id} not found")
@@ -123,12 +132,14 @@ class TierRepository:
         """Fetch the active default tier."""
         # C-3: Wrap sync Supabase call to avoid blocking the event loop
         result = await run_sync(
-            lambda: self._sb.table("tiers")
-            .select("*")
-            .eq("is_default", True)
-            .eq("is_active", True)
-            .single()
-            .execute()
+            lambda: (
+                self._sb.table("tiers")
+                .select("*")
+                .eq("is_default", True)
+                .eq("is_active", True)
+                .single()
+                .execute()
+            )
         )
         if not result.data:
             raise ValueError("No active default tier found")

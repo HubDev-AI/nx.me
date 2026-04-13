@@ -13,6 +13,7 @@ The mobile's parseApiError recognises these codes as 'faceAnalysis' kind.
 Pattern: unit tests calling production code directly with mock dependencies
 (consistent with test_refund.py and the rest of the test suite).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -32,6 +33,7 @@ try:
     )
     from app.face_analysis.landmark_extractor import LandmarkExtractor
     from app.api.errors import ApiError, api_error_handler
+
     _FACE_ERRORS_AVAILABLE = True
 except (ImportError, AttributeError):
     _FACE_ERRORS_AVAILABLE = False
@@ -62,6 +64,7 @@ def _make_minimal_valid_image_bytes() -> bytes:
     """Return a 1x1 white JPEG so PIL can open it without error."""
     import io
     from PIL import Image as PILImage
+
     buf = io.BytesIO()
     img = PILImage.new("RGB", (1, 1), color=(255, 255, 255))
     img.save(buf, format="JPEG")
@@ -142,7 +145,9 @@ class TestApiErrorWithDetails:
     def test_api_error_without_details(self):
         err = ApiError(status_code=422, code="face_not_detected", message="No face")
         assert err.details is None
-        assert err.detail == {"error": {"code": "face_not_detected", "message": "No face"}}
+        assert err.detail == {
+            "error": {"code": "face_not_detected", "message": "No face"}
+        }
 
     def test_api_error_with_details(self):
         details = {"zone": "center", "reason": "Face occupies >80% of frame"}
@@ -180,6 +185,7 @@ class TestApiErrorWithDetails:
         )
         response = await api_error_handler(request, err)
         import json
+
         body = json.loads(response.body)
         assert body["error"]["code"] == "face_too_close"
         assert body["error"]["details"]["zone"] == "center"
@@ -192,6 +198,7 @@ class TestApiErrorWithDetails:
         err = ApiError(status_code=400, code="bad_request", message="Bad")
         response = await api_error_handler(request, err)
         import json
+
         body = json.loads(response.body)
         assert "details" not in body["error"]
 
@@ -226,6 +233,7 @@ class TestLandmarkExtractorErrorShape:
         # Simulate MediaPipe returning empty landmarks.
         # mediapipe is imported lazily inside extract(), so we patch via sys.modules.
         import sys
+
         mp_mock = MagicMock()
         fake_result = MagicMock()
         fake_result.face_landmarks = []
@@ -273,6 +281,7 @@ class TestLandmarkExtractorErrorShape:
         fake_result.face_landmarks = [face1, face2]
 
         import sys
+
         mp_mock = MagicMock()
         mock_landmarker = MagicMock()
         mock_landmarker.detect.return_value = fake_result

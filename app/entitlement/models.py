@@ -4,6 +4,7 @@ AC-D1: All entitlement state is computed from credit_ledger + subscriptions.
 A-4: Tiers are DB-driven; tier_id UUID FK, not string enums.
 A-5: EntitlementResult with error codes for rate/feature gating.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,7 +26,9 @@ class TierRecord:
     display_name: str
     is_default: bool
     is_active: bool
-    generation_type: str  # LimitType value: daily, weekly, monthly, credits, total, unlimited
+    generation_type: (
+        str  # LimitType value: daily, weekly, monthly, credits, total, unlimited
+    )
     generation_limit: int | None
     generation_period_seconds: int | None
     advisor_nudges_type: str
@@ -101,7 +104,9 @@ TIER_FEATURE_LOCKED = "TIER_FEATURE_LOCKED"
 TIER_CONCURRENT_LIMIT = "TIER_CONCURRENT_LIMIT"
 
 # HTTP status mapping: 429 = "try later", 402 = "pay to unlock"
-PAYMENT_REQUIRED_CODES = frozenset({TIER_LIMIT_TOTAL, TIER_LIMIT_CREDITS, TIER_FEATURE_LOCKED})
+PAYMENT_REQUIRED_CODES = frozenset(
+    {TIER_LIMIT_TOTAL, TIER_LIMIT_CREDITS, TIER_FEATURE_LOCKED}
+)
 
 # User-facing error messages for entitlement failures
 ENTITLEMENT_ERROR_MESSAGES: dict[str, str] = {

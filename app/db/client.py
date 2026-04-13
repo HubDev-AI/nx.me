@@ -3,6 +3,7 @@
 Service-role client is used for all server-side operations.
 Admin operations (create/delete auth users) require the service-role key.
 """
+
 from supabase import create_client, Client
 from app.config import settings
 

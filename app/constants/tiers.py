@@ -6,9 +6,9 @@ deterministic UUIDs.
 """
 
 # Tier IDs (must match SEED_TIERS in app/config/tiers.py)
-TIER_ID_TRIAL = "a0000000-0000-0000-0000-000000000001"          # slug: free
+TIER_ID_TRIAL = "a0000000-0000-0000-0000-000000000001"  # slug: free
 TIER_ID_CREDIT_HOLDER = "a0000000-0000-0000-0000-000000000002"  # slug: credits
-TIER_ID_PREMIUM = "a0000000-0000-0000-0000-000000000003"        # slug: premium
+TIER_ID_PREMIUM = "a0000000-0000-0000-0000-000000000003"  # slug: premium
 
 # Slug aliases used by generation.py queue routing
 TRIAL = "free"

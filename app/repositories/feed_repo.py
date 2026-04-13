@@ -3,6 +3,7 @@
 Follows the same pattern as PostRepository: constructor takes a Client,
 methods are synchronous (callers use run_sync for async handlers).
 """
+
 from __future__ import annotations
 
 import logging
@@ -140,11 +141,14 @@ class FeedRepository:
 
         Returns the inserted row(s); empty list indicates a duplicate.
         """
-        result = self._sb.rpc("persist_reaction_atomic", {
-            "p_post_id": p_post_id,
-            "p_user_id": p_user_id,
-            "p_guest_session_token": p_guest_session_token,
-        }).execute()
+        result = self._sb.rpc(
+            "persist_reaction_atomic",
+            {
+                "p_post_id": p_post_id,
+                "p_user_id": p_user_id,
+                "p_guest_session_token": p_guest_session_token,
+            },
+        ).execute()
         return result.data or []
 
     def reconcile_reaction_counts(self, cutoff_iso: str) -> list[dict]:

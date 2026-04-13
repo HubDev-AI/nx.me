@@ -3,6 +3,7 @@
 C-2 LOCKED: No attractiveness score or ranking in any model field.
 ADR-1: Landmark vectors are ephemeral — never persisted.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

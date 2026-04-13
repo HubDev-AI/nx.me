@@ -69,11 +69,6 @@ export default function HomeScreen() {
   const [commentsPostId, setCommentsPostId] = useState<string | null>(null);
   const isCommentsVisible = commentsPostId !== null;
 
-  // Load feed on mount
-  useEffect(() => {
-    loadFeed();
-  }, [loadFeed]);
-
   const handleCommentPress = useCallback((postId: string) => {
     setCommentsPostId(postId);
   }, []);

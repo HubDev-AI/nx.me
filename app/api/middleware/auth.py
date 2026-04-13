@@ -8,6 +8,7 @@ asyncio event loop).  The key is pre-fetched at app startup via
 ``prefetch_jwks_key()`` and cached with a configurable TTL so that key
 rotations are picked up automatically.
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,6 +53,7 @@ class UserClaims(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # JWKS key fetching (httpx-based, no urllib)
 # ---------------------------------------------------------------------------
+
 
 def _jwks_url() -> str:
     return f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
@@ -115,13 +117,19 @@ def _get_es256_key() -> object:
     global _es256_key, _es256_key_fetched_at
 
     now = time.monotonic()
-    if _es256_key is not None and (now - _es256_key_fetched_at) < _JWKS_CACHE_TTL_SECONDS:
+    if (
+        _es256_key is not None
+        and (now - _es256_key_fetched_at) < _JWKS_CACHE_TTL_SECONDS
+    ):
         return _es256_key
 
     with _es256_key_lock:
         # Double-check after acquiring lock
         now = time.monotonic()
-        if _es256_key is not None and (now - _es256_key_fetched_at) < _JWKS_CACHE_TTL_SECONDS:
+        if (
+            _es256_key is not None
+            and (now - _es256_key_fetched_at) < _JWKS_CACHE_TTL_SECONDS
+        ):
             return _es256_key
 
         try:
@@ -142,6 +150,7 @@ def _get_es256_key() -> object:
 # ---------------------------------------------------------------------------
 # JWT validation
 # ---------------------------------------------------------------------------
+
 
 def validate_jwt(token: str) -> UserClaims:
     """Validate a Supabase JWT and return the decoded claims.

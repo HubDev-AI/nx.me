@@ -2,6 +2,7 @@
 
 Consumers depend on LLMPort, not on any concrete adapter.
 """
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable

@@ -14,6 +14,7 @@ Interface Contract (Story 2-1):
   TrialGrantor.grant(user_id: UUID) -> None
   Location: entitlement/trial_grantor.py
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,16 +53,18 @@ class TrialGrantor:
             # Supabase PostgREST wraps PG errors in APIError with a .code attribute.
             pg_code = getattr(exc, "code", None)
             if pg_code == "23505":
-                logger.info("trial_grant already applied for user %s — skipping", user_id_str)
+                logger.info(
+                    "trial_grant already applied for user %s — skipping", user_id_str
+                )
                 return
 
             # Fallback: some Supabase client versions embed the code in the message
             exc_str = str(exc).lower()
             if "23505" in exc_str or "unique_violation" in exc_str:
-                logger.info("trial_grant already applied for user %s — skipping", user_id_str)
+                logger.info(
+                    "trial_grant already applied for user %s — skipping", user_id_str
+                )
                 return
 
             logger.error("grant_trial RPC failed for user %s: %s", user_id_str, exc)
-            raise RuntimeError(
-                f"Failed to grant trial for user {user_id_str}"
-            ) from exc
+            raise RuntimeError(f"Failed to grant trial for user {user_id_str}") from exc

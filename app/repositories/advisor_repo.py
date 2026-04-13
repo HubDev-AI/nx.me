@@ -6,6 +6,7 @@ user_memories (pgvector), and images/storage for vision context.
 Follows the same pattern as UserRepository: constructor takes a Client,
 methods are synchronous unless they involve storage signed URLs.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,15 +56,15 @@ class AdvisorRepository:
             {"updated_at": datetime.now(tz=timezone.utc).isoformat()}
         ).eq("id", conversation_id).execute()
 
-    def update_conversation_summary(
-        self, conversation_id: str, summary: str
-    ) -> None:
+    def update_conversation_summary(self, conversation_id: str, summary: str) -> None:
         """Persist summary + summarised_at + updated_at on a conversation."""
-        self._sb.table("advisor_conversations").update({
-            "summary": summary,
-            "summarised_at": datetime.now(tz=timezone.utc).isoformat(),
-            "updated_at": datetime.now(tz=timezone.utc).isoformat(),
-        }).eq("id", conversation_id).execute()
+        self._sb.table("advisor_conversations").update(
+            {
+                "summary": summary,
+                "summarised_at": datetime.now(tz=timezone.utc).isoformat(),
+                "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+            }
+        ).eq("id", conversation_id).execute()
 
     # ------------------------------------------------------------------
     # Messages
@@ -106,7 +107,9 @@ class AdvisorRepository:
             try:
                 cursor_created_at, cursor_id = cursor.split("|", 1)
             except ValueError:
-                raise ValueError(f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'")
+                raise ValueError(
+                    f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'"
+                )
             query = query.or_(
                 f"created_at.gt.{cursor_created_at},"
                 f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
@@ -119,11 +122,13 @@ class AdvisorRepository:
         """Insert a message row and return it."""
         result = (
             self._sb.table("advisor_messages")
-            .insert({
-                "conversation_id": conversation_id,
-                "role": role,
-                "content": content,
-            })
+            .insert(
+                {
+                    "conversation_id": conversation_id,
+                    "role": role,
+                    "content": content,
+                }
+            )
             .execute()
         )
         return (result.data or [{}])[0]
@@ -135,11 +140,11 @@ class AdvisorRepository:
         summarized, preserving the rows for auditing and recovery.
         """
         now = datetime.now(tz=timezone.utc).isoformat()
-        self._sb.table("advisor_messages").update({
-            "summarized_at": now,
-        }).eq("conversation_id", conversation_id).is_(
-            "summarized_at", "null"
-        ).execute()
+        self._sb.table("advisor_messages").update(
+            {
+                "summarized_at": now,
+            }
+        ).eq("conversation_id", conversation_id).is_("summarized_at", "null").execute()
 
     # ------------------------------------------------------------------
     # Nudges
@@ -183,7 +188,9 @@ class AdvisorRepository:
             try:
                 cursor_created_at, cursor_id = cursor.split("|", 1)
             except ValueError:
-                raise ValueError(f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'")
+                raise ValueError(
+                    f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'"
+                )
             # Rows before the cursor (newest-first): same created_at and id < cursor_id,
             # OR created_at < cursor_created_at
             query = query.or_(
@@ -192,9 +199,7 @@ class AdvisorRepository:
             )
         return query.execute().data or []
 
-    def get_nudge_by_id(
-        self, nudge_id: str, user_id: str
-    ) -> dict[str, Any] | None:
+    def get_nudge_by_id(self, nudge_id: str, user_id: str) -> dict[str, Any] | None:
         """Fetch a single nudge, verifying ownership. Returns None if not found."""
         result = (
             self._sb.table("advisor_nudges")
@@ -216,9 +221,7 @@ class AdvisorRepository:
         """Persist a new nudge row."""
         self._sb.table("advisor_nudges").insert(nudge_data).execute()
 
-    def find_last_nudge(
-        self, user_id: str, trigger: str
-    ) -> dict[str, Any] | None:
+    def find_last_nudge(self, user_id: str, trigger: str) -> dict[str, Any] | None:
         """Return the most recent nudge for a user+trigger, or None."""
         result = (
             self._sb.table("advisor_nudges")
@@ -296,7 +299,9 @@ class AdvisorRepository:
             try:
                 cursor_created_at, cursor_id = cursor.split("|", 1)
             except ValueError:
-                raise ValueError(f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'")
+                raise ValueError(
+                    f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'"
+                )
             query = query.or_(
                 f"created_at.lt.{cursor_created_at},"
                 f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"
@@ -333,9 +338,7 @@ class AdvisorRepository:
         ).execute()
         return result.data or []
 
-    def get_recent_memories(
-        self, user_id: str, since: str
-    ) -> list[dict[str, Any]]:
+    def get_recent_memories(self, user_id: str, since: str) -> list[dict[str, Any]]:
         """Return memories created after ``since`` (ISO timestamp) for dedup."""
         result = (
             self._sb.table("user_memories")
@@ -385,7 +388,7 @@ class AdvisorRepository:
         # on the minimal (user_id-only) payload — significantly less data than
         # fetching created_at for every row.
         counts: dict[str, int] = {}
-        for row in (result.data or []):
+        for row in result.data or []:
             uid = row["user_id"]
             counts[uid] = counts.get(uid, 0) + 1
         return counts
@@ -427,9 +430,7 @@ class AdvisorRepository:
         )
         return result.count or 0
 
-    def get_latest_analysis_insight(
-        self, user_id: str
-    ) -> dict[str, Any] | None:
+    def get_latest_analysis_insight(self, user_id: str) -> dict[str, Any] | None:
         """Return the most recent analysis_insight content row, or None."""
         result = (
             self._sb.table("user_memories")
@@ -447,9 +448,7 @@ class AdvisorRepository:
     # Images / storage (vision context)
     # ------------------------------------------------------------------
 
-    def get_cleared_images(
-        self, user_id: str, limit: int = 2
-    ) -> list[dict[str, Any]]:
+    def get_cleared_images(self, user_id: str, limit: int = 2) -> list[dict[str, Any]]:
         """Fetch the most recent cleared images for a user."""
         result = (
             self._sb.table("images")

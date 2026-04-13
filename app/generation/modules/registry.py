@@ -1,4 +1,5 @@
 """Module registry — discovers and returns active transformation modules."""
+
 from __future__ import annotations
 
 from app.generation.modules.base import TransformationModule
@@ -17,6 +18,7 @@ def get_active_modules(
 ) -> list[TransformationModule]:
     """Return modules that are both enabled and applicable."""
     return [
-        m for slug, m in _MODULES.items()
+        m
+        for slug, m in _MODULES.items()
         if slug in enabled_slugs and m.is_applicable(analysis_result)
     ]

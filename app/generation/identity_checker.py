@@ -6,6 +6,7 @@ Never stored in any database or log.
 Uses insightface buffalo_l model, CPU execution.
 Pre-loaded at worker startup via preload_arcface().
 """
+
 from __future__ import annotations
 
 import io
@@ -110,7 +111,9 @@ def check_identity(
 
     logger.info(
         "Identity check: similarity=%.3f, threshold=%.2f, preserved=%s",
-        similarity, threshold, identity_preserved,
+        similarity,
+        threshold,
+        identity_preserved,
     )
 
     return IdentityCheckResult(

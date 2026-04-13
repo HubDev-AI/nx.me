@@ -5,6 +5,7 @@ Exercises production code in:
     FeatureFlags, ProvidersResponse, get_providers, MeResponse, VerifyEmailResponse,
     _is_invalid_token_error, _handle_supabase_auth_error, EmailLoginRequest, TikTokLoginRequest)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -13,11 +14,18 @@ from pydantic import ValidationError
 
 try:
     from app.api.auth import (
-        _get_enabled_providers, _derive_tiktok_password,
-        FeatureFlags, ProvidersResponse, MeResponse, VerifyEmailResponse,
-        LoginResponse, RefreshRequest,
-        _is_invalid_token_error, _handle_supabase_auth_error,
+        _get_enabled_providers,
+        _derive_tiktok_password,
+        FeatureFlags,
+        ProvidersResponse,
+        MeResponse,
+        VerifyEmailResponse,
+        LoginResponse,
+        RefreshRequest,
+        _is_invalid_token_error,
+        _handle_supabase_auth_error,
     )
+
     _AUTH_EXT_AVAILABLE = True
 except (ImportError, AttributeError):
     _AUTH_EXT_AVAILABLE = False
@@ -134,6 +142,7 @@ class TestHandleSupabaseAuthError:
 
     def test_raises_http_exception(self):
         from fastapi import HTTPException
+
         exc = Exception("User already registered")
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(exc)
@@ -141,6 +150,7 @@ class TestHandleSupabaseAuthError:
 
     def test_email_already_taken(self):
         from fastapi import HTTPException
+
         exc = Exception("User already registered")
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(exc)

@@ -9,6 +9,7 @@ Interface Contract (Story 4-1):
   EntitlementService.check(user_id, action) -> EntitlementResult
   EntitlementService.has_feature(user_id, feature) -> bool
 """
+
 from __future__ import annotations
 
 import logging
@@ -99,12 +100,14 @@ class EntitlementService:
         # Fetch user row
         # C-3: Wrap sync Supabase calls to avoid blocking the event loop
         user_result = await run_sync(
-            lambda: self._sb.table("users")
-            .select("tier_id, trial_analyses_remaining")
-            .eq("id", user_id_str)
-            .is_("deleted_at", "null")
-            .single()
-            .execute()
+            lambda: (
+                self._sb.table("users")
+                .select("tier_id, trial_analyses_remaining")
+                .eq("id", user_id_str)
+                .is_("deleted_at", "null")
+                .single()
+                .execute()
+            )
         )
         if not user_result.data:
             raise ValueError(f"User {user_id} not found")
@@ -123,12 +126,14 @@ class EntitlementService:
         # Check active subscription
         # C-3: Wrap sync Supabase call
         sub_result = await run_sync(
-            lambda: self._sb.table("subscriptions")
-            .select("status, billing_period_end")
-            .eq("user_id", user_id_str)
-            .eq("status", "active")
-            .limit(1)
-            .execute()
+            lambda: (
+                self._sb.table("subscriptions")
+                .select("status, billing_period_end")
+                .eq("user_id", user_id_str)
+                .eq("status", "active")
+                .limit(1)
+                .execute()
+            )
         )
         has_subscription = bool(sub_result.data)
         billing_end: datetime | None = None
@@ -174,8 +179,12 @@ class EntitlementService:
         if gen_type == LimitType.TOTAL:
             used = await run_sync(self._usage.count_total, user_id, "generation")
         else:
-            window_seconds = _get_window_seconds(gen_type, tier.generation_period_seconds)
-            used = await run_sync(self._usage.count_in_window, user_id, "generation", window_seconds)
+            window_seconds = _get_window_seconds(
+                gen_type, tier.generation_period_seconds
+            )
+            used = await run_sync(
+                self._usage.count_in_window, user_id, "generation", window_seconds
+            )
 
         limit = tier.generation_limit or 0
         if used < limit:
@@ -205,7 +214,9 @@ class EntitlementService:
 
         raise ValueError(f"Unknown entitlement action: {action}")
 
-    async def _check_generation(self, user_id: UUID, tier: TierRecord) -> EntitlementResult:
+    async def _check_generation(
+        self, user_id: UUID, tier: TierRecord
+    ) -> EntitlementResult:
         """Generation-specific check: concurrent guard + credits/window."""
         # 1. Concurrent guard (Redis) — atomic check-and-increment via Lua script.
         # The Lua script increments the counter only if it is below the limit,
@@ -284,7 +295,9 @@ class EntitlementService:
             used = await run_sync(self._usage.count_total, user_id, action)
         else:
             window_seconds = _get_window_seconds(limit_type, period_seconds)
-            used = await run_sync(self._usage.count_in_window, user_id, action, window_seconds)
+            used = await run_sync(
+                self._usage.count_in_window, user_id, action, window_seconds
+            )
 
         if used < limit:
             return EntitlementResult(allowed=True, limit=limit, used=used)
@@ -296,10 +309,15 @@ class EntitlementService:
         window = _LIMIT_WINDOW.get(limit_type)
         if window is not None and limit_type != LimitType.TOTAL:
             window_seconds = _get_window_seconds(limit_type, period_seconds)
-            earliest = await run_sync(self._usage.earliest_in_window, user_id, action, window_seconds)
+            earliest = await run_sync(
+                self._usage.earliest_in_window, user_id, action, window_seconds
+            )
             if earliest:
                 retry_after = earliest + window
-                reset_in = max(0, int((retry_after - datetime.now(tz=timezone.utc)).total_seconds()))
+                reset_in = max(
+                    0,
+                    int((retry_after - datetime.now(tz=timezone.utc)).total_seconds()),
+                )
 
         return EntitlementResult(
             allowed=False,
@@ -328,11 +346,13 @@ class EntitlementService:
         """Get stripe_price_id for a tier by slug."""
         # C-3: Converted to async and wrap sync Supabase call
         result = await run_sync(
-            lambda: self._sb.table("tiers")
-            .select("stripe_price_id")
-            .eq("slug", slug)
-            .single()
-            .execute()
+            lambda: (
+                self._sb.table("tiers")
+                .select("stripe_price_id")
+                .eq("slug", slug)
+                .single()
+                .execute()
+            )
         )
         return result.data.get("stripe_price_id") if result.data else None
 
@@ -352,12 +372,14 @@ class EntitlementService:
         """Fetch the user's tier record (Redis-cached)."""
         # C-3: Wrap sync Supabase call
         user_result = await run_sync(
-            lambda: self._sb.table("users")
-            .select("tier_id")
-            .eq("id", str(user_id))
-            .is_("deleted_at", "null")
-            .single()
-            .execute()
+            lambda: (
+                self._sb.table("users")
+                .select("tier_id")
+                .eq("id", str(user_id))
+                .is_("deleted_at", "null")
+                .single()
+                .execute()
+            )
         )
         if not user_result.data:
             raise ValueError(f"User {user_id} not found")

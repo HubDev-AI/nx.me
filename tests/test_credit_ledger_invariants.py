@@ -7,6 +7,7 @@ These tests verify the mathematical invariants of the credit ledger:
 Tests exercise the production CreditLedger class with a mocked Supabase
 client that simulates the RPC calls.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -15,6 +16,7 @@ from uuid import uuid4
 
 try:
     from app.entitlement.ledger import CreditLedger
+
     _HAS_SUPABASE = True
 except ImportError:
     _HAS_SUPABASE = False
@@ -42,14 +44,23 @@ class _InMemorySupabase:
             user_id = params["p_user_id"]
             res_id = params["p_reservation_id"]
             now = datetime.now(tz=timezone.utc).isoformat()
-            self.reservation_rows.append({
-                "id": res_id, "user_id": user_id, "amount": 1,
-                "status": "reserved", "created_at": now,
-            })
-            self.ledger_rows.append({
-                "user_id": user_id, "delta": -1, "type": "reserve",
-                "reference_id": res_id,
-            })
+            self.reservation_rows.append(
+                {
+                    "id": res_id,
+                    "user_id": user_id,
+                    "amount": 1,
+                    "status": "reserved",
+                    "created_at": now,
+                }
+            )
+            self.ledger_rows.append(
+                {
+                    "user_id": user_id,
+                    "delta": -1,
+                    "type": "reserve",
+                    "reference_id": res_id,
+                }
+            )
             return _RpcResult(data={"id": res_id})
 
         if name == "credit_release":
@@ -57,10 +68,14 @@ class _InMemorySupabase:
             for row in self.reservation_rows:
                 if row["id"] == res_id and row["status"] == "reserved":
                     row["status"] = "released"
-                    self.ledger_rows.append({
-                        "user_id": row["user_id"], "delta": 1, "type": "release",
-                        "reference_id": res_id,
-                    })
+                    self.ledger_rows.append(
+                        {
+                            "user_id": row["user_id"],
+                            "delta": 1,
+                            "type": "release",
+                            "reference_id": res_id,
+                        }
+                    )
                     return _RpcResult(data={"id": res_id})
             return _RpcResult(data=None)
 
@@ -69,10 +84,14 @@ class _InMemorySupabase:
             for row in self.reservation_rows:
                 if row["id"] == res_id and row["status"] == "reserved":
                     row["status"] = "committed"
-                    self.ledger_rows.append({
-                        "user_id": row["user_id"], "delta": 0, "type": "commit",
-                        "reference_id": res_id,
-                    })
+                    self.ledger_rows.append(
+                        {
+                            "user_id": row["user_id"],
+                            "delta": 0,
+                            "type": "commit",
+                            "reference_id": res_id,
+                        }
+                    )
                     return _RpcResult(data={"id": res_id})
             return _RpcResult(data=None)
 
@@ -97,9 +116,13 @@ class TestCreditLedgerInvariants(unittest.TestCase):
         self.user_id = uuid4()
 
         # Seed initial balance of 5 credits via a "purchase" ledger entry
-        self.db.ledger_rows.append({
-            "user_id": str(self.user_id), "delta": 5, "type": "purchase",
-        })
+        self.db.ledger_rows.append(
+            {
+                "user_id": str(self.user_id),
+                "delta": 5,
+                "type": "purchase",
+            }
+        )
 
     def test_invariant_1_reserve_plus_release_equals_zero(self):
         """reserve + release = 0 (net balance unchanged)."""

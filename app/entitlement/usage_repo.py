@@ -3,6 +3,7 @@
 A-5: usage_events table tracks all generation/nudge actions.
 Used by EntitlementService to check time-window tier limits (daily/weekly/monthly).
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,7 +32,9 @@ class UsageRepository:
         Returns:
             Number of committed events in the window.
         """
-        cutoff = (datetime.now(tz=timezone.utc) - timedelta(seconds=window_seconds)).isoformat()
+        cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(seconds=window_seconds)
+        ).isoformat()
 
         result = (
             self._sb.table("usage_events")
@@ -58,12 +61,16 @@ class UsageRepository:
 
         return result.count if result.count is not None else 0
 
-    def earliest_in_window(self, user_id: UUID, action: str, window_seconds: int) -> datetime | None:
+    def earliest_in_window(
+        self, user_id: UUID, action: str, window_seconds: int
+    ) -> datetime | None:
         """Get the earliest committed event's created_at within a time window.
 
         Returns None if no events exist in the window.
         """
-        cutoff = (datetime.now(tz=timezone.utc) - timedelta(seconds=window_seconds)).isoformat()
+        cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(seconds=window_seconds)
+        ).isoformat()
 
         result = (
             self._sb.table("usage_events")

@@ -7,6 +7,7 @@ Story 5-3:
   GET /posts/{id}/comments   — list comments (public)
   POST /posts/{id}/report    — report a post (auth required)
 """
+
 from __future__ import annotations
 
 import logging
@@ -134,27 +135,50 @@ async def create_post(
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     job_data = await run_sync(job_repo.get_jobs_for_post, body.glow_up_job_id)
     if not job_data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
+        )
     if job_data["user_id"] != user_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Job not found"
+        )
     if job_data["status"] != "completed":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": {"code": "JOB_NOT_COMPLETED", "message": "Job must be completed to create a post."}},
+            detail={
+                "error": {
+                    "code": "JOB_NOT_COMPLETED",
+                    "message": "Job must be completed to create a post.",
+                }
+            },
         )
     if not job_data.get("generated_image_id"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": {"code": "NO_GENERATED_IMAGE", "message": "Job has no generated image."}},
+            detail={
+                "error": {
+                    "code": "NO_GENERATED_IMAGE",
+                    "message": "Job has no generated image.",
+                }
+            },
         )
 
     # Get image storage keys from private buckets
-    before_img_data = await run_sync(image_repo.get_by_id_with_fields, job_data["original_image_id"], "storage_key, bucket")
-    after_img_data = await run_sync(image_repo.get_by_id_with_fields, job_data["generated_image_id"], "storage_key, bucket")
+    before_img_data = await run_sync(
+        image_repo.get_by_id_with_fields,
+        job_data["original_image_id"],
+        "storage_key, bucket",
+    )
+    after_img_data = await run_sync(
+        image_repo.get_by_id_with_fields,
+        job_data["generated_image_id"],
+        "storage_key, bucket",
+    )
 
     # Copy images from private buckets to public bucket and get CDN URLs
     try:
-        published = await run_sync(publish_post_images,
+        published = await run_sync(
+            publish_post_images,
             supabase,
             user_id=user_id,
             before_image=before_img_data,
@@ -177,26 +201,36 @@ async def create_post(
     if not fresh_job or fresh_job["status"] != "completed":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error": {"code": "JOB_STATUS_CHANGED", "message": "Job status changed during post creation."}},
+            detail={
+                "error": {
+                    "code": "JOB_STATUS_CHANGED",
+                    "message": "Job status changed during post creation.",
+                }
+            },
         )
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-    post = await run_sync(post_repo.insert_post, {
-        "user_id": user_id,
-        "glow_up_job_id": body.glow_up_job_id,
-        "caption": body.caption,
-        "before_image_id": job_data["original_image_id"],
-        "after_image_id": job_data["generated_image_id"],
-        "before_image_url": before_url,
-        "after_image_url": after_url,
-        "created_at": now_utc,
-        "updated_at": now_utc,
-    })
+    post = await run_sync(
+        post_repo.insert_post,
+        {
+            "user_id": user_id,
+            "glow_up_job_id": body.glow_up_job_id,
+            "caption": body.caption,
+            "before_image_id": job_data["original_image_id"],
+            "after_image_id": job_data["generated_image_id"],
+            "before_image_url": before_url,
+            "after_image_url": after_url,
+            "created_at": now_utc,
+            "updated_at": now_utc,
+        },
+    )
 
     post_id = post["id"]
 
-    logger.info("Post %s created by user %s from job %s", post_id, user_id, body.glow_up_job_id)
+    logger.info(
+        "Post %s created by user %s from job %s", post_id, user_id, body.glow_up_job_id
+    )
 
     from fastapi.responses import JSONResponse
 
@@ -231,14 +265,23 @@ async def delete_post(
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     post = await run_sync(post_repo.get_post_with_ownership, str(post_id))
     if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
+        )
     if post["user_id"] != user_id:
         # H-2: Return 404 (not 403) to prevent ownership enumeration
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
+        )
     if post["is_deleted"]:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error": {"code": "ALREADY_DELETED", "message": "Post is already deleted"}},
+            detail={
+                "error": {
+                    "code": "ALREADY_DELETED",
+                    "message": "Post is already deleted",
+                }
+            },
         )
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
@@ -276,13 +319,17 @@ async def create_comment(
     if count == 1:
         await redis_client.expire(rate_key, settings.COMMENT_RATE_WINDOW_SECONDS)
     if count > settings.COMMENT_RATE_LIMIT:
-        raise HTTPException(status_code=429, detail="Too many comments. Please slow down.")
+        raise HTTPException(
+            status_code=429, detail="Too many comments. Please slow down."
+        )
 
     # Verify post exists and is not deleted
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     post = await run_sync(post_repo.get_active_post, str(post_id))
     if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
+        )
 
     # Block check: reject if the post owner has blocked the commenting user
     post_owner_id = post["user_id"]
@@ -341,9 +388,15 @@ async def create_comment(
 @router.get("/posts/{post_id}/comments", response_model=CommentsListResponse)
 async def get_comments(
     post_id: UUID,
-    cursor: str | None = Query(None, description="Cursor ({created_at}|{id} composite)"),
+    cursor: str | None = Query(
+        None, description="Cursor ({created_at}|{id} composite)"
+    ),
     limit: int = Query(20, ge=1, le=100),
-    sort: str = Query("oldest", pattern="^(newest|oldest)$", description="Sort order: oldest or newest"),
+    sort: str = Query(
+        "oldest",
+        pattern="^(newest|oldest)$",
+        description="Sort order: oldest or newest",
+    ),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
 ) -> CommentsListResponse:
@@ -351,7 +404,8 @@ async def get_comments(
     fetch_limit = limit + 1
 
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
-    comments = await run_sync(post_repo.get_comments_page,
+    comments = await run_sync(
+        post_repo.get_comments_page,
         post_id=str(post_id),
         fetch_limit=fetch_limit,
         cursor=cursor,
@@ -386,7 +440,9 @@ async def get_comments(
                 is_deleted=c["is_deleted"],
                 created_at=c["created_at"],
                 display_name=(c.get("users") or {}).get("display_name"),
-                avatar_url=unique_keys.get((c.get("users") or {}).get("avatar_storage_key") or ""),
+                avatar_url=unique_keys.get(
+                    (c.get("users") or {}).get("avatar_storage_key") or ""
+                ),
             )
             for c in comments
         ],
@@ -421,13 +477,17 @@ async def report_post(
     if count == 1:
         await redis_client.expire(rate_key, settings.REPORT_RATE_WINDOW_SECONDS)
     if count > settings.REPORT_RATE_LIMIT:
-        raise HTTPException(status_code=429, detail="Too many reports. Please slow down.")
+        raise HTTPException(
+            status_code=429, detail="Too many reports. Please slow down."
+        )
 
     # Verify post exists
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     post = await run_sync(post_repo.get_active_post, str(post_id))
     if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Post not found"
+        )
 
     report = await run_sync(
         post_repo.insert_report,
