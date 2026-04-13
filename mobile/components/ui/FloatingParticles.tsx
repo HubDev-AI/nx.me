@@ -58,7 +58,7 @@ function Particle({
   startY,
   duration,
   delay,
-  screenHeight,
+  screenHeight: _screenHeight,
   swayAmplitude,
   swayDuration,
 }: ParticleProps) {

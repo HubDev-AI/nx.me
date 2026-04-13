@@ -1,17 +1,28 @@
 import React from "react";
-import { Pressable, type PressableProps } from "react-native";
+import {
+  Pressable,
+  type PressableProps,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withSpring,
 } from "react-native-reanimated";
 import { THEME } from "../../constants/theme";
 import { hapticLight } from "../../lib/haptics";
 
-interface PressableScaleProps extends PressableProps {
+interface PressableScaleProps extends Omit<PressableProps, "style"> {
   scale?: number;
   haptic?: boolean;
   children: React.ReactNode;
+  /**
+   * Static style applied to the wrapping Animated.View.
+   * Pressable's function-form style is not supported here — the wrapper
+   * owns the transform so per-state style callbacks don't fit.
+   */
+  style?: StyleProp<ViewStyle>;
 }
 
 export function PressableScale({
