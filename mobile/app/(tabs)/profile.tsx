@@ -1,29 +1,29 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  Pressable,
   ActivityIndicator,
+  Pressable,
   StyleSheet,
+  View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useNavigation } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 
 import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
 import { PageBackground } from "../../components/ui/PageBackground";
-import { MIN_TOUCH_TARGET, AUTH_ENDPOINTS } from "../../constants/config";
+import { Button } from "../../components/ui/Button";
+import { Body, Caption, Heading } from "../../components/ui/Text";
+import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
 import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";
-import { FONTS } from "../../hooks/useFonts";
 import { useAuth } from "../../lib/auth-context";
 import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
 import { useProfile } from "../../components/profile/useProfile";
-import { RadialMenu } from "../../components/ui/RadialMenu";
+import { RadialMenu, type RadialMenuItem } from "../../components/ui/RadialMenu";
 import type { UpdateProfilePayload } from "../../components/profile/types";
 
 /**
@@ -34,7 +34,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
-  const toggleMenuRef = useRef<() => void>();
+  const toggleMenuRef = useRef<() => void>(() => {});
   const { isAuthenticated, username: authUsername, setAuthenticated: setGlobalAuth, setUsername: setAuthUsername } = useAuth();
   const { theme } = useTheme();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
@@ -116,7 +116,7 @@ export default function ProfileScreen() {
     setMenuVisible(false);
   }, []);
 
-  const menuItems = [
+  const menuItems: RadialMenuItem[] = [
     { label: "Edit Profile", icon: "create-outline", onPress: handleEditProfile },
     { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
     { label: "Settings", icon: "settings-outline", onPress: () => router.push("/settings") },
@@ -152,18 +152,21 @@ export default function ProfileScreen() {
           size={64}
           color={THEME.colors.textMuted}
         />
-        <Text style={styles.signInTitle}>Sign in to see your profile</Text>
-        <Text style={styles.signInSubtitle}>
+        <Heading size="md" color="primary" style={styles.signInTitle}>
+          Sign in to see your profile
+        </Heading>
+        <Body color="secondary" style={styles.signInSubtitle}>
           Track your glow-ups and reactions
-        </Text>
-        <Pressable
+        </Body>
+        <Button
+          title="Sign In"
           onPress={() => router.push("/(auth)/login")}
-          style={[styles.signInButton, { backgroundColor: theme.accent }]}
+          variant="primary"
+          size="md"
+          accentColor={theme.accent}
           accessibilityLabel="Sign in"
-          accessibilityRole="button"
-        >
-          <Text style={styles.signInButtonText}>Sign In</Text>
-        </Pressable>
+          style={styles.signInButton}
+        />
       </View>
     );
   }
@@ -177,21 +180,29 @@ export default function ProfileScreen() {
           size={64}
           color={THEME.colors.textMuted}
         />
-        <Text style={styles.signInTitle}>Complete your profile</Text>
-        <Text style={styles.signInSubtitle}>
+        <Heading size="md" color="primary" style={styles.signInTitle}>
+          Complete your profile
+        </Heading>
+        <Body color="secondary" style={styles.signInSubtitle}>
           We couldn&apos;t determine your username. Please log out and sign in again,
           or register a new account.
-        </Text>
-        <Pressable
+        </Body>
+        <Button
+          title="Log out"
           onPress={handleLogout}
-          style={styles.fallbackLogoutButton}
-          accessibilityLabel="Log out"
-          accessibilityRole="button"
+          variant="ghost"
+          size="md"
+          haptic="light"
           testID="logout-button"
-        >
-          <Ionicons name="log-out-outline" size={20} color={THEME.colors.textSecondary} />
-          <Text style={styles.fallbackLogoutText}>Log out</Text>
-        </Pressable>
+          leftIcon={
+            <Ionicons
+              name="log-out-outline"
+              size={20}
+              color={THEME.colors.textSecondary}
+            />
+          }
+          style={styles.fallbackLogoutButton}
+        />
       </View>
     );
   }
@@ -201,7 +212,9 @@ export default function ProfileScreen() {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color={theme.accent} />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+        <Caption color="secondary" style={styles.loadingText}>
+          Loading profile...
+        </Caption>
       </View>
     );
   }
@@ -216,29 +229,39 @@ export default function ProfileScreen() {
             size={48}
             color={THEME.colors.destructive}
           />
-          <Text style={styles.errorTitle}>Something went wrong</Text>
-          <Text style={styles.errorMessage}>{error}</Text>
+          <Heading size="md" display={false} color="primary" style={styles.errorTitle}>
+            Something went wrong
+          </Heading>
+          <Caption color="secondary" style={styles.errorMessage}>
+            {error}
+          </Caption>
           {authUsername ? (
-            <Pressable
+            <Button
+              title="Retry"
               onPress={() => loadProfile(authUsername)}
-              style={[styles.retryButton, { backgroundColor: theme.accent }]}
+              variant="primary"
+              size="md"
+              accentColor={theme.accent}
               accessibilityLabel="Retry loading profile"
-              accessibilityRole="button"
-            >
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
+            />
           ) : null}
         </View>
-        <Pressable
+        <Button
+          title="Log out"
           onPress={handleLogout}
-          style={styles.fallbackLogoutButton}
-          accessibilityLabel="Log out"
-          accessibilityRole="button"
+          variant="ghost"
+          size="md"
+          haptic="light"
           testID="logout-button"
-        >
-          <Ionicons name="log-out-outline" size={20} color={THEME.colors.textSecondary} />
-          <Text style={styles.fallbackLogoutText}>Log out</Text>
-        </Pressable>
+          leftIcon={
+            <Ionicons
+              name="log-out-outline"
+              size={20}
+              color={THEME.colors.textSecondary}
+            />
+          }
+          style={styles.fallbackLogoutButton}
+        />
       </View>
     );
   }
@@ -301,101 +324,41 @@ const styles = StyleSheet.create({
     paddingBottom: TAB_BAR_HEIGHT,
   },
   signInTitle: {
-    fontFamily: FONTS.display,
-    fontSize: 24,
-    color: THEME.colors.textPrimary,
     marginTop: THEME.spacing.lg,
     marginBottom: THEME.spacing.sm,
+    textAlign: "center",
   },
   signInSubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   signInButton: {
     marginTop: THEME.spacing.xl,
-    borderRadius: THEME.radius.pill,
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingVertical: THEME.spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  signInButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.bg,
   },
   loadingText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     marginTop: THEME.spacing.md,
   },
   errorCard: {
     backgroundColor: THEME.colors.glass,
     borderRadius: THEME.radius.lg,
+    borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.xxl,
     alignItems: "center",
+    gap: THEME.spacing.sm,
   },
   errorTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
     marginTop: THEME.spacing.md,
-    marginBottom: THEME.spacing.xs,
+    textAlign: "center",
   },
   errorMessage: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
     marginBottom: THEME.spacing.lg,
-  },
-  retryButton: {
-    borderRadius: THEME.radius.pill,
-    paddingHorizontal: THEME.spacing.xxl,
-    paddingVertical: THEME.spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  retryButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.bg,
-  },
-
-  /* 3-dot menu -- absolutely positioned over the screen, never inside scroll content */
-  moreMenuButton: {
-    position: "absolute",
-    top: 0,
-    right: THEME.spacing.md,
-    zIndex: 20,
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: THEME.radius.pill,
   },
 
   /* Fallback logout for edge-case screens (no username, error state) */
   fallbackLogoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: THEME.spacing.sm,
     marginTop: THEME.spacing.xxxl,
     marginBottom: THEME.spacing.xxxl + THEME.spacing.sm,
-    paddingVertical: THEME.spacing.lg - 2,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  fallbackLogoutText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.textSecondary,
   },
 });
