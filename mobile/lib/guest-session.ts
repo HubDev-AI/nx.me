@@ -39,3 +39,12 @@ export async function getOrCreateGuestToken(): Promise<string> {
   await setItem(SECURE_STORE_KEYS.GUEST_TOKEN, data.guest_token);
   return data.guest_token;
 }
+
+/**
+ * Return the persisted guest token without provisioning a new guest session.
+ *
+ * Use this in generic request code paths where guest mode may be disabled.
+ */
+export async function getStoredGuestToken(): Promise<string | null> {
+  return getItem(SECURE_STORE_KEYS.GUEST_TOKEN);
+}

@@ -5,6 +5,7 @@ Shared dependencies injected into route handlers via Depends().
 
 from __future__ import annotations
 
+import ipaddress
 import hmac
 import logging
 from typing import TYPE_CHECKING, Annotated
@@ -43,21 +44,56 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_TRUSTED_PROXY_NETWORKS = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+)
+
 
 # ---------------------------------------------------------------------------
 # Request helpers
 # ---------------------------------------------------------------------------
 
 
+def _is_trusted_proxy_host(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(ip in network for network in _TRUSTED_PROXY_NETWORKS)
+
+
+def _get_forwarded_ip(forwarded_for: str) -> str | None:
+    # Walk from right to left so we trust the last hop inserted by the
+    # immediate trusted proxy rather than a client-supplied leftmost value.
+    for candidate in reversed([part.strip() for part in forwarded_for.split(",")]):
+        if not candidate:
+            continue
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        return candidate
+    return None
+
+
 def get_client_ip(request: Request) -> str:
-    """Get client IP, respecting TRUST_PROXY_HEADERS setting."""
+    """Get client IP, only trusting forwarded headers from known proxy ranges."""
     from app.config import settings
 
-    if settings.TRUST_PROXY_HEADERS:
+    socket_ip = request.client.host if request.client else ""
+
+    if settings.TRUST_PROXY_HEADERS and socket_ip and _is_trusted_proxy_host(socket_ip):
         forwarded = request.headers.get("x-forwarded-for", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else ""
+        forwarded_ip = _get_forwarded_ip(forwarded)
+        if forwarded_ip:
+            return forwarded_ip
+
+    return socket_ip
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import {
   storeRefreshToken,
   clearAllTokens,
 } from "./auth";
-import { getOrCreateGuestToken } from "./guest-session";
+import { getStoredGuestToken } from "./guest-session";
 
 type RequestOptions = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -80,8 +80,15 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 /**
+ * Restore a stored session on app launch using the refresh token, if present.
+ */
+export async function restoreStoredSession(): Promise<string | null> {
+  return refreshAccessToken();
+}
+
+/**
  * Authenticated fetch wrapper.
- * Attaches JWT if available, otherwise attaches guest token.
+ * Attaches JWT if available, otherwise attaches an already-provisioned guest token.
  * On 401, attempts a single token refresh before retrying.
  * All requests go to API_BASE_URL.
  */
@@ -90,7 +97,7 @@ export async function apiFetch<T = unknown>(
   options: RequestOptions = {},
 ): Promise<T> {
   const jwt = await getStoredJwt();
-  const guestToken = jwt ? null : await getOrCreateGuestToken();
+  const guestToken = jwt ? null : await getStoredGuestToken();
 
   const headers: Record<string, string> = {
     ...options.headers,

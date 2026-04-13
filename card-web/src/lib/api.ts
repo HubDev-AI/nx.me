@@ -22,6 +22,14 @@ export interface CardData {
   comment_count: number;
 }
 
+export function getCardCacheTags(username: string, shareHash?: string): string[] {
+  const baseTag = `card:${username}`;
+  if (!shareHash) {
+    return [baseTag];
+  }
+  return [baseTag, `${baseTag}:${shareHash}`];
+}
+
 /**
  * Fetch public card data for a given username.
  *
@@ -39,7 +47,10 @@ export async function getCardData(username: string, shareHash?: string): Promise
   let res: Response;
   try {
     res = await fetch(url, {
-      next: { revalidate: CARD_REVALIDATE_SECONDS },
+      next: {
+        revalidate: CARD_REVALIDATE_SECONDS,
+        tags: getCardCacheTags(username, shareHash),
+      },
       signal: AbortSignal.timeout(API_FETCH_TIMEOUT_MS),
     });
   } catch (err) {

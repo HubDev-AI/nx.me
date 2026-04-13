@@ -61,6 +61,21 @@ describe('parseCardData', () => {
   })
 })
 
+describe('card cache tags', () => {
+  it('exposes stable tags for username and share-hash variants', async () => {
+    const apiModule = await import('@/lib/api') as typeof import('@/lib/api') & {
+      getCardCacheTags?: (username: string, shareHash?: string) => string[]
+    }
+
+    expect(typeof apiModule.getCardCacheTags).toBe('function')
+    expect(apiModule.getCardCacheTags?.('janedoe')).toEqual(['card:janedoe'])
+    expect(apiModule.getCardCacheTags?.('janedoe', 'abc123')).toEqual([
+      'card:janedoe',
+      'card:janedoe:abc123',
+    ])
+  })
+})
+
 describe('detectPlatform', () => {
   it('returns "desktop" when navigator is undefined (server/test env)', () => {
     // In a Node/Vitest environment there is no navigator, so detectPlatform

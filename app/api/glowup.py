@@ -401,16 +401,16 @@ async def generate_glowup(
             detail="Upload not found",
         )
 
-    await _check_entitlement(ent_svc, user_id)
-
-    cost_tracker = CostTracker(redis_client)
-    tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
-
     idempotency_response = await _check_idempotency(
         job_repo, idempotency_key, user_id_str
     )
     if idempotency_response:
         return idempotency_response
+
+    await _check_entitlement(ent_svc, user_id)
+
+    cost_tracker = CostTracker(redis_client)
+    tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
 
     queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
     tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
@@ -468,6 +468,7 @@ async def generate_glowup(
             str(job_id),
         )
     except Exception:
+        await redis_client.decr(f"concurrent:{user_id_str}")
         if reservation_id:
             try:
                 ledger.release(reservation_id)

@@ -265,11 +265,13 @@ class TestLoginModels:
 
         resp = LoginResponse(
             user_id="u-1",
+            username="alice",
             access_token="at-123",
             refresh_token="rt-456",
             expires_at=1710720000,
         )
         assert resp.expires_at == 1710720000
+        assert resp.username == "alice"
 
     def test_register_response_model(self):
         from app.api.auth import RegisterResponse

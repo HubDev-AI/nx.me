@@ -27,7 +27,7 @@ interface UseSocialAuthReturn {
 }
 
 export function useSocialAuth(): UseSocialAuthReturn {
-  const { setAuthenticated } = useAuth();
+  const { setAuthenticated, setUsername } = useAuth();
   const [isSocialLoading, setIsSocialLoading] = useState(false);
   const [socialError, setSocialError] = useState<AppError | null>(null);
 
@@ -57,6 +57,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
         if (response.refresh_token) {
           await storeRefreshToken(response.refresh_token);
         }
+        setUsername(response.username);
         setAuthenticated(true);
       } catch (err) {
         setSocialError(parseApiError(err));
@@ -64,7 +65,7 @@ export function useSocialAuth(): UseSocialAuthReturn {
         setIsSocialLoading(false);
       }
     },
-    [setAuthenticated],
+    [setAuthenticated, setUsername],
   );
 
   const handleGoogleLogin = useCallback(async () => {
@@ -121,13 +122,14 @@ export function useSocialAuth(): UseSocialAuthReturn {
       if (response.refresh_token) {
         await storeRefreshToken(response.refresh_token);
       }
+      setUsername(response.username);
       setAuthenticated(true);
     } catch (err) {
       setSocialError(parseApiError(err));
     } finally {
       setIsSocialLoading(false);
     }
-  }, [setAuthenticated]);
+  }, [setAuthenticated, setUsername]);
 
   const clearSocialError = useCallback(() => {
     setSocialError(null);

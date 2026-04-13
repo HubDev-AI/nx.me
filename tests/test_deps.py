@@ -44,18 +44,31 @@ class TestGetClientIP:
 
         assert result == "192.168.1.10"
 
-    def test_returns_forwarded_ip_when_trusted(self):
+    def test_returns_forwarded_ip_when_trusted_loopback_proxy(self):
         from app.api.deps import get_client_ip
 
         request = MagicMock()
         request.client.host = "127.0.0.1"
-        request.headers = {"x-forwarded-for": "203.0.113.50, 70.41.3.18"}
+        request.headers = {"x-forwarded-for": "198.51.100.77, 203.0.113.50"}
 
         with patch("app.config.settings") as mock_settings:
             mock_settings.TRUST_PROXY_HEADERS = True
             result = get_client_ip(request)
 
         assert result == "203.0.113.50"
+
+    def test_ignores_forwarded_ip_from_untrusted_socket_peer(self):
+        from app.api.deps import get_client_ip
+
+        request = MagicMock()
+        request.client.host = "198.51.100.10"
+        request.headers = {"x-forwarded-for": "203.0.113.50"}
+
+        with patch("app.config.settings") as mock_settings:
+            mock_settings.TRUST_PROXY_HEADERS = True
+            result = get_client_ip(request)
+
+        assert result == "198.51.100.10"
 
     def test_returns_empty_when_no_client(self):
         from app.api.deps import get_client_ip

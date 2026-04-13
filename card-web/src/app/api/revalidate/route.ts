@@ -1,7 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
+
+import { getCardCacheTags } from '@/lib/api';
 
 // Security notes:
 // - M-17: Uses timing-safe comparison to prevent brute-force via timing side-channel
@@ -66,6 +68,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  revalidateTag(getCardCacheTags(username)[0]);
   revalidatePath(`/${username}`);
 
   return NextResponse.json({ revalidated: true, username });

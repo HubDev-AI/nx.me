@@ -35,6 +35,7 @@ from app.api.deps import (
 )
 from app.config import settings
 from app.db.async_helpers import run_sync
+from app.db.guest import resolve_guest_by_token
 from app.repositories.block_repo import BlockRepository
 from app.repositories.feed_repo import FeedRepository
 from app.services.public_url import build_avatar_url
@@ -235,7 +236,9 @@ _REACTION_RATE_LIMIT = 10
 _REACTION_RATE_WINDOW_SECONDS = 300
 
 
-async def validate_guest_token(redis_client: aioredis.Redis, token: str) -> bool:
+async def validate_guest_token(
+    redis_client: aioredis.Redis, supabase: Client, token: str
+) -> bool:
     """Register a guest session token on first use and enforce per-token rate limit.
 
     Tokens are stored as SHA-256 hashes (first 32 hex chars) so raw tokens are
@@ -245,6 +248,10 @@ async def validate_guest_token(redis_client: aioredis.Redis, token: str) -> bool
     Returns False if the token has exceeded GUEST_REACTION_LIMIT reactions within
     GUEST_TOKEN_TTL_SECONDS.
     """
+    guest_user_id = await run_sync(resolve_guest_by_token, supabase, token)
+    if guest_user_id is None:
+        return False
+
     token_hash = hashlib.sha256(token.encode()).hexdigest()
 
     # Register token idempotently — NX means "only set if not exists"
@@ -274,6 +281,7 @@ async def react_to_post(
     authorization: Annotated[str | None, Header()] = None,
     feed_repo: FeedRepository = Depends(get_feed_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
+    supabase: Client = Depends(get_supabase),
 ) -> ReactionResponse:
     """React to a post — guest (X-Guest-Token) or authenticated (JWT).
 
@@ -298,7 +306,7 @@ async def react_to_post(
             )
         guest_token = x_guest_token
         # Server-side token registry + per-token rate limit (LR-8)
-        token_allowed = await validate_guest_token(redis_client, guest_token)
+        token_allowed = await validate_guest_token(redis_client, supabase, guest_token)
         if not token_allowed:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -389,6 +397,7 @@ async def react_to_post_deprecated(
     authorization: Annotated[str | None, Header()] = None,
     feed_repo: FeedRepository = Depends(get_feed_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
+    supabase: Client = Depends(get_supabase),
 ) -> ReactionResponse:
     """Deprecated alias — use POST /posts/{post_id}/reactions instead."""
     return await react_to_post(
@@ -398,6 +407,7 @@ async def react_to_post_deprecated(
         authorization=authorization,
         feed_repo=feed_repo,
         redis_client=redis_client,
+        supabase=supabase,
     )
 
 

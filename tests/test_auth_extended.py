@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 
 try:
@@ -22,9 +24,15 @@ try:
         VerifyEmailResponse,
         LoginResponse,
         RefreshRequest,
+        LoginRequest,
+        EmailLoginRequest,
+        social_login,
+        email_login,
+        refresh_token,
         _is_invalid_token_error,
         _handle_supabase_auth_error,
     )
+    from tests.conftest import MockRedis, MockSupabase
 
     _AUTH_EXT_AVAILABLE = True
 except (ImportError, AttributeError):
@@ -110,11 +118,13 @@ class TestAuthModels:
     def test_login_response_model(self):
         resp = LoginResponse(
             user_id="u-1",
+            username="alice",
             access_token="at-123",
             refresh_token="rt-456",
             expires_at=1710720000,
         )
         assert resp.expires_at == 1710720000
+        assert resp.username == "alice"
 
 
 class TestIsInvalidTokenError:
@@ -155,3 +165,141 @@ class TestHandleSupabaseAuthError:
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(exc)
         assert exc_info.value.status_code == 409
+
+
+class TestAuthSessionIsolation:
+    """Session-mutating auth calls must use fresh Supabase clients."""
+
+    @staticmethod
+    def _session_response(*, user_id: str, email: str):
+        session = SimpleNamespace(
+            access_token="at-123",
+            refresh_token="rt-456",
+            expires_at=1710720000,
+        )
+        user = SimpleNamespace(
+            id=user_id,
+            email=email,
+            user_metadata={"full_name": "Alice Example"},
+        )
+        return SimpleNamespace(session=session, user=user)
+
+    @pytest.mark.asyncio
+    async def test_social_login_uses_separate_supabase_client(self, monkeypatch):
+        shared_supabase = MockSupabase()
+        shared_supabase.auth.sign_in_with_id_token = MagicMock(
+            side_effect=AssertionError("shared client used")
+        )
+        isolated_supabase = MockSupabase()
+        isolated_supabase.auth.sign_in_with_id_token = MagicMock(
+            return_value=self._session_response(
+                user_id="user-1", email="alice@example.com"
+            )
+        )
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.auth.run_sync", fake_run_sync)
+        monkeypatch.setattr("app.api.auth.get_client_ip", lambda request: "203.0.113.8")
+        monkeypatch.setattr(
+            "app.api.auth.check_login_rate_limit",
+            AsyncMock(return_value=(True, 0)),
+        )
+        monkeypatch.setattr(
+            "app.db.client.get_supabase_service", lambda: isolated_supabase
+        )
+
+        user_repo = MagicMock()
+        user_repo.check_username_taken.return_value = None
+        user_repo.upsert.return_value = None
+        user_repo.get_profile_by_id.return_value = {"username": "alice"}
+        tier_repo = SimpleNamespace(
+            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
+        )
+
+        result = await social_login(
+            request=MagicMock(),
+            body=LoginRequest(provider="google", id_token="id-token"),
+            supabase=shared_supabase,
+            r=MockRedis(),
+            user_repo=user_repo,
+            tier_repo=tier_repo,
+        )
+
+        assert result.username == "alice"
+        isolated_supabase.auth.sign_in_with_id_token.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_email_login_uses_separate_supabase_client(self, monkeypatch):
+        shared_supabase = MockSupabase()
+        shared_supabase.auth.sign_in_with_password = MagicMock(
+            side_effect=AssertionError("shared client used")
+        )
+        isolated_supabase = MockSupabase()
+        isolated_supabase.auth.sign_in_with_password = MagicMock(
+            return_value=self._session_response(
+                user_id="user-2", email="alice@example.com"
+            )
+        )
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.auth.run_sync", fake_run_sync)
+        monkeypatch.setattr("app.api.auth.get_client_ip", lambda request: "203.0.113.8")
+        monkeypatch.setattr(
+            "app.api.auth.check_login_rate_limit",
+            AsyncMock(return_value=(True, 0)),
+        )
+        monkeypatch.setattr("app.api.auth.settings.AUTH_PROVIDER_EMAIL_ENABLED", True)
+        monkeypatch.setattr(
+            "app.db.client.get_supabase_service", lambda: isolated_supabase
+        )
+
+        user_repo = MagicMock()
+        user_repo.get_profile_by_id.return_value = {"username": "alice"}
+
+        result = await email_login(
+            request=MagicMock(),
+            body=EmailLoginRequest(email="alice@example.com", password="secret123"),
+            supabase=shared_supabase,
+            r=MockRedis(),
+            user_repo=user_repo,
+        )
+
+        assert result.username == "alice"
+        isolated_supabase.auth.sign_in_with_password.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_refresh_uses_separate_supabase_client(self, monkeypatch):
+        shared_supabase = MockSupabase()
+        shared_supabase.auth.refresh_session = MagicMock(
+            side_effect=AssertionError("shared client used")
+        )
+        isolated_supabase = MockSupabase()
+        isolated_supabase.auth.refresh_session = MagicMock(
+            return_value=self._session_response(
+                user_id="user-3", email="alice@example.com"
+            )
+        )
+
+        async def fake_run_sync(fn, *args, **kwargs):
+            return fn(*args, **kwargs)
+
+        monkeypatch.setattr("app.api.auth.run_sync", fake_run_sync)
+        monkeypatch.setattr(
+            "app.db.client.get_supabase_service", lambda: isolated_supabase
+        )
+
+        user_repo = MagicMock()
+        user_repo.get_profile_by_id.return_value = {"username": "alice"}
+
+        result = await refresh_token(
+            body=RefreshRequest(refresh_token="rt-123"),
+            supabase=shared_supabase,
+            user_repo=user_repo,
+        )
+
+        assert result.username == "alice"
+        isolated_supabase.auth.refresh_session.assert_called_once()
