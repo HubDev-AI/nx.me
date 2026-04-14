@@ -6,12 +6,13 @@
  * purchase logic and state stays in one place.
  *
  * The hook keeps `Linking.openURL` for the Stripe Checkout fallback
- * (PR6 will swap this for the in-app Stripe Payment Sheet) and the
- * native `Alert.alert` for the cancel confirmation (PR4 will swap this
- * for the custom bottom sheet).
+ * (PR6 will swap this for the in-app Stripe Payment Sheet). Cancel
+ * confirmation is driven by `isCancelSheetOpen` / `openCancelSheet` /
+ * `confirmCancel` / `dismissCancelSheet`; the consumer screen renders
+ * `<CancelSubscriptionSheet>` wired to that state.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Linking } from "react-native";
+import { Linking } from "react-native";
 
 import {
   cancelSubscription,
@@ -32,12 +33,7 @@ const ERROR_LOAD_ENTITLEMENT =
   "We couldn't load your subscription info. Try again.";
 const WARNING_SUBSCRIPTION_UNAVAILABLE =
   "Subscription is not available at this time.";
-
-const CANCEL_TITLE = "Cancel Subscription";
-const CANCEL_MESSAGE =
-  "Your premium benefits will remain until the end of your billing period.";
-const CANCEL_KEEP_LABEL = "Keep Subscription";
-const CANCEL_CONFIRM_LABEL = "Cancel";
+const INFO_ALREADY_SUBSCRIBED = "You\u2019re already subscribed.";
 
 export interface UsePurchaseFlowReturn {
   entitlement: EntitlementState | null;
@@ -50,10 +46,17 @@ export interface UsePurchaseFlowReturn {
    */
   purchasingId: string | null;
   isCancelling: boolean;
+  /** True while the confirm-cancel bottom sheet is visible. */
+  isCancelSheetOpen: boolean;
   refresh: () => Promise<void>;
   buyCredits: (pack: CreditPackOption) => Promise<void>;
   subscribe: () => Promise<void>;
-  cancel: () => void;
+  /** Open the confirm-cancel bottom sheet (no API call yet). */
+  openCancelSheet: () => void;
+  /** Dismiss the sheet without cancelling. */
+  dismissCancelSheet: () => void;
+  /** Fire the cancel API call + close the sheet. */
+  confirmCancel: () => Promise<void>;
 }
 
 interface UsePurchaseFlowOptions {
@@ -77,6 +80,7 @@ export function usePurchaseFlow({
   const [error, setError] = useState<string | null>(null);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isCancelSheetOpen, setIsCancelSheetOpen] = useState(false);
 
   // Ref mirror of `entitlement` so `refresh` can read the current value
   // without becoming part of its dependency list (callers like PaywallModal
@@ -157,10 +161,11 @@ export function usePurchaseFlow({
       const response = await createSubscription();
 
       if (response.status === SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED) {
-        // Not a new purchase — silently re-sync state without firing
-        // `onPurchaseComplete` (which would show a misleading "Purchase
-        // complete!" banner in the paywall modal).
+        // Not a new purchase — re-sync state and surface an info toast.
+        // We deliberately skip `onPurchaseComplete` so consumers don't
+        // show a misleading "Purchase complete!" banner.
         await refetch();
+        showToast({ kind: "info", message: INFO_ALREADY_SUBSCRIBED });
         return;
       }
 
@@ -181,29 +186,31 @@ export function usePurchaseFlow({
   }, [refetch, onPurchaseComplete]);
 
   // ---------------------------------------------------------------------
-  // Cancel subscription (PR4 will replace the native Alert with a sheet)
+  // Cancel subscription — sheet-driven confirmation.
+  // `openCancelSheet` just shows the sheet; `confirmCancel` fires the
+  // API call when the user presses the destructive button.
   // ---------------------------------------------------------------------
-  const cancel = useCallback(() => {
-    Alert.alert(CANCEL_TITLE, CANCEL_MESSAGE, [
-      { text: CANCEL_KEEP_LABEL, style: "cancel" },
-      {
-        text: CANCEL_CONFIRM_LABEL,
-        style: "destructive",
-        onPress: async () => {
-          setIsCancelling(true);
-          try {
-            const resp = await cancelSubscription();
-            await refetch();
-            showToast({ kind: "success", message: resp.message });
-          } catch (err) {
-            const appError = parseApiError(err);
-            showToast({ kind: "error", message: appError.message });
-          } finally {
-            setIsCancelling(false);
-          }
-        },
-      },
-    ]);
+  const openCancelSheet = useCallback(() => {
+    setIsCancelSheetOpen(true);
+  }, []);
+
+  const dismissCancelSheet = useCallback(() => {
+    setIsCancelSheetOpen(false);
+  }, []);
+
+  const confirmCancel = useCallback(async () => {
+    setIsCancelling(true);
+    try {
+      const resp = await cancelSubscription();
+      await refetch();
+      setIsCancelSheetOpen(false);
+      showToast({ kind: "success", message: resp.message });
+    } catch (err) {
+      const appError = parseApiError(err);
+      showToast({ kind: "error", message: appError.message });
+    } finally {
+      setIsCancelling(false);
+    }
   }, [refetch]);
 
   return {
@@ -212,9 +219,12 @@ export function usePurchaseFlow({
     error,
     purchasingId,
     isCancelling,
+    isCancelSheetOpen,
     refresh,
     buyCredits,
     subscribe,
-    cancel,
+    openCancelSheet,
+    dismissCancelSheet,
+    confirmCancel,
   };
 }
