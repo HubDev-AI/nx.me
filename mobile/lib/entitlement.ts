@@ -15,11 +15,19 @@ export interface CreditPackOption {
   pack_id: string;
   credits: number;
   price_id: string;
+  /** Stripe amount in the smallest currency unit (e.g. cents). */
+  amount_cents: number;
+  /** ISO 4217 currency code, lowercase (e.g. "usd"). */
+  currency: string;
 }
 
 export interface PremiumOption {
   price_id: string;
   name: string;
+  /** Stripe amount in the smallest currency unit (e.g. cents). */
+  amount_cents: number;
+  /** ISO 4217 currency code, lowercase (e.g. "usd"). */
+  currency: string;
 }
 
 export interface PurchaseOptions {
@@ -30,6 +38,8 @@ export interface PurchaseOptions {
 export interface EntitlementState {
   tier: string;
   trial_analyses_remaining: number;
+  /** Total trial analyses granted on signup (e.g. 3). */
+  trial_analyses_limit: number;
   credit_balance: number;
   can_generate: boolean;
   subscription_status: string | null;
@@ -46,6 +56,14 @@ export interface SubscriptionResponse {
   status: string | null;
   message: string | null;
 }
+
+export interface CancelSubscriptionResponse {
+  status: string;
+  message: string;
+}
+
+/** Server response status when re-subscribing on an already-active plan. */
+export const SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED = "already_subscribed";
 
 // ---------------------------------------------------------------------------
 // API calls
@@ -78,5 +96,12 @@ export async function createSubscription(): Promise<SubscriptionResponse> {
       success_url: "https://nxme.ai/payment/success",
       cancel_url: "https://nxme.ai/payment/cancel",
     }),
+  });
+}
+
+/** Cancel an active premium subscription (remains active until billing period end). */
+export async function cancelSubscription(): Promise<CancelSubscriptionResponse> {
+  return apiFetch<CancelSubscriptionResponse>(ENTITLEMENT_ENDPOINTS.SUBSCRIBE, {
+    method: "DELETE",
   });
 }

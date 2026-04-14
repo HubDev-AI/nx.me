@@ -8,7 +8,7 @@
  * so it's safe to render unconditionally.
  */
 import { useEffect, useState, useCallback } from "react";
-import { Pressable, StyleSheet } from "react-native";
+import { Pressable } from "react-native";
 import { useRouter } from "expo-router";
 
 import { CreditBadge } from "../paywall/CreditBadge";
@@ -60,7 +60,6 @@ export function FeedCreditBadge() {
   return (
     <Pressable
       onPress={handlePress}
-      style={styles.container}
       accessibilityLabel={`${displayCount} credits remaining. Tap to manage subscription.`}
       accessibilityRole="button"
     >
@@ -68,9 +67,3 @@ export function FeedCreditBadge() {
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    // No additional styling needed — CreditBadge handles its own
-  },
-});

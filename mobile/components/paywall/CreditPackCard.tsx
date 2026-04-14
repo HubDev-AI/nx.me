@@ -1,8 +1,8 @@
 /**
  * CreditPackCard — selectable credit pack option within the paywall.
  *
- * Displays credit count and a "Buy" CTA. Press feedback follows the
- * NXME pattern: scale 0.98 over 150ms, min 44pt touch target.
+ * Displays credit count, formatted price and a "Buy" CTA. Press feedback
+ * follows the NXME pattern: scale 0.98 over 150ms, min 44pt touch target.
  */
 import { useRef, useCallback } from "react";
 import { Pressable, Text, View, Animated, StyleSheet } from "react-native";
@@ -15,6 +15,8 @@ import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
+import { Caption } from "../ui/Text";
+import { formatPrice } from "../../lib/format-price";
 import type { CreditPackOption } from "../../lib/entitlement";
 
 interface CreditPackCardProps {
@@ -54,8 +56,8 @@ export function CreditPackCard({
     onPurchase(pack);
   }, [onPurchase, pack]);
 
-  /** Derive a display label from the pack_id (e.g. "10_credits" -> "10 Credits") */
   const displayCredits = pack.credits;
+  const formattedPrice = formatPrice(pack.amount_cents, pack.currency);
 
   return (
     <Animated.View
@@ -71,7 +73,7 @@ export function CreditPackCard({
         onPressOut={handlePressOut}
         disabled={isDisabled}
         style={styles.container}
-        accessibilityLabel={`Purchase ${displayCredits} Credits`}
+        accessibilityLabel={`Purchase ${displayCredits} credits for ${formattedPrice}`}
         accessibilityRole="button"
         accessibilityState={{ disabled: isDisabled, busy: isLoading }}
       >
@@ -83,6 +85,10 @@ export function CreditPackCard({
           />
           <Text style={styles.creditCount}>{displayCredits}</Text>
           <Text style={styles.label}>credits</Text>
+          <Caption style={styles.priceSeparator}>·</Caption>
+          <Caption weight="medium" style={styles.price}>
+            {formattedPrice}
+          </Caption>
         </View>
 
         <View
@@ -130,6 +136,12 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bodyMedium,
     color: THEME.colors.textSecondary,
     fontSize: 14,
+  },
+  priceSeparator: {
+    color: THEME.colors.textMuted,
+  },
+  price: {
+    color: THEME.colors.textPrimary,
   },
   buyButton: {
     borderRadius: THEME.radius.pill,
