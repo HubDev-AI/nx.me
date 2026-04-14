@@ -52,17 +52,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // share cards into the app, which has no matching route.
     //
     // Android `pathPrefix` is substring-prefix — `/signup` would also capture
-    // `/signups`, `/signup-bot`, etc. Use `path` for the exact match and
-    // `pathPattern` for nested routes. `/card/` is safe as a prefix because
-    // every match starts with the terminating slash, so it cannot swallow a
-    // hypothetical `/cardiology`.
+    // `/signups`, `/signup-bot`, etc. — so use an exact `path` for signup.
+    // There is no `/signup/...` route in mobile (see `mobile/app/(auth)/`),
+    // so we do NOT claim a nested pattern. `/card/` is safe as a prefix
+    // because every match starts with the terminating slash, so it cannot
+    // swallow a hypothetical `/cardiology`.
     intentFilters: [
       {
         action: "VIEW",
         autoVerify: true,
         data: [
           { scheme: "https", host: "nxme.ai", path: "/signup" },
-          { scheme: "https", host: "nxme.ai", pathPattern: "/signup/.*" },
           { scheme: "https", host: "nxme.ai", pathPrefix: "/card/" },
         ],
         category: ["BROWSABLE", "DEFAULT"],
