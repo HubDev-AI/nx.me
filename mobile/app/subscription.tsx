@@ -53,6 +53,12 @@ type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 /** Server returns this status when re-subscribing on an already-active plan. */
 const STATUS_ALREADY_SUBSCRIBED = "already_subscribed";
 
+/** Backend DELETE /v1/subscriptions response shape (CancelSubscriptionResponse). */
+interface CancelSubscriptionResponse {
+  status: string;
+  message: string;
+}
+
 interface TierConfig {
   label: string;
   icon: IoniconName;
@@ -191,11 +197,15 @@ export default function SubscriptionScreen() {
           onPress: async () => {
             setIsCancelling(true);
             try {
-              await apiFetch("/v1/subscriptions", { method: "DELETE" });
+              const resp = await apiFetch<CancelSubscriptionResponse>(
+                "/v1/subscriptions",
+                { method: "DELETE" },
+              );
               await refreshEntitlement();
+              showToast({ kind: "success", message: resp.message });
             } catch (err) {
               const appError = parseApiError(err);
-              showToast({ kind: 'error', message: appError.message });
+              showToast({ kind: "error", message: appError.message });
             } finally {
               setIsCancelling(false);
             }
