@@ -45,6 +45,14 @@ export async function generateMetadata({
       description,
       url: cardUrl,
       type: 'website',
+      images: [
+        {
+          url: card.after_image_url,
+          width: 1200,
+          height: 630,
+          alt: `${card.display_name}'s glow-up transformation`,
+        },
+      ],
     },
     twitter: {
       card: 'summary_large_image',
