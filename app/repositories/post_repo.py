@@ -157,12 +157,19 @@ class PostRepository:
             key=lambda item: (-item[1].timestamp(), item[0]),
         )
 
-        # Apply strict cursor tuple filter after aggregation.
+        # Apply strict cursor filter after aggregation. The comparator must
+        # match the sort order (updated_at DESC, username ASC) — a naive
+        # lexicographic tuple `<` would drop users whose updated_at matches
+        # the cursor but whose username is alphabetically after it.
         if cursor is not None:
             sorted_items = [
                 item
                 for item in sorted_items
-                if (item[1], item[0]) < (cursor_updated_at, cursor_username)
+                if item[1] < cursor_updated_at
+                or (
+                    item[1] == cursor_updated_at
+                    and item[0] > cursor_username
+                )
             ]
 
         # Return limit + 1 so the caller can compute next_cursor.

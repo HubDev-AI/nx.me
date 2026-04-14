@@ -37,10 +37,31 @@ describe('GET /.well-known/apple-app-site-association', () => {
         details: [
           {
             appIDs: ['ABC1234567.ai.nxme.app'],
-            components: [{ '/': '*' }],
+            components: [
+              { '/': '/signup' },
+              { '/': '/card/*' },
+            ],
           },
         ],
       },
     })
+  })
+
+  it('never claims origin-wide paths (only mobile-handled routes)', async () => {
+    // Regression for Codex adversarial finding: wildcard "/: *" captured
+    // public share URLs like /{username} into the app, which has no matching
+    // route. The AASA must mirror APP_LINK_PATHS, which only lists paths
+    // present in mobile/app/**.
+    process.env.APPLE_TEAM_ID = 'ABC1234567'
+    const { GET } = await import('@/app/.well-known/apple-app-site-association/route')
+
+    const response = await GET()
+    const body = await response.json()
+    const components = body.applinks.details[0].components as Array<Record<string, string>>
+
+    for (const entry of components) {
+      expect(entry['/']).not.toBe('*')
+      expect(entry['/']).not.toMatch(/^\/\*$/)
+    }
   })
 })

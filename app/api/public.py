@@ -21,7 +21,7 @@ import base64
 import binascii
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -138,6 +138,13 @@ def _decode_cursor(raw: str) -> tuple[datetime, str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Malformed cursor",
         ) from exc
+    # Normalise to UTC so comparisons against Supabase-returned timestamptz
+    # (which are always offset-aware) never raise TypeError. A cursor payload
+    # without a timezone suffix gets UTC attached — not rejected — because
+    # `_encode_cursor` always emits offset-aware ISO strings, so naive values
+    # only appear from hand-crafted or mis-encoded inputs.
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
     return updated_at, username
 
 
