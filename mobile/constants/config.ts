@@ -8,10 +8,18 @@ const extra = Constants.expoConfig?.extra ?? {};
 
 /** Base URL for the NXME backend API */
 import { Platform } from "react-native";
-export const API_BASE_URL: string =
-  Platform.OS === "web" && __DEV__
-    ? "http://localhost:8000"
-    : (extra.apiBaseUrl as string) ?? "https://api.nxme.ai";
+export const API_BASE_URL: string = (() => {
+  // Web dev always hits local FastAPI; native dev + prod read from Expo extras.
+  if (Platform.OS === "web" && __DEV__) return "http://localhost:8000";
+  const configured = extra.apiBaseUrl as string | undefined;
+  if (!configured) {
+    throw new Error(
+      "API_BASE_URL missing — set expo.extra.apiBaseUrl in app.config.ts " +
+        "(driven by the API_BASE_URL env var).",
+    );
+  }
+  return configured;
+})();
 
 /** Universal link origin — only HTTPS allowed, no custom URI schemes */
 export const UNIVERSAL_LINK_ORIGIN = "https://nxme.ai";
