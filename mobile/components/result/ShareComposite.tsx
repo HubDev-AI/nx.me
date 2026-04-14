@@ -66,6 +66,13 @@ interface ShareParams {
   afterUrl: string;
   /** Right-side label, e.g. "Glow Up". */
   rightLabel: string;
+  /** Optional card-web URL to attach to the native share sheet.
+   *  When present, shared messages include a clickable link back to
+   *  the user's card instead of a standalone PNG. */
+  shareUrl?: string;
+  /** Optional prose message accompanying the image. Used when the
+   *  recipient app supports plain text alongside the attachment. */
+  shareMessage?: string;
 }
 
 interface UseShareCompositeReturn {
@@ -95,10 +102,13 @@ export function useShareComposite(): UseShareCompositeReturn {
     afterUrl: "",
     rightLabel: "",
   });
+  const paramsRef = useRef<ShareParams>(params);
+  paramsRef.current = params;
 
   // Reset image readiness whenever URLs change.
   const updateParams = useCallback((next: ShareParams) => {
     setParams(next);
+    paramsRef.current = next;
     setBeforeReady(false);
     setAfterReady(false);
   }, []);
@@ -137,7 +147,15 @@ export function useShareComposite(): UseShareCompositeReturn {
           width: COMPOSITE_SIZE_PX,
           height: COMPOSITE_SIZE_PX,
         });
-        await Share.share({ url: uri });
+        // iOS Share.share accepts both url (attachment) + message (body).
+        // On Android `url` is ignored; the message carries the link text so
+        // recipients still get something clickable.
+        const { shareUrl, shareMessage } = paramsRef.current;
+        const content: Parameters<typeof Share.share>[0] = shareMessage
+          ? { url: uri, message: shareMessage }
+          : { url: uri };
+        await Share.share(content);
+        void shareUrl; // consumed via shareMessage; kept for future platforms.
       } catch (err) {
         const message = err instanceof Error ? err.message : "Share failed";
         Alert.alert("Share failed", message);
