@@ -49,8 +49,6 @@ import { CreditBadge } from "./CreditBadge";
 import { CreditPackCard } from "./CreditPackCard";
 import { PremiumCard } from "./PremiumCard";
 
-const SWIPE_DISMISS_THRESHOLD = 100;
-
 interface PaywallModalProps {
   visible: boolean;
   onClose: () => void;
@@ -99,14 +97,14 @@ export function PaywallModal({
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > 10,
+        gestureState.dy > PAYWALL_ANIMATION.PAN_MOVE_THRESHOLD,
       onPanResponderMove: (_, gestureState) => {
         if (gestureState.dy > 0) {
           panY.setValue(gestureState.dy);
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > SWIPE_DISMISS_THRESHOLD) {
+        if (gestureState.dy > PAYWALL_ANIMATION.SWIPE_DISMISS_THRESHOLD) {
           handleClose();
         } else {
           Animated.spring(panY, {
@@ -477,7 +475,7 @@ export function PaywallModal({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000000",
+    backgroundColor: THEME.colors.backdrop,
   },
   sheet: {
     position: "absolute",
@@ -590,7 +588,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.sm,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    backgroundColor: THEME.colors.destructiveBg,
     borderRadius: THEME.radius.md,
     padding: THEME.spacing.md,
     marginBottom: THEME.spacing.lg,
@@ -605,7 +603,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.sm,
-    backgroundColor: "rgba(74,222,128,0.1)",
+    backgroundColor: THEME.colors.successBg,
     borderRadius: THEME.radius.md,
     padding: THEME.spacing.md,
     marginBottom: THEME.spacing.lg,

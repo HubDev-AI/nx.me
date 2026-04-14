@@ -246,6 +246,12 @@ export const PAYWALL_ANIMATION = {
   PRESS_DURATION_MS: 150,
   /** Credit badge count animation duration (ms) */
   COUNT_ANIMATION_DURATION_MS: 600,
+  /** Pixels of vertical pan before the sheet dismisses on release */
+  SWIPE_DISMISS_THRESHOLD: 100,
+  /** Pixels of vertical pan before the responder claims the gesture */
+  PAN_MOVE_THRESHOLD: 10,
+  /** Scale factor for the credit badge bounce when balance changes */
+  BOUNCE_SCALE: 1.15,
 } as const;
 
 /** Public card API paths (no auth required) */

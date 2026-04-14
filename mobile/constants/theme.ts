@@ -30,6 +30,29 @@ export const THEME = {
     glassBorder: "rgba(255, 255, 255, 0.08)",
     /** Subtle glass — lighter, for cards over images */
     glassLight: "rgba(17, 17, 17, 0.55)",
+    /** Modal scrim base color (combine with backdrop opacity) */
+    backdrop: "#000000",
+    /** Destructive notification background (10% destructive red) */
+    destructiveBg: "rgba(239, 68, 68, 0.1)",
+    /** Success notification background (10% success green) */
+    successBg: "rgba(74, 222, 128, 0.1)",
+    /** Amber-gold credit/diamond accent — used for credit pack icons */
+    creditAccent: "#F59E0B",
+  },
+
+  /**
+   * Hex alpha suffixes for compositing 8-digit hex colors.
+   * Append to a 6-digit hex string (e.g. `theme.accent + THEME.alpha.subtle`).
+   */
+  alpha: {
+    /** ~15% — subtle accent fill (badge background) */
+    subtle: "26",
+    /** ~20% — low accent fill (badge border) */
+    low: "33",
+    /** ~25% — medium accent fill (premium card border) */
+    med: "40",
+    /** ~38% — mid accent fill (active pack card border) */
+    mid: "60",
   },
 
   radius: {

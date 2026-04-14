@@ -70,7 +70,7 @@ export function PremiumCard({
     >
       <View style={[
         styles.container,
-        { borderColor: theme.accent + "40" },
+        { borderColor: theme.accent + THEME.alpha.med },
         THEME.shadow.glow(theme.accent),
       ]}>
         {/* Header */}
