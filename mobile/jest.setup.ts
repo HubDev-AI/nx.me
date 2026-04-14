@@ -1,5 +1,22 @@
 import '@testing-library/jest-native/extend-expect';
 
+// Provide a deterministic Expo config so constants/config.ts (which now
+// throws when apiBaseUrl is missing) can load under jest.
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    expoConfig: {
+      extra: {
+        apiBaseUrl: 'http://localhost:8000',
+        googleClientId: '',
+        googleWebClientId: '',
+        appleClientId: '',
+        stripePublishableKey: '',
+      },
+    },
+  },
+}));
+
 // Mock react-native-mmkv (native module, unavailable in Jest env).
 // v4 exports `MMKV` as a type and `createMMKV` as the runtime factory.
 // Stores are keyed by id so multiple instances with the same id share state
