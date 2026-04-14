@@ -5,8 +5,14 @@
  * accent color from useTheme(). When the balance changes (e.g. after
  * purchase), the count animates with a scale bounce to draw attention.
  */
-import { useRef, useEffect, useMemo } from "react";
-import { Text, Animated, StyleSheet } from "react-native";
+import { useEffect, useMemo, useRef } from "react";
+import { Text, StyleSheet } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -23,10 +29,9 @@ interface CreditBadgeProps {
 
 export function CreditBadge({ balance, size = "default" }: CreditBadgeProps) {
   const { theme } = useTheme();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useSharedValue(1);
   const prevBalance = useRef(balance);
 
-  // Derive accent-based colors using THEME.alpha tokens
   const accentColors = useMemo(() => ({
     bg: theme.accent + THEME.alpha.subtle,
     border: theme.accent + THEME.alpha.low,
@@ -34,25 +39,23 @@ export function CreditBadge({ balance, size = "default" }: CreditBadgeProps) {
     text: theme.accent,
   }), [theme.accent]);
 
-  // Animate bounce when balance changes
   useEffect(() => {
     if (prevBalance.current !== balance) {
       prevBalance.current = balance;
-
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: PAYWALL_ANIMATION.BOUNCE_SCALE,
+      scaleAnim.value = withSequence(
+        withTiming(PAYWALL_ANIMATION.BOUNCE_SCALE, {
           duration: PAYWALL_ANIMATION.COUNT_ANIMATION_DURATION_MS / 3,
-          useNativeDriver: true,
         }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
+        withTiming(1, {
           duration: (PAYWALL_ANIMATION.COUNT_ANIMATION_DURATION_MS * 2) / 3,
-          useNativeDriver: true,
         }),
-      ]).start();
+      );
     }
   }, [balance, scaleAnim]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleAnim.value }],
+  }));
 
   const isSmall = size === "small";
   const iconSize = isSmall ? 14 : 18;
@@ -65,8 +68,8 @@ export function CreditBadge({ balance, size = "default" }: CreditBadgeProps) {
         {
           backgroundColor: accentColors.bg,
           borderColor: accentColors.border,
-          transform: [{ scale: scaleAnim }],
         },
+        animatedStyle,
       ]}
       accessibilityLabel={`${balance} credits remaining`}
       accessibilityRole="text"
