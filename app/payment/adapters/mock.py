@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from app.payment.ports import WebhookEvent
+from app.payment.ports import PriceInfo, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,10 @@ class MockPaymentAdapter:
     async def cancel_subscription(self, subscription_id: str) -> None:
         """No-op for mock."""
         logger.info("Mock cancel subscription: %s", subscription_id)
+
+    async def get_price(self, price_id: str) -> PriceInfo:
+        """Return a deterministic placeholder price for any ID."""
+        return PriceInfo(price_id=price_id, amount_cents=999, currency="usd")
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Accept any signature in mock mode. Parse payload as JSON.

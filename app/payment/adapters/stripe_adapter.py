@@ -8,12 +8,37 @@ via Stripe hosted payment sheet (mobile SDK).
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 
 from app.config import settings
-from app.payment.ports import WebhookEvent
+from app.payment.ports import PriceInfo, WebhookEvent
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=128)
+def _retrieve_price_cached(price_id: str) -> PriceInfo:
+    """Fetch and cache a Stripe price by ID. Module-level so the cache
+    survives across adapter instances (one network call per price).
+
+    Stripe prices are immutable; cache invalidation is not required.
+    """
+    import stripe
+
+    price = stripe.Price.retrieve(price_id)
+    unit_amount = price.get("unit_amount")
+    if unit_amount is None:
+        # Tiered or metered prices have no flat unit_amount and are not
+        # supported for display in purchase_options.
+        raise ValueError(
+            f"Stripe price {price_id} has no flat unit_amount (tiered/metered?)"
+        )
+    return PriceInfo(
+        price_id=price_id,
+        amount_cents=int(unit_amount),
+        currency=str(price["currency"]).lower(),
+    )
 
 
 class StripePaymentAdapter:
@@ -88,6 +113,11 @@ class StripePaymentAdapter:
         logger.info(
             "Stripe subscription %s set to cancel at period end", subscription_id
         )
+
+    async def get_price(self, price_id: str) -> PriceInfo:
+        """Fetch price metadata from Stripe (cached in-process)."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _retrieve_price_cached, price_id)
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Verify Stripe webhook signature and return a typed WebhookEvent.
