@@ -203,6 +203,11 @@ class Settings(BaseSettings):
     )
     RETENTION_JOB_DAYS: int = 7  # unsaved jobs older than N days are purged
 
+    # Reconcile/retention cron mutex — reconcile holds a Redis lock so the
+    # retention cron (scheduled 30 min later) skips if reconcile is still
+    # running. 1800s = 30 min, matching the cron-spacing budget.
+    RECONCILE_LOCK_TTL_SECONDS: int = 1800
+
     # Auth provider feature flags — toggle login methods per environment.
     # When disabled: API rejects requests, mobile hides the button.
     AUTH_PROVIDER_GOOGLE_ENABLED: bool = True

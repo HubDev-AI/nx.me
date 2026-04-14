@@ -79,6 +79,12 @@ return redis.call('INCR', KEYS[1])
 _DEFAULT_PAGE_SIZE = 10
 _MAX_PAGE_SIZE = 50
 
+# Redis mutex key shared with the retention cron. Acquired by
+# ``reconcile_reaction_counts`` at 03:00 UTC; ``run_retention`` checks for it
+# at 03:30 UTC and skips if held. Extracted to a module-level constant so both
+# crons reference the exact same key without relying on string duplication.
+RECONCILE_LOCK_KEY = "cron:reconcile_reactions:lock"
+
 
 class FeedSort(StrEnum):
     NEWEST = "newest"
@@ -426,7 +432,9 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
     # the error isn't masked by an env-loading exception.
     post_id = reaction_data.get("post_id")
     if not post_id:
-        logger.error("persist_reaction received payload without post_id: %r", reaction_data)
+        logger.error(
+            "persist_reaction received payload without post_id: %r", reaction_data
+        )
         raise ValueError("persist_reaction: post_id is required")
 
     from app.db.client import get_supabase_service
@@ -465,22 +473,50 @@ async def reconcile_reaction_counts(ctx: dict) -> None:
 
     Single SQL statement via RPC — no per-post loop.
     Runs for all posts with reactions in the previous 48 hours.
+
+    Acquires a Redis mutex (``RECONCILE_LOCK_KEY``) at the top so the
+    retention cron scheduled 30 min later skips if reconcile is still
+    running. The lock is released in ``finally`` — including on failure —
+    so a crashed run does not block subsequent retention passes forever
+    (the lock TTL also bounds the worst case at
+    ``RECONCILE_LOCK_TTL_SECONDS``).
     """
     from app.db.client import get_supabase_service
     from app.repositories.feed_repo import FeedRepository
 
-    supabase = get_supabase_service()
-    feed_repo = FeedRepository(supabase)
     redis_client = ctx.get("redis")
 
-    cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=2)).isoformat()
+    # Acquire the cross-cron mutex before doing any work. If another process
+    # already holds it, silently skip — the next scheduled tick will retry.
+    if redis_client is not None:
+        acquired = await redis_client.set(
+            RECONCILE_LOCK_KEY,
+            "1",
+            nx=True,
+            ex=settings.RECONCILE_LOCK_TTL_SECONDS,
+        )
+        if not acquired:
+            logger.warning(
+                "reconcile_reaction_counts skipped: lock %s already held",
+                RECONCILE_LOCK_KEY,
+            )
+            return
 
-    updated_rows = await run_sync(feed_repo.reconcile_reaction_counts, cutoff)
-    updated_ids = [row["id"] for row in updated_rows]
+    try:
+        supabase = get_supabase_service()
+        feed_repo = FeedRepository(supabase)
 
-    # Invalidate Redis for reconciled posts so next read fetches fresh count
-    if redis_client and updated_ids:
-        keys = [f"posts:{pid}:reactions" for pid in updated_ids]
-        await redis_client.delete(*keys)
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=2)).isoformat()
 
-    logger.info("Reconciled reaction counts for %d posts", len(updated_ids))
+        updated_rows = await run_sync(feed_repo.reconcile_reaction_counts, cutoff)
+        updated_ids = [row["id"] for row in updated_rows]
+
+        # Invalidate Redis for reconciled posts so next read fetches fresh count
+        if redis_client and updated_ids:
+            keys = [f"posts:{pid}:reactions" for pid in updated_ids]
+            await redis_client.delete(*keys)
+
+        logger.info("Reconciled reaction counts for %d posts", len(updated_ids))
+    finally:
+        if redis_client is not None:
+            await redis_client.delete(RECONCILE_LOCK_KEY)

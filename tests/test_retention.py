@@ -13,7 +13,7 @@ test_worker_auto_refund.py and test_user_consent.py. No live DB required.
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call
 from uuid import uuid4
 
 
@@ -226,3 +226,58 @@ async def test_multiple_expired_uploads_batched() -> None:
 
     sb.storage.from_.assert_called_once_with("raw-selfies")
     sb.storage.from_.return_value.remove.assert_called_once_with(storage_keys)
+
+
+# ---------------------------------------------------------------------------
+# Reconcile-cron mutex — retention skips when reconcile is still running
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retention_skips_when_reconcile_lock_held() -> None:
+    """If reconcile_reaction_counts holds its Redis lock, retention must
+    bail out immediately without touching the DB or storage."""
+    from app.api.social import RECONCILE_LOCK_KEY
+
+    sb = _make_supabase()
+    redis_mock = AsyncMock()
+    # Lock held → get() returns non-None.
+    redis_mock.get = AsyncMock(return_value="1")
+
+    ctx = {"supabase": sb, "redis": redis_mock}
+    await run_retention(ctx)
+
+    redis_mock.get.assert_called_once_with(RECONCILE_LOCK_KEY)
+    # No DB work — table() never called, storage untouched.
+    sb.table.assert_not_called()
+    sb.storage.from_.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retention_runs_when_reconcile_lock_absent() -> None:
+    """With no lock present (get returns None), retention executes normally."""
+    from app.api.social import RECONCILE_LOCK_KEY
+
+    sb = _make_supabase(expired_uploads=[])
+    redis_mock = AsyncMock()
+    redis_mock.get = AsyncMock(return_value=None)  # lock free
+
+    ctx = {"supabase": sb, "redis": redis_mock}
+    await run_retention(ctx)
+
+    redis_mock.get.assert_called_once_with(RECONCILE_LOCK_KEY)
+    # Retention proceeded — jobs table accessed for the delete.
+    jobs_calls = [c for c in sb.table.call_args_list if c == call("jobs")]
+    assert len(jobs_calls) >= 1
+
+
+@pytest.mark.asyncio
+async def test_retention_runs_when_no_redis_in_ctx() -> None:
+    """If ``redis`` is absent from ctx (older worker versions), retention
+    still runs — the mutex check is best-effort."""
+    sb = _make_supabase(expired_uploads=[])
+    # No redis key in ctx at all.
+    await run_retention({"supabase": sb})
+
+    jobs_calls = [c for c in sb.table.call_args_list if c == call("jobs")]
+    assert len(jobs_calls) >= 1
