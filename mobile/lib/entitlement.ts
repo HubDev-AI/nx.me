@@ -51,6 +51,13 @@ export interface CheckoutResponse {
   checkout_url: string;
 }
 
+export interface CreditPurchaseIntentResponse {
+  payment_intent_client_secret: string;
+  ephemeral_key: string;
+  customer_id: string;
+  publishable_key: string;
+}
+
 export interface SubscriptionResponse {
   checkout_url: string | null;
   status: string | null;
@@ -74,7 +81,14 @@ export async function fetchEntitlement(): Promise<EntitlementState> {
   return apiFetch<EntitlementState>(ENTITLEMENT_ENDPOINTS.GET);
 }
 
-/** Create a Stripe checkout session for a credit pack purchase. */
+/**
+ * Create a Stripe Checkout session for a credit pack purchase.
+ *
+ * @deprecated Prefer `createCreditPurchaseIntent` — credit packs use the
+ * in-app Payment Sheet since PR6. This function is retained for
+ * back-compat while older builds remain in the field and will be
+ * removed in a follow-up PR.
+ */
 export async function purchaseCredits(
   creditPackId: string,
 ): Promise<CheckoutResponse> {
@@ -86,6 +100,23 @@ export async function purchaseCredits(
       cancel_url: "https://nxme.ai/payment/cancel",
     }),
   });
+}
+
+/**
+ * Create a Stripe PaymentIntent bundle for the in-app Payment Sheet.
+ * The returned secrets bootstrap `initPaymentSheet` + `presentPaymentSheet`
+ * from `@stripe/stripe-react-native`.
+ */
+export async function createCreditPurchaseIntent(
+  creditPackId: string,
+): Promise<CreditPurchaseIntentResponse> {
+  return apiFetch<CreditPurchaseIntentResponse>(
+    ENTITLEMENT_ENDPOINTS.PURCHASE_CREDITS_INTENT,
+    {
+      method: "POST",
+      body: JSON.stringify({ credit_pack_id: creditPackId }),
+    },
+  );
 }
 
 /** Create a Stripe checkout session for Premium subscription. */

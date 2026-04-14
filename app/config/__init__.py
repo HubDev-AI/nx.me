@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     STRIPE_API_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    # Publishable key returned to mobile clients alongside PaymentIntent
+    # bundles so they can sanity-check against the compiled-in key.
+    STRIPE_PUBLISHABLE_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""  # Required when ADAPTER__LLM_ADAPTER=anthropic (used for embeddings via OpenAI API)
 

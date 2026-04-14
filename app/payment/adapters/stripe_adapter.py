@@ -12,7 +12,7 @@ import functools
 import logging
 
 from app.config import settings
-from app.payment.ports import PriceInfo, WebhookEvent
+from app.payment.ports import PaymentIntentBundle, PriceInfo, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,92 @@ class StripePaymentAdapter:
         """Fetch price metadata from Stripe (cached in-process)."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _retrieve_price_cached, price_id)
+
+    async def create_payment_intent(
+        self,
+        user_id: str,
+        price_id: str,
+        metadata: dict | None = None,
+    ) -> PaymentIntentBundle:
+        """Create a PaymentIntent + ephemeral key for Payment Sheet.
+
+        Customer lookup is idempotent via `metadata.user_id` — existing
+        customers are reused across calls. Price is resolved through the
+        cached Price.retrieve helper so repeat calls for the same pack
+        don't round-trip to Stripe.
+        """
+        loop = asyncio.get_running_loop()
+
+        try:
+            # Resolve amount + currency from the price (cached).
+            price = await loop.run_in_executor(None, _retrieve_price_cached, price_id)
+
+            customer_id = await self._get_or_create_customer(user_id)
+
+            intent_metadata = {"user_id": user_id}
+            if metadata:
+                intent_metadata.update(metadata)
+
+            intent = await loop.run_in_executor(
+                None,
+                lambda: self._stripe.PaymentIntent.create(
+                    amount=price.amount_cents,
+                    currency=price.currency,
+                    customer=customer_id,
+                    automatic_payment_methods={"enabled": True},
+                    metadata=intent_metadata,
+                ),
+            )
+
+            ephemeral = await loop.run_in_executor(
+                None,
+                lambda: self._stripe.EphemeralKey.create(
+                    customer=customer_id,
+                    stripe_version=self._stripe.api_version,
+                ),
+            )
+        except self._stripe.StripeError as exc:
+            logger.exception("Stripe API error during PaymentIntent creation: %s", exc)
+            raise
+
+        logger.info(
+            "Stripe PaymentIntent created: user=%s, price=%s, intent=%s",
+            user_id,
+            price_id,
+            intent.get("id"),
+        )
+
+        return PaymentIntentBundle(
+            client_secret=intent["client_secret"],
+            ephemeral_key=ephemeral["secret"],
+            customer_id=customer_id,
+            publishable_key=settings.STRIPE_PUBLISHABLE_KEY,
+        )
+
+    async def _get_or_create_customer(self, user_id: str) -> str:
+        """Idempotent Stripe customer lookup keyed on `metadata.user_id`.
+
+        No per-user `stripe_customer_id` table exists in v1; rate limits
+        on `Customer.search` (~100/sec) are acceptable at current scale.
+        If search misses, create a customer with the user_id stamped into
+        metadata for future lookups.
+        """
+        loop = asyncio.get_running_loop()
+
+        query = f'metadata["user_id"]:"{user_id}"'
+        result = await loop.run_in_executor(
+            None,
+            lambda: self._stripe.Customer.search(query=query, limit=1),
+        )
+        existing = result.get("data") or []
+        if existing:
+            return existing[0]["id"]
+
+        customer = await loop.run_in_executor(
+            None,
+            lambda: self._stripe.Customer.create(metadata={"user_id": user_id}),
+        )
+        return customer["id"]
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Verify Stripe webhook signature and return a typed WebhookEvent.

@@ -28,6 +28,16 @@ class PriceInfo:
     currency: str  # ISO 4217 lowercase, e.g. "usd"
 
 
+@dataclass(frozen=True)
+class PaymentIntentBundle:
+    """Returned to client to bootstrap a Stripe Payment Sheet."""
+
+    client_secret: str  # PaymentIntent client_secret
+    ephemeral_key: str  # Stripe ephemeral key secret for the customer
+    customer_id: str  # Stripe customer ID
+    publishable_key: str  # publishable key (pass-through from settings)
+
+
 class PaymentPort(Protocol):
     """Port for payment provider interactions."""
 
@@ -59,5 +69,19 @@ class PaymentPort(Protocol):
 
         Raises Exception on retrieval failure (caller decides whether to
         skip the offering or propagate the error).
+        """
+        ...
+
+    async def create_payment_intent(
+        self,
+        user_id: str,
+        price_id: str,
+        metadata: dict | None = None,
+    ) -> PaymentIntentBundle:
+        """Create a PaymentIntent for the given price and the user's
+        Stripe customer (creating the customer if absent, idempotent via
+        metadata.user_id lookup).
+
+        Returns the bundle needed to present a Stripe Payment Sheet.
         """
         ...
