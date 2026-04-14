@@ -12,7 +12,6 @@ from enum import StrEnum
 
 
 class JobStatus(StrEnum):
-    PENDING = "pending"
     QUEUED = "queued"
     PROCESSING = "processing"
     FINALIZING = "finalizing"
