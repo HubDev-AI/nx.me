@@ -22,17 +22,6 @@ class JobStatus(StrEnum):
 
 
 # ---------------------------------------------------------------------------
-# Queue lanes
-# ---------------------------------------------------------------------------
-
-LANE_PREMIUM = "generation:premium"
-LANE_CREDIT = "generation:credit"
-LANE_TRIAL = "generation:trial"
-
-QUEUE_LANES = [LANE_PREMIUM, LANE_CREDIT, LANE_TRIAL]  # Priority order
-
-
-# ---------------------------------------------------------------------------
 # Failure reasons
 # ---------------------------------------------------------------------------
 

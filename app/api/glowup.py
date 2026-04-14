@@ -39,25 +39,13 @@ from app.entitlement.models import (
 )
 from app.entitlement.service import EntitlementService
 from app.generation.cost_tracker import CostTracker
-from app.generation.models import (
-    JobStatus,
-    LANE_CREDIT,
-    LANE_PREMIUM,
-    LANE_TRIAL,
-)
+from app.generation.models import JobStatus
 from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
 from app.services.glowup_service import GlowupService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["glowup"])
-
-# Maps tier slug → queue lane
-_SLUG_TO_LANE: dict[str, str] = {
-    "free": LANE_TRIAL,
-    "credits": LANE_CREDIT,
-    "premium": LANE_PREMIUM,
-}
 
 # Maps tier slug → public display name (for API responses)
 _SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
@@ -418,12 +406,10 @@ async def generate_glowup(
         cost_tracker = CostTracker(redis_client)
         tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
 
-        queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
         tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
-        # ARQ stores pending jobs in a sorted set at the queue name
-        # (default "arq:queue"); LLEN on a ZSET returns 0, so the previous
-        # "arq:queue:{queue_lane}" key always reported 0 depth. Until the
-        # multi-queue worker lands, report the actual shared queue depth.
+        # ARQ stores pending jobs in a sorted set at the default queue name
+        # ("arq:queue"); the unified worker only consumes from this queue,
+        # so the shared depth is the true wait signal.
         raw_position = await redis_client.zcard("arq:queue")
         if raw_position <= 5:
             queue_position = raw_position
@@ -507,10 +493,9 @@ async def generate_glowup(
         raise
 
     logger.info(
-        "Generation job %s enqueued for user %s on lane %s (upload=%s, analysis=%s)",
+        "Generation job %s enqueued for user %s (upload=%s, analysis=%s)",
         job_id,
         user_id_str,
-        queue_lane,
         upload_id,
         analysis["id"],
     )
