@@ -10,14 +10,18 @@
  * a monthly Premium price). When backend exposes the interval, replace
  * `BILLING_INTERVAL_SUFFIX` with a value derived from `premium`.
  */
-import { useRef, useCallback } from "react";
+import { useCallback } from "react";
 import {
   Pressable,
   View,
-  Animated,
   ActivityIndicator,
   StyleSheet,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -48,30 +52,30 @@ export function PremiumCard({
   disabled,
 }: PremiumCardProps) {
   const { theme } = useTheme();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useSharedValue(1);
   const isDisabled = disabled || isLoading;
 
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleAnim.value }],
+  }));
+
   const handlePressIn = useCallback(() => {
-    Animated.timing(scaleAnim, {
-      toValue: PAYWALL_ANIMATION.PRESS_SCALE,
+    scaleAnim.value = withTiming(PAYWALL_ANIMATION.PRESS_SCALE, {
       duration: PAYWALL_ANIMATION.PRESS_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
+    });
   }, [scaleAnim]);
 
   const handlePressOut = useCallback(() => {
-    Animated.timing(scaleAnim, {
-      toValue: 1,
+    scaleAnim.value = withTiming(1, {
       duration: PAYWALL_ANIMATION.PRESS_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
+    });
   }, [scaleAnim]);
 
   return (
     <Animated.View
       style={[
         styles.wrapper,
-        { transform: [{ scale: scaleAnim }] },
+        animatedStyle,
         isDisabled && styles.disabledWrapper,
       ]}
     >

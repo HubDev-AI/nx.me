@@ -9,14 +9,20 @@
  * `dismissCancelSheet`). While `isCancelling` is true the destructive
  * button shows a spinner and the close/dismiss affordances are disabled.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Animated,
   Modal,
   Pressable,
   StyleSheet,
   View,
 } from "react-native";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -92,40 +98,36 @@ export function CancelSubscriptionSheet({
   // Keep the modal mounted through the exit animation.
   const [mounted, setMounted] = useState(visible);
 
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const sheetTranslateY = useRef(new Animated.Value(SHEET_OFFSCREEN_Y)).current;
+  const backdropOpacity = useSharedValue(0);
+  const sheetTranslateY = useSharedValue(SHEET_OFFSCREEN_Y);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: SCRIM_OPACITY,
-          duration: ENTER_DURATION_MS,
-          useNativeDriver: true,
-        }),
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          damping: THEME.animation.press.damping,
-          stiffness: THEME.animation.press.stiffness,
-        }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: EXIT_DURATION_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(sheetTranslateY, {
-          toValue: SHEET_OFFSCREEN_Y,
-          duration: EXIT_DURATION_MS,
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
-        if (finished) setMounted(false);
+      backdropOpacity.value = withTiming(SCRIM_OPACITY, {
+        duration: ENTER_DURATION_MS,
       });
+      sheetTranslateY.value = withSpring(0, {
+        damping: THEME.animation.press.damping,
+        stiffness: THEME.animation.press.stiffness,
+      });
+    } else {
+      backdropOpacity.value = withTiming(0, { duration: EXIT_DURATION_MS });
+      sheetTranslateY.value = withTiming(
+        SHEET_OFFSCREEN_Y,
+        { duration: EXIT_DURATION_MS },
+        (finished) => {
+          if (finished) runOnJS(setMounted)(false);
+        },
+      );
     }
   }, [visible, backdropOpacity, sheetTranslateY]);
 
@@ -154,7 +156,7 @@ export function CancelSubscriptionSheet({
       statusBarTranslucent
     >
       <Animated.View
-        style={[styles.scrim, { opacity: backdropOpacity }]}
+        style={[styles.scrim, backdropStyle]}
         pointerEvents="none"
       />
 
@@ -167,10 +169,8 @@ export function CancelSubscriptionSheet({
       <Animated.View
         style={[
           styles.sheet,
-          {
-            transform: [{ translateY: sheetTranslateY }],
-            paddingBottom: Math.max(insets.bottom, THEME.spacing.xl),
-          },
+          sheetStyle,
+          { paddingBottom: Math.max(insets.bottom, THEME.spacing.xl) },
         ]}
       >
         <View style={styles.dragIndicator} />

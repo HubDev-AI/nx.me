@@ -10,10 +10,9 @@
  * browser via `Linking.openURL`. PR6 will swap this for the in-app
  * Stripe Payment Sheet.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
-  Animated,
   ActivityIndicator,
   Modal,
   PanResponder,
@@ -22,6 +21,13 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -47,6 +53,13 @@ interface PaywallModalProps {
 /** Sheet position offsets for entry/exit animations. */
 const SHEET_OFFSCREEN_OFFSET = 60;
 const SHEET_INITIAL_SCALE = 0.95;
+
+/**
+ * Spring config used when the swipe-to-dismiss gesture is released below the
+ * dismiss threshold and the sheet snaps back to `panY: 0`. Tuned to
+ * approximate the legacy Animated.spring feel (tension: 40, friction: 7).
+ */
+const PAN_RELEASE_SPRING = { damping: 20, stiffness: 150 } as const;
 
 export function PaywallModal({
   visible,
@@ -81,60 +94,61 @@ export function PaywallModal({
   const closeButtonRef = useRef<React.ElementRef<typeof Pressable>>(null);
 
   // ---------------------------------------------------------------------------
-  // Animation refs
+  // Animation shared values
   // ---------------------------------------------------------------------------
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const sheetTranslateY = useRef(new Animated.Value(SHEET_OFFSCREEN_OFFSET)).current;
-  const sheetScale = useRef(new Animated.Value(SHEET_INITIAL_SCALE)).current;
-  const panY = useRef(new Animated.Value(0)).current;
+  const backdropOpacity = useSharedValue(0);
+  const sheetTranslateY = useSharedValue(SHEET_OFFSCREEN_OFFSET);
+  const sheetScale = useSharedValue(SHEET_INITIAL_SCALE);
+  const panY = useSharedValue(0);
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: sheetTranslateY.value + panY.value },
+      { scale: sheetScale.value },
+    ],
+  }));
 
   // ---------------------------------------------------------------------------
   // Open / close animations
   // ---------------------------------------------------------------------------
   const animateIn = useCallback(() => {
-    sheetTranslateY.setValue(SHEET_OFFSCREEN_OFFSET);
-    sheetScale.setValue(SHEET_INITIAL_SCALE);
-    backdropOpacity.setValue(0);
-    panY.setValue(0);
+    sheetTranslateY.value = SHEET_OFFSCREEN_OFFSET;
+    sheetScale.value = SHEET_INITIAL_SCALE;
+    backdropOpacity.value = 0;
+    panY.value = 0;
 
-    Animated.parallel([
-      Animated.timing(backdropOpacity, {
-        toValue: PAYWALL_ANIMATION.SCRIM_OPACITY,
-        duration: PAYWALL_ANIMATION.ENTER_DURATION_MS,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sheetTranslateY, {
-        toValue: 0,
-        duration: PAYWALL_ANIMATION.ENTER_DURATION_MS,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sheetScale, {
-        toValue: 1,
-        duration: PAYWALL_ANIMATION.ENTER_DURATION_MS,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    backdropOpacity.value = withTiming(PAYWALL_ANIMATION.SCRIM_OPACITY, {
+      duration: PAYWALL_ANIMATION.ENTER_DURATION_MS,
+    });
+    sheetTranslateY.value = withTiming(0, {
+      duration: PAYWALL_ANIMATION.ENTER_DURATION_MS,
+    });
+    sheetScale.value = withTiming(1, {
+      duration: PAYWALL_ANIMATION.ENTER_DURATION_MS,
+    });
   }, [backdropOpacity, sheetTranslateY, sheetScale, panY]);
 
   const animateOut = useCallback(
     (callback: () => void) => {
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 0,
-          duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(sheetTranslateY, {
-          toValue: SHEET_OFFSCREEN_OFFSET,
-          duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
-          useNativeDriver: true,
-        }),
-        Animated.timing(sheetScale, {
-          toValue: SHEET_INITIAL_SCALE,
-          duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
-          useNativeDriver: true,
-        }),
-      ]).start(callback);
+      backdropOpacity.value = withTiming(0, {
+        duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
+      });
+      sheetScale.value = withTiming(SHEET_INITIAL_SCALE, {
+        duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
+      });
+      // Callback fires when the longest leg (sheetTranslateY) finishes so the
+      // caller is only invoked once all three animations have settled.
+      sheetTranslateY.value = withTiming(
+        SHEET_OFFSCREEN_OFFSET,
+        { duration: PAYWALL_ANIMATION.EXIT_DURATION_MS },
+        (finished) => {
+          if (finished) runOnJS(callback)();
+        },
+      );
     },
     [backdropOpacity, sheetTranslateY, sheetScale],
   );
@@ -152,31 +166,34 @@ export function PaywallModal({
 
   // ---------------------------------------------------------------------------
   // Swipe-down to dismiss via PanResponder
+  //
+  // TODO(PR-future): migrate to `Gesture.Pan()` once
+  // `react-native-gesture-handler` is added to the project (requires pod
+  // install + native rebuild). Until then, we keep the JS PanResponder and
+  // drive the Reanimated shared value directly — sharedValue.value = x is
+  // safe from the JS thread, no worklet required.
   // ---------------------------------------------------------------------------
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > PAYWALL_ANIMATION.PAN_MOVE_THRESHOLD,
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dy > 0) {
-          panY.setValue(gestureState.dy);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > PAYWALL_ANIMATION.SWIPE_DISMISS_THRESHOLD) {
-          handleClose();
-        } else {
-          Animated.spring(panY, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 7,
-          }).start();
-        }
-      },
-    }),
-  ).current;
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          gestureState.dy > PAYWALL_ANIMATION.PAN_MOVE_THRESHOLD,
+        onPanResponderMove: (_, gestureState) => {
+          if (gestureState.dy > 0) {
+            panY.value = gestureState.dy;
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dy > PAYWALL_ANIMATION.SWIPE_DISMISS_THRESHOLD) {
+            handleClose();
+          } else {
+            panY.value = withSpring(0, PAN_RELEASE_SPRING);
+          }
+        },
+      }),
+    [panY, handleClose],
+  );
 
   // ---------------------------------------------------------------------------
   // Fetch entitlement on open + accessibility announcement
@@ -218,9 +235,7 @@ export function PaywallModal({
       statusBarTranslucent
     >
       {/* Scrim backdrop */}
-      <Animated.View
-        style={[styles.backdrop, { opacity: backdropOpacity }]}
-      >
+      <Animated.View style={[styles.backdrop, backdropStyle]}>
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={handleClose}
@@ -231,15 +246,7 @@ export function PaywallModal({
 
       {/* Sheet */}
       <Animated.View
-        style={[
-          styles.sheet,
-          {
-            transform: [
-              { translateY: Animated.add(sheetTranslateY, panY) },
-              { scale: sheetScale },
-            ],
-          },
-        ]}
+        style={[styles.sheet, sheetStyle]}
         {...panResponder.panHandlers}
       >
         {/* Drag handle */}

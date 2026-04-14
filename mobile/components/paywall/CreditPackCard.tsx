@@ -4,8 +4,13 @@
  * Displays credit count, formatted price and a "Buy" CTA. Press feedback
  * follows the NXME pattern: scale 0.98 over 150ms, min 44pt touch target.
  */
-import { useRef, useCallback } from "react";
-import { Pressable, Text, View, Animated, StyleSheet } from "react-native";
+import { useCallback } from "react";
+import { Pressable, Text, View, StyleSheet } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -33,23 +38,23 @@ export function CreditPackCard({
   disabled,
 }: CreditPackCardProps) {
   const { theme } = useTheme();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useSharedValue(1);
   const isDisabled = disabled || isLoading;
 
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleAnim.value }],
+  }));
+
   const handlePressIn = useCallback(() => {
-    Animated.timing(scaleAnim, {
-      toValue: PAYWALL_ANIMATION.PRESS_SCALE,
+    scaleAnim.value = withTiming(PAYWALL_ANIMATION.PRESS_SCALE, {
       duration: PAYWALL_ANIMATION.PRESS_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
+    });
   }, [scaleAnim]);
 
   const handlePressOut = useCallback(() => {
-    Animated.timing(scaleAnim, {
-      toValue: 1,
+    scaleAnim.value = withTiming(1, {
       duration: PAYWALL_ANIMATION.PRESS_DURATION_MS,
-      useNativeDriver: true,
-    }).start();
+    });
   }, [scaleAnim]);
 
   const handlePress = useCallback(() => {
@@ -62,7 +67,7 @@ export function CreditPackCard({
     <Animated.View
       style={[
         styles.wrapper,
-        { transform: [{ scale: scaleAnim }] },
+        animatedStyle,
         isDisabled && styles.disabledWrapper,
       ]}
     >
