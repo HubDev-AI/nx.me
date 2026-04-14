@@ -426,7 +426,12 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
 
     supabase = get_supabase_service()
     feed_repo = FeedRepository(supabase)
-    post_id = reaction_data["post_id"]
+    post_id = reaction_data.get("post_id")
+    if not post_id:
+        # Malformed job payload — fail loudly so ARQ surfaces the error and
+        # the job is dropped after max retries instead of silently looping.
+        logger.error("persist_reaction received payload without post_id: %r", reaction_data)
+        raise ValueError("persist_reaction: post_id is required")
 
     try:
         result = await run_sync(
