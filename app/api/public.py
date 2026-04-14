@@ -51,6 +51,9 @@ PUBLIC_CARDS_DEFAULT_PER_PAGE = 1000
 # Cursor encoding: urlsafe base64 of JSON ``{"u": <iso8601>, "n": <username>}``.
 _CURSOR_KEY_UPDATED_AT = "u"
 _CURSOR_KEY_USERNAME = "n"
+# Real cursors are ~80 chars; cap raw input at 1 KiB to block pathological
+# base64 payloads before we allocate for decode/json.loads.
+_CURSOR_MAX_RAW_LEN = 1024
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +111,13 @@ def _decode_cursor(raw: str) -> tuple[datetime, str]:
 
     Raises ``HTTPException(400)`` when the cursor is structurally invalid —
     malformed base64, malformed JSON, missing keys, or an unparseable timestamp.
+    Real cursors are ~80 chars; a 1 KiB ceiling blocks pathological payloads.
     """
+    if len(raw) > _CURSOR_MAX_RAW_LEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed cursor",
+        )
     try:
         padding = "=" * (-len(raw) % 4)
         decoded = base64.urlsafe_b64decode(raw + padding)

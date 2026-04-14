@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 # Upper bound on rows fetched when aggregating latest-post-per-user for the
 # public-cards listing. Sized to handle ~10k users with avg 10 posts each.
-# The endpoint's sole consumer is the card-web sitemap (low frequency).
+# The endpoint's sole consumer is the card-web sitemap (low frequency, ISR
+# cached for 24h). TODO: replace this Python-side aggregation with a Postgres
+# RPC (SELECT username, MAX(updated_at) ... GROUP BY user_id) once the user
+# base approaches this cap.
 _PUBLIC_USER_CURSOR_FETCH_CAP = 100_000
 
 
@@ -103,6 +106,14 @@ class PostRepository:
         uses a PostgREST inner-join to exclude soft-deleted users at the DB
         layer. An upper-bound fetch cap guards against runaway memory — the
         sole caller is the card-web sitemap (a single low-frequency reader).
+
+        Known boundary quirk: because the pre-filter is ``lte(updated_at)``
+        (not a tuple filter, which PostgREST does not express), a user whose
+        newest post lands between page fetches can reappear on a later page
+        with a stale ``updated_at``. Acceptable for the sitemap caller —
+        Google dedupes URLs and uses the fresher ``lastmod`` — but **do not**
+        reuse this method for a general listing without replacing it with a
+        DB-side aggregation.
         """
         cursor_updated_at, cursor_username = (
             cursor if cursor is not None else (None, None)
