@@ -18,3 +18,4 @@ Items surfaced during audits/reviews that are real but intentionally not in any 
 ## Ops / infra
 
 - **Priority-lane worker** — multi-queue ARQ worker if premium users ever queue behind trial users at volume. Requires multi-process deploy setup or arq extension. Rebuild with real queue-depth data.
+- **Expo prebuild regen** after push-flow strip — `mobile/ios/` and `mobile/android/` are gitignored, so stripping `expo-notifications` from `package.json` alone does not update the native entitlements / Pods. Run `cd mobile && npx expo prebuild --clean` before the next TestFlight / Play internal build so `aps-environment` drops from `NXME.entitlements` and the Pod is unlinked.
