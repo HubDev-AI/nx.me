@@ -634,11 +634,6 @@ const styles = StyleSheet.create({
     padding: THEME.spacing.xxl,
     gap: THEME.spacing.md,
   },
-  loadingText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-  },
   errorText: {
     fontFamily: FONTS.body,
     ...THEME.typography.body,
