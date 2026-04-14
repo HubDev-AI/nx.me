@@ -29,6 +29,7 @@ import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
 import { LoadingSkeleton } from "../components/ui/LoadingSkeleton";
+import { Body, Caption, Heading, Label } from "../components/ui/Text";
 import { useEntering } from "../lib/hooks/use-entering";
 import { useTheme } from "../lib/theme-context";
 import { FONTS } from "../hooks/useFonts";
@@ -246,12 +247,13 @@ export default function SubscriptionScreen() {
           >
             <Ionicons name="chevron-back" size={24} color={THEME.colors.textPrimary} />
           </Pressable>
-          <Text
+          <Heading
+            size="md"
             style={styles.headerTitle}
             maxFontSizeMultiplier={1.3}
           >
             Subscription
-          </Text>
+          </Heading>
           <View style={styles.backBtn} />
         </View>
 
@@ -283,7 +285,7 @@ export default function SubscriptionScreen() {
               size={48}
               color={THEME.colors.destructive}
             />
-            <Text style={styles.errorText}>{error}</Text>
+            <Body color="secondary" style={styles.errorText}>{error}</Body>
             <Pressable
               onPress={loadEntitlement}
               style={[styles.retryButton, { backgroundColor: theme.accent }]}
@@ -327,8 +329,8 @@ export default function SubscriptionScreen() {
                     />
                   </View>
                   <View style={styles.planInfo}>
-                    <Text style={styles.planTitle}>{tierMeta.label} Plan</Text>
-                    <Text style={styles.planSubtitle}>
+                    <Heading size="md">{tierMeta.label} Plan</Heading>
+                    <Caption style={styles.planSubtitle}>
                       {isPremium
                         ? entitlement?.subscription_status === "active"
                           ? "Active subscription"
@@ -336,7 +338,7 @@ export default function SubscriptionScreen() {
                             ? "Cancels at period end"
                             : "Active"
                         : tierMeta.description(trialRemaining)}
-                    </Text>
+                    </Caption>
                   </View>
                 </View>
 
@@ -347,7 +349,7 @@ export default function SubscriptionScreen() {
                       <Text style={[styles.statNumber, { color: theme.accent }]}>
                         {creditBalance}
                       </Text>
-                      <Text style={styles.statLabel}>Credits</Text>
+                      <Caption>Credits</Caption>
                     </View>
                   )}
                   {tier === "FREE" && (
@@ -355,7 +357,7 @@ export default function SubscriptionScreen() {
                       <Text style={[styles.statNumber, { color: theme.accent }]}>
                         {trialRemaining}
                       </Text>
-                      <Text style={styles.statLabel}>Trial Left</Text>
+                      <Caption>Trial Left</Caption>
                     </View>
                   )}
                   {isPremium && (
@@ -363,7 +365,7 @@ export default function SubscriptionScreen() {
                       <Text style={[styles.statNumber, { color: theme.accent }]}>
                         Unlimited
                       </Text>
-                      <Text style={styles.statLabel}>Generations</Text>
+                      <Caption>Generations</Caption>
                     </View>
                   )}
                   {billingEnd && (
@@ -374,11 +376,11 @@ export default function SubscriptionScreen() {
                           day: "numeric",
                         })}
                       </Text>
-                      <Text style={styles.statLabel}>
+                      <Caption>
                         {entitlement?.subscription_status === "canceling"
                           ? "Expires"
                           : "Renews"}
-                      </Text>
+                      </Caption>
                     </View>
                   )}
                 </View>
@@ -400,11 +402,11 @@ export default function SubscriptionScreen() {
                         ]}
                       />
                     </View>
-                    <Text style={styles.trialBarLabel}>
+                    <Caption color="muted" style={styles.trialBarLabel}>
                       {trialRemaining > 0
                         ? `${3 - trialRemaining} of 3 trial analyses used`
                         : "Trial complete -- upgrade below"}
-                    </Text>
+                    </Caption>
                   </View>
                 )}
 
@@ -424,9 +426,9 @@ export default function SubscriptionScreen() {
                           size="small"
                         />
                       ) : (
-                        <Text style={styles.cancelLinkText}>
+                        <Caption weight="medium" style={styles.cancelLinkText}>
                           Cancel subscription
-                        </Text>
+                        </Caption>
                       )}
                     </PressableScale>
                   )}
@@ -436,12 +438,12 @@ export default function SubscriptionScreen() {
             {/* ---- Premium Upsell (if not already premium) ---- */}
             {!isPremium && hasPremiumOption && (
               <Animated.View entering={fadeInDown(60, 240)}>
-                <Text
+                <Label
                   style={styles.sectionLabel}
                   maxFontSizeMultiplier={1.3}
                 >
                   RECOMMENDED
-                </Text>
+                </Label>
                 <PressableScale
                   onPress={handleSubscribe}
                   disabled={isSubscribing}
@@ -457,20 +459,18 @@ export default function SubscriptionScreen() {
                 >
                   <View style={styles.premiumBadge}>
                     <Ionicons name="diamond" size={16} color={theme.accent} />
-                    <Text
-                      style={[styles.premiumBadgeText, { color: theme.accent }]}
-                    >
+                    <Label color={theme.accent} style={styles.premiumBadgeText}>
                       PREMIUM
-                    </Text>
+                    </Label>
                   </View>
-                  <Text style={styles.premiumTitle}>Go Unlimited</Text>
-                  <Text style={styles.premiumDescription}>
+                  <Heading size="md" style={styles.premiumTitle}>Go Unlimited</Heading>
+                  <Body color="secondary" style={styles.premiumDescription}>
                     Unlimited glow-up analyses, priority processing, and access
                     to Ada AI advisor chat.
-                  </Text>
-                  <Text style={[styles.premiumPrice, { color: theme.accent }]}>
+                  </Body>
+                  <Body weight="semibold" color={theme.accent} style={styles.premiumPrice}>
                     {purchaseOptions?.premium?.name ?? "Premium Plan"}
-                  </Text>
+                  </Body>
 
                   <View
                     style={[
@@ -493,15 +493,15 @@ export default function SubscriptionScreen() {
             {/* ---- Credit Packs ---- */}
             {!isPremium && creditPacks.length > 0 && (
               <Animated.View entering={fadeInDown(120, 240)}>
-                <Text
+                <Label
                   style={styles.sectionLabel}
                   maxFontSizeMultiplier={1.3}
                 >
                   CREDIT PACKS
-                </Text>
-                <Text style={styles.sectionDescription}>
+                </Label>
+                <Caption color="muted" style={styles.sectionDescription}>
                   Buy credits to unlock individual analyses
-                </Text>
+                </Caption>
                 <View style={styles.packGrid}>
                   {creditPacks.map((pack, index) => {
                     const isActive = purchasingId === pack.pack_id;
@@ -539,7 +539,7 @@ export default function SubscriptionScreen() {
                           <Text style={styles.packCredits}>
                             {pack.credits}
                           </Text>
-                          <Text style={styles.packLabel}>credits</Text>
+                          <Caption style={styles.packLabel}>credits</Caption>
                           <View
                             style={[
                               styles.packButton,
@@ -579,11 +579,11 @@ export default function SubscriptionScreen() {
                     size={24}
                     color={THEME.colors.textSecondary}
                   />
-                  <Text style={styles.hintText}>
+                  <Body color="secondary" style={styles.hintText}>
                     {tier === "FREE" && trialRemaining > 0
                       ? "Use your free trial analyses first. Purchase options will appear when your trial ends."
                       : "Purchase options are loading. Pull down to refresh."}
-                  </Text>
+                  </Body>
                 </View>
               </Animated.View>
             )}
@@ -616,9 +616,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontFamily: FONTS.display,
     fontSize: 20,
-    color: THEME.colors.textPrimary,
   },
   scroll: {
     flex: 1,
@@ -635,9 +633,6 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.md,
   },
   errorText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
     textAlign: "center",
   },
   retryButton: {
@@ -657,19 +652,11 @@ const styles = StyleSheet.create({
 
   // Section label
   sectionLabel: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 11,
-    color: THEME.colors.textSecondary,
-    letterSpacing: 1,
-    textTransform: "uppercase",
     marginTop: THEME.spacing.xxl,
     marginBottom: THEME.spacing.xs,
     marginLeft: THEME.spacing.xs,
   },
   sectionDescription: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textMuted,
     marginBottom: THEME.spacing.md,
     marginLeft: THEME.spacing.xs,
   },
@@ -699,15 +686,7 @@ const styles = StyleSheet.create({
   planInfo: {
     flex: 1,
   },
-  planTitle: {
-    fontFamily: FONTS.display,
-    ...THEME.typography.heading,
-    color: THEME.colors.textPrimary,
-  },
   planSubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     marginTop: THEME.spacing.xs / 2,
   },
 
@@ -731,12 +710,6 @@ const styles = StyleSheet.create({
     // Prevent digit-width jitter as counts change (e.g. 9 → 10).
     fontVariant: ["tabular-nums"],
   },
-  statLabel: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-  },
-
   // Trial timeline
   trialTimeline: {
     marginTop: THEME.spacing.lg,
@@ -753,9 +726,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   trialBarLabel: {
-    fontFamily: FONTS.body,
     fontSize: 12,
-    color: THEME.colors.textMuted,
     letterSpacing: 0.2,
   },
 
@@ -768,9 +739,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cancelLinkText: {
-    fontFamily: FONTS.bodyMedium,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     textDecorationLine: "underline",
   },
 
@@ -788,25 +756,16 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.md,
   },
   premiumBadgeText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 11,
     letterSpacing: 1.2,
   },
   premiumTitle: {
-    fontFamily: FONTS.display,
-    ...THEME.typography.heading,
-    color: THEME.colors.textPrimary,
     marginBottom: THEME.spacing.sm,
   },
   premiumDescription: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
     marginBottom: THEME.spacing.md,
     lineHeight: 22,
   },
   premiumPrice: {
-    fontFamily: FONTS.bodySemiBold,
     fontSize: 16,
     marginBottom: THEME.spacing.xl,
   },
@@ -858,9 +817,6 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   packLabel: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
     marginBottom: THEME.spacing.sm,
   },
   packButton: {
@@ -890,9 +846,6 @@ const styles = StyleSheet.create({
     marginTop: THEME.spacing.xxl,
   },
   hintText: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.body,
-    color: THEME.colors.textSecondary,
     flex: 1,
     lineHeight: 22,
   },
