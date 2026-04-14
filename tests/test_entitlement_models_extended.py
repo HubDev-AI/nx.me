@@ -98,12 +98,14 @@ class TestEntitlementState:
         state = EntitlementState(
             tier=tier,
             trial_analyses_remaining=2,
+            trial_analyses_limit=2,
             credit_balance=0,
             has_active_subscription=False,
             can_generate=True,
         )
         assert state.can_generate is True
         assert state.subscription_billing_period_end is None
+        assert state.trial_analyses_limit == 2
 
     def test_premium_state(self):
         tier = _make_tier(slug="premium")
@@ -111,6 +113,7 @@ class TestEntitlementState:
         state = EntitlementState(
             tier=tier,
             trial_analyses_remaining=0,
+            trial_analyses_limit=2,
             credit_balance=25,
             has_active_subscription=True,
             subscription_billing_period_end=end,
@@ -124,6 +127,7 @@ class TestEntitlementState:
         state = EntitlementState(
             tier=tier,
             trial_analyses_remaining=0,
+            trial_analyses_limit=2,
             credit_balance=0,
             has_active_subscription=False,
             can_generate=False,

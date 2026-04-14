@@ -19,6 +19,15 @@ class WebhookEvent:
     data: dict  # the full event payload (provider-specific)
 
 
+@dataclass(frozen=True)
+class PriceInfo:
+    """Typed price metadata returned by get_price."""
+
+    price_id: str
+    amount_cents: int  # minor currency unit (e.g. cents)
+    currency: str  # ISO 4217 lowercase, e.g. "usd"
+
+
 class PaymentPort(Protocol):
     """Port for payment provider interactions."""
 
@@ -42,5 +51,13 @@ class PaymentPort(Protocol):
         """Verify webhook signature and construct event object.
 
         Raises ValueError on invalid signature.
+        """
+        ...
+
+    async def get_price(self, price_id: str) -> PriceInfo:
+        """Fetch price metadata (amount + currency) for a Stripe price ID.
+
+        Raises Exception on retrieval failure (caller decides whether to
+        skip the offering or propagate the error).
         """
         ...

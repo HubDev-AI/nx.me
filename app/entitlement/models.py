@@ -53,6 +53,7 @@ class EntitlementState:
 
     tier: TierRecord
     trial_analyses_remaining: int
+    trial_analyses_limit: int
     credit_balance: int
     has_active_subscription: bool
     subscription_billing_period_end: datetime | None = None

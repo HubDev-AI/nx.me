@@ -40,11 +40,15 @@ class CreditPackOption(BaseModel):
     pack_id: str
     credits: int
     price_id: str
+    amount_cents: int
+    currency: str
 
 
 class PremiumOption(BaseModel):
     price_id: str
     name: str
+    amount_cents: int
+    currency: str
 
 
 class PurchaseOptions(BaseModel):
@@ -55,6 +59,7 @@ class PurchaseOptions(BaseModel):
 class EntitlementResponse(BaseModel):
     tier: str
     trial_analyses_remaining: int
+    trial_analyses_limit: int
     credit_balance: int
     can_generate: bool
     subscription_status: str | None = None
@@ -62,24 +67,58 @@ class EntitlementResponse(BaseModel):
     purchase_options: PurchaseOptions | None = None
 
 
-def _build_purchase_options(svc: EntitlementService) -> PurchaseOptions | None:
-    """Build purchase options for paywall display (AC-FR2)."""
+async def _build_purchase_options(
+    svc: EntitlementService, payment: PaymentPort
+) -> PurchaseOptions | None:
+    """Build purchase options for paywall display (AC-FR2).
+
+    Mobile relies on this regardless of can_generate state — it powers
+    preemptive top-up. Stripe price retrieval is fail-soft: a single
+    pack is dropped (logged as a warning) rather than failing the whole
+    endpoint, and Premium becomes None on failure.
+    """
     packs: list[CreditPackOption] = []
     for pack_id, credit_count in _CREDIT_PACKS.items():
         price_id = getattr(settings, f"STRIPE_PRICE_CREDITS_{credit_count}", "")
-        if price_id:
-            packs.append(
-                CreditPackOption(
-                    pack_id=pack_id, credits=credit_count, price_id=price_id
-                )
+        if not price_id:
+            continue
+        try:
+            price = await payment.get_price(price_id)
+        except Exception as exc:
+            logger.warning(
+                "Skipping credit pack %s — Stripe price retrieval failed for %s: %s",
+                pack_id,
+                price_id,
+                exc,
             )
+            continue
+        packs.append(
+            CreditPackOption(
+                pack_id=pack_id,
+                credits=credit_count,
+                price_id=price_id,
+                amount_cents=price.amount_cents,
+                currency=price.currency,
+            )
+        )
 
-    premium_price_id = svc.get_tier_stripe_price_id("premium")
-    premium = (
-        PremiumOption(price_id=premium_price_id, name="Premium")
-        if premium_price_id
-        else None
-    )
+    premium_price_id = await svc.get_tier_stripe_price_id("premium")
+    premium: PremiumOption | None = None
+    if premium_price_id:
+        try:
+            premium_price = await payment.get_price(premium_price_id)
+            premium = PremiumOption(
+                price_id=premium_price_id,
+                name="Premium",
+                amount_cents=premium_price.amount_cents,
+                currency=premium_price.currency,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Premium option unavailable — Stripe price retrieval failed for %s: %s",
+                premium_price_id,
+                exc,
+            )
 
     if not packs and not premium:
         return None
@@ -91,11 +130,14 @@ def _build_purchase_options(svc: EntitlementService) -> PurchaseOptions | None:
 async def get_entitlement(
     claims: UserClaims = Depends(get_user_or_guest),
     svc: EntitlementService = Depends(get_entitlement_service),
+    payment: PaymentPort = Depends(get_payment_adapter),
 ) -> EntitlementResponse:
     """Return the authenticated user's current entitlement snapshot.
 
     Story 4-5: includes subscription_status, billing_period_end, and
-    purchase_options for paywall display.
+    purchase_options for paywall display. purchase_options is now always
+    populated so the mobile subscription screen can offer preemptive
+    top-up while the user still has credits or trial remaining.
     """
     user_id = UUID(claims["sub"])
     state = await svc.get_entitlement(user_id)
@@ -110,14 +152,12 @@ async def get_entitlement(
         if state.subscription_billing_period_end:
             billing_end = state.subscription_billing_period_end.isoformat()
 
-    # Include purchase options when user can't generate (paywall trigger)
-    purchase_options: PurchaseOptions | None = None
-    if not state.can_generate:
-        purchase_options = _build_purchase_options(svc)
+    purchase_options = await _build_purchase_options(svc, payment)
 
     return EntitlementResponse(
         tier=tier_name,
         trial_analyses_remaining=state.trial_analyses_remaining,
+        trial_analyses_limit=state.trial_analyses_limit,
         credit_balance=state.credit_balance,
         can_generate=state.can_generate,
         subscription_status=sub_status,
@@ -266,7 +306,7 @@ async def create_subscription(
         )
 
     # Look up the premium tier's stripe_price_id
-    price_id = svc.get_tier_stripe_price_id("premium")
+    price_id = await svc.get_tier_stripe_price_id("premium")
     if not price_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

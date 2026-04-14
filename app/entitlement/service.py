@@ -150,6 +150,7 @@ class EntitlementService:
         return EntitlementState(
             tier=tier,
             trial_analyses_remaining=trial_remaining,
+            trial_analyses_limit=settings.FREE_TRIAL_ANALYSES,
             credit_balance=credit_balance,
             has_active_subscription=has_subscription,
             subscription_billing_period_end=billing_end,
