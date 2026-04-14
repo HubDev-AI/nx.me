@@ -1,601 +1,208 @@
 /**
- * Subscription screen -- view current plan, credit balance, upgrade options.
+ * Subscription screen — view current plan, credit balance, upgrade options.
  *
  * Route: /subscription (Stack.Screen)
- * Auth: required -- fetches GET /v1/entitlement for tier + balance + purchase options.
+ * Auth: required — fetches GET /v1/entitlement for tier + balance + purchase options.
  *
- * Tiers: FREE, CREDITS, PREMIUM
- * If on FREE: shows trial analyses remaining, credit packs, premium upsell
- * If on CREDITS: shows credit balance, option to buy more, premium upsell
- * If on PREMIUM: shows active subscription details, option to cancel
+ * Tiers: FREE, CREDITS, PREMIUM.
+ *
+ * Orchestration only — purchase + cancel + entitlement fetching live in
+ * `usePurchaseFlow`; rendering lives in `PlanCard` / `PremiumUpsell` /
+ * `CreditPackGrid`.
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  Pressable,
   ActivityIndicator,
-  Alert,
-  Linking,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
+  View,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
 
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
-import { PressableScale } from "../components/ui/PressableScale";
-import { LoadingSkeleton } from "../components/ui/LoadingSkeleton";
-import { Body, Caption, Heading, Label } from "../components/ui/Text";
-import { useEntering } from "../lib/hooks/use-entering";
-import { useTheme } from "../lib/theme-context";
-import { FONTS } from "../hooks/useFonts";
-import { MIN_TOUCH_TARGET } from "../constants/config";
 import {
-  fetchEntitlement,
-  purchaseCredits,
-  createSubscription,
-  type EntitlementState,
-  type CreditPackOption,
-} from "../lib/entitlement";
-import { apiFetch } from "../lib/api";
-import { parseApiError } from "../lib/errors";
-import { showToast } from "../lib/toast";
+  HeaderBackButton,
+  HeaderBackButtonSpacer,
+} from "../components/ui/HeaderBackButton";
+import { Heading } from "../components/ui/Text";
+import { useEntering } from "../lib/hooks/use-entering";
+import {
+  PURCHASING_PREMIUM_ID,
+  usePurchaseFlow,
+} from "../lib/hooks/use-purchase-flow";
+import { PlanCard, PlanCardSkeleton } from "../components/subscription/PlanCard";
+import { PremiumUpsell } from "../components/subscription/PremiumUpsell";
+import { CreditPackGrid } from "../components/subscription/CreditPackGrid";
+import {
+  SubscriptionEmptyHint,
+  SubscriptionErrorState,
+} from "../components/subscription/SubscriptionStates";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const TIER_PREMIUM = "PREMIUM";
+const TIER_FREE = "FREE";
 
-type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+const ENTRANCE_DELAY_PLAN_MS = 0;
+const ENTRANCE_DELAY_PREMIUM_MS = 60;
+const ENTRANCE_DELAY_PACKS_MS = 120;
+const ENTRANCE_DURATION_MS = 240;
 
-/** Server returns this status when re-subscribing on an already-active plan. */
-const STATUS_ALREADY_SUBSCRIBED = "already_subscribed";
+const HEADER_TITLE_FONT_SIZE = 20;
+const PAGE_OVERLAY_OPACITY = 0.88;
 
-/** Backend DELETE /v1/subscriptions response shape (CancelSubscriptionResponse). */
-interface CancelSubscriptionResponse {
-  status: string;
-  message: string;
-}
-
-interface TierConfig {
-  label: string;
-  icon: IoniconName;
-  description: (trialRemaining: number) => string;
-}
-
-const TIER_CONFIG: Record<string, TierConfig> = {
-  FREE: {
-    label: "Free",
-    icon: "leaf-outline",
-    description: (trialRemaining) =>
-      trialRemaining > 0
-        ? `${trialRemaining} free ${trialRemaining === 1 ? "analysis" : "analyses"} remaining`
-        : "Trial expired -- upgrade to continue",
-  },
-  CREDITS: {
-    label: "Credits",
-    icon: "flash",
-    description: () => "Pay-as-you-go with credit packs",
-  },
-  PREMIUM: {
-    label: "Premium",
-    icon: "diamond",
-    description: () => "Unlimited analyses & priority processing",
-  },
-};
-
-const DEFAULT_TIER: TierConfig = {
-  label: "Plan",
-  icon: "leaf-outline",
-  description: () => "Your current tier",
-};
-
-function tierConfig(tier: string): TierConfig {
-  return TIER_CONFIG[tier.toUpperCase()] ?? { ...DEFAULT_TIER, label: tier };
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+const HINT_TRIAL_AVAILABLE =
+  "Use your free trial analyses first. Purchase options will appear when your trial ends.";
+const HINT_LOADING = "Purchase options are loading. Pull down to refresh.";
+const ERROR_LOAD = "We couldn't load your subscription info. Try again.";
 
 export default function SubscriptionScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { theme } = useTheme();
   const { fadeInDown } = useEntering();
 
-  const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [purchasingId, setPurchasingId] = useState<string | null>(null);
-  const [isSubscribing, setIsSubscribing] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
+  const {
+    entitlement,
+    isLoading,
+    error,
+    purchasingId,
+    isCancelling,
+    refresh,
+    buyCredits,
+    subscribe,
+    cancel,
+  } = usePurchaseFlow();
 
-  // -------------------------------------------------------------------------
-  // Entitlement refresh — shared by initial load and all post-action refetches.
-  // -------------------------------------------------------------------------
-  const refreshEntitlement = useCallback(async () => {
-    const updated = await fetchEntitlement();
-    setEntitlement(updated);
-  }, []);
-
-  const loadEntitlement = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
     try {
-      await refreshEntitlement();
-    } catch {
-      setError("We couldn't load your subscription info. Try again.");
+      await refresh();
     } finally {
-      setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, [refreshEntitlement]);
+  }, [refresh]);
 
-  useEffect(() => {
-    loadEntitlement();
-  }, [loadEntitlement]);
-
-  // -------------------------------------------------------------------------
-  // Purchase credit pack
-  // -------------------------------------------------------------------------
-  const handleBuyCredits = useCallback(async (pack: CreditPackOption) => {
-    setPurchasingId(pack.pack_id);
-    try {
-      const { checkout_url } = await purchaseCredits(pack.pack_id);
-      await Linking.openURL(checkout_url);
-      await refreshEntitlement();
-    } catch (err) {
-      const appError = parseApiError(err);
-      showToast({ kind: 'error', message: appError.message });
-    } finally {
-      setPurchasingId(null);
-    }
-  }, [refreshEntitlement]);
-
-  // -------------------------------------------------------------------------
-  // Subscribe to premium
-  // -------------------------------------------------------------------------
-  const handleSubscribe = useCallback(async () => {
-    setIsSubscribing(true);
-    try {
-      const response = await createSubscription();
-
-      if (response.status === STATUS_ALREADY_SUBSCRIBED) {
-        await refreshEntitlement();
-        return;
-      }
-
-      if (!response.checkout_url) {
-        showToast({ kind: 'warning', message: "Subscription is not available at this time." });
-        return;
-      }
-
-      await Linking.openURL(response.checkout_url);
-      await refreshEntitlement();
-    } catch (err) {
-      const appError = parseApiError(err);
-      showToast({ kind: 'error', message: appError.message });
-    } finally {
-      setIsSubscribing(false);
-    }
-  }, [refreshEntitlement]);
-
-  // -------------------------------------------------------------------------
-  // Cancel subscription
-  // -------------------------------------------------------------------------
-  const handleCancel = useCallback(() => {
-    Alert.alert(
-      "Cancel Subscription",
-      "Your premium benefits will remain until the end of your billing period.",
-      [
-        { text: "Keep Subscription", style: "cancel" },
-        {
-          text: "Cancel",
-          style: "destructive",
-          onPress: async () => {
-            setIsCancelling(true);
-            try {
-              const resp = await apiFetch<CancelSubscriptionResponse>(
-                "/v1/subscriptions",
-                { method: "DELETE" },
-              );
-              await refreshEntitlement();
-              showToast({ kind: "success", message: resp.message });
-            } catch (err) {
-              const appError = parseApiError(err);
-              showToast({ kind: "error", message: appError.message });
-            } finally {
-              setIsCancelling(false);
-            }
-          },
-        },
-      ],
-    );
-  }, [refreshEntitlement]);
-
-  // -------------------------------------------------------------------------
-  // Derived state
-  // -------------------------------------------------------------------------
-  const tier = entitlement?.tier?.toUpperCase() ?? "FREE";
-  const tierMeta = tierConfig(tier);
-  const isPremium = tier === "PREMIUM";
-  const creditBalance = entitlement?.credit_balance ?? 0;
+  const tier = entitlement?.tier?.toUpperCase() ?? TIER_FREE;
+  const isPremium = tier === TIER_PREMIUM;
   const trialRemaining = entitlement?.trial_analyses_remaining ?? 0;
   const purchaseOptions = entitlement?.purchase_options;
   const creditPacks = purchaseOptions?.credit_packs ?? [];
-  const hasPremiumOption = purchaseOptions?.premium != null;
-  const billingEnd = entitlement?.billing_period_end;
+  const premium = purchaseOptions?.premium ?? null;
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
+  const isSubscribing = purchasingId === PURCHASING_PREMIUM_ID;
+  const showHint =
+    !isPremium && premium == null && creditPacks.length === 0;
+  const hintMessage =
+    tier === TIER_FREE && trialRemaining > 0 ? HINT_TRIAL_AVAILABLE : HINT_LOADING;
+
   return (
-      <View style={styles.container}>
-        <PageBackground overlayOpacity={0.88} />
+    <View style={styles.container}>
+      <PageBackground overlayOpacity={PAGE_OVERLAY_OPACITY} />
 
-        {/* Custom header with back button */}
-        <View style={[styles.header, { paddingTop: insets.top }]}>
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.backBtn}
-            accessibilityLabel="Go back"
-            accessibilityRole="button"
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="chevron-back" size={24} color={THEME.colors.textPrimary} />
-          </Pressable>
-          <Heading
-            size="md"
-            style={styles.headerTitle}
-            maxFontSizeMultiplier={1.3}
-          >
-            Subscription
-          </Heading>
-          <View style={styles.backBtn} />
-        </View>
-
-        {isLoading ? (
-          <View
-            style={[
-              styles.scrollContent,
-              { paddingTop: THEME.spacing.lg, paddingBottom: insets.bottom + THEME.spacing.xxxl },
-            ]}
-          >
-            <View style={styles.planCard}>
-              <View style={[styles.planHeader, { gap: THEME.spacing.lg }]}>
-                <LoadingSkeleton height={56} width={56} borderRadius={THEME.radius.md} />
-                <View style={{ flex: 1, gap: THEME.spacing.sm }}>
-                  <LoadingSkeleton height={22} width="60%" />
-                  <LoadingSkeleton height={14} width="80%" />
-                </View>
-              </View>
-              <View style={[styles.statsRow, { marginTop: THEME.spacing.lg }]}>
-                <LoadingSkeleton height={56} width="48%" borderRadius={THEME.radius.md} />
-                <LoadingSkeleton height={56} width="48%" borderRadius={THEME.radius.md} />
-              </View>
-            </View>
-          </View>
-        ) : error ? (
-          <View style={[styles.centered, { paddingBottom: insets.bottom }]}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={48}
-              color={THEME.colors.destructive}
-            />
-            <Body color="secondary" style={styles.errorText}>{error}</Body>
-            <Pressable
-              onPress={loadEntitlement}
-              style={[styles.retryButton, { backgroundColor: theme.accent }]}
-              accessibilityLabel="Retry"
-              accessibilityRole="button"
-            >
-              <Text style={styles.retryButtonText}>Retry</Text>
-            </Pressable>
-          </View>
-        ) : (
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: insets.bottom + THEME.spacing.xxxl },
-            ]}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* ---- Current Plan Card ---- */}
-            <Animated.View entering={fadeInDown(0, 240)}>
-              <View
-                style={[
-                  styles.planCard,
-                  {
-                    borderColor: theme.accent + THEME.alpha.med,
-                    ...THEME.shadow.glow(theme.accent),
-                  },
-                ]}
-              >
-                <View style={styles.planHeader}>
-                  <View
-                    style={[
-                      styles.planIconBg,
-                      { backgroundColor: theme.accentMuted },
-                    ]}
-                  >
-                    <Ionicons
-                      name={tierMeta.icon}
-                      size={28}
-                      color={theme.accent}
-                    />
-                  </View>
-                  <View style={styles.planInfo}>
-                    <Heading size="md">{tierMeta.label} Plan</Heading>
-                    <Caption style={styles.planSubtitle}>
-                      {isPremium
-                        ? entitlement?.subscription_status === "active"
-                          ? "Active subscription"
-                          : entitlement?.subscription_status === "canceling"
-                            ? "Cancels at period end"
-                            : "Active"
-                        : tierMeta.description(trialRemaining)}
-                    </Caption>
-                  </View>
-                </View>
-
-                {/* Stats row */}
-                <View style={styles.statsRow}>
-                  {!isPremium && (
-                    <View style={styles.statBox}>
-                      <Text style={[styles.statNumber, { color: theme.accent }]}>
-                        {creditBalance}
-                      </Text>
-                      <Caption>Credits</Caption>
-                    </View>
-                  )}
-                  {tier === "FREE" && (
-                    <View style={styles.statBox}>
-                      <Text style={[styles.statNumber, { color: theme.accent }]}>
-                        {trialRemaining}
-                      </Text>
-                      <Caption>Trial Left</Caption>
-                    </View>
-                  )}
-                  {isPremium && (
-                    <View style={styles.statBox}>
-                      <Text style={[styles.statNumber, { color: theme.accent }]}>
-                        Unlimited
-                      </Text>
-                      <Caption>Generations</Caption>
-                    </View>
-                  )}
-                  {billingEnd && (
-                    <View style={styles.statBox}>
-                      <Text style={[styles.statNumber, { color: theme.accent }]}>
-                        {new Date(billingEnd).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </Text>
-                      <Caption>
-                        {entitlement?.subscription_status === "canceling"
-                          ? "Expires"
-                          : "Renews"}
-                      </Caption>
-                    </View>
-                  )}
-                </View>
-
-                {/* Trial timeline for free users */}
-                {tier === "FREE" && (
-                  <View style={styles.trialTimeline}>
-                    <View style={styles.trialBarBg}>
-                      <View
-                        style={[
-                          styles.trialBarFill,
-                          {
-                            backgroundColor: theme.accent,
-                            width: `${Math.max(
-                              5,
-                              ((3 - trialRemaining) / 3) * 100,
-                            )}%`,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Caption color="muted" style={styles.trialBarLabel}>
-                      {trialRemaining > 0
-                        ? `${3 - trialRemaining} of 3 trial analyses used`
-                        : "Trial complete -- upgrade below"}
-                    </Caption>
-                  </View>
-                )}
-
-                {/* Cancel for premium users */}
-                {isPremium &&
-                  entitlement?.subscription_status === "active" && (
-                    <PressableScale
-                      onPress={handleCancel}
-                      disabled={isCancelling}
-                      style={styles.cancelLink}
-                      accessibilityLabel="Cancel subscription"
-                      accessibilityRole="button"
-                    >
-                      {isCancelling ? (
-                        <ActivityIndicator
-                          color={THEME.colors.textSecondary}
-                          size="small"
-                        />
-                      ) : (
-                        <Caption weight="medium" style={styles.cancelLinkText}>
-                          Cancel subscription
-                        </Caption>
-                      )}
-                    </PressableScale>
-                  )}
-              </View>
-            </Animated.View>
-
-            {/* ---- Premium Upsell (if not already premium) ---- */}
-            {!isPremium && hasPremiumOption && (
-              <Animated.View entering={fadeInDown(60, 240)}>
-                <Label
-                  style={styles.sectionLabel}
-                  maxFontSizeMultiplier={1.3}
-                >
-                  RECOMMENDED
-                </Label>
-                <PressableScale
-                  onPress={handleSubscribe}
-                  disabled={isSubscribing}
-                  style={[
-                    styles.premiumCard,
-                    {
-                      borderColor: theme.accent,
-                      ...THEME.shadow.glow(theme.accent),
-                    },
-                  ]}
-                  accessibilityLabel="Subscribe to Premium"
-                  accessibilityRole="button"
-                >
-                  <View style={styles.premiumBadge}>
-                    <Ionicons name="diamond" size={16} color={theme.accent} />
-                    <Label color={theme.accent} style={styles.premiumBadgeText}>
-                      PREMIUM
-                    </Label>
-                  </View>
-                  <Heading size="md" style={styles.premiumTitle}>Go Unlimited</Heading>
-                  <Body color="secondary" style={styles.premiumDescription}>
-                    Unlimited glow-up analyses, priority processing, and access
-                    to Ada AI advisor chat.
-                  </Body>
-                  <Body weight="semibold" color={theme.accent} style={styles.premiumPrice}>
-                    {purchaseOptions?.premium?.name ?? "Premium Plan"}
-                  </Body>
-
-                  <View
-                    style={[
-                      styles.premiumButton,
-                      { backgroundColor: theme.accent },
-                    ]}
-                  >
-                    {isSubscribing ? (
-                      <ActivityIndicator color={THEME.colors.bg} size="small" />
-                    ) : (
-                      <Text style={styles.premiumButtonText}>
-                        Subscribe Now
-                      </Text>
-                    )}
-                  </View>
-                </PressableScale>
-              </Animated.View>
-            )}
-
-            {/* ---- Credit Packs ---- */}
-            {!isPremium && creditPacks.length > 0 && (
-              <Animated.View entering={fadeInDown(120, 240)}>
-                <Label
-                  style={styles.sectionLabel}
-                  maxFontSizeMultiplier={1.3}
-                >
-                  CREDIT PACKS
-                </Label>
-                <Caption color="muted" style={styles.sectionDescription}>
-                  Buy credits to unlock individual analyses
-                </Caption>
-                <View style={styles.packGrid}>
-                  {creditPacks.map((pack, index) => {
-                    const isActive = purchasingId === pack.pack_id;
-                    return (
-                      <Animated.View
-                        key={pack.pack_id}
-                        entering={fadeInDown(160 + Math.min(index, 4) * 40, 240)}
-                        style={styles.packCardWrapper}
-                      >
-                        <PressableScale
-                          onPress={() => handleBuyCredits(pack)}
-                          disabled={purchasingId !== null}
-                          style={[
-                            styles.packCard,
-                            isActive && {
-                              borderColor: theme.accent + THEME.alpha.mid,
-                              ...THEME.shadow.glow(theme.accent),
-                            },
-                          ]}
-                          accessibilityLabel={`Buy ${pack.credits} credits`}
-                          accessibilityRole="button"
-                        >
-                          <View
-                            style={[
-                              styles.packIconBg,
-                              { backgroundColor: theme.accentMuted },
-                            ]}
-                          >
-                            <Ionicons
-                              name="flash"
-                              size={22}
-                              color={theme.accent}
-                            />
-                          </View>
-                          <Text style={styles.packCredits}>
-                            {pack.credits}
-                          </Text>
-                          <Caption style={styles.packLabel}>credits</Caption>
-                          <View
-                            style={[
-                              styles.packButton,
-                              { backgroundColor: theme.accentMuted },
-                            ]}
-                          >
-                            {isActive ? (
-                              <ActivityIndicator
-                                color={theme.accent}
-                                size="small"
-                              />
-                            ) : (
-                              <Text
-                                style={[
-                                  styles.packButtonText,
-                                  { color: theme.accent },
-                                ]}
-                              >
-                                Buy
-                              </Text>
-                            )}
-                          </View>
-                        </PressableScale>
-                      </Animated.View>
-                    );
-                  })}
-                </View>
-              </Animated.View>
-            )}
-
-            {/* ---- No purchase options available hint ---- */}
-            {!isPremium && !hasPremiumOption && creditPacks.length === 0 && (
-              <Animated.View entering={fadeInDown(60, 240)}>
-                <View style={styles.hintCard}>
-                  <Ionicons
-                    name="information-circle-outline"
-                    size={24}
-                    color={THEME.colors.textSecondary}
-                  />
-                  <Body color="secondary" style={styles.hintText}>
-                    {tier === "FREE" && trialRemaining > 0
-                      ? "Use your free trial analyses first. Purchase options will appear when your trial ends."
-                      : "Purchase options are loading. Pull down to refresh."}
-                  </Body>
-                </View>
-              </Animated.View>
-            )}
-          </ScrollView>
-        )}
+      {/* Custom header with back button */}
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <HeaderBackButton onPress={() => router.back()} />
+        <Heading
+          size="md"
+          style={styles.headerTitle}
+          maxFontSizeMultiplier={1.3}
+        >
+          Subscription
+        </Heading>
+        <HeaderBackButtonSpacer />
       </View>
+
+      {isLoading ? (
+        <View
+          style={[
+            styles.scrollContent,
+            { paddingBottom: insets.bottom + THEME.spacing.xxxl },
+          ]}
+        >
+          <PlanCardSkeleton />
+        </View>
+      ) : error ? (
+        <View style={{ flex: 1, paddingBottom: insets.bottom }}>
+          <SubscriptionErrorState message={error ?? ERROR_LOAD} onRetry={refresh} />
+        </View>
+      ) : entitlement ? (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: insets.bottom + THEME.spacing.xxxl },
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={THEME.colors.textSecondary}
+            />
+          }
+        >
+          <Animated.View
+            entering={fadeInDown(ENTRANCE_DELAY_PLAN_MS, ENTRANCE_DURATION_MS)}
+          >
+            <PlanCard
+              entitlement={entitlement}
+              isCancelling={isCancelling}
+              onCancel={cancel}
+            />
+          </Animated.View>
+
+          {!isPremium && premium != null && (
+            <Animated.View
+              entering={fadeInDown(
+                ENTRANCE_DELAY_PREMIUM_MS,
+                ENTRANCE_DURATION_MS,
+              )}
+            >
+              <PremiumUpsell
+                premium={premium}
+                isSubscribing={isSubscribing}
+                onSubscribe={subscribe}
+              />
+            </Animated.View>
+          )}
+
+          {!isPremium && creditPacks.length > 0 && (
+            <Animated.View
+              entering={fadeInDown(
+                ENTRANCE_DELAY_PACKS_MS,
+                ENTRANCE_DURATION_MS,
+              )}
+            >
+              <CreditPackGrid
+                packs={creditPacks}
+                purchasingId={purchasingId}
+                onBuy={buyCredits}
+              />
+            </Animated.View>
+          )}
+
+          {showHint && (
+            <Animated.View
+              entering={fadeInDown(
+                ENTRANCE_DELAY_PREMIUM_MS,
+                ENTRANCE_DURATION_MS,
+              )}
+            >
+              <SubscriptionEmptyHint message={hintMessage} />
+            </Animated.View>
+          )}
+        </ScrollView>
+      ) : (
+        <View style={styles.centered}>
+          <ActivityIndicator color={THEME.colors.textSecondary} size="small" />
+        </View>
+      )}
+    </View>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
   container: {
@@ -606,17 +213,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 8,
-    paddingBottom: 10,
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
+    paddingHorizontal: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.sm,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: HEADER_TITLE_FONT_SIZE,
   },
   scroll: {
     flex: 1,
@@ -630,223 +231,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: THEME.spacing.xxl,
-    gap: THEME.spacing.md,
-  },
-  errorText: {
-    textAlign: "center",
-  },
-  retryButton: {
-    borderRadius: THEME.radius.pill,
-    paddingHorizontal: THEME.spacing.xxl,
-    paddingVertical: THEME.spacing.md,
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: THEME.spacing.sm,
-  },
-  retryButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 15,
-    color: THEME.colors.bg,
-  },
-
-  // Section label
-  sectionLabel: {
-    marginTop: THEME.spacing.xxl,
-    marginBottom: THEME.spacing.xs,
-    marginLeft: THEME.spacing.xs,
-  },
-  sectionDescription: {
-    marginBottom: THEME.spacing.md,
-    marginLeft: THEME.spacing.xs,
-  },
-
-  // Plan card
-  planCard: {
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1.5,
-    borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.xl,
-    ...THEME.shadow.glass,
-  },
-  planHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.lg,
-    marginBottom: THEME.spacing.xl,
-  },
-  planIconBg: {
-    width: 56,
-    height: 56,
-    borderRadius: THEME.radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  planInfo: {
-    flex: 1,
-  },
-  planSubtitle: {
-    marginTop: THEME.spacing.xs / 2,
-  },
-
-  // Stats row
-  statsRow: {
-    flexDirection: "row",
-    gap: THEME.spacing.md,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: THEME.colors.surface,
-    borderRadius: THEME.radius.md,
-    padding: THEME.spacing.md,
-    alignItems: "center",
-    gap: THEME.spacing.xs,
-  },
-  statNumber: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 20,
-    letterSpacing: 0,
-    // Prevent digit-width jitter as counts change (e.g. 9 → 10).
-    fontVariant: ["tabular-nums"],
-  },
-  // Trial timeline
-  trialTimeline: {
-    marginTop: THEME.spacing.lg,
-    gap: THEME.spacing.sm,
-  },
-  trialBarBg: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: THEME.colors.surface,
-    overflow: "hidden",
-  },
-  trialBarFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-  trialBarLabel: {
-    fontSize: 12,
-    letterSpacing: 0.2,
-  },
-
-  // Cancel link
-  cancelLink: {
-    alignSelf: "center",
-    marginTop: THEME.spacing.lg,
-    paddingVertical: THEME.spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
-  },
-  cancelLinkText: {
-    textDecorationLine: "underline",
-  },
-
-  // Premium upsell card
-  premiumCard: {
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1.5,
-    padding: THEME.spacing.xl,
-  },
-  premiumBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.xs,
-    marginBottom: THEME.spacing.md,
-  },
-  premiumBadgeText: {
-    letterSpacing: 1.2,
-  },
-  premiumTitle: {
-    marginBottom: THEME.spacing.sm,
-  },
-  premiumDescription: {
-    marginBottom: THEME.spacing.md,
-    lineHeight: 22,
-  },
-  premiumPrice: {
-    fontSize: 16,
-    marginBottom: THEME.spacing.xl,
-  },
-  premiumButton: {
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  premiumButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 16,
-    color: THEME.colors.bg,
-  },
-
-  // Credit pack grid
-  packGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: THEME.spacing.md,
-  },
-  packCardWrapper: {
-    flex: 1,
-    minWidth: 140,
-  },
-  packCard: {
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.lg,
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-    ...THEME.shadow.glass,
-  },
-  packIconBg: {
-    width: 40,
-    height: 40,
-    borderRadius: THEME.radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: THEME.spacing.xs,
-  },
-  packCredits: {
-    fontFamily: FONTS.display,
-    fontSize: 32,
-    color: THEME.colors.textPrimary,
-    lineHeight: 38,
-    fontVariant: ["tabular-nums"],
-  },
-  packLabel: {
-    marginBottom: THEME.spacing.sm,
-  },
-  packButton: {
-    borderRadius: THEME.radius.pill,
-    paddingHorizontal: THEME.spacing.xxl,
-    paddingVertical: THEME.spacing.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-  },
-  packButtonText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 14,
-  },
-
-  // Hint card
-  hintCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: THEME.spacing.md,
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.xl,
-    marginTop: THEME.spacing.xxl,
-  },
-  hintText: {
-    flex: 1,
-    lineHeight: 22,
   },
 });

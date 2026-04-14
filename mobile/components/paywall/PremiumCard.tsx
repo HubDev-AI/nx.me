@@ -2,7 +2,13 @@
  * PremiumCard — premium subscription option within the paywall.
  *
  * Glass card with accent border glow. "Subscribe Now" CTA uses the
- * session accent color. Displays premium benefits list.
+ * session accent color. Displays premium benefits + plan name and
+ * formatted recurring price.
+ *
+ * Billing interval assumption: backend currently does not expose the
+ * Stripe `recurring.interval`, so we hardcode `/mo` (PR1 only ships
+ * a monthly Premium price). When backend exposes the interval, replace
+ * `BILLING_INTERVAL_SUFFIX` with a value derived from `premium`.
  */
 import { useRef, useCallback } from "react";
 import {
@@ -22,6 +28,9 @@ import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
+import { Caption } from "../ui/Text";
+import { formatPrice } from "../../lib/format-price";
+import type { PremiumOption } from "../../lib/entitlement";
 
 const PREMIUM_BENEFITS = [
   "Unlimited generations",
@@ -29,13 +38,18 @@ const PREMIUM_BENEFITS = [
   "Advanced style options",
 ] as const;
 
+/** Suffix appended to the Premium price (e.g. "/mo"). Monthly-only for now. */
+const BILLING_INTERVAL_SUFFIX = "/mo";
+
 interface PremiumCardProps {
+  premium: PremiumOption;
   onSubscribe: () => void;
   isLoading: boolean;
   disabled: boolean;
 }
 
 export function PremiumCard({
+  premium,
   onSubscribe,
   isLoading,
   disabled,
@@ -78,6 +92,12 @@ export function PremiumCard({
           <Ionicons name="star" size={20} color={theme.accent} />
           <Text style={styles.title}>Premium</Text>
         </View>
+
+        {/* Plan name + price */}
+        <Caption weight="medium" style={styles.priceLine}>
+          {premium.name} · {formatPrice(premium.amount_cents, premium.currency)}
+          {BILLING_INTERVAL_SUFFIX}
+        </Caption>
 
         {/* Benefits list */}
         <View style={styles.benefits}>
@@ -143,6 +163,9 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.display,
     color: THEME.colors.textPrimary,
     fontSize: 20,
+  },
+  priceLine: {
+    color: THEME.colors.textPrimary,
   },
   benefits: {
     gap: THEME.spacing.md,

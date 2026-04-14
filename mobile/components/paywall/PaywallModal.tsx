@@ -1,33 +1,27 @@
 /**
  * PaywallModal — full paywall sheet triggered when can_generate=false.
  *
- * Fetches entitlement data (with purchase_options), displays:
- *   - Credit badge with remaining balance
- *   - Credit pack purchase options
- *   - Premium subscription card
+ * Shows credit packs and premium subscription via the shared
+ * `usePurchaseFlow` hook (same source of truth as the subscription
+ * screen). Modal UX: scale+fade entry from trigger, swipe-down
+ * dismiss, ~50% scrim.
  *
- * Purchase flow:
- *   1. User taps credit pack "Buy" or premium "Subscribe Now"
- *   2. App calls POST /credits/purchase or POST /subscriptions
- *   3. Backend returns checkout_url (Stripe Checkout session)
- *   4. App opens Stripe Payment Sheet via initPaymentSheet + presentPaymentSheet
- *   5. On success: re-fetch entitlement, animate credit badge update
- *
- * Modal UX: scale+fade entry from trigger, swipe-down dismiss, 40-60% scrim.
+ * Stripe Checkout fallback: opens the hosted checkout page in the
+ * browser via `Linking.openURL`. PR6 will swap this for the in-app
+ * Stripe Payment Sheet.
  */
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  Modal,
-  Pressable,
-  ScrollView,
+  AccessibilityInfo,
   Animated,
   ActivityIndicator,
-  StyleSheet,
+  Modal,
   PanResponder,
-  AccessibilityInfo,
-  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
   useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -36,15 +30,11 @@ import { THEME } from "../../constants/theme";
 import { SUCCESS_DARK } from "../../constants/colors";
 import { FONTS } from "../../hooks/useFonts";
 import { PAYWALL_ANIMATION, MIN_TOUCH_TARGET } from "../../constants/config";
+import type { EntitlementState } from "../../lib/entitlement";
 import {
-  fetchEntitlement,
-  purchaseCredits,
-  createSubscription,
-} from "../../lib/entitlement";
-import type {
-  EntitlementState,
-  CreditPackOption,
-} from "../../lib/entitlement";
+  PURCHASING_PREMIUM_ID,
+  usePurchaseFlow,
+} from "../../lib/hooks/use-purchase-flow";
 import { CreditBadge } from "./CreditBadge";
 import { CreditPackCard } from "./CreditPackCard";
 import { PremiumCard } from "./PremiumCard";
@@ -56,7 +46,9 @@ interface PaywallModalProps {
   onPurchaseComplete?: (state: EntitlementState) => void;
 }
 
-type PurchaseState = "idle" | "loading" | "success" | "error";
+/** Sheet position offsets for entry/exit animations. */
+const SHEET_OFFSCREEN_OFFSET = 60;
+const SHEET_INITIAL_SCALE = 0.95;
 
 export function PaywallModal({
   visible,
@@ -65,17 +57,27 @@ export function PaywallModal({
 }: PaywallModalProps) {
   const { height: SCREEN_HEIGHT } = useWindowDimensions();
 
-  // ---------------------------------------------------------------------------
-  // State
-  // ---------------------------------------------------------------------------
-  const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [isFetching, setIsFetching] = useState(false);
+  // Local UI state — purchase success banner only (errors → toast via hook).
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const [purchaseState, setPurchaseState] = useState<PurchaseState>("idle");
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  /** Track which pack is being purchased (null = subscription in progress) */
-  const [activePurchaseId, setActivePurchaseId] = useState<string | null>(null);
+  // Shared purchase flow — fetches entitlement, drives buy/subscribe.
+  const {
+    entitlement,
+    isLoading: isFetching,
+    error: fetchError,
+    purchasingId,
+    refresh,
+    buyCredits,
+    subscribe,
+  } = usePurchaseFlow({
+    autoLoad: false, // load on `visible` toggle below
+    onPurchaseComplete: (state) => {
+      setShowSuccess(true);
+      onPurchaseComplete?.(state);
+    },
+  });
+
+  const isPurchasing = purchasingId !== null;
 
   // ---------------------------------------------------------------------------
   // Focus management refs
@@ -87,43 +89,15 @@ export function PaywallModal({
   // ---------------------------------------------------------------------------
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const sheetScale = useRef(new Animated.Value(0.95)).current;
+  const sheetScale = useRef(new Animated.Value(SHEET_INITIAL_SCALE)).current;
   const panY = useRef(new Animated.Value(0)).current;
-
-  // ---------------------------------------------------------------------------
-  // Swipe-down to dismiss via PanResponder
-  // ---------------------------------------------------------------------------
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > PAYWALL_ANIMATION.PAN_MOVE_THRESHOLD,
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dy > 0) {
-          panY.setValue(gestureState.dy);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > PAYWALL_ANIMATION.SWIPE_DISMISS_THRESHOLD) {
-          handleClose();
-        } else {
-          Animated.spring(panY, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 7,
-          }).start();
-        }
-      },
-    }),
-  ).current;
 
   // ---------------------------------------------------------------------------
   // Open / close animations
   // ---------------------------------------------------------------------------
   const animateIn = useCallback(() => {
-    sheetTranslateY.setValue(60);
-    sheetScale.setValue(0.95);
+    sheetTranslateY.setValue(SHEET_OFFSCREEN_OFFSET);
+    sheetScale.setValue(SHEET_INITIAL_SCALE);
     backdropOpacity.setValue(0);
     panY.setValue(0);
 
@@ -155,12 +129,12 @@ export function PaywallModal({
           useNativeDriver: true,
         }),
         Animated.timing(sheetTranslateY, {
-          toValue: 60,
+          toValue: SHEET_OFFSCREEN_OFFSET,
           duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
           useNativeDriver: true,
         }),
         Animated.timing(sheetScale, {
-          toValue: 0.95,
+          toValue: SHEET_INITIAL_SCALE,
           duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
           useNativeDriver: true,
         }),
@@ -170,22 +144,43 @@ export function PaywallModal({
   );
 
   // ---------------------------------------------------------------------------
-  // Load entitlement
+  // Close handler
   // ---------------------------------------------------------------------------
-  const loadEntitlement = useCallback(async () => {
-    setIsFetching(true);
-    setFetchError(null);
-    try {
-      const state = await fetchEntitlement();
-      setEntitlement(state);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "We couldn't load pricing right now.";
-      setFetchError(message);
-    } finally {
-      setIsFetching(false);
-    }
-  }, []);
+  const handleClose = useCallback(() => {
+    if (isPurchasing) return; // prevent close during purchase
+    animateOut(() => {
+      setShowSuccess(false);
+      onClose();
+    });
+  }, [isPurchasing, animateOut, onClose]);
+
+  // ---------------------------------------------------------------------------
+  // Swipe-down to dismiss via PanResponder
+  // ---------------------------------------------------------------------------
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > PAYWALL_ANIMATION.PAN_MOVE_THRESHOLD,
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          panY.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > PAYWALL_ANIMATION.SWIPE_DISMISS_THRESHOLD) {
+          handleClose();
+        } else {
+          Animated.spring(panY, {
+            toValue: 0,
+            useNativeDriver: true,
+            tension: 40,
+            friction: 7,
+          }).start();
+        }
+      },
+    }),
+  ).current;
 
   // ---------------------------------------------------------------------------
   // Fetch entitlement on open + accessibility announcement
@@ -193,117 +188,21 @@ export function PaywallModal({
   useEffect(() => {
     if (visible) {
       animateIn();
-      loadEntitlement();
+      refresh();
       AccessibilityInfo.announceForAccessibility("Dialog opened");
       // Move focus to close button so screen readers enter the modal
       closeButtonRef.current?.focus();
     }
-  }, [visible, animateIn, loadEntitlement]);
-
-  // ---------------------------------------------------------------------------
-  // Close handler
-  // ---------------------------------------------------------------------------
-  const handleClose = useCallback(() => {
-    if (purchaseState === "loading") return; // prevent close during purchase
-    animateOut(() => {
-      setPurchaseState("idle");
-      setPurchaseError(null);
-      setActivePurchaseId(null);
-      onClose();
-    });
-  }, [purchaseState, animateOut, onClose]);
-
-  // ---------------------------------------------------------------------------
-  // Purchase flow: credit pack
-  // ---------------------------------------------------------------------------
-  const handleCreditPurchase = useCallback(
-    async (pack: CreditPackOption) => {
-      setPurchaseState("loading");
-      setPurchaseError(null);
-      setActivePurchaseId(pack.pack_id);
-
-      try {
-        // 1. Get checkout URL from backend
-        const { checkout_url } = await purchaseCredits(pack.pack_id);
-
-        // TODO: Backend returns a Stripe Checkout Session URL, not a PaymentIntent
-        // client secret. The Payment Sheet requires a paymentIntentClientSecret.
-        // When the backend is updated to return a payment_intent_client_secret,
-        // replace the Linking.openURL fallback with initPaymentSheet + presentPaymentSheet.
-        // For now, open the Stripe-hosted checkout page in the browser.
-        await Linking.openURL(checkout_url);
-
-        // Re-fetch entitlement after returning from checkout.
-        // The user may have completed or cancelled payment externally.
-        const updatedState = await fetchEntitlement();
-        setEntitlement(updatedState);
-        setPurchaseState("success");
-        onPurchaseComplete?.(updatedState);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Something went wrong with your purchase.";
-        setPurchaseError(message);
-        setPurchaseState("error");
-      } finally {
-        setActivePurchaseId(null);
-      }
-    },
-    [onPurchaseComplete],
-  );
-
-  // ---------------------------------------------------------------------------
-  // Purchase flow: premium subscription
-  // ---------------------------------------------------------------------------
-  const handleSubscribe = useCallback(async () => {
-    setPurchaseState("loading");
-    setPurchaseError(null);
-    setActivePurchaseId(null); // null signals subscription (not a credit pack)
-
-    try {
-      const response = await createSubscription();
-
-      if (response.status === "already_subscribed") {
-        setPurchaseState("idle");
-        // Re-fetch to get current state
-        const updatedState = await fetchEntitlement();
-        setEntitlement(updatedState);
-        onPurchaseComplete?.(updatedState);
-        return;
-      }
-
-      if (!response.checkout_url) {
-        setPurchaseError("Subscription not available at this time.");
-        setPurchaseState("error");
-        return;
-      }
-
-      // TODO: Backend returns a Stripe Checkout Session URL, not a PaymentIntent
-      // client secret. When the backend is updated to return a payment_intent_client_secret,
-      // replace the Linking.openURL fallback with initPaymentSheet + presentPaymentSheet.
-      await Linking.openURL(response.checkout_url);
-
-      // Re-fetch entitlement after returning from checkout
-      const updatedState = await fetchEntitlement();
-      setEntitlement(updatedState);
-      setPurchaseState("success");
-      onPurchaseComplete?.(updatedState);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Something went wrong with your subscription.";
-      setPurchaseError(message);
-      setPurchaseState("error");
-    }
-  }, [onPurchaseComplete]);
+  }, [visible, animateIn, refresh]);
 
   // ---------------------------------------------------------------------------
   // Derived state
   // ---------------------------------------------------------------------------
-  const isPurchasing = purchaseState === "loading";
   const creditBalance = entitlement?.credit_balance ?? 0;
   const purchaseOptions = entitlement?.purchase_options;
-  const hasCreditPacks =
-    purchaseOptions?.credit_packs && purchaseOptions.credit_packs.length > 0;
-  const hasPremium = purchaseOptions?.premium != null;
+  const creditPacks = purchaseOptions?.credit_packs ?? [];
+  const hasCreditPacks = creditPacks.length > 0;
+  const premium = purchaseOptions?.premium ?? null;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -392,7 +291,7 @@ export function PaywallModal({
               <Ionicons name="alert-circle" size={32} color={THEME.colors.destructive} />
               <Text style={styles.errorText}>{fetchError}</Text>
               <Pressable
-                onPress={loadEntitlement}
+                onPress={refresh}
                 style={styles.retryButton}
                 accessibilityLabel="Retry loading pricing"
                 accessibilityRole="button"
@@ -402,16 +301,8 @@ export function PaywallModal({
             </View>
           )}
 
-          {/* Purchase error banner */}
-          {purchaseError && (
-            <View style={styles.errorBanner} accessibilityRole="alert">
-              <Ionicons name="alert-circle" size={18} color={THEME.colors.destructive} />
-              <Text style={styles.errorBannerText}>{purchaseError}</Text>
-            </View>
-          )}
-
           {/* Success banner */}
-          {purchaseState === "success" && (
+          {showSuccess && (
             <View style={styles.successBanner}>
               <Ionicons name="checkmark-circle" size={18} color={SUCCESS_DARK} />
               <Text style={styles.successBannerText}>
@@ -425,17 +316,13 @@ export function PaywallModal({
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Credit Packs</Text>
               <View style={styles.packList}>
-                {purchaseOptions!.credit_packs.map((pack) => (
+                {creditPacks.map((pack) => (
                   <CreditPackCard
                     key={pack.pack_id}
                     pack={pack}
-                    onPurchase={handleCreditPurchase}
-                    isLoading={
-                      isPurchasing && activePurchaseId === pack.pack_id
-                    }
-                    disabled={
-                      isPurchasing && activePurchaseId !== pack.pack_id
-                    }
+                    onPurchase={buyCredits}
+                    isLoading={purchasingId === pack.pack_id}
+                    disabled={isPurchasing && purchasingId !== pack.pack_id}
                   />
                 ))}
               </View>
@@ -443,13 +330,16 @@ export function PaywallModal({
           )}
 
           {/* Premium subscription */}
-          {!isFetching && !fetchError && hasPremium && (
+          {!isFetching && !fetchError && premium != null && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Go Premium</Text>
               <PremiumCard
-                onSubscribe={handleSubscribe}
-                isLoading={isPurchasing && activePurchaseId === null}
-                disabled={isPurchasing && activePurchaseId !== null}
+                premium={premium}
+                onSubscribe={subscribe}
+                isLoading={purchasingId === PURCHASING_PREMIUM_ID}
+                disabled={
+                  isPurchasing && purchasingId !== PURCHASING_PREMIUM_ID
+                }
               />
             </View>
           )}
@@ -459,7 +349,7 @@ export function PaywallModal({
             !fetchError &&
             entitlement &&
             !hasCreditPacks &&
-            !hasPremium && (
+            premium == null && (
               <View style={styles.centerState}>
                 <Text style={styles.stateText}>
                   No purchase options available right now.
@@ -583,21 +473,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.bodySemiBold,
     color: THEME.colors.textPrimary,
     fontSize: 14,
-  },
-  errorBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-    backgroundColor: THEME.colors.destructiveBg,
-    borderRadius: THEME.radius.md,
-    padding: THEME.spacing.md,
-    marginBottom: THEME.spacing.lg,
-  },
-  errorBannerText: {
-    fontFamily: FONTS.bodyMedium,
-    color: THEME.colors.destructive,
-    fontSize: 14,
-    flex: 1,
   },
   successBanner: {
     flexDirection: "row",
