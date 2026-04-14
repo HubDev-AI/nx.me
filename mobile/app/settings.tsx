@@ -29,12 +29,11 @@ import { Body, Caption, Label } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { FONTS } from "../hooks/useFonts";
-import { MIN_TOUCH_TARGET } from "../constants/config";
+import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../constants/config";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { showToast } from "../lib/toast";
 import { clearAllTokens } from "../lib/auth";
-import { AUTH_ENDPOINTS } from "../constants/config";
 
 // Safely resolve expo-constants — if unavailable (bare workflow edge case),
 // we fall back to a static version string instead of crashing the screen.
