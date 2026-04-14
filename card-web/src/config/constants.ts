@@ -38,17 +38,26 @@ export const API_BASE_URL: string = (() => {
 
 /**
  * App Store URL for iOS.
- * When not configured, returns an empty string. UI components should
- * hide the App Store link when this value is empty.
+ * When NEXT_PUBLIC_APP_STORE_URL is unset (e.g. pre-launch), this
+ * falls back to the site's universal link origin so the CTA still
+ * resolves to a working page instead of a broken id=0 App Store URL.
+ * cta-button treats an empty string as "skip store redirect" — the
+ * fallback keeps the landing-page links navigable while keeping that
+ * semantics in place for the CTA flow.
  */
-// TODO: Replace with the real App Store URL once the app is published
 export const APP_STORE_URL =
-  process.env.NEXT_PUBLIC_APP_STORE_URL ?? 'https://apps.apple.com/app/nxme/id000000000';
+  process.env.NEXT_PUBLIC_APP_STORE_URL ??
+  process.env.NEXT_PUBLIC_APP_BASE_URL ??
+  'https://nxme.ai';
 
-/** Play Store URL for Android */
+/**
+ * Play Store URL for Android. Same fallback as APP_STORE_URL — resolves
+ * to the marketing site until NEXT_PUBLIC_PLAY_STORE_URL is configured.
+ */
 export const PLAY_STORE_URL =
   process.env.NEXT_PUBLIC_PLAY_STORE_URL ??
-  'https://play.google.com/store/apps/details?id=ai.nxme.app';
+  process.env.NEXT_PUBLIC_APP_BASE_URL ??
+  'https://nxme.ai';
 
 /** Universal link / web base URL (used for app deep-links) */
 export const APP_BASE_URL =
