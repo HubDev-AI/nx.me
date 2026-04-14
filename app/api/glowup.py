@@ -215,6 +215,7 @@ async def _check_idempotency(
 )
 async def analyze_glowup(
     upload_id: UUID,
+    request: Request,
     claims: UserClaims = Depends(get_user_or_guest),
     glowup_svc: GlowupService = Depends(get_glowup_service),
 ) -> AnalyzeResponse:
@@ -267,6 +268,22 @@ async def analyze_glowup(
         logger.warning(
             "Analytics emit failed for glowup_analyze_completed", exc_info=True
         )
+
+    # Advisor: schedule a post-analysis nudge. ARQ-dispatched so the
+    # endpoint does not block on LLM latency. Any failure (pool missing,
+    # queue unavailable) is swallowed — a missed nudge must never turn a
+    # successful analysis into a 5xx.
+    if settings.ADVISOR_ENABLED:
+        try:
+            await request.app.state.arq_pool.enqueue_job(
+                "schedule_post_analysis_nudge", user_id
+            )
+        except Exception:
+            logger.warning(
+                "Failed to enqueue post-analysis nudge for user %s",
+                user_id,
+                exc_info=True,
+            )
 
     return AnalyzeResponse(
         glowup_analysis_id=str(result.glowup_analysis_id),
