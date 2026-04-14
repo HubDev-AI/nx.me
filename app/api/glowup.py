@@ -413,6 +413,7 @@ async def generate_glowup(
     await _check_entitlement(ent_svc, user_id)
 
     reservation_id: UUID | None = None
+    created_job_id: UUID | None = None
     try:
         cost_tracker = CostTracker(redis_client)
         tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
@@ -458,6 +459,7 @@ async def generate_glowup(
                 "updated_at": now_utc,
             },
         )
+        created_job_id = job_id
 
         await run_sync(
             job_repo.insert_usage_event,
@@ -482,6 +484,25 @@ async def generate_glowup(
                 logger.error(
                     "Failed to release credit reservation %s after enqueue failure",
                     reservation_id,
+                )
+        # If the job row was written before the enqueue failure, mark it
+        # FAILED so the mobile poller gets a terminal state instead of
+        # waiting forever on an orphaned "queued" row.
+        if created_job_id is not None:
+            try:
+                await run_sync(
+                    job_repo.update,
+                    str(created_job_id),
+                    {
+                        "status": JobStatus.FAILED,
+                        "failure_reason": "ENQUEUE_FAILED",
+                        "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+                    },
+                )
+            except Exception:
+                logger.error(
+                    "Failed to mark orphaned job %s as failed after enqueue error",
+                    created_job_id,
                 )
         raise
 
