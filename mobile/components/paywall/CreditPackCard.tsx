@@ -17,9 +17,6 @@ import {
 } from "../../constants/config";
 import type { CreditPackOption } from "../../lib/entitlement";
 
-/** Amber-gold accent for credit icon */
-const CREDIT_ICON = "#F59E0B";
-
 interface CreditPackCardProps {
   pack: CreditPackOption;
   onPurchase: (pack: CreditPackOption) => void;
@@ -82,7 +79,7 @@ export function CreditPackCard({
           <Ionicons
             name="diamond-outline"
             size={24}
-            color={CREDIT_ICON}
+            color={THEME.colors.creditAccent}
           />
           <Text style={styles.creditCount}>{displayCredits}</Text>
           <Text style={styles.label}>credits</Text>

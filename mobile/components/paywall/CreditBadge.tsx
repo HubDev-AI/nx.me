@@ -21,17 +21,15 @@ interface CreditBadgeProps {
   size?: "small" | "default";
 }
 
-const BOUNCE_SCALE = 1.15;
-
 export function CreditBadge({ balance, size = "default" }: CreditBadgeProps) {
   const { theme } = useTheme();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const prevBalance = useRef(balance);
 
-  // Derive accent-based colors
+  // Derive accent-based colors using THEME.alpha tokens
   const accentColors = useMemo(() => ({
-    bg: theme.accent + "26", // ~15% opacity
-    border: theme.accent + "33", // ~20% opacity
+    bg: theme.accent + THEME.alpha.subtle,
+    border: theme.accent + THEME.alpha.low,
     icon: theme.accent,
     text: theme.accent,
   }), [theme.accent]);
@@ -43,7 +41,7 @@ export function CreditBadge({ balance, size = "default" }: CreditBadgeProps) {
 
       Animated.sequence([
         Animated.timing(scaleAnim, {
-          toValue: BOUNCE_SCALE,
+          toValue: PAYWALL_ANIMATION.BOUNCE_SCALE,
           duration: PAYWALL_ANIMATION.COUNT_ANIMATION_DURATION_MS / 3,
           useNativeDriver: true,
         }),

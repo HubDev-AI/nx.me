@@ -310,7 +310,7 @@ export default function SubscriptionScreen() {
                 style={[
                   styles.planCard,
                   {
-                    borderColor: theme.accent + "40",
+                    borderColor: theme.accent + THEME.alpha.med,
                     ...THEME.shadow.glow(theme.accent),
                   },
                 ]}
@@ -517,7 +517,7 @@ export default function SubscriptionScreen() {
                           style={[
                             styles.packCard,
                             isActive && {
-                              borderColor: theme.accent + "60",
+                              borderColor: theme.accent + THEME.alpha.mid,
                               ...THEME.shadow.glow(theme.accent),
                             },
                           ]}
