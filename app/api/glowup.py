@@ -468,7 +468,6 @@ async def generate_glowup(
         await request.app.state.arq_pool.enqueue_job(
             "process_generation_job",
             str(job_id),
-            _queue_name=queue_lane,
         )
     except Exception:
         await redis_client.decr(f"concurrent:{user_id_str}")
