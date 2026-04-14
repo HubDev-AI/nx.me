@@ -81,6 +81,21 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://nxme.ai';
 export const APP_BUNDLE_ID = 'ai.nxme.app';
 
 /**
+ * Paths the mobile app claims via iOS universal links and Android app-links.
+ *
+ * **Keep in parity with `mobile/app.config.ts`** — claiming a path here but not
+ * registering a matching Expo route means iOS captures URLs the app can't
+ * resolve and silently 404s inside the app instead of opening the browser.
+ *
+ * Entries use Apple AASA path-pattern syntax (`*` = multi-segment wildcard).
+ * Only add paths that have a corresponding `mobile/app/...` route.
+ */
+export const APP_LINK_PATHS: ReadonlyArray<string> = [
+  '/signup',
+  '/card/*',
+];
+
+/**
  * Sitemap pagination + caching constants.
  * - PAGE_SIZE: backend default/max per_page is 1000; we use the max to minimise round-trips.
  * - MAX_ENTRIES: Google sitemap cap (50,000 URLs per sitemap file). Above this we'd need a

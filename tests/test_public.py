@@ -204,6 +204,38 @@ class TestListPublicUserCursor:
 
         assert [r["username"] for r in result] == ["bravo", "charlie"]
 
+    def test_cursor_keeps_same_timestamp_tiebreaker(self):
+        """Users with identical updated_at but later username must NOT be dropped.
+
+        Regression for Codex adversarial finding: the previous tuple compare
+        `(updated_at, username) < cursor` filtered out rows where
+        updated_at == cursor.updated_at but username came alphabetically after
+        the cursor's username — i.e. the users that are supposed to open the
+        next page under `(updated_at DESC, username ASC)` order.
+        """
+        from app.repositories.post_repo import PostRepository
+
+        base = datetime(2026, 4, 10, 12, 0, 0, tzinfo=timezone.utc)
+        # Four users, three sharing the same updated_at. Sort order:
+        # (base, alpha), (base, bravo), (base, charlie), (base-1m, delta).
+        # Cursor at (base, "alpha") → next page must include bravo + charlie.
+        rows = [
+            _post_row("u-a", "alpha", base),
+            _post_row("u-b", "bravo", base),
+            _post_row("u-c", "charlie", base),
+            _post_row("u-d", "delta", base - timedelta(minutes=1)),
+        ]
+
+        sb = _build_supabase_with_posts(rows)
+        repo = PostRepository(sb)
+
+        result = repo.list_public_user_cursor(
+            cursor=(base, "alpha"),
+            limit=10,
+        )
+
+        assert [r["username"] for r in result] == ["bravo", "charlie", "delta"]
+
 
 class TestCursorCodec:
     """Cursor encode/decode round-trip and 400 semantics."""
@@ -248,6 +280,37 @@ class TestCursorCodec:
 
         with pytest.raises(HTTPException) as exc_info:
             _decode_cursor(payload)
+
+        assert exc_info.value.status_code == 400
+
+    def test_naive_cursor_is_rejected_with_400(self):
+        """A cursor payload missing a timezone offset must fail loudly, not silently coerce.
+
+        Regression for Codex adversarial finding: `datetime.fromisoformat` on
+        a naive ISO string returned a naive datetime, which then hit
+        `TypeError` when compared against the offset-aware Supabase
+        timestamps. `_encode_cursor` always emits offset-aware strings, so a
+        naive cursor can only appear from a hand-crafted, mis-encoded, or
+        forged input — rejecting with 400 surfaces such bugs instead of
+        hiding them behind an implicit UTC coercion.
+        """
+        import base64
+        import json
+
+        from fastapi import HTTPException
+
+        from app.api.public import _decode_cursor
+
+        naive_payload = (
+            base64.urlsafe_b64encode(
+                json.dumps({"u": "2026-04-10T12:00:00", "n": "alice"}).encode()
+            )
+            .rstrip(b"=")
+            .decode()
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            _decode_cursor(naive_payload)
 
         assert exc_info.value.status_code == 400
 

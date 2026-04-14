@@ -138,6 +138,17 @@ def _decode_cursor(raw: str) -> tuple[datetime, str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Malformed cursor",
         ) from exc
+    # `_encode_cursor` always emits offset-aware ISO strings, so a naive
+    # timestamp can only come from a hand-crafted, mis-encoded, or forged
+    # input. Reject loudly: silently coercing to UTC would mask future
+    # round-trip bugs and hide the exact class of issue the Codex review
+    # caught (naive values crashing comparisons against Supabase's offset-
+    # aware timestamptz).
+    if updated_at.tzinfo is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed cursor",
+        )
     return updated_at, username
 
 

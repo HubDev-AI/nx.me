@@ -15,6 +15,10 @@ Items surfaced during audits/reviews that are real but intentionally not in any 
 - **Sitemap index file** — current `sitemap.ts` caps at 50k URLs per Google's limit. When user count exceeds 50k, split into multiple sitemap files + generate an index.
 - **Privacy model for public cards** — today all users with a post are public by default. If product wants opt-in discoverability, add `is_public` / `privacy_public` column + UI toggle + filter the listing endpoint.
 
+## Quality gates
+
+- **Cross-workspace APP_LINK_PATHS parity test** — `APP_LINK_PATHS` in `card-web/src/config/constants.ts` and the Android `intentFilters` in `mobile/app.config.ts` must declare the same set of paths. Today parity is enforced by comments + review. A CI test that reads `mobile/app.config.ts` (the file is a full Expo config that runs `dotenv/config` at import time, so a naïve `import` from Python/vitest is fiddly) would catch drift. Options: a parser-based test that regexes `path`/`pathPrefix`/`pathPattern` values out of the TS source, or a CI step that extracts both sets via a small Node script and diffs them.
+
 ## Ops / infra
 
 - **Priority-lane worker** — multi-queue ARQ worker if premium users ever queue behind trial users at volume. Requires multi-process deploy setup or arq extension. Rebuild with real queue-depth data.
