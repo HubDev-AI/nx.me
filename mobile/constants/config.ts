@@ -68,10 +68,8 @@ export const AUTH_ENDPOINTS = {
   PROVIDERS: "/v1/auth/providers",
   /**
    * Refresh token endpoint — POST with { refresh_token }.
-   * NOTE: As of 2026-03-20, the backend does NOT expose a /v1/auth/refresh
-   * endpoint in its OpenAPI spec. The path is kept here for forward-compat;
-   * the refresh logic in lib/api.ts will gracefully fall back (clear tokens)
-   * when the server returns a non-200 response.
+   * Backend: app/api/auth.py:refresh_token (POST /v1/auth/refresh).
+   * Response: LoginResponse. lib/api.ts clears tokens on any non-200.
    */
   REFRESH: "/v1/auth/refresh",
   /** Server-side logout — POST with JWT in Authorization header */
