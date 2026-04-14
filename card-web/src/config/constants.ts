@@ -76,3 +76,20 @@ export const SITE_NAME = 'NXME';
 
 /** Site URL — canonical base */
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://nxme.ai';
+
+/** Native app bundle identifier — shared between iOS App ID and Android package name. */
+export const APP_BUNDLE_ID = 'ai.nxme.app';
+
+/**
+ * Sitemap pagination + caching constants.
+ * - PAGE_SIZE: backend default/max per_page is 1000; we use the max to minimise round-trips.
+ * - MAX_ENTRIES: Google sitemap cap (50,000 URLs per sitemap file). Above this we'd need a
+ *   sitemap index. We log a warning when we hit the cap instead of silently truncating.
+ * - REVALIDATE_SECONDS: 1h — avoids hitting the backend listing endpoint on every crawl.
+ */
+export const SITEMAP_PAGE_SIZE = 1000;
+export const SITEMAP_MAX_ENTRIES = 50000;
+export const SITEMAP_REVALIDATE_SECONDS = 3600;
+
+/** Public card listing path on the backend — used by the sitemap generator. */
+export const PUBLIC_CARDS_LIST_PATH = '/v1/public/cards';
