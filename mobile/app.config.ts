@@ -47,15 +47,22 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png",
     },
-    // Path prefixes MUST mirror card-web/src/config/constants.ts APP_LINK_PATHS.
+    // Path filters MUST mirror card-web/src/config/constants.ts APP_LINK_PATHS.
     // Claiming all paths ("/") would capture web-only URLs like /{username}
     // share cards into the app, which has no matching route.
+    //
+    // Android `pathPrefix` is substring-prefix — `/signup` would also capture
+    // `/signups`, `/signup-bot`, etc. Use `path` for the exact match and
+    // `pathPattern` for nested routes. `/card/` is safe as a prefix because
+    // every match starts with the terminating slash, so it cannot swallow a
+    // hypothetical `/cardiology`.
     intentFilters: [
       {
         action: "VIEW",
         autoVerify: true,
         data: [
-          { scheme: "https", host: "nxme.ai", pathPrefix: "/signup" },
+          { scheme: "https", host: "nxme.ai", path: "/signup" },
+          { scheme: "https", host: "nxme.ai", pathPattern: "/signup/.*" },
           { scheme: "https", host: "nxme.ai", pathPrefix: "/card/" },
         ],
         category: ["BROWSABLE", "DEFAULT"],

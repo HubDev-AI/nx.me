@@ -283,17 +283,21 @@ class TestCursorCodec:
 
         assert exc_info.value.status_code == 400
 
-    def test_naive_cursor_normalises_to_utc(self):
-        """A cursor payload missing a timezone offset must not crash the handler.
+    def test_naive_cursor_is_rejected_with_400(self):
+        """A cursor payload missing a timezone offset must fail loudly, not silently coerce.
 
         Regression for Codex adversarial finding: `datetime.fromisoformat` on
         a naive ISO string returned a naive datetime, which then hit
         `TypeError` when compared against the offset-aware Supabase
-        timestamps. Normalising to UTC on decode keeps downstream comparisons
-        legal.
+        timestamps. `_encode_cursor` always emits offset-aware strings, so a
+        naive cursor can only appear from a hand-crafted, mis-encoded, or
+        forged input — rejecting with 400 surfaces such bugs instead of
+        hiding them behind an implicit UTC coercion.
         """
         import base64
         import json
+
+        from fastapi import HTTPException
 
         from app.api.public import _decode_cursor
 
@@ -305,10 +309,10 @@ class TestCursorCodec:
             .decode()
         )
 
-        updated_at, username = _decode_cursor(naive_payload)
+        with pytest.raises(HTTPException) as exc_info:
+            _decode_cursor(naive_payload)
 
-        assert updated_at.tzinfo is not None
-        assert username == "alice"
+        assert exc_info.value.status_code == 400
 
 
 class TestListPublicCardsHandler:
