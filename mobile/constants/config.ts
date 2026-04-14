@@ -198,7 +198,21 @@ export const APPLE_MERCHANT_ID: string =
 export const ENTITLEMENT_ENDPOINTS = {
   GET: "/v1/entitlement",
   PURCHASE_CREDITS: "/v1/credit-purchases",
+  /** PaymentIntent bootstrap for the in-app Stripe Payment Sheet (PR6). */
+  PURCHASE_CREDITS_INTENT: "/v1/credit-purchases/intent",
   SUBSCRIBE: "/v1/subscriptions",
+} as const;
+
+/** Stripe Payment Sheet copy + configuration (no magic strings in callers). */
+export const STRIPE_PAYMENT_SHEET = {
+  /** Text shown at the top of the Payment Sheet. */
+  MERCHANT_DISPLAY_NAME: "NXME",
+  /** ISO country code for the Apple Pay / business registration. */
+  MERCHANT_COUNTRY_CODE: "US",
+  /** `@stripe/stripe-react-native` error code for user-initiated dismiss. */
+  USER_CANCELED_ERROR_CODE: "Canceled",
+  /** Success toast after credit pack payment. */
+  SUCCESS_MESSAGE: "Credits added.",
 } as const;
 
 /** Advisor API paths */

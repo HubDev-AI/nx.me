@@ -17,6 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.deps import get_payment_adapter, get_subscription_repo
+from app.api.entitlement import FLOW_PAYMENT_SHEET
 from app.constants.tiers import TIER_ID_CREDIT_HOLDER, TIER_ID_PREMIUM, TIER_ID_TRIAL
 from app.repositories.subscription_repo import SubscriptionRepository
 
@@ -73,6 +74,8 @@ async def stripe_webhook(
 
         if event_type == "checkout.session.completed":
             await _handle_checkout_completed(sub_repo, data, event_id)
+        elif event_type == "payment_intent.succeeded":
+            await _handle_payment_intent_succeeded(sub_repo, data, event_id)
         elif event_type == "customer.subscription.created":
             _handle_subscription_created(sub_repo, data)
         elif event_type == "customer.subscription.updated":
@@ -163,6 +166,80 @@ async def _handle_checkout_completed(
     elif mode == "subscription":
         # Subscription activation handled by customer.subscription.created webhook
         logger.info("Subscription checkout completed for user=%s", user_id)
+
+
+async def _handle_payment_intent_succeeded(
+    sub_repo: SubscriptionRepository, intent: dict, event_id: str
+) -> None:
+    """Handle payment_intent.succeeded — credit grant from Payment Sheet.
+
+    Only processes intents stamped with ``metadata.flow=payment_sheet``
+    so legacy Checkout-created PaymentIntents are ignored here (the
+    ``checkout.session.completed`` handler owns those). Reuses the
+    ``handle_checkout_credit_atomic`` RPC — its idempotency key is the
+    webhook ``event_id`` which is distinct per Stripe event, so
+    overlap with the legacy flow is impossible by contract.
+    """
+    metadata = intent.get("metadata") or {}
+    if metadata.get("flow") != FLOW_PAYMENT_SHEET:
+        logger.info(
+            "payment_intent.succeeded: non-payment-sheet flow, skipping (event=%s)",
+            event_id,
+        )
+        return
+
+    user_id = metadata.get("user_id")
+    if not user_id:
+        logger.warning(
+            "payment_intent.succeeded missing user_id in metadata (event=%s)",
+            event_id,
+        )
+        return
+    try:
+        UUID(user_id)
+    except ValueError:
+        logger.error(
+            "Invalid user_id UUID in payment_intent.succeeded: %s (event=%s)",
+            user_id,
+            event_id,
+        )
+        return
+
+    credits_str = metadata.get("credits", "0")
+    try:
+        credits = int(credits_str)
+    except (ValueError, TypeError):
+        logger.error(
+            "payment_intent.succeeded: invalid credits value '%s' in event %s",
+            credits_str,
+            event_id,
+        )
+        return
+
+    if credits <= 0:
+        logger.warning(
+            "payment_intent.succeeded with invalid credits=%s (event=%s)",
+            credits_str,
+            event_id,
+        )
+        return
+
+    rpc_result = sub_repo.handle_checkout_credit_atomic(
+        user_id=user_id,
+        credits=credits,
+        event_id=event_id,
+        trial_tier_id=TIER_ID_TRIAL,
+        credit_holder_tier_id=TIER_ID_CREDIT_HOLDER,
+    )
+
+    tier_upgraded = rpc_result.get("tier_upgraded", False)
+    logger.info(
+        "PaymentIntent credit purchase: user=%s, credits=%d, event=%s, tier_upgraded=%s",
+        user_id,
+        credits,
+        event_id,
+        tier_upgraded,
+    )
 
 
 def _handle_subscription_created(

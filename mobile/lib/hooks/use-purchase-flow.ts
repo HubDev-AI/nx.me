@@ -5,9 +5,10 @@
  * Used by both `subscription.tsx` and `PaywallModal.tsx` so duplicated
  * purchase logic and state stays in one place.
  *
- * The hook keeps `Linking.openURL` for the Stripe Checkout fallback
- * (PR6 will swap this for the in-app Stripe Payment Sheet). Cancel
- * confirmation is driven by `isCancelSheetOpen` / `openCancelSheet` /
+ * Credit packs use the in-app Stripe Payment Sheet (PR6). Premium
+ * subscriptions keep the `Linking.openURL` redirect flow — migrating
+ * Stripe Subscriptions to the sheet is a separate, larger lift.
+ * Cancel confirmation is driven by `isCancelSheetOpen` / `openCancelSheet` /
  * `confirmCancel` / `dismissCancelSheet`; the consumer screen renders
  * `<CancelSubscriptionSheet>` wired to that state.
  */
@@ -15,15 +16,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking } from "react-native";
 
 import {
+  STRIPE_PAYMENT_SHEET,
+  STRIPE_PUBLISHABLE_KEY,
+} from "../../constants/config";
+import {
   cancelSubscription,
+  createCreditPurchaseIntent,
   createSubscription,
   fetchEntitlement,
-  purchaseCredits,
   SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED,
   type CreditPackOption,
   type EntitlementState,
 } from "../entitlement";
 import { parseApiError } from "../errors";
+import { useStripe } from "../stripe-web-shim";
 import { showToast } from "../toast";
 
 /** Sentinel `purchasingId` used while the premium subscribe call is in flight. */
@@ -75,6 +81,7 @@ export function usePurchaseFlow({
   autoLoad = true,
   onPurchaseComplete,
 }: UsePurchaseFlowOptions = {}): UsePurchaseFlowReturn {
+  const stripe = useStripe();
   const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
   const [isLoading, setIsLoading] = useState(autoLoad);
   const [error, setError] = useState<string | null>(null);
@@ -132,16 +139,60 @@ export function usePurchaseFlow({
   }, [autoLoad, refresh]);
 
   // ---------------------------------------------------------------------
-  // Buy credits
+  // Buy credits — in-app Stripe Payment Sheet (PR6).
+  // Bootstrap a PaymentIntent on the server, init the sheet, present it,
+  // then refresh entitlement once payment_intent.succeeded lands. User
+  // cancellation is surfaced silently — only real errors raise a toast.
   // ---------------------------------------------------------------------
   const buyCredits = useCallback(
     async (pack: CreditPackOption) => {
       setPurchasingId(pack.pack_id);
       try {
-        const { checkout_url } = await purchaseCredits(pack.pack_id);
-        await Linking.openURL(checkout_url);
+        const intent = await createCreditPurchaseIntent(pack.pack_id);
+
+        // Dev-only sanity check: the publishable key returned by the
+        // backend should match the one compiled into the mobile app.
+        // A mismatch almost always means the two halves are talking to
+        // different Stripe accounts.
+        if (__DEV__ && intent.publishable_key !== STRIPE_PUBLISHABLE_KEY) {
+          console.warn(
+            "[stripe] publishable key mismatch between backend and mobile build",
+          );
+        }
+
+        const initRes = await stripe.initPaymentSheet({
+          merchantDisplayName: STRIPE_PAYMENT_SHEET.MERCHANT_DISPLAY_NAME,
+          customerId: intent.customer_id,
+          customerEphemeralKeySecret: intent.ephemeral_key,
+          paymentIntentClientSecret: intent.payment_intent_client_secret,
+          applePay: {
+            merchantCountryCode: STRIPE_PAYMENT_SHEET.MERCHANT_COUNTRY_CODE,
+          },
+          defaultBillingDetails: {},
+          allowsDelayedPaymentMethods: false,
+        });
+        if (initRes.error) {
+          throw new Error(initRes.error.message);
+        }
+
+        const presentRes = await stripe.presentPaymentSheet();
+        if (presentRes.error) {
+          if (
+            presentRes.error.code ===
+            STRIPE_PAYMENT_SHEET.USER_CANCELED_ERROR_CODE
+          ) {
+            // User dismissed the sheet — no toast, no refresh.
+            return;
+          }
+          throw new Error(presentRes.error.message);
+        }
+
         const updated = await refetch();
         onPurchaseComplete?.(updated);
+        showToast({
+          kind: "success",
+          message: STRIPE_PAYMENT_SHEET.SUCCESS_MESSAGE,
+        });
       } catch (err) {
         const appError = parseApiError(err);
         showToast({ kind: "error", message: appError.message });
@@ -149,7 +200,7 @@ export function usePurchaseFlow({
         setPurchasingId(null);
       }
     },
-    [refetch, onPurchaseComplete],
+    [stripe, refetch, onPurchaseComplete],
   );
 
   // ---------------------------------------------------------------------

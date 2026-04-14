@@ -1,6 +1,7 @@
 /**
  * Platform-specific Stripe shim.
- * On native: re-exports real StripeProvider.
- * On web: provides a passthrough wrapper (Stripe is native-only).
+ * On native: re-exports real StripeProvider + useStripe.
+ * On web: provides a passthrough wrapper + a stub useStripe that rejects
+ *         with a clear message (web clients cannot present Payment Sheet).
  */
-export { StripeProvider } from "@stripe/stripe-react-native";
+export { StripeProvider, useStripe } from "@stripe/stripe-react-native";

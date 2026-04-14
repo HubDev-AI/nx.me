@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from app.payment.ports import PriceInfo, WebhookEvent
+from app.payment.ports import PaymentIntentBundle, PriceInfo, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,26 @@ class MockPaymentAdapter:
     async def get_price(self, price_id: str) -> PriceInfo:
         """Return a deterministic placeholder price for any ID."""
         return PriceInfo(price_id=price_id, amount_cents=999, currency="usd")
+
+    async def create_payment_intent(
+        self,
+        user_id: str,
+        price_id: str,
+        metadata: dict | None = None,
+    ) -> PaymentIntentBundle:
+        """Return a deterministic PaymentIntent bundle. No Stripe calls."""
+        logger.info(
+            "Mock PaymentIntent created: user=%s, price=%s, metadata=%s",
+            user_id,
+            price_id,
+            metadata,
+        )
+        return PaymentIntentBundle(
+            client_secret=f"pi_mock_{user_id}_secret",
+            ephemeral_key="ek_mock",
+            customer_id=f"cus_mock_{user_id}",
+            publishable_key="pk_test_mock",
+        )
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Accept any signature in mock mode. Parse payload as JSON.
