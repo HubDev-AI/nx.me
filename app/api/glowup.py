@@ -419,7 +419,11 @@ async def generate_glowup(
 
         queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
         tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
-        raw_position = await redis_client.llen(f"arq:queue:{queue_lane}")
+        # ARQ stores pending jobs in a sorted set at the queue name
+        # (default "arq:queue"); LLEN on a ZSET returns 0, so the previous
+        # "arq:queue:{queue_lane}" key always reported 0 depth. Until the
+        # multi-queue worker lands, report the actual shared queue depth.
+        raw_position = await redis_client.zcard("arq:queue")
         if raw_position <= 5:
             queue_position = raw_position
         elif raw_position <= 50:

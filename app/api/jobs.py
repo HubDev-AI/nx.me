@@ -118,11 +118,11 @@ async def get_job(
     elapsed: int | None = None
 
     if job_status in (JobStatus.QUEUED, JobStatus.PROCESSING):
-        # The new jobs table does not carry a queue_lane column — derive from
-        # source_type. For now all glowup_analysis jobs map to the default lane.
-        # Future: jobs may carry an explicit lane column.
-        queue_lane = "default"
-        queued_ahead = await redis_client.llen(f"arq:queue:{queue_lane}")
+        # ARQ stores pending jobs in a sorted set at the default queue name
+        # ("arq:queue"). The previous LLEN on "arq:queue:default" always
+        # returned 0 (wrong key + wrong type), so users saw zero estimated
+        # wait even under load.
+        queued_ahead = await redis_client.zcard("arq:queue")
 
         if job_status == JobStatus.QUEUED:
             estimated_wait = queued_ahead * settings.AVG_SECONDS_PER_JOB

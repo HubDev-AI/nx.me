@@ -58,7 +58,7 @@ def _make_job_repo(
 
 def _make_redis() -> MagicMock:
     redis = MagicMock()
-    redis.llen = AsyncMock(return_value=0)
+    redis.zcard = AsyncMock(return_value=0)
     return redis
 
 

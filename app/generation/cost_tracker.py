@@ -141,12 +141,13 @@ class CostTracker:
         return val == "1"
 
     async def check_queue_depth(self, max_depth: int) -> bool:
-        """Return True if queue is within acceptable depth."""
-        # Check all three lanes
-        total = 0
-        for lane in ["generation:premium", "generation:credit", "generation:trial"]:
-            depth = await self._redis.llen(f"arq:queue:{lane}")
-            total += depth
+        """Return True if queue is within acceptable depth.
+
+        ARQ stores pending jobs in a ZSET at the default queue name
+        ("arq:queue"). The previous per-lane LLEN always returned 0
+        (wrong key, wrong type), so this gate effectively never tripped.
+        """
+        total = await self._redis.zcard("arq:queue")
 
         if total > max_depth:
             logger.warning("Queue depth %d exceeds max %d", total, max_depth)

@@ -346,7 +346,7 @@ class TestGenerateGlowupHandler:
         )
 
         redis_client = AsyncMock()
-        redis_client.llen.return_value = 0
+        redis_client.zcard.return_value = 0
         job_repo = MagicMock()
         job_repo.create.return_value = {"id": "job-1"}
         job_repo.insert_usage_event.return_value = {"id": "usage-1"}
