@@ -95,7 +95,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   ],
   extra: {
-    apiBaseUrl: process.env.API_BASE_URL ?? "https://api.nxme.ai",
+    // Intentionally no default — API_BASE_URL must be set per environment
+    // (see mobile/.env / mobile/.env.example). The consuming constants.ts
+    // throws at import time if apiBaseUrl is undefined.
+    apiBaseUrl: process.env.API_BASE_URL,
     stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? "",
     googleClientId: process.env.GOOGLE_IOS_CLIENT_ID ?? "",
     googleWebClientId: process.env.GOOGLE_OAUTH_CLIENT_ID ?? "",

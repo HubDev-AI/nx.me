@@ -35,11 +35,20 @@ import { useTheme } from "../../lib/theme-context";
 // Types
 // ---------------------------------------------------------------------------
 
+interface RecommendationItem {
+  rank: number;
+  category: string;
+  suggestion: string;
+  rationale: string | null;
+}
+
 interface PublicCard {
   username: string;
+  display_name: string;
+  share_hash: string;
   before_image_url: string;
   after_image_url: string;
-  recommendations: string[];
+  recommendations: RecommendationItem[];
   reaction_count: number;
   comment_count: number;
 }
@@ -183,10 +192,13 @@ export default function CardDetailScreen() {
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Username heading */}
+          {/* Display name + username heading */}
           <Heading size="md" color="primary" style={styles.usernameHeading}>
-            @{card.username}
+            {card.display_name}
           </Heading>
+          <Caption color="secondary" style={styles.usernameSub}>
+            @{card.username}
+          </Caption>
 
           {/* Before / After reveal */}
           <BeforeAfterSlider
@@ -224,7 +236,7 @@ export default function CardDetailScreen() {
 
           {/* Recommendations */}
           <SuggestionPills
-            suggestions={card.recommendations}
+            suggestions={card.recommendations.map((r) => r.suggestion)}
             visible={revealComplete}
           />
         </ScrollView>
@@ -265,6 +277,11 @@ const styles = StyleSheet.create({
   usernameHeading: {
     textAlign: "center",
     paddingTop: THEME.spacing.xxl,
+    paddingHorizontal: THEME.spacing.lg,
+  },
+  usernameSub: {
+    textAlign: "center",
+    paddingTop: THEME.spacing.xs,
     paddingHorizontal: THEME.spacing.lg,
   },
   statsRow: {

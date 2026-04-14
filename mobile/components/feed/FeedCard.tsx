@@ -140,9 +140,15 @@ export const FeedCard = React.memo(function FeedCard({
     });
   }, []);
 
+  // Prefer a per-user card URL so recipients land on the poster's latest
+  // glow-up (card-web /{username} route). Fall back to the site root only
+  // when the post has no username (guest/legacy rows).
+  const shareUrl = post.username
+    ? `${UNIVERSAL_LINK_ORIGIN}/${post.username}`
+    : UNIVERSAL_LINK_ORIGIN;
   const shareMessage = post.caption
-    ? `${post.caption} — Check it out on NXME ${UNIVERSAL_LINK_ORIGIN}`
-    : `Check out this glow-up on NXME ${UNIVERSAL_LINK_ORIGIN}`;
+    ? `${post.caption} — Check it out on NXME ${shareUrl}`
+    : `Check out this glow-up on NXME ${shareUrl}`;
   const blockLabel = post.display_name
     ? `Block ${post.display_name}`
     : "Block User";
@@ -155,13 +161,13 @@ export const FeedCard = React.memo(function FeedCard({
         try {
           if (Platform.OS === "web") {
             if (typeof navigator !== "undefined" && navigator.share) {
-              await navigator.share({ url: UNIVERSAL_LINK_ORIGIN, text: shareMessage });
+              await navigator.share({ url: shareUrl, text: shareMessage });
             } else if (typeof navigator !== "undefined" && navigator.clipboard) {
-              await navigator.clipboard.writeText(UNIVERSAL_LINK_ORIGIN);
+              await navigator.clipboard.writeText(shareUrl);
               showToast({ kind: 'success', message: "Share link copied to clipboard" });
             }
           } else if (Platform.OS === "ios") {
-            await Share.share({ message: shareMessage, url: UNIVERSAL_LINK_ORIGIN });
+            await Share.share({ message: shareMessage, url: shareUrl });
           } else {
             await Share.share({ message: shareMessage });
           }

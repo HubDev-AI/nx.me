@@ -68,7 +68,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  revalidateTag(getCardCacheTags(username)[0]);
+  for (const tag of getCardCacheTags(username)) {
+    revalidateTag(tag);
+  }
   revalidatePath(`/${username}`);
 
   return NextResponse.json({ revalidated: true, username });

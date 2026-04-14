@@ -346,7 +346,7 @@ class TestGenerateGlowupHandler:
         )
 
         redis_client = AsyncMock()
-        redis_client.llen.return_value = 0
+        redis_client.zcard.return_value = 0
         job_repo = MagicMock()
         job_repo.create.return_value = {"id": "job-1"}
         job_repo.insert_usage_event.return_value = {"id": "usage-1"}
@@ -380,6 +380,18 @@ class TestGenerateGlowupHandler:
             )
 
         redis_client.decr.assert_awaited_once_with(f"concurrent:{user_id}")
+
+        # Orphan-job rescue: the job row was created but enqueue failed, so
+        # the endpoint must mark it FAILED/ENQUEUE_FAILED so mobile pollers
+        # get a terminal state instead of spinning on QUEUED forever.
+        update_calls = [
+            c for c in job_repo.update.call_args_list
+            if len(c.args) >= 2 and isinstance(c.args[1], dict)
+        ]
+        assert update_calls, "orphan job row was never updated after enqueue failure"
+        update_payload = update_calls[-1].args[1]
+        assert update_payload.get("status") == "failed"
+        assert update_payload.get("failure_reason") == "ENQUEUE_FAILED"
 
     @pytest.mark.asyncio
     async def test_preflight_failure_releases_concurrent_slot(self, monkeypatch):

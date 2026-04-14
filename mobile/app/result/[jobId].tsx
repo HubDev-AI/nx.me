@@ -39,10 +39,11 @@ import { PressableScale } from "../../components/ui/PressableScale";
 import { QueryStateView } from "../../components/ui/QueryStateView";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
-import { AI_DISCLOSURE } from "../../constants/config";
+import { AI_DISCLOSURE, UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
 import { useAppMutation } from "../../lib/hooks/use-app-mutation";
 import { showToast } from "../../lib/toast";
+import { useAuth } from "../../lib/auth-context";
 
 // ---------------------------------------------------------------------------
 // Terminal statuses — polling stops when job reaches these
@@ -60,6 +61,7 @@ export default function ResultScreen() {
   const { theme } = useTheme();
 
   const [saveState, setSaveState] = useState<SaveState>("pending");
+  const { username } = useAuth();
 
   // Share composite hook — ShareCompositeView must be in the tree
   const { ShareCompositeView, generateAndShare, isCapturing } =
@@ -102,11 +104,20 @@ export default function ResultScreen() {
 
   const handleShare = useCallback(async () => {
     if (!result?.before_image_url || !result.after_image_url) return;
+    // Authenticated users get a clickable link back to their latest card on
+    // the web surface (card-web /{username}). Guests share the PNG only.
+    const shareUrl = username
+      ? `${UNIVERSAL_LINK_ORIGIN}/${username}`
+      : undefined;
     try {
       await generateAndShare({
         beforeUrl: result.before_image_url,
         afterUrl: result.after_image_url,
         rightLabel: "Glow Up",
+        shareUrl,
+        shareMessage: shareUrl
+          ? `My NXME glow-up — ${shareUrl}`
+          : undefined,
       });
     } catch (err) {
       if (err instanceof Error && err.message.includes("timeout")) {
@@ -117,7 +128,7 @@ export default function ResultScreen() {
       }
       // User-cancelled native share sheet — not an error
     }
-  }, [result, generateAndShare]);
+  }, [result, generateAndShare, username]);
 
   const handleTryAnother = useCallback(() => {
     router.replace("/upload");

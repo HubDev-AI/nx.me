@@ -11,18 +11,18 @@ import {
 } from '@/config/constants';
 import { getCardData } from '@/lib/api';
 
-/** ISR: revalidate the page at most every 60 seconds */
+/** ISR: revalidate the page at most every 60 seconds. */
 export const revalidate = CARD_REVALIDATE_SECONDS;
 
 interface PageProps {
-  params: Promise<{ username: string; hash: string }>;
+  params: Promise<{ username: string }>;
 }
 
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const { username, hash } = await params;
-  const card = await getCardData(username, hash);
+  const { username } = await params;
+  const card = await getCardData(username);
 
   if (!card) {
     return {
@@ -32,18 +32,18 @@ export async function generateMetadata({
 
   const title = `${card.display_name}'s Glow-Up | ${SITE_NAME}`;
   const description = `See ${card.display_name}'s before & after glow-up transformation on NXME — ${card.recommendations.length} personalised style improvements.`;
-  const cardUrl = `${SITE_URL}/${card.username}/glow-up/${card.share_hash}`;
+  const canonicalUrl = `${SITE_URL}/${card.username}/glow-up/${card.share_hash}`;
 
   return {
     title,
     description,
     alternates: {
-      canonical: cardUrl,
+      canonical: canonicalUrl,
     },
     openGraph: {
       title,
       description,
-      url: cardUrl,
+      url: canonicalUrl,
       type: 'website',
       images: [
         {
@@ -63,9 +63,9 @@ export async function generateMetadata({
   };
 }
 
-export default async function GlowUpPage({ params }: PageProps) {
-  const { username, hash } = await params;
-  const card = await getCardData(username, hash);
+export default async function UserLatestCardPage({ params }: PageProps) {
+  const { username } = await params;
+  const card = await getCardData(username);
 
   if (!card) {
     notFound();

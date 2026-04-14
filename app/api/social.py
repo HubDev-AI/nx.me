@@ -421,12 +421,19 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
 
     On duplicate (UNIQUE constraint), RPC returns empty set — decrement Redis.
     """
+    # Validate payload BEFORE loading the Supabase client so a malformed
+    # job fails loudly without paying the cost of a DB connection and so
+    # the error isn't masked by an env-loading exception.
+    post_id = reaction_data.get("post_id")
+    if not post_id:
+        logger.error("persist_reaction received payload without post_id: %r", reaction_data)
+        raise ValueError("persist_reaction: post_id is required")
+
     from app.db.client import get_supabase_service
     from app.repositories.feed_repo import FeedRepository
 
     supabase = get_supabase_service()
     feed_repo = FeedRepository(supabase)
-    post_id = reaction_data["post_id"]
 
     try:
         result = await run_sync(

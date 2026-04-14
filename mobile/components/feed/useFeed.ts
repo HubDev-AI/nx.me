@@ -110,6 +110,9 @@ export function useFeed(): UseFeedReturn {
     if (query.hasNextPage && !query.isFetchingNextPage) {
       await query.fetchNextPage();
     }
+    // Intentionally depending on the stable sub-fields we actually read —
+    // including `query` would bust identity on every background refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
 
   const refresh = useCallback(async () => {

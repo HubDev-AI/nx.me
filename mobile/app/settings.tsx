@@ -29,7 +29,7 @@ import { Body, Caption, Label } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { FONTS } from "../hooks/useFonts";
-import { MIN_TOUCH_TARGET } from "../constants/config";
+import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../constants/config";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { showToast } from "../lib/toast";
@@ -71,6 +71,7 @@ export default function SettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const appVersion = Constants?.expoConfig?.version ?? "1.0.0";
 
@@ -101,6 +102,33 @@ export default function SettingsScreen() {
       cancelled = true;
     };
   }, []);
+
+  // -------------------------------------------------------------------------
+  // Logout (best-effort server logout — always clear local tokens)
+  // -------------------------------------------------------------------------
+  const handleLogout = useCallback(() => {
+    Alert.alert(
+      "Log Out",
+      "You'll need to sign in again to access your account.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Log Out",
+          style: "destructive",
+          onPress: async () => {
+            setIsLoggingOut(true);
+            try {
+              await apiFetch<void>(AUTH_ENDPOINTS.LOGOUT, { method: "POST" });
+            } catch {
+              // Network or 401 — proceed with local logout anyway.
+            }
+            await clearAllTokens();
+            setSessionMode("anon");
+          },
+        },
+      ],
+    );
+  }, [setSessionMode]);
 
   // -------------------------------------------------------------------------
   // Delete account
@@ -271,8 +299,33 @@ export default function SettingsScreen() {
             </View>
           </Animated.View>
 
-          {/* ─── Danger Zone ──────────────────────────────────────────── */}
+          {/* ─── Session ──────────────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(160, 240)}>
+            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
+              SESSION
+            </Label>
+            <View style={styles.glassCard}>
+              <Button
+                title="Log Out"
+                onPress={handleLogout}
+                variant="secondary"
+                size="md"
+                block
+                isLoading={isLoggingOut}
+                leftIcon={
+                  <Ionicons
+                    name="log-out-outline"
+                    size={18}
+                    color={theme.accent}
+                  />
+                }
+                accessibilityLabel="Log out of your account"
+              />
+            </View>
+          </Animated.View>
+
+          {/* ─── Danger Zone ──────────────────────────────────────────── */}
+          <Animated.View entering={fadeInDown(200, 240)}>
             <Label color="destructive" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
               DANGER ZONE
             </Label>
