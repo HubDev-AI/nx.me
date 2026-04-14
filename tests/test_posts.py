@@ -141,8 +141,10 @@ class TestPostModels:
             after_image_url="https://cdn.example.com/after.jpg",
             caption="Test",
             created_at="2026-03-17T00:00:00+00:00",
+            share_hash="abc123",
         )
         assert resp.post_id == "p-1"
+        assert resp.share_hash == "abc123"
 
     def test_comment_response_model(self):
         from app.api.posts import CommentResponse

@@ -73,6 +73,7 @@ class PostResponse(BaseModel):
     after_image_url: str
     caption: str | None
     created_at: str
+    share_hash: str
 
 
 class CreateCommentRequest(BaseModel):
@@ -240,6 +241,7 @@ async def create_post(
         after_image_url=after_url,
         caption=body.caption,
         created_at=now_utc,
+        share_hash=post["share_hash"],
     )
     return JSONResponse(
         content=payload.model_dump(),
