@@ -6,7 +6,6 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
-import { registerForPushNotifications } from "../lib/notifications";
 import { setItem } from "../lib/secure-storage";
 import { THEME } from "../constants/theme";
 import { SUCCESS_DARK } from "../constants/colors";
@@ -54,8 +53,6 @@ export default function OnboardingScreen() {
   const [trialRemaining, setTrialRemaining] = useState<number | null>(null);
   const [isLoadingEntitlement, setIsLoadingEntitlement] = useState(true);
   const [entitlementError, setEntitlementError] = useState(false);
-  const [isRequestingPush, setIsRequestingPush] = useState(false);
-  const [pushCompleted, setPushCompleted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,23 +86,6 @@ export default function OnboardingScreen() {
     await setItem("nxme_onboarding_complete", "true");
     router.replace("/(tabs)/create");
   }, [router]);
-
-  const handleEnablePush = useCallback(async () => {
-    setIsRequestingPush(true);
-    try {
-      await registerForPushNotifications();
-      setPushCompleted(true);
-    } catch {
-      // Non-blocking — push is optional
-      setPushCompleted(true);
-    } finally {
-      setIsRequestingPush(false);
-    }
-  }, []);
-
-  const handleSkipPush = useCallback(() => {
-    setPushCompleted(true);
-  }, []);
 
   const trialText = isLoadingEntitlement
     ? "Loading..."
@@ -164,42 +144,6 @@ export default function OnboardingScreen() {
             </View>
           ))}
         </View>
-
-        {!pushCompleted ? (
-          <View style={styles.pushCard}>
-            <View style={styles.pushHeader}>
-              <Ionicons
-                name="notifications-outline"
-                size={24}
-                color={THEME.colors.textPrimary}
-              />
-              <Body weight="semibold" color="primary">
-                Stay in the Loop
-              </Body>
-            </View>
-            <Body color="secondary" style={styles.pushDescription}>
-              Get notified when your glow-up is ready and discover new styles.
-            </Body>
-            <Button
-              title="Enable Notifications"
-              onPress={handleEnablePush}
-              variant="primary"
-              size="md"
-              block
-              isLoading={isRequestingPush}
-              accentColor={theme.accent}
-              haptic="light"
-            />
-            <Button
-              title="Not now"
-              onPress={handleSkipPush}
-              variant="ghost"
-              size="sm"
-              block
-              haptic="none"
-            />
-          </View>
-        ) : null}
 
         <View style={styles.ctaContainer}>
           <Button
@@ -294,24 +238,6 @@ const styles = StyleSheet.create({
   featureTextContainer: {
     flex: 1,
     gap: THEME.spacing.xs,
-  },
-  pushCard: {
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderCurve: "continuous",
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.xxl,
-    marginBottom: THEME.spacing.xxxl,
-    gap: THEME.spacing.md,
-  },
-  pushHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-  },
-  pushDescription: {
-    marginBottom: THEME.spacing.xs,
   },
   ctaContainer: {
     marginBottom: THEME.spacing.lg,

@@ -7,10 +7,33 @@ methods are synchronous (callers use run_sync for async handlers).
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on rows fetched when aggregating latest-post-per-user for the
+# public-cards listing. Sized to handle ~10k users with avg 10 posts each.
+# The endpoint's sole consumer is the card-web sitemap (low frequency, ISR
+# cached for 24h). TODO: replace this Python-side aggregation with a Postgres
+# RPC (SELECT username, MAX(updated_at) ... GROUP BY user_id) once the user
+# base approaches this cap.
+_PUBLIC_USER_CURSOR_FETCH_CAP = 100_000
+
+
+def _parse_iso_datetime(value: str | datetime) -> datetime:
+    """Coerce a Supabase timestamp value to ``datetime``.
+
+    supabase-py returns JSON strings for ``timestamptz`` columns; tests
+    occasionally pass native ``datetime`` instances. Handles both.
+    """
+    if isinstance(value, datetime):
+        return value
+    # Postgres emits "+00:00"; datetime.fromisoformat accepts that in 3.11+.
+    # Trailing "Z" is tolerated for safety.
+    normalised = value.replace("Z", "+00:00") if value.endswith("Z") else value
+    return datetime.fromisoformat(normalised)
 
 
 class PostRepository:
@@ -59,6 +82,95 @@ class PostRepository:
             .execute()
         )
         return result.data if result else None
+
+    def list_public_user_cursor(
+        self,
+        cursor: tuple[datetime, str] | None,
+        limit: int,
+    ) -> list[dict]:
+        """Return the next page of users with at least one non-deleted post.
+
+        Each result has shape ``{"username": str, "updated_at": datetime}`` where
+        ``updated_at`` is the max(posts.updated_at) across that user's
+        non-deleted posts. Results are sorted ``(updated_at DESC, username ASC)``
+        for stable keyset pagination — ``username`` is the tie-breaker.
+
+        The cursor is a strict upper bound: the returned rows satisfy
+        ``(updated_at, username) < cursor`` in lexicographic order.
+
+        The returned list length is at most ``limit + 1`` — the caller uses the
+        extra row (if present) to derive ``next_cursor`` without a second query.
+
+        Implementation note: the supabase-py client does not expose SQL
+        ``GROUP BY``, so aggregation happens in Python. The upstream query
+        uses a PostgREST inner-join to exclude soft-deleted users at the DB
+        layer. An upper-bound fetch cap guards against runaway memory — the
+        sole caller is the card-web sitemap (a single low-frequency reader).
+
+        Known boundary quirk: because the pre-filter is ``lte(updated_at)``
+        (not a tuple filter, which PostgREST does not express), a user whose
+        newest post lands between page fetches can reappear on a later page
+        with a stale ``updated_at``. Acceptable for the sitemap caller —
+        Google dedupes URLs and uses the fresher ``lastmod`` — but **do not**
+        reuse this method for a general listing without replacing it with a
+        DB-side aggregation.
+        """
+        cursor_updated_at, cursor_username = (
+            cursor if cursor is not None else (None, None)
+        )
+
+        query = (
+            self._sb.table("posts")
+            .select("user_id, updated_at, users!inner(username, deleted_at)")
+            .eq("is_deleted", False)
+            .is_("users.deleted_at", "null")
+            .order("updated_at", desc=True)
+        )
+
+        # Cursor pre-filter: rows strictly before the cursor's updated_at are
+        # definitely in scope. Rows equal to the cursor's updated_at need the
+        # tuple tie-break applied in Python (after aggregation).
+        if cursor_updated_at is not None:
+            query = query.lte("updated_at", cursor_updated_at.isoformat())
+
+        query = query.limit(_PUBLIC_USER_CURSOR_FETCH_CAP)
+        rows = query.execute().data or []
+
+        # Fold posts → latest per user (username, max updated_at).
+        latest: dict[str, tuple[str, datetime]] = {}
+        for row in rows:
+            user_id = row.get("user_id")
+            updated_at_raw = row.get("updated_at")
+            user_obj = row.get("users") or {}
+            username = user_obj.get("username")
+            if not user_id or not updated_at_raw or not username:
+                continue
+            # supabase returns ISO-8601 strings; normalise to datetime for comparison.
+            updated_at = _parse_iso_datetime(updated_at_raw)
+            current = latest.get(user_id)
+            if current is None or updated_at > current[1]:
+                latest[user_id] = (username, updated_at)
+
+        # Sort: updated_at DESC, username ASC.
+        sorted_items = sorted(
+            latest.values(),
+            key=lambda item: (-item[1].timestamp(), item[0]),
+        )
+
+        # Apply strict cursor tuple filter after aggregation.
+        if cursor is not None:
+            sorted_items = [
+                item
+                for item in sorted_items
+                if (item[1], item[0]) < (cursor_updated_at, cursor_username)
+            ]
+
+        # Return limit + 1 so the caller can compute next_cursor.
+        page = sorted_items[: limit + 1]
+        return [
+            {"username": username, "updated_at": updated_at}
+            for username, updated_at in page
+        ]
 
     def get_post_with_ownership(self, post_id: str) -> dict | None:
         """Fetch post id, user_id, is_deleted fields for ownership checks."""

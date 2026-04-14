@@ -11,7 +11,10 @@ removed from Supabase storage (raw-selfies bucket). The uploads.image_url
 column stores the storage key directly (e.g. "{user_id}/{upload_id}.jpg"),
 not a full HTTPS URL — so no URL parsing is needed.
 
-Scheduling: nightly cron at 03:00 UTC (configured in app/worker_settings.py).
+Scheduling: nightly cron at 03:30 UTC (configured in app/worker_settings.py).
+Runs 30 minutes after ``reconcile_reaction_counts`` at 03:00 UTC. If
+reconcile is still running when retention fires, retention skips this tick —
+it checks the shared ``RECONCILE_LOCK_KEY`` mutex before doing any work.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import logging
 
 from supabase import Client
 
+from app.api.social import RECONCILE_LOCK_KEY
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,12 +33,23 @@ async def run_retention(ctx: dict) -> None:
     """ARQ cron task: enforce upload and job retention policies.
 
     Steps:
-    1. Delete unsaved jobs beyond RETENTION_JOB_DAYS (independent of uploads).
-    2. Collect image_url values for uploads past RETENTION_UPLOAD_DAYS.
-    3. Delete those uploads (CASCADE removes glowup_analyses + orphaned jobs).
-    4. Remove the corresponding storage blobs from the raw-selfies bucket.
-    5. Log counts for observability.
+    1. Honour the reconcile-cron mutex — skip entirely if reconcile is
+       still running (prevents racing on tables reconcile touches).
+    2. Delete unsaved jobs beyond RETENTION_JOB_DAYS (independent of uploads).
+    3. Collect image_url values for uploads past RETENTION_UPLOAD_DAYS.
+    4. Delete those uploads (CASCADE removes glowup_analyses + orphaned jobs).
+    5. Remove the corresponding storage blobs from the raw-selfies bucket.
+    6. Log counts for observability.
     """
+    redis_client = ctx.get("redis")
+
+    if redis_client is not None:
+        if await redis_client.get(RECONCILE_LOCK_KEY) is not None:
+            logger.warning(
+                "retention skipped: reconcile lock %s held", RECONCILE_LOCK_KEY
+            )
+            return
+
     supabase: Client = ctx["supabase"]
 
     # ------------------------------------------------------------------

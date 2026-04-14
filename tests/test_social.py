@@ -235,3 +235,117 @@ class TestPersistReaction:
             asyncio.get_event_loop().run_until_complete(
                 persist_reaction({}, {"post_id": "", "user_id": "u1"})
             )
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="StrEnum requires 3.11+")
+class TestReconcileReactionLock:
+    """Redis mutex behaviour in reconcile_reaction_counts — guards against
+    racing the 03:30 UTC retention cron when reconcile hangs past its slot."""
+
+    def _patch_feed_repo(self, monkeypatch, updated_rows=None):
+        """Replace FeedRepository + get_supabase_service with stand-ins so
+        reconcile_reaction_counts never touches the real DB."""
+        rows = updated_rows or []
+
+        monkeypatch.setattr("app.api.social.run_sync", AsyncMock(return_value=rows))
+
+        class _FakeFeedRepo:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            # run_sync(feed_repo.reconcile_reaction_counts, cutoff) evaluates
+            # the attribute before awaiting, so the method must exist even
+            # though run_sync is mocked.
+            def reconcile_reaction_counts(self, *_args, **_kwargs):
+                return rows
+
+        # The function re-imports inside the body — patch the package exports.
+        import app.db.client
+        import app.repositories.feed_repo
+
+        monkeypatch.setattr(app.db.client, "get_supabase_service", lambda: object())
+        monkeypatch.setattr(app.repositories.feed_repo, "FeedRepository", _FakeFeedRepo)
+
+    def test_lock_is_acquired_and_released_on_success(self, monkeypatch):
+        from app.api.social import RECONCILE_LOCK_KEY, reconcile_reaction_counts
+        from app.config import settings
+
+        self._patch_feed_repo(monkeypatch, updated_rows=[])
+
+        redis_mock = AsyncMock()
+        redis_mock.set = AsyncMock(return_value=True)
+        redis_mock.delete = AsyncMock(return_value=1)
+
+        asyncio.get_event_loop().run_until_complete(
+            reconcile_reaction_counts({"redis": redis_mock})
+        )
+
+        # Lock acquired exactly once with NX + TTL from config.
+        redis_mock.set.assert_called_once_with(
+            RECONCILE_LOCK_KEY,
+            "1",
+            nx=True,
+            ex=settings.RECONCILE_LOCK_TTL_SECONDS,
+        )
+        # Released in finally — so the retention cron can run next tick.
+        redis_mock.delete.assert_any_call(RECONCILE_LOCK_KEY)
+
+    def test_skips_when_lock_already_held(self, monkeypatch):
+        """SET NX returning False → log warning and return without work."""
+        from app.api.social import reconcile_reaction_counts
+
+        # run_sync should not be called at all — but we patch it to detect.
+        run_sync_mock = AsyncMock()
+        monkeypatch.setattr("app.api.social.run_sync", run_sync_mock)
+
+        redis_mock = AsyncMock()
+        redis_mock.set = AsyncMock(return_value=False)  # lock busy
+        redis_mock.delete = AsyncMock(return_value=0)
+
+        asyncio.get_event_loop().run_until_complete(
+            reconcile_reaction_counts({"redis": redis_mock})
+        )
+
+        run_sync_mock.assert_not_awaited()
+        # No delete because we never acquired the lock.
+        redis_mock.delete.assert_not_called()
+
+    def test_lock_released_even_when_body_raises(self, monkeypatch):
+        """An exception inside the try-block must not leak the lock."""
+        from app.api.social import RECONCILE_LOCK_KEY, reconcile_reaction_counts
+
+        async def _boom(*_args, **_kwargs):
+            raise RuntimeError("feed repo exploded")
+
+        # Acquire succeeds, then run_sync raises.
+        monkeypatch.setattr("app.api.social.run_sync", _boom)
+
+        import app.db.client
+
+        monkeypatch.setattr(app.db.client, "get_supabase_service", lambda: object())
+
+        redis_mock = AsyncMock()
+        redis_mock.set = AsyncMock(return_value=True)
+        redis_mock.delete = AsyncMock(return_value=1)
+
+        with pytest.raises(RuntimeError):
+            asyncio.get_event_loop().run_until_complete(
+                reconcile_reaction_counts({"redis": redis_mock})
+            )
+
+        # Finally ran → lock released.
+        redis_mock.delete.assert_any_call(RECONCILE_LOCK_KEY)
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="StrEnum requires 3.11+")
+class TestReconcileLockConstants:
+    def test_ttl_exposed_on_settings(self):
+        from app.config import settings
+
+        assert hasattr(settings, "RECONCILE_LOCK_TTL_SECONDS")
+        assert settings.RECONCILE_LOCK_TTL_SECONDS == 1800
+
+    def test_lock_key_is_module_constant(self):
+        from app.api.social import RECONCILE_LOCK_KEY
+
+        assert RECONCILE_LOCK_KEY == "cron:reconcile_reactions:lock"

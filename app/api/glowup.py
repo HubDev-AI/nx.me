@@ -39,25 +39,13 @@ from app.entitlement.models import (
 )
 from app.entitlement.service import EntitlementService
 from app.generation.cost_tracker import CostTracker
-from app.generation.models import (
-    JobStatus,
-    LANE_CREDIT,
-    LANE_PREMIUM,
-    LANE_TRIAL,
-)
+from app.generation.models import JobStatus
 from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
 from app.services.glowup_service import GlowupService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["glowup"])
-
-# Maps tier slug → queue lane
-_SLUG_TO_LANE: dict[str, str] = {
-    "free": LANE_TRIAL,
-    "credits": LANE_CREDIT,
-    "premium": LANE_PREMIUM,
-}
 
 # Maps tier slug → public display name (for API responses)
 _SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
@@ -227,6 +215,7 @@ async def _check_idempotency(
 )
 async def analyze_glowup(
     upload_id: UUID,
+    request: Request,
     claims: UserClaims = Depends(get_user_or_guest),
     glowup_svc: GlowupService = Depends(get_glowup_service),
 ) -> AnalyzeResponse:
@@ -279,6 +268,22 @@ async def analyze_glowup(
         logger.warning(
             "Analytics emit failed for glowup_analyze_completed", exc_info=True
         )
+
+    # Advisor: schedule a post-analysis nudge. ARQ-dispatched so the
+    # endpoint does not block on LLM latency. Any failure (pool missing,
+    # queue unavailable) is swallowed — a missed nudge must never turn a
+    # successful analysis into a 5xx.
+    if settings.ADVISOR_ENABLED:
+        try:
+            await request.app.state.arq_pool.enqueue_job(
+                "schedule_post_analysis_nudge", user_id
+            )
+        except Exception:
+            logger.warning(
+                "Failed to enqueue post-analysis nudge for user %s",
+                user_id,
+                exc_info=True,
+            )
 
     return AnalyzeResponse(
         glowup_analysis_id=str(result.glowup_analysis_id),
@@ -418,12 +423,10 @@ async def generate_glowup(
         cost_tracker = CostTracker(redis_client)
         tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
 
-        queue_lane = _SLUG_TO_LANE.get(tier.slug, LANE_TRIAL)
         tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
-        # ARQ stores pending jobs in a sorted set at the queue name
-        # (default "arq:queue"); LLEN on a ZSET returns 0, so the previous
-        # "arq:queue:{queue_lane}" key always reported 0 depth. Until the
-        # multi-queue worker lands, report the actual shared queue depth.
+        # ARQ stores pending jobs in a sorted set at the default queue name
+        # ("arq:queue"); the unified worker only consumes from this queue,
+        # so the shared depth is the true wait signal.
         raw_position = await redis_client.zcard("arq:queue")
         if raw_position <= 5:
             queue_position = raw_position
@@ -507,10 +510,9 @@ async def generate_glowup(
         raise
 
     logger.info(
-        "Generation job %s enqueued for user %s on lane %s (upload=%s, analysis=%s)",
+        "Generation job %s enqueued for user %s (upload=%s, analysis=%s)",
         job_id,
         user_id_str,
-        queue_lane,
         upload_id,
         analysis["id"],
     )

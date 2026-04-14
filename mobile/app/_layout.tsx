@@ -18,7 +18,6 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import type { SessionMode } from "../lib/session";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
 import { ConsentProvider } from "../lib/consent-context";
-import { registerForPushNotifications } from "../lib/notifications";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
 import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS, DEV_FEATURE_FOCUS } from "../constants/config";
@@ -159,11 +158,8 @@ export default function RootLayout() {
         authed = Boolean(await restoreStoredSession());
       }
 
-      // 3. Non-critical init — never blocks auth. Guest token provisioning
-      //    now happens inside AuthGuard once feature flags resolve, so we
-      //    avoid hitting POST /auth/guest when auth is required.
-      registerForPushNotifications().catch((err) => { if (__DEV__) console.warn("Push notification registration failed:", err); });
-
+      // Guest token provisioning happens inside AuthGuard once feature flags
+      // resolve, so we avoid hitting POST /auth/guest when auth is required.
       setInitialMode(authed ? "user" : "anon");
     }
 

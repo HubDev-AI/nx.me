@@ -168,6 +168,18 @@ class TestGlowupResponseModels:
 # ---------------------------------------------------------------------------
 
 
+def _make_analyze_request(enqueue_job=None) -> MagicMock:
+    """Build a Request double with an arq_pool on app.state.
+
+    Handler path uses `request.app.state.arq_pool.enqueue_job(...)`. When
+    `enqueue_job` is None, success-path tests don't care about the call
+    record; a default AsyncMock is fine.
+    """
+    request = MagicMock()
+    request.app.state.arq_pool.enqueue_job = enqueue_job or AsyncMock()
+    return request
+
+
 class TestAnalyzeGlowupHandler:
     """Handler-level tests for POST /uploads/{id}/glowup/analyze."""
 
@@ -181,6 +193,7 @@ class TestAnalyzeGlowupHandler:
 
         result = await analyze_glowup(
             upload_id=upload_id,
+            request=_make_analyze_request(),
             claims=claims,
             glowup_svc=glowup_svc,
         )
@@ -210,6 +223,7 @@ class TestAnalyzeGlowupHandler:
         with pytest.raises(HTTPException) as exc_info:
             await analyze_glowup(
                 upload_id=uuid4(),
+                request=_make_analyze_request(),
                 claims=claims,
                 glowup_svc=glowup_svc,
             )
@@ -232,6 +246,7 @@ class TestAnalyzeGlowupHandler:
         with pytest.raises(HTTPException) as exc_info:
             await analyze_glowup(
                 upload_id=uuid4(),
+                request=_make_analyze_request(),
                 claims=claims,
                 glowup_svc=glowup_svc,
             )
@@ -254,11 +269,67 @@ class TestAnalyzeGlowupHandler:
         with pytest.raises(HTTPException) as exc_info:
             await analyze_glowup(
                 upload_id=uuid4(),
+                request=_make_analyze_request(),
                 claims=claims,
                 glowup_svc=glowup_svc,
             )
 
         assert exc_info.value.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_enqueues_post_analysis_nudge_on_success(self, monkeypatch):
+        """ADVISOR_ENABLED=True: successful analysis enqueues the nudge job."""
+        monkeypatch.setattr("app.api.glowup.settings.ADVISOR_ENABLED", True)
+
+        user_id = str(uuid4())
+        enqueue_job = AsyncMock()
+        request = _make_analyze_request(enqueue_job=enqueue_job)
+
+        await analyze_glowup(
+            upload_id=uuid4(),
+            request=request,
+            claims=_make_claims(user_id),
+            glowup_svc=_make_glowup_service(),
+        )
+
+        enqueue_job.assert_awaited_once_with(
+            "schedule_post_analysis_nudge", user_id
+        )
+
+    @pytest.mark.asyncio
+    async def test_skips_nudge_when_advisor_disabled(self, monkeypatch):
+        """ADVISOR_ENABLED=False: handler must not touch arq_pool."""
+        monkeypatch.setattr("app.api.glowup.settings.ADVISOR_ENABLED", False)
+
+        enqueue_job = AsyncMock()
+        request = _make_analyze_request(enqueue_job=enqueue_job)
+
+        await analyze_glowup(
+            upload_id=uuid4(),
+            request=request,
+            claims=_make_claims(),
+            glowup_svc=_make_glowup_service(),
+        )
+
+        enqueue_job.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_nudge_enqueue_failure_does_not_fail_request(self, monkeypatch):
+        """enqueue_job raising must not bubble — analysis still returns 201."""
+        monkeypatch.setattr("app.api.glowup.settings.ADVISOR_ENABLED", True)
+
+        enqueue_job = AsyncMock(side_effect=RuntimeError("queue down"))
+        request = _make_analyze_request(enqueue_job=enqueue_job)
+
+        result = await analyze_glowup(
+            upload_id=uuid4(),
+            request=request,
+            claims=_make_claims(),
+            glowup_svc=_make_glowup_service(face_shape="oval"),
+        )
+
+        assert result.face_shape == "oval"
+        enqueue_job.assert_awaited_once()
 
 
 class TestGenerateGlowupHandler:

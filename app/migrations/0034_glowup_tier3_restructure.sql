@@ -70,7 +70,7 @@ CREATE TABLE jobs (
     user_id                 UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     source_type             TEXT         NOT NULL,
     source_id               UUID         NOT NULL,
-    status                  TEXT         NOT NULL DEFAULT 'pending',
+    status                  TEXT         NOT NULL DEFAULT 'queued',
     before_image_url        TEXT,
     after_image_url         TEXT,
     failure_reason          TEXT,
@@ -82,7 +82,7 @@ CREATE TABLE jobs (
     CONSTRAINT jobs_source_type_check
         CHECK (source_type IN ('glowup_analysis','makeup_session')),
     CONSTRAINT jobs_status_check
-        CHECK (status IN ('pending','queued','processing','finalizing','completed','failed','cancelled')),
+        CHECK (status IN ('queued','processing','finalizing','completed','failed','cancelled')),
     CONSTRAINT jobs_failure_reason_check
         CHECK (failure_reason IS NULL OR failure_reason IN (
             'FACE_VALIDATION_FAILED','GENERATION_TIMEOUT','NSFW_QUARANTINE',
@@ -96,7 +96,7 @@ CREATE UNIQUE INDEX idx_jobs_user_idempotency ON jobs (user_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 CREATE        INDEX idx_jobs_source             ON jobs (source_type, source_id);
 CREATE        INDEX idx_jobs_status_updated     ON jobs (status, updated_at)
-    WHERE status IN ('pending','queued','processing','finalizing');
+    WHERE status IN ('queued','processing','finalizing');
 CREATE        INDEX idx_jobs_saved_at           ON jobs (saved_at)
     WHERE saved_at IS NOT NULL;
 CREATE        INDEX idx_jobs_user_id_created    ON jobs (user_id, created_at DESC);

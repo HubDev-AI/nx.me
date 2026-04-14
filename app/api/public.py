@@ -1,5 +1,9 @@
 """Public (no-auth) API — Story 6-1: Shareable Card.
 
+GET /api/public/cards
+  Returns a cursor-paginated list of users with at least one public card.
+  Sole consumer: card-web sitemap.
+
 GET /api/public/cards/{username}
   Returns the latest published post for the given username.
 
@@ -13,9 +17,13 @@ GET /api/public/cards/{username}/{share_hash}
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import logging
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.api.deps import (
@@ -33,6 +41,19 @@ from app.repositories.user_repo import UserRepository
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["public"])
+
+# Keyset pagination bounds for GET /public/cards — the sitemap fetches in
+# 1000-user pages.
+PUBLIC_CARDS_MIN_PER_PAGE = 1
+PUBLIC_CARDS_MAX_PER_PAGE = 1000
+PUBLIC_CARDS_DEFAULT_PER_PAGE = 1000
+
+# Cursor encoding: urlsafe base64 of JSON ``{"u": <iso8601>, "n": <username>}``.
+_CURSOR_KEY_UPDATED_AT = "u"
+_CURSOR_KEY_USERNAME = "n"
+# Real cursors are ~80 chars; cap raw input at 1 KiB to block pathological
+# base64 payloads before we allocate for decode/json.loads.
+_CURSOR_MAX_RAW_LEN = 1024
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +77,68 @@ class CardResponse(BaseModel):
     recommendations: list[RecommendationItem]
     reaction_count: int
     comment_count: int
+
+
+class PublicCardListItem(BaseModel):
+    username: str
+    updated_at: datetime
+
+
+class PublicCardListResponse(BaseModel):
+    items: list[PublicCardListItem]
+    next_cursor: str | None
+
+
+# ---------------------------------------------------------------------------
+# Cursor helpers
+# ---------------------------------------------------------------------------
+
+
+def _encode_cursor(updated_at: datetime, username: str) -> str:
+    """Encode a ``(updated_at, username)`` pair as an urlsafe-base64 JSON blob."""
+    payload = json.dumps(
+        {
+            _CURSOR_KEY_UPDATED_AT: updated_at.isoformat(),
+            _CURSOR_KEY_USERNAME: username,
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).rstrip(b"=").decode("ascii")
+
+
+def _decode_cursor(raw: str) -> tuple[datetime, str]:
+    """Decode an urlsafe-base64 JSON cursor into ``(updated_at, username)``.
+
+    Raises ``HTTPException(400)`` when the cursor is structurally invalid —
+    malformed base64, malformed JSON, missing keys, or an unparseable timestamp.
+    Real cursors are ~80 chars; a 1 KiB ceiling blocks pathological payloads.
+    """
+    if len(raw) > _CURSOR_MAX_RAW_LEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed cursor",
+        )
+    try:
+        padding = "=" * (-len(raw) % 4)
+        decoded = base64.urlsafe_b64decode(raw + padding)
+        payload = json.loads(decoded)
+        updated_at_raw = payload[_CURSOR_KEY_UPDATED_AT]
+        username = payload[_CURSOR_KEY_USERNAME]
+        if not isinstance(updated_at_raw, str) or not isinstance(username, str):
+            raise ValueError("cursor fields must be strings")
+        updated_at = datetime.fromisoformat(updated_at_raw)
+    except (
+        binascii.Error,
+        ValueError,
+        KeyError,
+        json.JSONDecodeError,
+        TypeError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Malformed cursor",
+        ) from exc
+    return updated_at, username
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +168,48 @@ async def _fetch_recommendations(
     if not analysis:
         return []
     return analysis.get("recommendations") or []
+
+
+# ---------------------------------------------------------------------------
+# GET /public/cards — paginated listing (card-web sitemap)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/public/cards", response_model=PublicCardListResponse)
+async def list_public_cards(
+    cursor: str | None = None,
+    per_page: int = Query(
+        PUBLIC_CARDS_DEFAULT_PER_PAGE,
+        ge=PUBLIC_CARDS_MIN_PER_PAGE,
+        le=PUBLIC_CARDS_MAX_PER_PAGE,
+    ),
+    post_repo: PostRepository = Depends(get_post_repo),
+) -> PublicCardListResponse:
+    """List users with at least one public card, sorted by recency.
+
+    Cursor-paginated keyset over ``(max(post.updated_at), username)``. The
+    endpoint is unauthenticated — its sole consumer is the card-web sitemap.
+    """
+    decoded_cursor = _decode_cursor(cursor) if cursor else None
+
+    rows = await run_sync(
+        post_repo.list_public_user_cursor,
+        decoded_cursor,
+        per_page,
+    )
+
+    # The repo returns up to per_page+1 rows. The extra row signals a next page.
+    next_cursor: str | None = None
+    if len(rows) > per_page:
+        last = rows[per_page - 1]
+        next_cursor = _encode_cursor(last["updated_at"], last["username"])
+        rows = rows[:per_page]
+
+    items = [
+        PublicCardListItem(username=row["username"], updated_at=row["updated_at"])
+        for row in rows
+    ]
+    return PublicCardListResponse(items=items, next_cursor=next_cursor)
 
 
 # ---------------------------------------------------------------------------

@@ -29,7 +29,6 @@ export const SECURE_STORE_KEYS = {
   GUEST_TOKEN: "nxme_guest_token",
   JWT: "nxme_jwt",
   REFRESH_TOKEN: "nxme_refresh_token",
-  PUSH_TOKEN: "nxme_push_token",
   /** Set to "1" after registration when email_verification_required is true */
   PENDING_EMAIL_VERIFICATION: "nxme_pending_email_verification",
 } as const;

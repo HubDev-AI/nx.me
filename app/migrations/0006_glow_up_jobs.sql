@@ -12,8 +12,6 @@
 ALTER TABLE glow_up_jobs
     ADD COLUMN IF NOT EXISTS original_image_id       UUID REFERENCES images(id),
     ADD COLUMN IF NOT EXISTS generated_image_id      UUID REFERENCES images(id),
-    ADD COLUMN IF NOT EXISTS queue_lane              TEXT
-                                                     CHECK (queue_lane IN ('generation:premium', 'generation:credit', 'generation:trial')),
     ADD COLUMN IF NOT EXISTS prompt_mode             TEXT
                                                      CHECK (prompt_mode IN ('everyday', 'polished', 'editorial')),
     ADD COLUMN IF NOT EXISTS prompt_text             TEXT,
@@ -43,14 +41,6 @@ ALTER TABLE glow_up_jobs
         'CANCELLED',
         'QUEUE_FULL'
     ));
-
--- Indexes for the new queue/status access patterns.
--- The 0001 migration already created idx_jobs_user_id, idx_jobs_status,
--- idx_jobs_watchdog — create only the new ones here.
-
-CREATE INDEX IF NOT EXISTS idx_glow_up_jobs_queue_lane
-    ON glow_up_jobs (queue_lane, created_at DESC)
-    WHERE status IN ('pending', 'queued');
 
 -- Prompt A/B testing experiments
 CREATE TABLE IF NOT EXISTS prompt_experiments (
@@ -83,7 +73,6 @@ CREATE INDEX IF NOT EXISTS idx_prompt_exp_mode
 
 DROP INDEX IF EXISTS idx_prompt_exp_mode;
 DROP TABLE IF EXISTS prompt_experiments;
-DROP INDEX IF EXISTS idx_glow_up_jobs_queue_lane;
 
 -- Restore the original failure_reason constraint from 0001.
 ALTER TABLE glow_up_jobs
@@ -104,6 +93,5 @@ ALTER TABLE glow_up_jobs
     DROP COLUMN IF EXISTS negative_prompt_text,
     DROP COLUMN IF EXISTS prompt_text,
     DROP COLUMN IF EXISTS prompt_mode,
-    DROP COLUMN IF EXISTS queue_lane,
     DROP COLUMN IF EXISTS generated_image_id,
     DROP COLUMN IF EXISTS original_image_id;

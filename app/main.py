@@ -228,13 +228,17 @@ def create_app() -> FastAPI:
     # Admin endpoints — unversioned, keyed by X-Admin-Key header
     app.include_router(admin.router)
 
-    # Public endpoints — no auth, no versioning, under /api prefix
+    # Public endpoints — no auth, no versioning, under /api prefix (legacy).
     app.include_router(public.router, prefix="/api")
 
     # All API routes under /v1 prefix — single place to manage API version
     from fastapi import APIRouter
 
     v1 = APIRouter(prefix="/v1")
+    # Re-mount the public router under /v1 so new consumers (card-web
+    # sitemap) can use the versioned path. The /api mount above is kept for
+    # backwards compatibility with already-shipped mobile builds.
+    v1.include_router(public.router)
     v1.include_router(features.router)  # public — no auth required
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
