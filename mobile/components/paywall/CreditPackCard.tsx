@@ -15,7 +15,7 @@ import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
-import { Caption } from "../ui/Text";
+import { Body, Caption } from "../ui/Text";
 import { formatPrice } from "../../lib/format-price";
 import type { CreditPackOption } from "../../lib/entitlement";
 
@@ -56,7 +56,6 @@ export function CreditPackCard({
     onPurchase(pack);
   }, [onPurchase, pack]);
 
-  const displayCredits = pack.credits;
   const formattedPrice = formatPrice(pack.amount_cents, pack.currency);
 
   return (
@@ -73,7 +72,7 @@ export function CreditPackCard({
         onPressOut={handlePressOut}
         disabled={isDisabled}
         style={styles.container}
-        accessibilityLabel={`Purchase ${displayCredits} credits for ${formattedPrice}`}
+        accessibilityLabel={`Purchase ${pack.credits} credits for ${formattedPrice}`}
         accessibilityRole="button"
         accessibilityState={{ disabled: isDisabled, busy: isLoading }}
       >
@@ -83,8 +82,9 @@ export function CreditPackCard({
             size={24}
             color={THEME.colors.creditAccent}
           />
-          <Text style={styles.creditCount}>{displayCredits}</Text>
-          <Text style={styles.label}>credits</Text>
+          {/* Numeric count — keeps tabular-nums + custom bold face. */}
+          <Text style={styles.creditCount}>{pack.credits}</Text>
+          <Caption weight="medium">credits</Caption>
           <Caption style={styles.priceSeparator}>·</Caption>
           <Caption weight="medium" style={styles.price}>
             {formattedPrice}
@@ -98,7 +98,9 @@ export function CreditPackCard({
             isDisabled && styles.buyButtonDisabled,
           ]}
         >
-          <Text style={styles.buyText}>Buy</Text>
+          <Body weight="bold" color={THEME.colors.bg} style={styles.buyText}>
+            Buy
+          </Body>
         </View>
       </Pressable>
     </Animated.View>
@@ -132,11 +134,6 @@ const styles = StyleSheet.create({
     color: THEME.colors.textPrimary,
     fontSize: 18,
   },
-  label: {
-    fontFamily: FONTS.bodyMedium,
-    color: THEME.colors.textSecondary,
-    fontSize: 14,
-  },
   priceSeparator: {
     color: THEME.colors.textMuted,
   },
@@ -155,8 +152,6 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   buyText: {
-    fontFamily: FONTS.bodyBold,
-    color: THEME.colors.bg,
     fontSize: 14,
   },
 });

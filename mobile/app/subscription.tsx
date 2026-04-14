@@ -37,6 +37,7 @@ import {
 import { PlanCard, PlanCardSkeleton } from "../components/subscription/PlanCard";
 import { PremiumUpsell } from "../components/subscription/PremiumUpsell";
 import { CreditPackGrid } from "../components/subscription/CreditPackGrid";
+import { CancelSubscriptionSheet } from "../components/subscription/CancelSubscriptionSheet";
 import {
   SubscriptionEmptyHint,
   SubscriptionErrorState,
@@ -69,10 +70,13 @@ export default function SubscriptionScreen() {
     error,
     purchasingId,
     isCancelling,
+    isCancelSheetOpen,
     refresh,
     buyCredits,
     subscribe,
-    cancel,
+    openCancelSheet,
+    dismissCancelSheet,
+    confirmCancel,
   } = usePurchaseFlow();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -150,7 +154,7 @@ export default function SubscriptionScreen() {
             <PlanCard
               entitlement={entitlement}
               isCancelling={isCancelling}
-              onCancel={cancel}
+              onCancel={openCancelSheet}
             />
           </Animated.View>
 
@@ -200,6 +204,14 @@ export default function SubscriptionScreen() {
           <ActivityIndicator color={THEME.colors.textSecondary} size="small" />
         </View>
       )}
+
+      <CancelSubscriptionSheet
+        visible={isCancelSheetOpen}
+        isCancelling={isCancelling}
+        billingPeriodEnd={entitlement?.billing_period_end ?? null}
+        onConfirm={confirmCancel}
+        onDismiss={dismissCancelSheet}
+      />
     </View>
   );
 }

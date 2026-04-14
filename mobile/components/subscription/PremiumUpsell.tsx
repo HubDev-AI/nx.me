@@ -8,7 +8,7 @@
  * Billing interval assumption matches `PremiumCard`: hardcoded
  * monthly until backend exposes `recurring.interval`.
  */
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -16,9 +16,21 @@ import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { Body, Heading, Label } from "../ui/Text";
 import { PressableScale } from "../ui/PressableScale";
 import { useTheme } from "../../lib/theme-context";
-import { FONTS } from "../../hooks/useFonts";
 import { formatPrice } from "../../lib/format-price";
+import { PREMIUM_BENEFITS } from "../../constants/premium-benefits";
 import type { PremiumOption } from "../../lib/entitlement";
+
+/**
+ * Prose form of PREMIUM_BENEFITS — keeps copy in lock-step with
+ * `PremiumCard`. Bullets are joined with ", " and the last with "and".
+ */
+const PREMIUM_BENEFITS_PROSE = (() => {
+  const [first, ...rest] = PREMIUM_BENEFITS;
+  const lowercased = [first.charAt(0).toLowerCase() + first.slice(1), ...rest];
+  if (lowercased.length <= 1) return `${lowercased[0] ?? ""}.`;
+  const head = lowercased.slice(0, -1).join(", ");
+  return `${head}, and ${lowercased[lowercased.length - 1]}.`;
+})();
 
 /** Suffix appended to the Premium price (e.g. "/mo"). Monthly-only for now. */
 const BILLING_INTERVAL_SUFFIX = "/mo";
@@ -76,8 +88,7 @@ export function PremiumUpsell({
           Go Unlimited
         </Heading>
         <Body color="secondary" style={styles.description}>
-          Unlimited glow-up analyses, priority processing, and access to Ada
-          AI advisor chat.
+          Get {PREMIUM_BENEFITS_PROSE}
         </Body>
         <Body weight="semibold" color={theme.accent} style={styles.price}>
           {premium.name} · {formattedPrice}
@@ -88,7 +99,9 @@ export function PremiumUpsell({
           {isSubscribing ? (
             <ActivityIndicator color={THEME.colors.bg} size="small" />
           ) : (
-            <Text style={styles.buttonText}>Subscribe Now</Text>
+            <Body weight="medium" color={THEME.colors.bg} style={styles.buttonText}>
+              Subscribe Now
+            </Body>
           )}
         </View>
       </PressableScale>
@@ -135,8 +148,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   buttonText: {
-    fontFamily: FONTS.bodyMedium,
     fontSize: BUTTON_FONT_SIZE,
-    color: THEME.colors.bg,
   },
 });

@@ -4,14 +4,13 @@
  * Kept together because both render small status-icon + body-text cards
  * and don't merit their own files. Used exclusively by `subscription.tsx`.
  */
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { Body } from "../ui/Text";
 import { useTheme } from "../../lib/theme-context";
-import { FONTS } from "../../hooks/useFonts";
 
 const ERROR_ICON_SIZE = 48;
 const HINT_ICON_SIZE = 24;
@@ -43,7 +42,9 @@ export function SubscriptionErrorState({
         accessibilityLabel="Retry"
         accessibilityRole="button"
       >
-        <Text style={styles.retryButtonText}>Retry</Text>
+        <Body weight="medium" color={THEME.colors.bg} style={styles.retryButtonText}>
+          Retry
+        </Body>
       </Pressable>
     </View>
   );
@@ -89,9 +90,7 @@ const styles = StyleSheet.create({
     marginTop: THEME.spacing.sm,
   },
   retryButtonText: {
-    fontFamily: FONTS.bodyMedium,
     fontSize: RETRY_BUTTON_FONT_SIZE,
-    color: THEME.colors.bg,
   },
   hintCard: {
     flexDirection: "row",

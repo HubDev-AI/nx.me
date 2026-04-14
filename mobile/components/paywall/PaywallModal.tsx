@@ -20,16 +20,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { SUCCESS_DARK } from "../../constants/colors";
-import { FONTS } from "../../hooks/useFonts";
 import { PAYWALL_ANIMATION, MIN_TOUCH_TARGET } from "../../constants/config";
+import { Body, Caption, Heading, Label } from "../ui/Text";
 import type { EntitlementState } from "../../lib/entitlement";
 import {
   PURCHASING_PREMIUM_ID,
@@ -55,8 +53,6 @@ export function PaywallModal({
   onClose,
   onPurchaseComplete,
 }: PaywallModalProps) {
-  const { height: SCREEN_HEIGHT } = useWindowDimensions();
-
   // Local UI state — purchase success banner only (errors → toast via hook).
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -88,7 +84,7 @@ export function PaywallModal({
   // Animation refs
   // ---------------------------------------------------------------------------
   const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const sheetTranslateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const sheetTranslateY = useRef(new Animated.Value(SHEET_OFFSCREEN_OFFSET)).current;
   const sheetScale = useRef(new Animated.Value(SHEET_INITIAL_SCALE)).current;
   const panY = useRef(new Animated.Value(0)).current;
 
@@ -190,7 +186,13 @@ export function PaywallModal({
       animateIn();
       refresh();
       AccessibilityInfo.announceForAccessibility("Dialog opened");
-      // Move focus to close button so screen readers enter the modal
+      // Move focus to close button so screen readers enter the modal.
+      // Focus restore on close intentionally omitted: React Native does not
+      // expose `AccessibilityInfo.getCurrentlyFocusedElement` in the public
+      // API, and the caller cannot pass a ref to the previously focused
+      // element from outside the modal (the trigger lives in arbitrary
+      // parent screens). Revisit if RN adds a portable way to query or
+      // restore focus.
       closeButtonRef.current?.focus();
     }
   }, [visible, animateIn, refresh]);
@@ -245,7 +247,7 @@ export function PaywallModal({
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Get More Generations</Text>
+          <Heading size="md">Get More Generations</Heading>
           <Pressable
             ref={closeButtonRef}
             onPress={handleClose}
@@ -262,11 +264,11 @@ export function PaywallModal({
         <View style={styles.badgeRow}>
           <CreditBadge balance={creditBalance} />
           {entitlement && (
-            <Text style={styles.badgeHint}>
+            <Caption color="secondary">
               {entitlement.can_generate
                 ? "You can generate"
                 : "No credits remaining"}
-            </Text>
+            </Caption>
           )}
         </View>
 
@@ -281,7 +283,9 @@ export function PaywallModal({
           {isFetching && (
             <View style={styles.centerState}>
               <ActivityIndicator color={THEME.colors.textSecondary} size="large" />
-              <Text style={styles.stateText}>Loading pricing...</Text>
+              <Body color="secondary" style={styles.centerStateText}>
+                Loading pricing...
+              </Body>
             </View>
           )}
 
@@ -289,14 +293,16 @@ export function PaywallModal({
           {fetchError && !isFetching && (
             <View style={styles.centerState}>
               <Ionicons name="alert-circle" size={32} color={THEME.colors.destructive} />
-              <Text style={styles.errorText}>{fetchError}</Text>
+              <Body color="destructive" style={styles.centerStateText}>
+                {fetchError}
+              </Body>
               <Pressable
                 onPress={refresh}
                 style={styles.retryButton}
                 accessibilityLabel="Retry loading pricing"
                 accessibilityRole="button"
               >
-                <Text style={styles.retryText}>Retry</Text>
+                <Body weight="semibold">Retry</Body>
               </Pressable>
             </View>
           )}
@@ -305,16 +311,16 @@ export function PaywallModal({
           {showSuccess && (
             <View style={styles.successBanner}>
               <Ionicons name="checkmark-circle" size={18} color={SUCCESS_DARK} />
-              <Text style={styles.successBannerText}>
+              <Body weight="semibold" color={SUCCESS_DARK}>
                 Purchase complete!
-              </Text>
+              </Body>
             </View>
           )}
 
           {/* Credit packs */}
           {!isFetching && !fetchError && hasCreditPacks && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Credit Packs</Text>
+              <Label>Credit Packs</Label>
               <View style={styles.packList}>
                 {creditPacks.map((pack) => (
                   <CreditPackCard
@@ -332,7 +338,7 @@ export function PaywallModal({
           {/* Premium subscription */}
           {!isFetching && !fetchError && premium != null && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Go Premium</Text>
+              <Label>Go Premium</Label>
               <PremiumCard
                 premium={premium}
                 onSubscribe={subscribe}
@@ -351,9 +357,9 @@ export function PaywallModal({
             !hasCreditPacks &&
             premium == null && (
               <View style={styles.centerState}>
-                <Text style={styles.stateText}>
+                <Body color="secondary" style={styles.centerStateText}>
                   No purchase options available right now.
-                </Text>
+                </Body>
               </View>
             )}
         </ScrollView>
@@ -397,11 +403,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.xl,
     marginBottom: THEME.spacing.md,
   },
-  headerTitle: {
-    fontFamily: FONTS.display,
-    color: THEME.colors.textPrimary,
-    ...THEME.typography.heading,
-  },
   closeButton: {
     width: MIN_TOUCH_TARGET,
     height: MIN_TOUCH_TARGET,
@@ -415,11 +416,6 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.lg,
     gap: THEME.spacing.md,
   },
-  badgeHint: {
-    fontFamily: FONTS.bodyMedium,
-    color: THEME.colors.textSecondary,
-    ...THEME.typography.caption,
-  },
   scrollContent: {
     flex: 1,
   },
@@ -431,13 +427,6 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.xxl,
     gap: THEME.spacing.md,
   },
-  sectionTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    color: THEME.colors.textSecondary,
-    fontSize: 13,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
   packList: {
     gap: THEME.spacing.md,
   },
@@ -447,16 +436,7 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.xxxl + THEME.spacing.sm,
     gap: THEME.spacing.md,
   },
-  stateText: {
-    fontFamily: FONTS.body,
-    color: THEME.colors.textSecondary,
-    ...THEME.typography.body,
-    textAlign: "center",
-  },
-  errorText: {
-    fontFamily: FONTS.body,
-    color: THEME.colors.destructive,
-    ...THEME.typography.body,
+  centerStateText: {
     textAlign: "center",
   },
   retryButton: {
@@ -469,11 +449,6 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
   },
-  retryText: {
-    fontFamily: FONTS.bodySemiBold,
-    color: THEME.colors.textPrimary,
-    fontSize: 14,
-  },
   successBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -482,10 +457,5 @@ const styles = StyleSheet.create({
     borderRadius: THEME.radius.md,
     padding: THEME.spacing.md,
     marginBottom: THEME.spacing.lg,
-  },
-  successBannerText: {
-    fontFamily: FONTS.bodySemiBold,
-    color: SUCCESS_DARK,
-    fontSize: 14,
   },
 });

@@ -13,7 +13,6 @@
 import { useRef, useCallback } from "react";
 import {
   Pressable,
-  Text,
   View,
   Animated,
   ActivityIndicator,
@@ -22,21 +21,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 import {
   PAYWALL_ANIMATION,
   MIN_TOUCH_TARGET,
 } from "../../constants/config";
-import { Caption } from "../ui/Text";
+import { Body, Caption, Heading } from "../ui/Text";
 import { formatPrice } from "../../lib/format-price";
+import { PREMIUM_BENEFITS } from "../../constants/premium-benefits";
 import type { PremiumOption } from "../../lib/entitlement";
-
-const PREMIUM_BENEFITS = [
-  "Unlimited generations",
-  "Priority processing",
-  "Advanced style options",
-] as const;
 
 /** Suffix appended to the Premium price (e.g. "/mo"). Monthly-only for now. */
 const BILLING_INTERVAL_SUFFIX = "/mo";
@@ -89,8 +82,8 @@ export function PremiumCard({
       ]}>
         {/* Header */}
         <View style={styles.header}>
-          <Ionicons name="star" size={20} color={theme.accent} />
-          <Text style={styles.title}>Premium</Text>
+          <Ionicons name="diamond" size={20} color={theme.accent} />
+          <Heading size="md">Premium</Heading>
         </View>
 
         {/* Plan name + price */}
@@ -108,7 +101,9 @@ export function PremiumCard({
                 size={18}
                 color={theme.accent}
               />
-              <Text style={styles.benefitText}>{benefit}</Text>
+              <Body weight="medium" color="secondary">
+                {benefit}
+              </Body>
             </View>
           ))}
         </View>
@@ -133,7 +128,9 @@ export function PremiumCard({
           {isLoading ? (
             <ActivityIndicator color={THEME.colors.bg} size="small" />
           ) : (
-            <Text style={styles.subscribeText}>Subscribe Now</Text>
+            <Body weight="semibold" color={THEME.colors.bg} style={styles.subscribeText}>
+              Subscribe Now
+            </Body>
           )}
         </Pressable>
       </View>
@@ -159,11 +156,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: THEME.spacing.sm,
   },
-  title: {
-    fontFamily: FONTS.display,
-    color: THEME.colors.textPrimary,
-    fontSize: 20,
-  },
   priceLine: {
     color: THEME.colors.textPrimary,
   },
@@ -174,11 +166,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: THEME.spacing.md,
-  },
-  benefitText: {
-    fontFamily: FONTS.bodyMedium,
-    color: THEME.colors.textSecondary,
-    ...THEME.typography.body,
   },
   subscribeButton: {
     borderRadius: THEME.radius.pill,
@@ -191,8 +178,6 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   subscribeText: {
-    fontFamily: FONTS.bodySemiBold,
-    color: THEME.colors.bg,
     fontSize: 16,
   },
 });

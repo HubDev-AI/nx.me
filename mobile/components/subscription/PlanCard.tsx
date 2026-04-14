@@ -60,7 +60,7 @@ const TIER_CONFIG: Record<string, TierConfig> = {
   },
   [TIER_CREDITS]: {
     label: "Credits",
-    icon: "flash",
+    icon: "diamond-outline",
     description: () => "Pay-as-you-go with credit packs",
   },
   [TIER_PREMIUM]: {
@@ -148,7 +148,9 @@ export function PlanCard({ entitlement, isCancelling, onCancel }: PlanCardProps)
   const trialUsed = Math.max(0, trialLimit - trialRemaining);
   const trialPercent =
     trialLimit > 0 ? (trialUsed / trialLimit) * 100 : 0;
-  const trialBarWidth = `${Math.max(TRIAL_BAR_MIN_PERCENT, trialPercent)}%` as const;
+  const trialBarPercent =
+    trialPercent > 0 ? Math.max(TRIAL_BAR_MIN_PERCENT, trialPercent) : 0;
+  const trialBarWidth = `${trialBarPercent}%` as const;
 
   return (
     <View
@@ -247,7 +249,7 @@ export function PlanCard({ entitlement, isCancelling, onCancel }: PlanCardProps)
         <PressableScale
           onPress={onCancel}
           disabled={isCancelling}
-          style={styles.cancelLink}
+          style={[styles.cancelLink, isCancelling && styles.cancelLinkDisabled]}
           accessibilityLabel="Cancel subscription"
           accessibilityRole="button"
         >
@@ -337,6 +339,9 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.sm,
     minHeight: MIN_TOUCH_TARGET,
     justifyContent: "center",
+  },
+  cancelLinkDisabled: {
+    opacity: 0.5,
   },
   cancelLinkText: {
     textDecorationLine: "underline",
