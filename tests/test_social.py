@@ -211,3 +211,27 @@ class TestValidateGuestToken:
         assert hasattr(settings, "GUEST_REACTION_LIMIT")
         assert settings.GUEST_TOKEN_TTL_SECONDS == 86_400
         assert settings.GUEST_REACTION_LIMIT == 50
+
+
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="StrEnum requires 3.11+")
+class TestPersistReaction:
+    """Tests for persist_reaction worker — exercises app/api/social.py."""
+
+    def test_missing_post_id_raises_value_error(self):
+        """A payload without post_id must raise ValueError so ARQ surfaces it
+        and drops the job instead of looping forever."""
+        from app.api.social import persist_reaction
+
+        with pytest.raises(ValueError, match="post_id"):
+            asyncio.get_event_loop().run_until_complete(
+                persist_reaction({}, {"user_id": "u1"})
+            )
+
+    def test_empty_post_id_raises_value_error(self):
+        """Empty string post_id is just as bad as a missing key."""
+        from app.api.social import persist_reaction
+
+        with pytest.raises(ValueError, match="post_id"):
+            asyncio.get_event_loop().run_until_complete(
+                persist_reaction({}, {"post_id": "", "user_id": "u1"})
+            )
