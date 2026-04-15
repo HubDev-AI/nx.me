@@ -1,5 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 
+import { usePurchaseFlow } from "./use-purchase-flow";
+
 const mockInitPaymentSheet = jest.fn();
 const mockPresentPaymentSheet = jest.fn();
 const mockCreateIntent = jest.fn();
@@ -30,8 +32,6 @@ jest.mock("../errors", () => ({
 jest.mock("../toast", () => ({
   showToast: (...args: unknown[]) => mockShowToast(...args),
 }));
-
-import { usePurchaseFlow } from "./use-purchase-flow";
 
 const PACK = {
   pack_id: "10_credits",

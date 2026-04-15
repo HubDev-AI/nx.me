@@ -8,9 +8,8 @@
  */
 import { useState, useEffect, useCallback } from "react";
 
-import { AUTH_ENDPOINTS } from "../constants/config";
 import type { AuthProvider } from "../constants/config";
-import { API_BASE_URL } from "../constants/config";
+import { API_BASE_URL, AUTH_ENDPOINTS } from "../constants/config";
 
 interface UseEnabledProvidersReturn {
   providers: AuthProvider[];

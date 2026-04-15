@@ -20,6 +20,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { FaceModConsent } from "../components/consent/FaceModConsent";
+
 import { grantFaceModConsent } from "./analysis";
 
 // ---------------------------------------------------------------------------
@@ -121,12 +123,6 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
     </ConsentContext.Provider>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Modal slot (isolated so the import stays in one place)
-// ---------------------------------------------------------------------------
-
-import { FaceModConsent } from "../components/consent/FaceModConsent";
 
 function ConsentModalSlot({
   visible,

@@ -4,10 +4,10 @@
  */
 import Constants from "expo-constants";
 
-const extra = Constants.expoConfig?.extra ?? {};
-
 /** Base URL for the NXME backend API */
 import { Platform } from "react-native";
+
+const extra = Constants.expoConfig?.extra ?? {};
 export const API_BASE_URL: string = (() => {
   // Web dev always hits local FastAPI; native dev + prod read from Expo extras.
   if (Platform.OS === "web" && __DEV__) return "http://localhost:8000";
