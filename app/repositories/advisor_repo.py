@@ -252,6 +252,25 @@ class AdvisorRepository:
         )
         return result.data or []
 
+    def get_user_ids_with_nudge_since(
+        self, since: str, trigger: str | None = None
+    ) -> set[str]:
+        """Batch version of ``find_recent_nudges`` — one query, any user.
+
+        Returns the set of user IDs that have at least one nudge (optionally
+        filtered by ``trigger``) created after ``since``. Callers use set
+        membership to dedup eligibility scans in O(1) instead of N queries.
+        """
+        query = (
+            self._sb.table("advisor_nudges")
+            .select("user_id")
+            .gt("created_at", since)
+        )
+        if trigger is not None:
+            query = query.eq("trigger", trigger)
+        result = query.execute()
+        return {row["user_id"] for row in (result.data or [])}
+
     # ------------------------------------------------------------------
     # Memories
     # ------------------------------------------------------------------

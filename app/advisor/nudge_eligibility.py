@@ -32,17 +32,12 @@ async def find_weekly_checkin_eligible(advisor_repo: AdvisorRepository) -> list[
     weekly_cutoff = (now_utc - timedelta(days=WEEKLY_CHECKIN_DAYS)).isoformat()
 
     user_ids_with_goals = await run_sync(advisor_repo.get_all_goal_user_ids)
-
-    eligible: list[str] = []
-    for uid_str in user_ids_with_goals:
-        last_nudge = await run_sync(advisor_repo.get_latest_nudge_for_user, uid_str)
-        if not last_nudge:
-            # Never had a nudge — eligible
-            eligible.append(uid_str)
-        elif last_nudge["created_at"] < weekly_cutoff:
-            eligible.append(uid_str)
-
-    return eligible
+    # One batch query instead of N — users with ANY nudge inside the window
+    # are NOT eligible; everyone else (goal user \ recent) is.
+    recently_nudged = await run_sync(
+        advisor_repo.get_user_ids_with_nudge_since, weekly_cutoff
+    )
+    return [uid for uid in user_ids_with_goals if uid not in recently_nudged]
 
 
 async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
@@ -61,23 +56,17 @@ async def find_milestone_eligible(advisor_repo: AdvisorRepository) -> list[str]:
 
     # Single COUNT query grouped by user_id — avoids fetching every insight row.
     count_per_user = await run_sync(advisor_repo.count_insights_by_user)
+    # One batch query for dedup — replaces O(n) find_recent_nudges calls.
+    recently_nudged = await run_sync(
+        advisor_repo.get_user_ids_with_nudge_since,
+        recent_milestone_cutoff,
+        TRIGGER_MILESTONE,
+    )
 
     eligible: list[str] = []
-
     for milestone_count in MILESTONE_COUNTS:
-        milestone_users = [
-            uid_str for uid_str, cnt in count_per_user.items() if cnt == milestone_count
-        ]
-
-        for uid_str in milestone_users:
-            # Avoid duplicate milestone nudges within dedup window
-            recent = await run_sync(
-                advisor_repo.find_recent_nudges,
-                uid_str,
-                TRIGGER_MILESTONE,
-                recent_milestone_cutoff,
-            )
-            if not recent:
+        for uid_str, cnt in count_per_user.items():
+            if cnt == milestone_count and uid_str not in recently_nudged:
                 eligible.append(uid_str)
 
     return eligible
@@ -113,17 +102,10 @@ async def find_re_engagement_eligible(advisor_repo: AdvisorRepository) -> list[s
         for uid_str, last_ts in latest_activity.items()
         if last_ts < re_engagement_cutoff
     ]
-
-    eligible: list[str] = []
-    for uid_str in inactive_users:
-        # Avoid spamming: skip if a re-engagement nudge was sent recently
-        recent = await run_sync(
-            advisor_repo.find_recent_nudges,
-            uid_str,
-            TRIGGER_RE_ENGAGEMENT,
-            last_re_engagement_nudge_cutoff,
-        )
-        if not recent:
-            eligible.append(uid_str)
-
-    return eligible
+    # One batch query for dedup — replaces O(n) find_recent_nudges calls.
+    recently_nudged = await run_sync(
+        advisor_repo.get_user_ids_with_nudge_since,
+        last_re_engagement_nudge_cutoff,
+        TRIGGER_RE_ENGAGEMENT,
+    )
+    return [uid for uid in inactive_users if uid not in recently_nudged]
