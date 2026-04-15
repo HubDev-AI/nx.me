@@ -18,6 +18,7 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import type { SessionMode } from "../lib/session";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
 import { ConsentProvider } from "../lib/consent-context";
+import { RadialMenuProvider } from "../lib/radial-menu-context";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
 import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS, DEV_FEATURE_FOCUS } from "../constants/config";
@@ -259,17 +260,19 @@ export default function RootLayout() {
           <FeaturesProvider>
             <AuthProvider initialMode={initialMode}>
               <ConsentProvider>
-                {StripeProvider ? (
-                  <StripeProvider
-                    publishableKey={STRIPE_PUBLISHABLE_KEY}
-                    urlScheme="https"
-                    merchantIdentifier={APPLE_MERCHANT_ID}
-                  >
-                    {inner}
-                  </StripeProvider>
-                ) : (
-                  inner
-                )}
+                <RadialMenuProvider>
+                  {StripeProvider ? (
+                    <StripeProvider
+                      publishableKey={STRIPE_PUBLISHABLE_KEY}
+                      urlScheme="https"
+                      merchantIdentifier={APPLE_MERCHANT_ID}
+                    >
+                      {inner}
+                    </StripeProvider>
+                  ) : (
+                    inner
+                  )}
+                </RadialMenuProvider>
               </ConsentProvider>
             </AuthProvider>
           </FeaturesProvider>

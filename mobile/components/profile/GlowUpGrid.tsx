@@ -2,7 +2,6 @@ import React, { useCallback, useMemo } from "react";
 import {
   View,
   Image,
-  Text,
   FlatList,
   Pressable,
   RefreshControl,
@@ -15,12 +14,11 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { PROFILE_CONFIG } from "../../constants/config";
-import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
+import { EmptyState } from "../ui/EmptyState";
 import type { GlowUpItem } from "./types";
 
 interface GlowUpGridProps {
@@ -97,17 +95,15 @@ export function GlowUpGrid({
   const renderEmpty = useCallback(() => {
     if (items.length > 0) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <View style={[styles.emptyIconCircle, { backgroundColor: theme.accent + "1A" }]}>
-          <Ionicons name="sparkles" size={28} color={theme.accent} />
-        </View>
-        <Text style={styles.emptyText}>Your glow-ups will appear here</Text>
-        <Text style={styles.emptyHint}>
-          Create your first transformation to get started
-        </Text>
-      </View>
+      <EmptyState
+        icon="sparkles-outline"
+        title="Your glow-ups will appear here"
+        description="Create your first transformation to get started"
+        center={false}
+        style={styles.emptyWrapper}
+      />
     );
-  }, [items.length, theme.accent]);
+  }, [items.length]);
 
   return (
     <FlatList
@@ -235,33 +231,7 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.lg,
     alignItems: "center",
   },
-  emptyContainer: {
-    alignItems: "center",
-    justifyContent: "center",
+  emptyWrapper: {
     paddingVertical: THEME.spacing.xxxl + THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.xxxl,
-  },
-  emptyIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: THEME.radius.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: THEME.spacing.xs,
-  },
-  emptyText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    marginTop: THEME.spacing.md,
-    textAlign: "center",
-  },
-  emptyHint: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
-    marginTop: THEME.spacing.xs,
   },
 });

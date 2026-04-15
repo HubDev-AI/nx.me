@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 import * as Crypto from "expo-crypto";
@@ -72,6 +72,7 @@ const PROCESSING_PHASES: ReadonlySet<UploadPhase> = new Set([
 
 export default function UploadScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { requestConsentIfNeeded } = useConsent();
 
@@ -283,6 +284,12 @@ export default function UploadScreen() {
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
         <PageBackground overlayOpacity={0.88} />
 
+        {/* Floating back button — renders when the native stack header isn't
+            available (e.g. when reached from a tab without a Stack wrapper). */}
+        <View style={[styles.floatingBack, { top: insets.top + 8 }]} pointerEvents="box-none">
+          <HeaderBackButton onPress={handleBack} />
+        </View>
+
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -423,6 +430,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: THEME.colors.bg,
+  },
+  floatingBack: {
+    position: "absolute",
+    left: THEME.spacing.sm,
+    zIndex: 100,
   },
   scroll: {
     flex: 1,

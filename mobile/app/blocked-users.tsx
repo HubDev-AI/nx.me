@@ -25,8 +25,8 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
-import { Button } from "../components/ui/Button";
-import { Body, Caption, Heading } from "../components/ui/Text";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Body, Caption } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useEntering } from "../lib/hooks/use-entering";
 import { FONTS } from "../hooks/useFonts";
@@ -190,25 +190,16 @@ export default function BlockedUsersScreen() {
               entering={FadeInDown.duration(400)}
               style={styles.centered}
             >
-              <Ionicons
-                name="alert-circle-outline"
-                size={48}
-                color={THEME.colors.textSecondary}
-              />
-              <Caption color="destructive" style={styles.errorText}>
-                {error}
-              </Caption>
-              <Button
-                title="Try Again"
-                onPress={loadBlockedUsers}
-                variant="primary"
-                size="md"
-                accentColor={theme.accent}
-                leftIcon={
-                  <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-                }
-                accessibilityLabel="Retry loading blocked users"
-                style={styles.retryButton}
+              <EmptyState
+                icon="alert-circle-outline"
+                title="Could not load blocked users"
+                description={error}
+                action={{
+                  label: "Try Again",
+                  onPress: loadBlockedUsers,
+                  accessibilityLabel: "Retry loading blocked users",
+                }}
+                center={false}
               />
             </Animated.View>
           ) : blockedUsers.length === 0 ? (
@@ -217,19 +208,12 @@ export default function BlockedUsersScreen() {
               entering={FadeInDown.duration(400)}
               style={styles.centered}
             >
-              <View style={styles.emptyIconWrapper}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={48}
-                  color={THEME.colors.textMuted}
-                />
-              </View>
-              <Heading size="md" display={false} color="primary">
-                No blocked users
-              </Heading>
-              <Body color="secondary" style={styles.emptySubtitle}>
-                Users you block will appear here
-              </Body>
+              <EmptyState
+                icon="shield-checkmark-outline"
+                title="No blocked users"
+                description="Users you block will appear here"
+                center={false}
+              />
             </Animated.View>
           ) : (
             /* Blocked users list */
@@ -333,29 +317,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: THEME.spacing.sm,
-  },
-  errorText: {
-    textAlign: "center",
-    marginTop: THEME.spacing.sm,
-  },
-  retryButton: {
-    marginTop: THEME.spacing.lg,
-  },
-
-  // Empty state
-  emptyIconWrapper: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: THEME.colors.glass,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: THEME.spacing.lg,
-  },
-  emptySubtitle: {
-    textAlign: "center",
   },
 
   // List

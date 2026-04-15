@@ -37,6 +37,7 @@ import type { AdvisorMessage } from "../../lib/advisor";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { PaywallModal } from "../paywall/PaywallModal";
+import { EmptyState } from "../ui/EmptyState";
 
 /** The floating tab bar renders whenever at least two tabs are visible. */
 const MIN_TABS_FOR_FLOATING_BAR = 2;
@@ -317,20 +318,16 @@ export function ChatView() {
 
   if (error && messages.length === 0) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
-        <Text style={styles.errorTitle}>Could not load messages</Text>
-        <Text style={styles.errorSubtitle}>{error}</Text>
-        <Pressable
-          onPress={loadMessages}
-          style={[styles.retryButton, { backgroundColor: theme.accent }]}
-          accessibilityLabel="Retry loading messages"
-          accessibilityRole="button"
-        >
-          <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-          <Text style={styles.retryText}>Try Again</Text>
-        </Pressable>
-      </View>
+      <EmptyState
+        icon="alert-circle-outline"
+        title="Could not load messages"
+        description={error}
+        action={{
+          label: "Try Again",
+          onPress: loadMessages,
+          accessibilityLabel: "Retry loading messages",
+        }}
+      />
     );
   }
 
@@ -356,13 +353,11 @@ export function ChatView() {
         updateCellsBatchingPeriod={ADVISOR_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
         windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="sparkles" size={48} color={theme.accent} />
-            <Text style={styles.emptyTitle}>Start a conversation</Text>
-            <Text style={styles.emptySubtitle}>
-              Ask Ada for style advice
-            </Text>
-          </View>
+          <EmptyState
+            icon="sparkles-outline"
+            title="Start a conversation"
+            description="Ask Ada for style advice"
+          />
         }
       />
 
@@ -445,63 +440,6 @@ const styles = StyleSheet.create({
   loadingMore: {
     paddingVertical: THEME.spacing.md,
     alignItems: "center",
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingTop: THEME.spacing.xxxl * 2.5,
-    gap: THEME.spacing.sm,
-  },
-  emptyTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    marginTop: THEME.spacing.md,
-  },
-  emptySubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    gap: THEME.spacing.sm,
-    backgroundColor: "transparent",
-  },
-  errorTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    marginTop: THEME.spacing.md,
-  },
-  errorSubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
-  },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-    marginTop: THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.xl,
-    paddingVertical: THEME.spacing.md - 2,
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  retryText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 14,
-    color: THEME.colors.bg,
   },
   errorBanner: {
     flexDirection: "row",

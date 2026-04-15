@@ -1,0 +1,120 @@
+appId: ai.nxme.app
+---
+# Comprehensive screen tour — screenshots every accessible surface for UI audit.
+# Reflects current state: social_enabled=false, advisor_enabled=true.
+# Visible tabs: Create (default) + Advisor.
+
+- launchApp
+- waitForAnimationToEnd
+
+# 1. Login state if logged out
+- runFlow:
+    when:
+      visible: "Welcome back"
+    commands:
+      - takeScreenshot: tour_01_login
+      - runFlow:
+          when:
+            visible: "Sign up"
+          commands:
+            - tapOn: "Sign up"
+            - waitForAnimationToEnd
+            - takeScreenshot: tour_02_signup
+            - tapOn: "Log in"
+            - waitForAnimationToEnd
+      - tapOn:
+          id: "input-email"
+      - inputText: "maestro@test.com"
+      - runFlow:
+          when:
+            visible: "Show password"
+          commands:
+            - tapOn: "Show password"
+      - tapOn:
+          id: "input-password"
+      - waitForAnimationToEnd
+      - inputText: "TestPass1234"
+      - scrollUntilVisible:
+          element: "Log in"
+          direction: DOWN
+          timeout: 5000
+      - tapOn: "Log in"
+      - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible: "Not Now"
+          commands:
+            - tapOn: "Not Now"
+            - waitForAnimationToEnd
+
+# 2. Create screen (default landing in current feature config)
+- waitForAnimationToEnd
+- takeScreenshot: tour_03_create
+
+# 3. Settings sheet (gear icon top-right)
+- runFlow:
+    when:
+      visible: "Settings"
+    commands:
+      - tapOn: "Settings"
+      - waitForAnimationToEnd
+      - takeScreenshot: tour_04_settings
+      # Back to create
+      - runFlow:
+          when:
+            visible: "Close"
+          commands:
+            - tapOn: "Close"
+      - runFlow:
+          when:
+            visible: "Done"
+          commands:
+            - tapOn: "Done"
+      - back
+      - waitForAnimationToEnd
+
+# 4. Glow Up → Upload screen
+- tapOn: "Glow Up"
+- waitForAnimationToEnd
+- takeScreenshot: tour_05_upload
+
+# Back to create
+- back
+- waitForAnimationToEnd
+
+# 5. Tap COMING SOON cards (should show some response)
+- runFlow:
+    when:
+      visible: "Style Check"
+    commands:
+      - tapOn: "Style Check"
+      - waitForAnimationToEnd
+      - takeScreenshot: tour_06_coming_soon_response
+
+# 6. Advisor tab
+- runFlow:
+    when:
+      visible: "Advisor"
+    commands:
+      - tapOn: "Advisor"
+      - waitForAnimationToEnd
+      - takeScreenshot: tour_07_advisor_chat
+
+      - runFlow:
+          when:
+            visible: "Nudges"
+          commands:
+            - tapOn: "Nudges"
+            - waitForAnimationToEnd
+            - takeScreenshot: tour_08_advisor_nudges
+
+      - runFlow:
+          when:
+            visible: "Memories"
+          commands:
+            - tapOn: "Memories"
+            - waitForAnimationToEnd
+            - takeScreenshot: tour_09_advisor_memories
+
+# 7. Final state
+- takeScreenshot: tour_99_final

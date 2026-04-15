@@ -26,6 +26,7 @@ import { showToast } from "../../lib/toast";
 import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
+import { EmptyState } from "../ui/EmptyState";
 import { PressableScale } from "../ui/PressableScale";
 import { Caption } from "../ui/Text";
 
@@ -484,7 +485,6 @@ const memSkeletonStyles = StyleSheet.create({
 const MemorySeparator = () => <View style={styles.separator} />;
 
 export function MemoryList() {
-  const { theme } = useTheme();
   const [memories, setMemories] = useState<UserMemory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -601,20 +601,16 @@ export function MemoryList() {
     return (
       <View style={styles.container}>
         <AddMemoryForm onAdd={handleAdd} isAdding={isAdding} />
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
-          <Text style={styles.errorTitle}>Could not load memories</Text>
-          <Text style={styles.errorSubtitle}>{error}</Text>
-          <Pressable
-            onPress={loadMemories}
-            style={[styles.retryButton, { backgroundColor: theme.accent }]}
-            accessibilityLabel="Retry loading memories"
-            accessibilityRole="button"
-          >
-            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-            <Text style={styles.retryButtonText}>Try Again</Text>
-          </Pressable>
-        </View>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Could not load memories"
+          description={error}
+          action={{
+            label: "Try Again",
+            onPress: loadMemories,
+            accessibilityLabel: "Retry loading memories",
+          }}
+        />
       </View>
     );
   }
@@ -627,13 +623,11 @@ export function MemoryList() {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="bookmark-outline" size={48} color={THEME.colors.textSecondary} />
-            <Text style={styles.emptyTitle}>No memories yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Add goals or notes so Ada can personalise her advice
-            </Text>
-          </View>
+          <EmptyState
+            icon="bookmark-outline"
+            title="No memories yet"
+            description="Add goals or notes so Ada can personalise her advice"
+          />
         }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
@@ -656,61 +650,5 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: THEME.spacing.md - 2,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingTop: THEME.spacing.xxxl * 2,
-    gap: THEME.spacing.sm,
-  },
-  emptyTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    marginTop: THEME.spacing.md,
-  },
-  emptySubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    gap: THEME.spacing.sm,
-  },
-  errorTitle: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 18,
-    color: THEME.colors.textPrimary,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-    marginTop: THEME.spacing.md,
-  },
-  errorSubtitle: {
-    fontFamily: FONTS.body,
-    ...THEME.typography.caption,
-    color: THEME.colors.textSecondary,
-    textAlign: "center",
-  },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-    marginTop: THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.xl,
-    paddingVertical: THEME.spacing.md - 2,
-    borderRadius: THEME.radius.pill,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  retryButtonText: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 14,
-    color: THEME.colors.bg,
   },
 });
