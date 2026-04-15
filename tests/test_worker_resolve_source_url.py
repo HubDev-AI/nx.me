@@ -44,13 +44,6 @@ def _build_repos(
     return image_repo, glowup_repo
 
 
-@pytest.fixture
-def image_and_glowup_repos():
-    image_repo, glowup_repo = _build_repos()
-    yield image_repo, glowup_repo
-    image_repo._restore()
-
-
 class TestResolveSourceUrlHappyPath:
     def test_glowup_job_returns_signed_url(self):
         image_repo, glowup_repo = _build_repos(
