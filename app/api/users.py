@@ -51,6 +51,11 @@ _USERNAME_MAX_LENGTH = 30
 _USERNAME_CHANGE_COOLDOWN_HOURS = 24
 _USERNAME_CHECK_RATE_LIMIT = 30  # max requests per window
 _USERNAME_CHECK_RATE_WINDOW_SECONDS = 60  # 1 minute
+# Per-IP cap for the public profile-by-username endpoint. Mirrors
+# check-username's enumeration guard so removing the social_enabled gate
+# doesn't open a dictionary-scrape vector when social_enabled=false.
+_PROFILE_LOOKUP_RATE_LIMIT = 30
+_PROFILE_LOOKUP_RATE_WINDOW_SECONDS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -220,14 +225,32 @@ async def get_me(
     response_model=ProfileResponse,
 )
 async def get_user_profile(
+    request: Request,
     username: str,
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
+    r: aioredis.Redis = Depends(get_redis),
 ) -> ProfileResponse:
     """Return public profile stats for the given username.
 
-    No auth required. Returns 404 for deleted or non-existent users.
+    No auth required. Per-IP rate limited to prevent username enumeration —
+    the route is reachable in any feature-flag configuration (no longer
+    gated on social_enabled, which used to provide an indirect cap), so the
+    same throttle as check-username applies here.
+
+    Returns 404 for deleted or non-existent users.
     """
+    client_ip = get_client_ip(request) or "unknown"
+    rate_key = f"profile_lookup:{client_ip}"
+    current = await r.incr(rate_key)
+    if current == 1:
+        await r.expire(rate_key, _PROFILE_LOOKUP_RATE_WINDOW_SECONDS)
+    if current > _PROFILE_LOOKUP_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please slow down.",
+        )
+
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
     user_id: str = user["id"]

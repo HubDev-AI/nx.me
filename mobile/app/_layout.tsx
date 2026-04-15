@@ -22,7 +22,13 @@ import { ConsentProvider } from "../lib/consent-context";
 import { RadialMenuProvider } from "../lib/radial-menu-context";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
-import { STRIPE_PUBLISHABLE_KEY, APPLE_MERCHANT_ID, SECURE_STORE_KEYS, DEV_FEATURE_FOCUS } from "../constants/config";
+import {
+  STRIPE_PUBLISHABLE_KEY,
+  APPLE_MERCHANT_ID,
+  SECURE_STORE_KEYS,
+  DEV_FEATURE_FOCUS,
+  GUEST_ME_TIMEOUT_MS,
+} from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -69,14 +75,28 @@ function AuthGuard() {
         // listeners that may fire on the mode transition).
         setSessionMode("guest");
         try {
-          const me = await fetchMe();
+          // Bound the /me wait so a stalled network can't block the splash
+          // screen indefinitely. On timeout the screen mounts without an
+          // authUsername; the profile load effect stays inert until the user
+          // backgrounds/foregrounds and the AuthGuard re-runs.
+          const me = await Promise.race([
+            fetchMe(),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Guest /me timed out")),
+                GUEST_ME_TIMEOUT_MS,
+              ),
+            ),
+          ]);
           setUsername(me.username);
         } catch (err) {
           // Non-fatal — profile screens fall back to the "complete your
           // profile" stub when authUsername is null. Log so dev can debug.
           if (__DEV__) console.warn("Guest /me lookup failed:", err);
+        } finally {
+          // Always release the splash, even on /me timeout or failure.
+          markSessionReady();
         }
-        markSessionReady();
       })
       .catch((err) => {
         if (__DEV__) console.warn("Guest session init failed:", err);

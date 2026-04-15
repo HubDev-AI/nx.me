@@ -294,6 +294,12 @@ export const PROFILE_ENDPOINTS = {
   UPDATE: (username: string) => `/v1/users/${username}`,
 } as const;
 
+/**
+ * Bound on how long AuthGuard waits for the guest /me lookup before
+ * releasing the splash screen. A stalled network must not strand users.
+ */
+export const GUEST_ME_TIMEOUT_MS = 5_000;
+
 /** Profile grid configuration */
 export const PROFILE_CONFIG = {
   /** Number of columns in the glow-up grid */
