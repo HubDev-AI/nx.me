@@ -23,6 +23,10 @@ mobile/.env.*
 .vscode/
 *.swp
 
+# Agent / MCP tool caches (Serena, hippo)
+.serena/
+.hippo/
+
 # Node
 node_modules/
 

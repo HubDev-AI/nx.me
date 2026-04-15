@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 
+import { DEFAULT_ACCENT } from '@/config/constants';
+
 interface GlobalErrorProps {
   error: Error & { digest?: string };
   reset: () => void;
@@ -49,7 +51,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
             style={{
               padding: '12px 24px',
               borderRadius: '12px',
-              backgroundColor: '#F43F5E',
+              backgroundColor: DEFAULT_ACCENT,
               color: '#FFFFFF',
               fontSize: '14px',
               fontWeight: 600,

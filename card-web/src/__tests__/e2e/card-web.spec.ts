@@ -1,5 +1,3 @@
-import { test, expect } from '@playwright/test';
-
 /**
  * NXME card-web E2E tests.
  *
@@ -17,6 +15,8 @@ import { test, expect } from '@playwright/test';
 
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
+
+import { test, expect } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
 // Test fixtures

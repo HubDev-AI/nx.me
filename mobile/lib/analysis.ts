@@ -315,7 +315,6 @@ export async function pollJob(
 ): Promise<JobResult> {
   const terminalStatuses: JobStatus[] = ["completed", "failed", "cancelled"];
 
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (signal?.aborted) {
       throw new DOMException("Polling aborted", "AbortError");

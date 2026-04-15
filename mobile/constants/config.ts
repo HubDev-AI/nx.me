@@ -4,10 +4,10 @@
  */
 import Constants from "expo-constants";
 
-const extra = Constants.expoConfig?.extra ?? {};
-
 /** Base URL for the NXME backend API */
 import { Platform } from "react-native";
+
+const extra = Constants.expoConfig?.extra ?? {};
 export const API_BASE_URL: string = (() => {
   // Web dev always hits local FastAPI; native dev + prod read from Expo extras.
   if (Platform.OS === "web" && __DEV__) return "http://localhost:8000";
@@ -244,6 +244,10 @@ export const ADVISOR_CONFIG = {
   UPDATE_CELLS_BATCHING_PERIOD_MS: 50,
   /** FlatList performance: window size */
   WINDOW_SIZE: 21,
+  /** Max consecutive pagination retries before surfacing an error to the user */
+  PAGINATION_MAX_RETRIES: 3,
+  /** Pagination retry delays (ms) — backoff per attempt, indexed by attempt number */
+  PAGINATION_RETRY_DELAYS_MS: [2000, 3000] as const,
 } as const;
 
 /** Paywall animation configuration */

@@ -22,7 +22,7 @@ let _statusCodes: typeof import("@react-native-google-signin/google-signin").sta
 function getGoogleSignin() {
   if (!_GoogleSignin) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+       
       const mod = require("@react-native-google-signin/google-signin");
       _GoogleSignin = mod.GoogleSignin;
       _statusCodes = mod.statusCodes;
@@ -175,7 +175,7 @@ export async function signInWithTikTok(): Promise<TikTokAuthResult | null> {
   let authorize: typeof import("react-native-tiktok").authorize;
   let Scopes: typeof import("react-native-tiktok").Scopes;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const mod = require("react-native-tiktok");
     authorize = mod.authorize;
     Scopes = mod.Scopes;

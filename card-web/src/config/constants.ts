@@ -63,6 +63,14 @@ export const PLAY_STORE_URL =
 export const APP_BASE_URL =
   process.env.NEXT_PUBLIC_APP_BASE_URL ?? 'https://nxme.ai';
 
+/** Privacy policy URL (external — defaults to marketing site). */
+export const PRIVACY_URL =
+  process.env.NEXT_PUBLIC_PRIVACY_URL ?? `${APP_BASE_URL}/privacy`;
+
+/** Terms of service URL (external — defaults to marketing site). */
+export const TERMS_URL =
+  process.env.NEXT_PUBLIC_TERMS_URL ?? `${APP_BASE_URL}/terms`;
+
 /** ms to wait for the native app to open before redirecting to the store */
 export const APP_OPEN_TIMEOUT_MS = 1500;
 
@@ -111,3 +119,12 @@ export const SITEMAP_REVALIDATE_SECONDS = 86400;
 
 /** Public card listing path on the backend — used by the sitemap generator. */
 export const PUBLIC_CARDS_LIST_PATH = '/v1/public/cards';
+
+/**
+ * Fallback accent colour used when the `--accent` CSS custom property is not
+ * set (e.g. error pages rendered before the theme provider runs, icon assets,
+ * SSR paths that bypass `buildTheme()`). Kept in parity with the first entry
+ * in `theme-provider.ACCENTS` so the fallback visually matches the default
+ * theme rotation.
+ */
+export const DEFAULT_ACCENT = '#F43F5E';

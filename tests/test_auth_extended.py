@@ -115,6 +115,16 @@ class TestAuthModels:
         with pytest.raises(ValidationError):
             RefreshRequest(refresh_token="")
 
+    def test_refresh_request_strips_whitespace(self):
+        """StringConstraints(strip_whitespace=True) removes surrounding spaces."""
+        req = RefreshRequest(refresh_token="  rt-padded  ")
+        assert req.refresh_token == "rt-padded"
+
+    def test_refresh_request_whitespace_only_rejected(self):
+        """After strip, whitespace-only token is empty and fails min_length=1."""
+        with pytest.raises(ValidationError):
+            RefreshRequest(refresh_token="   ")
+
     def test_login_response_model(self):
         resp = LoginResponse(
             user_id="u-1",

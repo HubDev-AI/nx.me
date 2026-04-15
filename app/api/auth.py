@@ -24,7 +24,7 @@ from typing import Annotated, Literal, NoReturn
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
 from slugify import slugify
 from supabase import Client
 
@@ -575,7 +575,7 @@ class LoginResponse(BaseModel):
 class RefreshRequest(BaseModel):
     """Refresh an expired session using a refresh_token."""
 
-    refresh_token: str = Field(min_length=1, strip_whitespace=True)
+    refresh_token: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 async def _resolve_login_username(

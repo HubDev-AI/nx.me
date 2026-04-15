@@ -15,13 +15,14 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { THEME } from "../../constants/theme";
-import { useTheme } from "../../lib/theme-context";
-import { Body, Heading } from "../ui/Text";
-import { Button } from "../ui/Button";
 import { ADVISOR_CONFIG } from "../../constants/config";
+import { THEME } from "../../constants/theme";
 import { fetchNudges, markNudgeRead } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
+import { useTheme } from "../../lib/theme-context";
+import { showToast } from "../../lib/toast";
+import { Button } from "../ui/Button";
+import { Body, Heading } from "../ui/Text";
 import { NudgeCard } from "./NudgeCard";
 
 /** Skeleton for loading state */
@@ -147,16 +148,24 @@ export function NudgeFeed() {
       retryCountRef.current = 0;
     } catch {
       retryCountRef.current += 1;
-      if (retryCountRef.current < 3) {
-        const delay = retryCountRef.current === 1 ? 2000 : 3000;
+      if (retryCountRef.current < ADVISOR_CONFIG.PAGINATION_MAX_RETRIES) {
+        const attemptIndex = Math.min(
+          retryCountRef.current - 1,
+          ADVISOR_CONFIG.PAGINATION_RETRY_DELAYS_MS.length - 1,
+        );
+        const delay = ADVISOR_CONFIG.PAGINATION_RETRY_DELAYS_MS[attemptIndex]!;
         setIsLoadingMore(false);
         retryTimeoutRef.current = setTimeout(() => {
           loadMore();
         }, delay);
         return;
       }
-      // Reset so next user-initiated scroll starts a fresh retry round
+      // All retries exhausted — surface the error; next scroll starts fresh.
       retryCountRef.current = 0;
+      showToast({
+        kind: "error",
+        message: "Couldn't load more nudges. Pull to refresh.",
+      });
     } finally {
       setIsLoadingMore(false);
     }

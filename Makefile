@@ -45,7 +45,7 @@ worker: app/.env
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test:
-	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest tests/ -x -q
+	.venv/bin/pytest tests/ -x -q
 
 # ── Lint & Format ────────────────────────────────────────────────────────
 lint:
