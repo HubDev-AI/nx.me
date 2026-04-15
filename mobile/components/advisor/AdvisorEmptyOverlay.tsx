@@ -28,11 +28,7 @@ export function AdvisorEmptyOverlay({
   description,
 }: AdvisorEmptyOverlayProps) {
   return (
-    <View
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-      accessibilityRole="text"
-    >
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <View style={styles.center}>
         <EmptyState
           icon={icon}

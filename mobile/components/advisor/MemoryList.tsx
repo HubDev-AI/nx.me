@@ -329,6 +329,7 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
 
 const formStyles = StyleSheet.create({
   container: {
+    paddingTop: THEME.spacing.md,
     paddingBottom: THEME.spacing.md,
     gap: THEME.spacing.md,
   },
@@ -567,7 +568,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "transparent",
-    paddingTop: THEME.spacing.md,
   },
   listContent: {
     flexGrow: 1,
