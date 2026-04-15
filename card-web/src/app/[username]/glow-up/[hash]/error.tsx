@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 
+import { DEFAULT_ACCENT } from '@/config/constants';
+
 interface ErrorProps {
   error: Error & { digest?: string };
   reset: () => void;
@@ -48,7 +50,7 @@ export default function CardError({ error, reset }: ErrorProps) {
         <button
           onClick={reset}
           className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
-          style={{ backgroundColor: 'var(--accent, #F43F5E)' }}
+          style={{ backgroundColor: `var(--accent, ${DEFAULT_ACCENT})` }}
         >
           Try again
         </button>

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import { APP_BASE_URL } from '@/config/constants';
+import { APP_BASE_URL, DEFAULT_ACCENT } from '@/config/constants';
 
 /**
  * Rendered when a card has been deleted (HTTP 410) or simply never existed.
@@ -36,7 +36,7 @@ export function CardNotFound() {
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-3.5 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
-        style={{ backgroundColor: 'var(--accent, #F43F5E)' }}
+        style={{ backgroundColor: `var(--accent, ${DEFAULT_ACCENT})` }}
       >
         Get NXME &rarr;
       </Link>
