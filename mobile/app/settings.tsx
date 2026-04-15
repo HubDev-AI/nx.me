@@ -11,7 +11,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
@@ -25,15 +25,22 @@ import { ERROR_BORDER } from "../constants/colors";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
 import { Button } from "../components/ui/Button";
-import { Body, Caption, Label } from "../components/ui/Text";
+import {
+  HeaderBackButton,
+  HeaderBackButtonSpacer,
+} from "../components/ui/HeaderBackButton";
+import { Body, Caption, Heading, Label } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
-import { FONTS } from "../hooks/useFonts";
+import { useCapabilities } from "../lib/capabilities";
 import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../constants/config";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { showToast } from "../lib/toast";
 import { clearAllTokens } from "../lib/auth";
+
+/** Header title font size — matches subscription + upload screens. */
+const HEADER_TITLE_FONT_SIZE = 20;
 
 // Safely resolve expo-constants — if unavailable (bare workflow edge case),
 // we fall back to a static version string instead of crashing the screen.
@@ -65,6 +72,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { setSessionMode } = useAuth();
+  const caps = useCapabilities();
   const { fadeInDown } = useEntering();
 
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -164,24 +172,23 @@ export default function SettingsScreen() {
   // Render
   // -------------------------------------------------------------------------
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Settings",
-          headerStyle: { backgroundColor: THEME.colors.bg },
-          headerTintColor: THEME.colors.textPrimary,
-          headerShadowVisible: false,
-          headerTitleStyle: {
-            fontFamily: FONTS.display,
-            fontSize: 18,
-          },
-        }}
-      />
+    <View style={styles.container}>
+      <PageBackground overlayOpacity={0.88} />
 
-      <View style={styles.container}>
-        <PageBackground overlayOpacity={0.88} />
+      {/* Custom header — matches subscription + upload screens. */}
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <HeaderBackButton onPress={() => router.back()} />
+        <Heading
+          size="md"
+          style={styles.headerTitle}
+          maxFontSizeMultiplier={1.3}
+        >
+          Settings
+        </Heading>
+        <HeaderBackButtonSpacer />
+      </View>
 
-        <ScrollView
+      <ScrollView
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
@@ -256,34 +263,36 @@ export default function SettingsScreen() {
             </PressableScale>
           </Animated.View>
 
-          {/* ─── Privacy Section ──────────────────────────────────────── */}
-          <Animated.View entering={fadeInDown(80, 240)}>
-            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
-              PRIVACY
-            </Label>
-            <PressableScale
-              style={styles.glassCard}
-              onPress={() => router.push("/blocked-users")}
-              accessibilityLabel="Blocked users"
-              accessibilityRole="button"
-            >
-              <View style={styles.navRow}>
-                <View style={styles.navRowLeft}>
+          {/* ─── Privacy Section — auth + social both required ────────── */}
+          {caps.canViewBlockedUsers && (
+            <Animated.View entering={fadeInDown(80, 240)}>
+              <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
+                PRIVACY
+              </Label>
+              <PressableScale
+                style={styles.glassCard}
+                onPress={() => router.push("/blocked-users")}
+                accessibilityLabel="Blocked users"
+                accessibilityRole="button"
+              >
+                <View style={styles.navRow}>
+                  <View style={styles.navRowLeft}>
+                    <Ionicons
+                      name="shield-outline"
+                      size={20}
+                      color={theme.accent}
+                    />
+                    <Body weight="medium" color="primary">Blocked Users</Body>
+                  </View>
                   <Ionicons
-                    name="shield-outline"
-                    size={20}
-                    color={theme.accent}
+                    name="chevron-forward"
+                    size={18}
+                    color={THEME.colors.textMuted}
                   />
-                  <Body weight="medium" color="primary">Blocked Users</Body>
                 </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={THEME.colors.textMuted}
-                />
-              </View>
-            </PressableScale>
-          </Animated.View>
+              </PressableScale>
+            </Animated.View>
+          )}
 
           {/* ─── About Section ────────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(120, 240)}>
@@ -299,30 +308,32 @@ export default function SettingsScreen() {
             </View>
           </Animated.View>
 
-          {/* ─── Session ──────────────────────────────────────────────── */}
-          <Animated.View entering={fadeInDown(160, 240)}>
-            <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
-              SESSION
-            </Label>
-            <View style={styles.glassCard}>
-              <Button
-                title="Log Out"
-                onPress={handleLogout}
-                variant="secondary"
-                size="md"
-                block
-                isLoading={isLoggingOut}
-                leftIcon={
-                  <Ionicons
-                    name="log-out-outline"
-                    size={18}
-                    color={theme.accent}
-                  />
-                }
-                accessibilityLabel="Log out of your account"
-              />
-            </View>
-          </Animated.View>
+          {/* ─── Session — only when auth is enabled for this user ────── */}
+          {caps.canSignOut && (
+            <Animated.View entering={fadeInDown(160, 240)}>
+              <Label color="secondary" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
+                SESSION
+              </Label>
+              <View style={styles.glassCard}>
+                <Button
+                  title="Log Out"
+                  onPress={handleLogout}
+                  variant="secondary"
+                  size="md"
+                  block
+                  isLoading={isLoggingOut}
+                  leftIcon={
+                    <Ionicons
+                      name="log-out-outline"
+                      size={18}
+                      color={theme.accent}
+                    />
+                  }
+                  accessibilityLabel="Log out of your account"
+                />
+              </View>
+            </Animated.View>
+          )}
 
           {/* ─── Danger Zone ──────────────────────────────────────────── */}
           <Animated.View entering={fadeInDown(200, 240)}>
@@ -352,9 +363,8 @@ export default function SettingsScreen() {
               />
             </View>
           </Animated.View>
-        </ScrollView>
-      </View>
-    </>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -390,6 +400,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: THEME.colors.bg,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.sm,
+  },
+  headerTitle: {
+    fontSize: HEADER_TITLE_FONT_SIZE,
   },
   scroll: {
     flex: 1,
