@@ -20,6 +20,7 @@ const BASE: Capabilities = {
   canSeeOnboarding: false,
   canSubscribe: true,
   canReact: false,
+  canViewBlockedUsers: false,
   requiresAuth: false,
 };
 
