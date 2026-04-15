@@ -17,7 +17,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Stack } from "expo-router";
+import { Redirect, Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -28,6 +28,7 @@ import { PressableScale } from "../components/ui/PressableScale";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Body, Caption } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
+import { useCapabilities } from "../lib/capabilities";
 import { useEntering } from "../lib/hooks/use-entering";
 import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
@@ -71,6 +72,7 @@ interface BlockedListResponse {
 export default function BlockedUsersScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const caps = useCapabilities();
   const { fadeInDown } = useEntering();
 
   const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
@@ -103,8 +105,9 @@ export default function BlockedUsersScreen() {
   }, []);
 
   useEffect(() => {
+    if (!caps.canViewBlockedUsers) return;
     loadBlockedUsers();
-  }, [loadBlockedUsers]);
+  }, [caps.canViewBlockedUsers, loadBlockedUsers]);
 
   // -------------------------------------------------------------------------
   // Unblock handler
@@ -143,6 +146,13 @@ export default function BlockedUsersScreen() {
     },
     [],
   );
+
+  // Deep-link defense: with auth or social disabled there is no concept of
+  // blocking users. Redirect back to settings so the route matches the
+  // capability-gated entry point in settings.tsx.
+  if (!caps.canViewBlockedUsers) {
+    return <Redirect href="/settings" />;
+  }
 
   // -------------------------------------------------------------------------
   // Render

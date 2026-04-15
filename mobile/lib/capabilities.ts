@@ -23,9 +23,15 @@ export interface Capabilities {
   canViewOwnProfile: boolean;
   /** Can edit profile (requires real user identity — guests cannot). */
   canEditProfile: boolean;
-  /** Can sign out (real users only — guests have no session to terminate). */
+  /**
+   * Can sign out — only meaningful when auth is enabled AND the user is
+   * actually signed in. With auth off the concept doesn't apply.
+   */
   canSignOut: boolean;
-  /** Sign-in action offered (anyone who is not already a signed-in user). */
+  /**
+   * Can sign in — only meaningful when auth is enabled AND the user is
+   * not already signed in. With auth off the concept doesn't apply.
+   */
   canSignIn: boolean;
   /** Social feed tab visible + reachable. */
   canSeeFeed: boolean;
@@ -39,6 +45,12 @@ export interface Capabilities {
   canSubscribe: boolean;
   /** React to glowups in the feed (tied to social_enabled). */
   canReact: boolean;
+  /**
+   * Blocked-users screen reachable — needs both auth (to have users at all)
+   * and social (to have the concept of blocking someone). With either off,
+   * the screen has nothing to show.
+   */
+  canViewBlockedUsers: boolean;
   /** Raw `auth_required` passthrough for flow-level gating (AuthGuard). */
   requiresAuth: boolean;
 }
@@ -57,14 +69,15 @@ export function useCapabilities(): Capabilities {
       canViewOwnProfile:
         session.isUser || (session.isGuest && !features.auth_required),
       canEditProfile: session.isUser,
-      canSignOut: session.isUser,
-      canSignIn: !session.isUser,
+      canSignOut: features.auth_required && session.isUser,
+      canSignIn: features.auth_required && !session.isUser,
       canSeeFeed: features.social_enabled,
       canUseAdvisor: features.advisor_enabled,
       canShareGlowup: features.share_enabled,
       canSeeOnboarding: features.onboarding_enabled,
       canSubscribe: true,
       canReact: features.social_enabled,
+      canViewBlockedUsers: features.auth_required && features.social_enabled,
       requiresAuth: features.auth_required,
     }),
     [

@@ -12,7 +12,6 @@ import { useNavigation, useRouter } from "expo-router";
 import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
 import { PageBackground } from "../../components/ui/PageBackground";
-import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Caption } from "../../components/ui/Text";
 import { AUTH_ENDPOINTS } from "../../constants/config";
@@ -164,11 +163,15 @@ export default function ProfileScreen() {
             icon="person-circle-outline"
             title={title}
             description={subtitle}
-            action={{
-              label: "Sign In",
-              onPress: handleSignIn,
-              accessibilityLabel: "Sign in",
-            }}
+            action={
+              caps.canSignIn
+                ? {
+                    label: "Sign In",
+                    onPress: handleSignIn,
+                    accessibilityLabel: "Sign in",
+                  }
+                : undefined
+            }
             center={false}
           />
         </View>
@@ -176,7 +179,9 @@ export default function ProfileScreen() {
     );
   }
 
-  // Authenticated but username not yet resolved
+  // Authenticated but username not yet resolved — surface Log out as the
+  // primary recovery action so the button matches the rest of the app's
+  // design (same primary-button shape as "Try Again" on error states).
   if (!authUsername) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
@@ -184,23 +189,16 @@ export default function ProfileScreen() {
           icon="person-circle-outline"
           title="Complete your profile"
           description="We couldn't determine your username. Please log out and sign in again, or register a new account."
-          center={false}
-        />
-        <Button
-          title="Log out"
-          onPress={handleLogout}
-          variant="ghost"
-          size="md"
-          haptic="light"
-          testID="logout-button"
-          leftIcon={
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color={THEME.colors.textSecondary}
-            />
+          action={
+            caps.canSignOut
+              ? {
+                  label: "Log out",
+                  onPress: handleLogout,
+                  accessibilityLabel: "Log out",
+                }
+              : undefined
           }
-          style={styles.fallbackLogoutButton}
+          center={false}
         />
       </View>
     );
@@ -218,40 +216,31 @@ export default function ProfileScreen() {
     );
   }
 
-  // Error state
+  // Error state — prefer Retry if we have a username to retry with,
+  // otherwise fall back to Log out (both actions rendered as the standard
+  // primary button via EmptyState's action prop).
   if (error && !profile) {
+    const errorAction = authUsername
+      ? {
+          label: "Retry",
+          onPress: () => loadProfile(authUsername),
+          accessibilityLabel: "Retry loading profile",
+        }
+      : caps.canSignOut
+        ? {
+            label: "Log out",
+            onPress: handleLogout,
+            accessibilityLabel: "Log out",
+          }
+        : undefined;
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
         <EmptyState
           icon="alert-circle-outline"
           title="Something went wrong"
           description={error}
-          action={
-            authUsername
-              ? {
-                  label: "Retry",
-                  onPress: () => loadProfile(authUsername),
-                  accessibilityLabel: "Retry loading profile",
-                }
-              : undefined
-          }
+          action={errorAction}
           center={false}
-        />
-        <Button
-          title="Log out"
-          onPress={handleLogout}
-          variant="ghost"
-          size="md"
-          haptic="light"
-          testID="logout-button"
-          leftIcon={
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color={THEME.colors.textSecondary}
-            />
-          }
-          style={styles.fallbackLogoutButton}
         />
       </View>
     );
@@ -322,11 +311,5 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: THEME.spacing.md,
-  },
-
-  /* Fallback logout for edge-case screens (no username, error state) */
-  fallbackLogoutButton: {
-    marginTop: THEME.spacing.xxxl,
-    marginBottom: THEME.spacing.xxxl + THEME.spacing.sm,
   },
 });

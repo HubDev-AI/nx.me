@@ -65,14 +65,16 @@ describe("useCapabilities", () => {
     expect(caps.requiresAuth).toBe(true);
   });
 
-  it("guest + auth_required=false + social_enabled=false → guest profile without social/feed", () => {
+  it("guest + auth_required=false + social_enabled=false → guest profile without sign-in/sign-out UI", () => {
     setInputs("guest", { auth_required: false, social_enabled: false });
     const caps = render();
 
     expect(caps.canViewOwnProfile).toBe(true);
     expect(caps.canEditProfile).toBe(false);
+    // Auth feature off → neither sign-in nor sign-out make sense.
     expect(caps.canSignOut).toBe(false);
-    expect(caps.canSignIn).toBe(true);
+    expect(caps.canSignIn).toBe(false);
+    expect(caps.canViewBlockedUsers).toBe(false);
     expect(caps.canSeeFeed).toBe(false);
     expect(caps.canReact).toBe(false);
     expect(caps.requiresAuth).toBe(false);
@@ -80,14 +82,17 @@ describe("useCapabilities", () => {
 
   // ---------- Edge cases ----------
 
-  it("user + auth_required=false → user branch dominates regardless of flag", () => {
+  it("user + auth_required=false → user retains profile access but auth actions hide", () => {
     setInputs("user", { auth_required: false });
     const caps = render();
 
     expect(caps.canViewOwnProfile).toBe(true);
-    expect(caps.canSignOut).toBe(true);
-    expect(caps.canSignIn).toBe(false);
     expect(caps.canEditProfile).toBe(true);
+    // Even though the user is signed in, the feature is off — UI shouldn't
+    // offer log-out. (Impossible runtime combo but the derivation stays pure.)
+    expect(caps.canSignOut).toBe(false);
+    expect(caps.canSignIn).toBe(false);
+    expect(caps.canViewBlockedUsers).toBe(false);
   });
 
   it("anon + auth_required=true → no profile access, sign-in offered", () => {
@@ -134,6 +139,21 @@ describe("useCapabilities", () => {
       expect(caps.canUseAdvisor).toBe(advisor);
       expect(caps.canShareGlowup).toBe(share);
       expect(caps.canSeeOnboarding).toBe(onboarding);
+    },
+  );
+
+  // ---------- Blocked users: requires auth AND social ----------
+
+  it.each([
+    { auth: true, social: true, expected: true },
+    { auth: true, social: false, expected: false },
+    { auth: false, social: true, expected: false },
+    { auth: false, social: false, expected: false },
+  ])(
+    "canViewBlockedUsers needs both auth and social (auth=$auth, social=$social)",
+    ({ auth, social, expected }) => {
+      setInputs("user", { auth_required: auth, social_enabled: social });
+      expect(render().canViewBlockedUsers).toBe(expected);
     },
   );
 
