@@ -90,6 +90,7 @@ above). Key invariants to keep in mind:
 - **Verification before "done"** — run the Verification Loop commands above; no "looks right" claims.
 - **Infinite scroll** for all pagination (no load-more buttons).
 - **Always reuse** — check for existing components/hooks/utilities before writing new ones.
+- **Feature gating** — use `useCapabilities()` in mobile UI and `Depends(require_app_feature("..."))` on backend routers. Never read raw `features.X` for gating outside the capabilities module. See `app/features/README.md`.
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
