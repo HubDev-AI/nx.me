@@ -1,0 +1,7 @@
+iteration	category	target	delta	guard	status	description
+1	bug	mobile pagination retry stacking	0	pass	fixed	clear stacked timers + unify PAGINATION_CONFIG across 3 hooks
+2	perf	app/advisor/nudge_eligibility.py	0	pass	fixed	collapse 3 N+1 scans into one batch query + add tests
+3	refactor	mobile/lib/analysis.ts RN file helper	0	pass	fixed	centralize 2 'as unknown as Blob' casts in appendRNFile helper
+4	security	app/repositories/advisor_repo.py cursor	0	pass	fixed	harden cursor validation + 9 tests
+5	type	mobile/app/(tabs)/index.tsx ref cast	0	pass	fixed	remove 'as any' escape hatch on AnimatedFlatList ref
+6	test	tests/test_worker_resolve_source_url.py	0	pass	fixed	+6 tests for _resolve_source_url critical path
