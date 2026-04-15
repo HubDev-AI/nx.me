@@ -1,0 +1,12 @@
+iteration	category	target	delta	guard	status	description
+1	build	Makefile:48	-122	pass	fixed	remove PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 (broke pytest-asyncio)
+2	lint	mobile/index.ts mobile/polyfills.ts +5	-10	pass	fixed	extract polyfills to own file + import/order autofix cleanup
+3	lint	mobile/eslint.config.js	-14	pass	fixed	test-file + runtime-lazy require overrides
+4	lint	card-web/page.tsx + spec.ts	-2	pass	fixed	import/order cleanup
+5	type	app/api/auth.py:578	0	pass	fixed	Pydantic strip_whitespace deprecation -> StringConstraints
+6	bug	card-web/page.tsx footer links	0	pass	fixed	replace href=# with PRIVACY_URL/TERMS_URL env-backed constants
+7	bug	mobile/NudgeFeed.tsx	0	pass	fixed	add toast on pagination exhaustion + extract retry constants
+8	chore	.gitignore + untrack .serena	0	pass	fixed	ignore Serena/hippo MCP caches
+9	a11y	card-web/page.tsx h2 hierarchy	0	pass	fixed	promote 4 section eyebrows to h2 for WCAG compliance
+10	refactor	card-web/DEFAULT_ACCENT consolidation	0	pass	fixed	4 duplicated #F43F5E fallbacks -> DEFAULT_ACCENT constant
+11	test	tests/test_auth_extended.py RefreshRequest	0	pass	fixed	add 2 tests for new StringConstraints path
