@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
-import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import { ADVISOR_CONFIG, MIN_TOUCH_TARGET, PAGINATION_CONFIG } from "../../constants/config";
 import { useFeatures } from "../../lib/features-context";
 import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import {
@@ -187,10 +187,19 @@ export function ChatView() {
       retryCountRef.current = 0;
     } catch {
       retryCountRef.current += 1;
-      if (retryCountRef.current < 3) {
-        const delay = retryCountRef.current === 1 ? 2000 : 3000;
+      if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
+        const attemptIndex = Math.min(
+          retryCountRef.current - 1,
+          PAGINATION_CONFIG.RETRY_DELAYS_MS.length - 1,
+        );
+        const delay = PAGINATION_CONFIG.RETRY_DELAYS_MS[attemptIndex]!;
         setIsLoadingMore(false);
+        // Clear any previously scheduled retry so rapid scrolls don't stack timers.
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+        }
         retryTimeoutRef.current = setTimeout(() => {
+          retryTimeoutRef.current = null;
           loadOlderMessages();
         }, delay);
         return;

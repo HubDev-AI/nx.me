@@ -244,10 +244,18 @@ export const ADVISOR_CONFIG = {
   UPDATE_CELLS_BATCHING_PERIOD_MS: 50,
   /** FlatList performance: window size */
   WINDOW_SIZE: 21,
-  /** Max consecutive pagination retries before surfacing an error to the user */
-  PAGINATION_MAX_RETRIES: 3,
-  /** Pagination retry delays (ms) — backoff per attempt, indexed by attempt number */
-  PAGINATION_RETRY_DELAYS_MS: [2000, 3000] as const,
+} as const;
+
+/**
+ * Shared pagination retry backoff used by infinite-scroll hooks
+ * (advisor nudges, chat messages, comments). Centralised so every
+ * paginated list exhibits the same retry cadence and UX.
+ */
+export const PAGINATION_CONFIG = {
+  /** Max consecutive retries before surfacing an error to the user */
+  MAX_RETRIES: 3,
+  /** Retry delays (ms) — backoff per attempt, indexed by attempt number */
+  RETRY_DELAYS_MS: [2000, 3000] as const,
 } as const;
 
 /** Paywall animation configuration */

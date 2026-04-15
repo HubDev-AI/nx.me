@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { ADVISOR_CONFIG } from "../../constants/config";
+import { ADVISOR_CONFIG, PAGINATION_CONFIG } from "../../constants/config";
 import { THEME } from "../../constants/theme";
 import { fetchNudges, markNudgeRead } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
@@ -148,14 +148,19 @@ export function NudgeFeed() {
       retryCountRef.current = 0;
     } catch {
       retryCountRef.current += 1;
-      if (retryCountRef.current < ADVISOR_CONFIG.PAGINATION_MAX_RETRIES) {
+      if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
         const attemptIndex = Math.min(
           retryCountRef.current - 1,
-          ADVISOR_CONFIG.PAGINATION_RETRY_DELAYS_MS.length - 1,
+          PAGINATION_CONFIG.RETRY_DELAYS_MS.length - 1,
         );
-        const delay = ADVISOR_CONFIG.PAGINATION_RETRY_DELAYS_MS[attemptIndex]!;
+        const delay = PAGINATION_CONFIG.RETRY_DELAYS_MS[attemptIndex]!;
         setIsLoadingMore(false);
+        // Clear any previously scheduled retry so rapid scrolls don't stack timers.
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+        }
         retryTimeoutRef.current = setTimeout(() => {
+          retryTimeoutRef.current = null;
           loadMore();
         }, delay);
         return;
