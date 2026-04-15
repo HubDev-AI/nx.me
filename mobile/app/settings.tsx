@@ -1,7 +1,7 @@
 /**
  * Settings screen — account info, subscription link, about, danger zone.
  *
- * Route: /settings (Stack.Screen)
+ * Route: /settings (custom header)
  * Auth: required — fetches /v1/auth/me for account details.
  */
 import { useCallback, useEffect, useState } from "react";

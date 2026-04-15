@@ -74,9 +74,11 @@ describe("profile screen — capability-driven gating", () => {
     expect(caps.canViewOwnProfile).toBe(true); // R1: profile screen mounts
 
     const labels = buildProfileMenu(caps, HANDLERS).map((i) => i.label);
-    expect(labels).toEqual(["Subscription", "Settings", "Sign In"]);
+    expect(labels).toEqual(["Subscription", "Settings"]);
     // Edit Profile is omitted — guests have no identity target to edit.
     // Log Out is omitted — guests have no JWT session to terminate.
+    // Sign In is omitted — the auth feature is disabled, so there is no
+    // account to sign into. `canSignIn` is gated on `features.auth_required`.
   });
 
   it("user + auth_required=true renders full-profile menu (Edit + Log Out, no Sign In)", () => {
