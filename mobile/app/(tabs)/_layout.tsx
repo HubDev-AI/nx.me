@@ -218,9 +218,9 @@ function TabLayoutInner() {
   const socialOn = features.social_enabled;
   const advisorOn = features.advisor_enabled;
 
-  // Count of tabs that will appear in the bar. Create is always visible.
+  // Count of tabs that will appear in the bar. Create + Profile always visible.
   const visibleTabs =
-    1 /* create */ + (socialOn ? 2 : 0) /* home + profile */ + (advisorOn ? 1 : 0);
+    1 /* create */ + 1 /* profile */ + (socialOn ? 1 : 0) /* home */ + (advisorOn ? 1 : 0);
 
   const initialRoute = socialOn ? "index" : "create";
   const showTabBar = visibleTabs >= MIN_TABS_FOR_BAR;
@@ -297,22 +297,20 @@ function TabLayoutInner() {
             }}
           />
         </Tabs.Protected>
-        <Tabs.Protected guard={socialOn}>
-          <Tabs.Screen
-            name="profile"
-            options={{
-              title: "Profile",
-              tabBarIcon: ({ color, focused }) => (
-                <TabIcon
-                  name={focused ? "person" : "person-outline"}
-                  color={color}
-                  focused={focused}
-                  accentColor={theme.accent}
-                />
-              ),
-            }}
-          />
-        </Tabs.Protected>
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: "Profile",
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon
+                name={focused ? "person" : "person-outline"}
+                color={color}
+                focused={focused}
+                accentColor={theme.accent}
+              />
+            ),
+          }}
+        />
       </Tabs>
       {showTabBar && <ScrollToTopPill />}
     </>

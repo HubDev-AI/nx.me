@@ -9,7 +9,6 @@ import {
   View,
 } from "react-native";
 import Animated from "react-native-reanimated";
-import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
@@ -28,7 +27,7 @@ import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
 import { hapticLight } from "../../lib/haptics";
 import { showToast } from "../../lib/toast";
-import { Body, Heading } from "../../components/ui/Text";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { useTabBar } from "../../lib/tab-bar-context";
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<FeedPost>);
@@ -178,15 +177,11 @@ export default function HomeScreen() {
   const renderEmpty = useCallback(() => {
     if (isLoading) return null;
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="images-outline" size={48} color={THEME.colors.textSecondary} />
-        <Heading size="md" display={false} color="primary" style={styles.emptyTitle}>
-          No posts yet
-        </Heading>
-        <Body color="secondary" style={styles.emptySubtitle}>
-          Be the first to share your glow-up
-        </Body>
-      </View>
+      <EmptyState
+        icon="images-outline"
+        title="No posts yet"
+        description="Be the first to share your glow-up"
+      />
     );
   }, [isLoading]);
 
@@ -272,21 +267,6 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: THEME.spacing.xl,
     alignItems: "center",
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingTop: 80,
-    gap: THEME.spacing.sm,
-  },
-  emptyTitle: {
-    marginTop: THEME.spacing.lg,
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    textAlign: "center",
   },
   // retryButton and retryText removed — handled by QueryStateView
 });

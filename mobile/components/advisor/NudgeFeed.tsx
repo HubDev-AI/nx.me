@@ -13,7 +13,6 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 
 import { ADVISOR_CONFIG, PAGINATION_CONFIG } from "../../constants/config";
 import { THEME } from "../../constants/theme";
@@ -21,8 +20,7 @@ import { fetchNudges, markNudgeRead } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
 import { useTheme } from "../../lib/theme-context";
 import { showToast } from "../../lib/toast";
-import { Button } from "../ui/Button";
-import { Body, Heading } from "../ui/Text";
+import { EmptyState } from "../ui/EmptyState";
 import { NudgeCard } from "./NudgeCard";
 
 /** Skeleton for loading state */
@@ -225,27 +223,16 @@ export function NudgeFeed() {
 
   if (error && nudges.length === 0) {
     return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.textSecondary} />
-        <Heading size="md" display={false} color="primary" style={styles.errorTitle}>
-          Could not load nudges
-        </Heading>
-        <Body color="secondary" style={styles.errorSubtitle}>
-          {error}
-        </Body>
-        <Button
-          title="Try Again"
-          onPress={loadNudges}
-          variant="primary"
-          size="md"
-          accentColor={theme.accent}
-          leftIcon={
-            <Ionicons name="refresh-outline" size={18} color={THEME.colors.bg} />
-          }
-          accessibilityLabel="Retry loading nudges"
-          style={styles.retryButton}
-        />
-      </View>
+      <EmptyState
+        icon="alert-circle-outline"
+        title="Could not load nudges"
+        description={error}
+        action={{
+          label: "Try Again",
+          onPress: loadNudges,
+          accessibilityLabel: "Retry loading nudges",
+        }}
+      />
     );
   }
 
@@ -257,15 +244,11 @@ export function NudgeFeed() {
         renderItem={renderItem}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="sparkles-outline" size={48} color={THEME.colors.textSecondary} />
-            <Heading size="md" display={false} color="primary" style={styles.emptyTitle}>
-              No nudges yet
-            </Heading>
-            <Body color="secondary" style={styles.emptySubtitle}>
-              Ada will send you tips and check-ins as she gets to know you
-            </Body>
-          </View>
+          <EmptyState
+            icon="sparkles-outline"
+            title="No nudges yet"
+            description="Ada will send you tips and check-ins as she gets to know you"
+          />
         }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
@@ -305,38 +288,5 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: THEME.spacing.xl,
     alignItems: "center",
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    paddingTop: THEME.spacing.xxxl * 2.5,
-    gap: THEME.spacing.sm,
-  },
-  emptyTitle: {
-    marginTop: THEME.spacing.md,
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    textAlign: "center",
-  },
-  errorContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    gap: THEME.spacing.sm,
-    backgroundColor: "transparent",
-  },
-  errorTitle: {
-    marginTop: THEME.spacing.md,
-    textAlign: "center",
-  },
-  errorSubtitle: {
-    textAlign: "center",
-  },
-  retryButton: {
-    marginTop: THEME.spacing.lg,
   },
 });

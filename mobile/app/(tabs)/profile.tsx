@@ -13,7 +13,8 @@ import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { Button } from "../../components/ui/Button";
-import { Body, Caption, Heading } from "../../components/ui/Text";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Caption } from "../../components/ui/Text";
 import { AUTH_ENDPOINTS } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
 import { apiFetch } from "../../lib/api";
@@ -23,7 +24,8 @@ import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
 import { useProfile } from "../../components/profile/useProfile";
-import { RadialMenu, type RadialMenuItem } from "../../components/ui/RadialMenu";
+import type { RadialMenuItem } from "../../components/ui/RadialMenu";
+import { useRadialMenu } from "../../lib/radial-menu-context";
 import type { UpdateProfilePayload } from "../../components/profile/types";
 
 /**
@@ -39,8 +41,8 @@ export default function ProfileScreen() {
   const isAuthenticated = session.isUser;
   const isGuest = session.isGuest;
   const { theme } = useTheme();
+  const radialMenu = useRadialMenu();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
 
   const {
     profile,
@@ -110,14 +112,6 @@ export default function ProfileScreen() {
     [profile, updateProfile, setAuthUsername],
   );
 
-  const toggleMenu = useCallback(() => {
-    setMenuVisible((prev) => !prev);
-  }, []);
-
-  const closeMenu = useCallback(() => {
-    setMenuVisible(false);
-  }, []);
-
   const handleSignIn = useCallback(() => {
     router.push("/(auth)/login");
   }, [router]);
@@ -140,7 +134,7 @@ export default function ProfileScreen() {
       : [{ label: "Sign In", icon: "log-in-outline", onPress: handleSignIn }];
 
   // Keep ref in sync so headerRight button can call it
-  toggleMenuRef.current = toggleMenu;
+  toggleMenuRef.current = () => radialMenu.open(menuItems);
 
   // Put 3-dot button in the actual navigation header
   useLayoutEffect(() => {
@@ -159,13 +153,9 @@ export default function ProfileScreen() {
     });
   }, [navigation]);
 
-  // Not a real user (guest or anon) — render a centered sign-in CTA.
-  // The tab header already owns the top safe-area inset, so we only reserve
-  // room for the floating tab bar at the bottom. Flex centering in the
-  // remaining space keeps the CTA anchored both axes.
-  //
-  // IMPORTANT: RadialMenu is rendered here too so the headerRight 3-dot
-  // button (installed unconditionally via useLayoutEffect below) stays wired.
+  // Not a real user (guest or anon) — render a centered sign-in CTA. The
+  // RadialMenu is mounted globally via RadialMenuProvider, so we only call
+  // `open(menuItems)` from the 3-dot button; no local rendering needed.
   if (!isAuthenticated) {
     const title = isGuest
       ? "Sign in to save your glow-ups"
@@ -176,32 +166,17 @@ export default function ProfileScreen() {
     return (
       <View style={styles.emptyStateScreen}>
         <PageBackground overlayOpacity={0.85} />
-        <RadialMenu
-          visible={menuVisible}
-          onClose={closeMenu}
-          items={menuItems}
-          accentColor={theme.accent}
-        />
         <View style={styles.emptyStateContent}>
-          <Ionicons
-            name="person-circle-outline"
-            size={96}
-            color={THEME.colors.textMuted}
-          />
-          <Heading size="md" color="primary" style={styles.signInTitle}>
-            {title}
-          </Heading>
-          <Body color="secondary" style={styles.signInSubtitle}>
-            {subtitle}
-          </Body>
-          <Button
-            title="Sign In"
-            onPress={handleSignIn}
-            variant="primary"
-            size="md"
-            accentColor={theme.accent}
-            accessibilityLabel="Sign in"
-            style={styles.signInButton}
+          <EmptyState
+            icon="person-circle-outline"
+            title={title}
+            description={subtitle}
+            action={{
+              label: "Sign In",
+              onPress: handleSignIn,
+              accessibilityLabel: "Sign in",
+            }}
+            center={false}
           />
         </View>
       </View>
@@ -212,18 +187,12 @@ export default function ProfileScreen() {
   if (!authUsername) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <Ionicons
-          name="person-circle-outline"
-          size={64}
-          color={THEME.colors.textMuted}
+        <EmptyState
+          icon="person-circle-outline"
+          title="Complete your profile"
+          description="We couldn't determine your username. Please log out and sign in again, or register a new account."
+          center={false}
         />
-        <Heading size="md" color="primary" style={styles.signInTitle}>
-          Complete your profile
-        </Heading>
-        <Body color="secondary" style={styles.signInSubtitle}>
-          We couldn&apos;t determine your username. Please log out and sign in again,
-          or register a new account.
-        </Body>
         <Button
           title="Log out"
           onPress={handleLogout}
@@ -260,29 +229,21 @@ export default function ProfileScreen() {
   if (error && !profile) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <View style={styles.errorCard}>
-          <Ionicons
-            name="alert-circle-outline"
-            size={48}
-            color={THEME.colors.destructive}
-          />
-          <Heading size="md" display={false} color="primary" style={styles.errorTitle}>
-            Something went wrong
-          </Heading>
-          <Caption color="secondary" style={styles.errorMessage}>
-            {error}
-          </Caption>
-          {authUsername ? (
-            <Button
-              title="Retry"
-              onPress={() => loadProfile(authUsername)}
-              variant="primary"
-              size="md"
-              accentColor={theme.accent}
-              accessibilityLabel="Retry loading profile"
-            />
-          ) : null}
-        </View>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Something went wrong"
+          description={error}
+          action={
+            authUsername
+              ? {
+                  label: "Retry",
+                  onPress: () => loadProfile(authUsername),
+                  accessibilityLabel: "Retry loading profile",
+                }
+              : undefined
+          }
+          center={false}
+        />
         <Button
           title="Log out"
           onPress={handleLogout}
@@ -316,13 +277,6 @@ export default function ProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <PageBackground overlayOpacity={0.85} />
       {/* Radial menu — button is in headerRight, menu renders here */}
-      <RadialMenu
-        visible={menuVisible}
-        onClose={closeMenu}
-        items={menuItems}
-        accentColor={theme.accent}
-      />
-
       {/* Single FlatList: profile header + glow-up grid -- no nested ScrollView */}
       <GlowUpGrid
         items={glowUps}
@@ -357,7 +311,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.bg,
     alignItems: "center",
     justifyContent: "center",
-    padding: THEME.spacing.xxl,
+    paddingVertical: THEME.spacing.xxl,
     paddingBottom: TAB_BAR_HEIGHT,
   },
   /* Guest/anon empty-state — tab header owns top safe area; we just reserve
@@ -370,43 +324,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxl,
     paddingBottom: TAB_BAR_HEIGHT,
     gap: THEME.spacing.md,
   },
-  signInTitle: {
-    marginTop: THEME.spacing.lg,
-    marginBottom: THEME.spacing.xs,
-    textAlign: "center",
-  },
-  signInSubtitle: {
-    textAlign: "center",
-    maxWidth: 320,
-  },
-  signInButton: {
-    marginTop: THEME.spacing.xl,
-    minWidth: 200,
-  },
   loadingText: {
     marginTop: THEME.spacing.md,
-  },
-  errorCard: {
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
-    borderCurve: "continuous",
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    padding: THEME.spacing.xxl,
-    alignItems: "center",
-    gap: THEME.spacing.sm,
-  },
-  errorTitle: {
-    marginTop: THEME.spacing.md,
-    textAlign: "center",
-  },
-  errorMessage: {
-    textAlign: "center",
-    marginBottom: THEME.spacing.lg,
   },
 
   /* Fallback logout for edge-case screens (no username, error state) */

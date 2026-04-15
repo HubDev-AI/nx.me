@@ -31,6 +31,7 @@ import { useComments } from "./useComments";
 import { CommentItem } from "./CommentItem";
 import { CommentInput } from "./CommentInput";
 import { CommentSkeleton } from "./CommentSkeleton";
+import { EmptyState } from "../ui/EmptyState";
 import type { Comment } from "./types";
 
 interface CommentsSheetProps {
@@ -214,30 +215,28 @@ export function CommentsSheet({
     if (isLoading) return null;
     if (error) {
       return (
-        <View style={styles.emptyState}>
-          <Ionicons name="alert-circle" size={28} color={THEME.colors.destructive} />
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable
-            onPress={() => loadComments(postId)}
-            style={styles.retryButton}
-            accessibilityLabel="Retry loading comments"
-            accessibilityRole="button"
-          >
-            <Text style={styles.retryText}>Retry</Text>
-          </Pressable>
-        </View>
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Could not load comments"
+          description={error}
+          action={{
+            label: "Try Again",
+            onPress: () => loadComments(postId),
+            accessibilityLabel: "Retry loading comments",
+          }}
+          center={false}
+          style={styles.emptyStateWrapper}
+        />
       );
     }
     return (
-      <View style={styles.emptyState}>
-        <Ionicons
-          name="chatbubble-outline"
-          size={28}
-          color={THEME.colors.textDisabled}
-        />
-        <Text style={styles.emptyText}>No comments yet</Text>
-        <Text style={styles.emptyHint}>Be the first to comment</Text>
-      </View>
+      <EmptyState
+        icon="chatbubble-outline"
+        title="No comments yet"
+        description="Be the first to comment"
+        center={false}
+        style={styles.emptyStateWrapper}
+      />
     );
   }, [isLoading, error, loadComments, postId]);
 
@@ -412,44 +411,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     flex: 1,
   },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
+  emptyStateWrapper: {
     paddingVertical: THEME.spacing.xxxl + THEME.spacing.sm,
-    gap: THEME.spacing.sm,
-  },
-  emptyText: {
-    fontFamily: FONTS.bodySemiBold,
-    color: THEME.colors.textPrimary,
-    fontSize: 18,
-    letterSpacing: THEME.typography.heading.letterSpacing,
-  },
-  emptyHint: {
-    fontFamily: FONTS.body,
-    color: THEME.colors.textSecondary,
-    ...THEME.typography.caption,
-  },
-  errorText: {
-    fontFamily: FONTS.body,
-    color: THEME.colors.destructive,
-    fontSize: 14,
-    textAlign: "center",
-  },
-  retryButton: {
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: THEME.spacing.sm,
-    backgroundColor: THEME.colors.glass,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    borderRadius: THEME.radius.sm,
-    minHeight: MIN_TOUCH_TARGET,
-    justifyContent: "center",
-    marginTop: THEME.spacing.xs,
-  },
-  retryText: {
-    fontFamily: FONTS.bodySemiBold,
-    color: THEME.colors.textPrimary,
-    fontSize: 14,
   },
   emptyListContent: {
     flexGrow: 1,

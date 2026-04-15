@@ -13,14 +13,16 @@ import Animated, {
 import { THEME } from "../../constants/theme";
 import { hapticLight } from "../../lib/haptics";
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 interface PressableScaleProps extends Omit<PressableProps, "style"> {
   scale?: number;
   haptic?: boolean;
   children: React.ReactNode;
   /**
-   * Static style applied to the wrapping Animated.View.
-   * Pressable's function-form style is not supported here — the wrapper
-   * owns the transform so per-state style callbacks don't fit.
+   * Style applied directly to the underlying Pressable. Use this for layout
+   * (flex, flexDirection, padding, etc) — children of the Pressable respect
+   * its flexDirection.
    */
   style?: StyleProp<ViewStyle>;
 }
@@ -39,22 +41,21 @@ export function PressableScale({
   }));
 
   return (
-    <Animated.View style={[animStyle, style]}>
-      <Pressable
-        onPressIn={() => {
-          sv.value = withSpring(scale, THEME.animation.press);
-        }}
-        onPressOut={() => {
-          sv.value = withSpring(1, THEME.animation.press);
-        }}
-        onPress={(e) => {
-          if (haptic) hapticLight();
-          onPress?.(e);
-        }}
-        {...rest}
-      >
-        {children}
-      </Pressable>
-    </Animated.View>
+    <AnimatedPressable
+      onPressIn={() => {
+        sv.value = withSpring(scale, THEME.animation.press);
+      }}
+      onPressOut={() => {
+        sv.value = withSpring(1, THEME.animation.press);
+      }}
+      onPress={(e) => {
+        if (haptic) hapticLight();
+        onPress?.(e);
+      }}
+      style={[style, animStyle]}
+      {...rest}
+    >
+      {children}
+    </AnimatedPressable>
   );
 }
