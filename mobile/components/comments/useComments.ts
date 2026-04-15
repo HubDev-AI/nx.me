@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { getStoredJwt } from "../../lib/auth";
-import { FEED_ENDPOINTS, COMMENTS_CONFIG } from "../../constants/config";
+import { COMMENTS_CONFIG, FEED_ENDPOINTS, PAGINATION_CONFIG } from "../../constants/config";
 import type { Comment, CommentsResponse, CreateCommentResponse } from "./types";
 
 interface UseCommentsReturn {
@@ -100,11 +100,20 @@ export function useComments(): UseCommentsReturn {
         setPaginationFailed(false);
       } catch {
         retryCountRef.current += 1;
-        if (retryCountRef.current < 3) {
-          const delay = retryCountRef.current === 1 ? 2000 : 3000;
+        if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
+          const attemptIndex = Math.min(
+            retryCountRef.current - 1,
+            PAGINATION_CONFIG.RETRY_DELAYS_MS.length - 1,
+          );
+          const delay = PAGINATION_CONFIG.RETRY_DELAYS_MS[attemptIndex]!;
           isLoadingRef.current = false;
           setIsLoadingMore(false);
+          // Clear any previously scheduled retry so rapid scrolls don't stack.
+          if (retryTimeoutRef.current) {
+            clearTimeout(retryTimeoutRef.current);
+          }
           retryTimeoutRef.current = setTimeout(() => {
+            retryTimeoutRef.current = null;
             loadMore(postId);
           }, delay);
           return;

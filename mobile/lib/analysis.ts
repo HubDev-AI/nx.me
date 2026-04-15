@@ -17,6 +17,24 @@ import {
 } from "../constants/config";
 
 // ---------------------------------------------------------------------------
+// React Native FormData file descriptor
+// ---------------------------------------------------------------------------
+// RN's `FormData.append` accepts a `{ uri, name, type }` object as a file
+// value, but the DOM typings only allow `Blob | string`. Declare the shape
+// once and cast at the single append site — this is the officially sanctioned
+// RN pattern (see https://reactnative.dev/docs/network#uploading-files).
+
+interface RNFileDescriptor {
+  uri: string;
+  name: string;
+  type: string;
+}
+
+function appendRNFile(form: FormData, field: string, file: RNFileDescriptor): void {
+  form.append(field, file as unknown as Blob);
+}
+
+// ---------------------------------------------------------------------------
 // Types — kept in sync with backend OpenAPI spec (2026-03-23)
 // ---------------------------------------------------------------------------
 
@@ -160,11 +178,11 @@ export async function createUpload(file: {
   type: string;
 }): Promise<UploadCreateResponse> {
   const formData = new FormData();
-  formData.append("file", {
+  appendRNFile(formData, "file", {
     uri: file.uri,
     name: file.name,
     type: file.type,
-  } as unknown as Blob);
+  });
 
   return apiFetch<UploadCreateResponse>(GLOWUP_ENDPOINTS.UPLOAD, {
     method: "POST",
@@ -234,11 +252,11 @@ export async function createAnalysis(
   mimeType: string,
 ): Promise<AnalysisCreateResponse> {
   const formData = new FormData();
-  formData.append("file", {
+  appendRNFile(formData, "file", {
     uri: imageUri,
     name: fileName,
     type: mimeType,
-  } as unknown as Blob);
+  });
 
   // Do not set Content-Type manually — fetch sets it automatically with the
   // correct multipart boundary when the body is FormData.

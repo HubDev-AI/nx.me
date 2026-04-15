@@ -104,11 +104,18 @@ class AdvisorRepository:
         )
         if cursor:
             # A-7: Validate cursor format to return 400 on malformed input
-            try:
-                cursor_created_at, cursor_id = cursor.split("|", 1)
-            except ValueError:
+            parts = cursor.split("|", 1)
+            if len(parts) != 2 or not parts[0] or not parts[1]:
                 raise ValueError(
                     f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'"
+                )
+            cursor_created_at, cursor_id = parts
+            # Reject characters that would break the PostgREST filter grammar —
+            # commas, parentheses, or quotes inside a component smuggle filter
+            # tokens into `or_()` (same injection shape as SQL).
+            if any(ch in cursor_created_at + cursor_id for ch in ",()\"'"):
+                raise ValueError(
+                    f"Malformed cursor: illegal character in cursor components: '{cursor}'"
                 )
             query = query.or_(
                 f"created_at.gt.{cursor_created_at},"
@@ -251,6 +258,25 @@ class AdvisorRepository:
             .execute()
         )
         return result.data or []
+
+    def get_user_ids_with_nudge_since(
+        self, since: str, trigger: str | None = None
+    ) -> set[str]:
+        """Batch version of ``find_recent_nudges`` — one query, any user.
+
+        Returns the set of user IDs that have at least one nudge (optionally
+        filtered by ``trigger``) created after ``since``. Callers use set
+        membership to dedup eligibility scans in O(1) instead of N queries.
+        """
+        query = (
+            self._sb.table("advisor_nudges")
+            .select("user_id")
+            .gt("created_at", since)
+        )
+        if trigger is not None:
+            query = query.eq("trigger", trigger)
+        result = query.execute()
+        return {row["user_id"] for row in (result.data or [])}
 
     # ------------------------------------------------------------------
     # Memories

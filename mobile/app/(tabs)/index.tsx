@@ -221,7 +221,7 @@ export default function HomeScreen() {
         onRetry={loadFeed}
       >
         <AnimatedFlatList
-          ref={flatListRef as any}
+          ref={flatListRef}
           data={posts}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
