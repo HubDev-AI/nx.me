@@ -20,7 +20,6 @@ import { fetchNudges, markNudgeRead } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
 import { useTheme } from "../../lib/theme-context";
 import { showToast } from "../../lib/toast";
-import { EmptyState } from "../ui/EmptyState";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { NudgeCard } from "./NudgeCard";
 
@@ -222,21 +221,6 @@ export function NudgeFeed() {
     return <NudgeSkeleton />;
   }
 
-  if (error && nudges.length === 0) {
-    return (
-      <EmptyState
-        icon="alert-circle-outline"
-        title="Could not load nudges"
-        description={error}
-        action={{
-          label: "Try Again",
-          onPress: loadNudges,
-          accessibilityLabel: "Retry loading nudges",
-        }}
-      />
-    );
-  }
-
   return (
     <View style={styles.container}>
       <FlatList
@@ -263,6 +247,20 @@ export function NudgeFeed() {
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={Separator}
       />
+
+      {/* Error overlay — centered with Try Again button. */}
+      {error && nudges.length === 0 && (
+        <AdvisorEmptyOverlay
+          icon="alert-circle-outline"
+          title="Could not load nudges"
+          description={error}
+          action={{
+            label: "Try Again",
+            onPress: loadNudges,
+            accessibilityLabel: "Retry loading nudges",
+          }}
+        />
+      )}
 
       {/* Fixed-center empty state — matches position across advisor tabs. */}
       {!error && nudges.length === 0 && (

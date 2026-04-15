@@ -38,7 +38,6 @@ import { TypingIndicator } from "./TypingIndicator";
 import { AdvisorComposer } from "./AdvisorComposer";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PaywallModal } from "../paywall/PaywallModal";
-import { EmptyState } from "../ui/EmptyState";
 
 /** The floating tab bar renders whenever at least two tabs are visible. */
 const MIN_TABS_FOR_FLOATING_BAR = 2;
@@ -315,21 +314,6 @@ export function ChatView() {
     return <ChatSkeleton />;
   }
 
-  if (error && messages.length === 0) {
-    return (
-      <EmptyState
-        icon="alert-circle-outline"
-        title="Could not load messages"
-        description={error}
-        action={{
-          label: "Try Again",
-          onPress: loadMessages,
-          accessibilityLabel: "Retry loading messages",
-        }}
-      />
-    );
-  }
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -352,6 +336,20 @@ export function ChatView() {
         updateCellsBatchingPeriod={ADVISOR_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
         windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
       />
+
+      {/* Error overlay — centered with Try Again button. */}
+      {error && messages.length === 0 && (
+        <AdvisorEmptyOverlay
+          icon="alert-circle-outline"
+          title="Could not load messages"
+          description={error}
+          action={{
+            label: "Try Again",
+            onPress: loadMessages,
+            accessibilityLabel: "Retry loading messages",
+          }}
+        />
+      )}
 
       {/* Fixed-center empty state — matches position across advisor tabs. */}
       {!error && messages.length === 0 && (
