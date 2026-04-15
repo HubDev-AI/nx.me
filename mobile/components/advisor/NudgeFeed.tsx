@@ -21,6 +21,7 @@ import type { Nudge } from "../../lib/advisor";
 import { useTheme } from "../../lib/theme-context";
 import { showToast } from "../../lib/toast";
 import { EmptyState } from "../ui/EmptyState";
+import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { NudgeCard } from "./NudgeCard";
 
 /** Skeleton for loading state */
@@ -243,13 +244,6 @@ export function NudgeFeed() {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         ListFooterComponent={renderFooter}
-        ListEmptyComponent={
-          <EmptyState
-            icon="sparkles-outline"
-            title="No nudges yet"
-            description="Ada will send you tips and check-ins as she gets to know you"
-          />
-        }
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
         refreshControl={
@@ -269,6 +263,15 @@ export function NudgeFeed() {
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={Separator}
       />
+
+      {/* Fixed-center empty state — matches position across advisor tabs. */}
+      {!error && nudges.length === 0 && (
+        <AdvisorEmptyOverlay
+          icon="sparkles-outline"
+          title="No nudges yet"
+          description="Ada will send you tips and check-ins as she gets to know you"
+        />
+      )}
     </View>
   );
 }

@@ -27,6 +27,7 @@ import { MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
 import { EmptyState } from "../ui/EmptyState";
+import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PressableScale } from "../ui/PressableScale";
 import { Caption } from "../ui/Text";
 
@@ -622,17 +623,19 @@ export function MemoryList() {
         data={memories}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        ListEmptyComponent={
-          <EmptyState
-            icon="bookmark-outline"
-            title="No memories yet"
-            description="Add goals or notes so Ada can personalise her advice"
-          />
-        }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={MemorySeparator}
       />
+
+      {/* Fixed-center empty state — matches position across advisor tabs. */}
+      {memories.length === 0 && (
+        <AdvisorEmptyOverlay
+          icon="bookmark-outline"
+          title="No memories yet"
+          description="Add goals or notes so Ada can personalise her advice"
+        />
+      )}
     </View>
   );
 }

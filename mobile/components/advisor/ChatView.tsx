@@ -36,6 +36,7 @@ import type { AdvisorMessage } from "../../lib/advisor";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { AdvisorComposer } from "./AdvisorComposer";
+import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PaywallModal } from "../paywall/PaywallModal";
 import { EmptyState } from "../ui/EmptyState";
 
@@ -350,14 +351,16 @@ export function ChatView() {
         maxToRenderPerBatch={ADVISOR_CONFIG.MAX_TO_RENDER_PER_BATCH}
         updateCellsBatchingPeriod={ADVISOR_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
         windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
-        ListEmptyComponent={
-          <EmptyState
-            icon="sparkles-outline"
-            title="Start a conversation"
-            description="Ask Ada for style advice"
-          />
-        }
       />
+
+      {/* Fixed-center empty state — matches position across advisor tabs. */}
+      {!error && messages.length === 0 && (
+        <AdvisorEmptyOverlay
+          icon="sparkles-outline"
+          title="Start a conversation"
+          description="Ask Ada for style advice"
+        />
+      )}
 
       {/* Send error banner */}
       {error && messages.length > 0 && (
