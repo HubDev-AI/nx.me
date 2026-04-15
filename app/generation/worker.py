@@ -11,6 +11,7 @@ import io
 import logging
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -65,6 +66,38 @@ else
     return val
 end
 """
+
+
+# Cached SHA — loaded lazily on first use per worker process.
+_concurrent_cleanup_sha_cache: str | None = None
+
+
+async def _release_concurrent_counter(redis: Any, user_id: str) -> None:
+    """Atomically decrement ``concurrent:{user_id}`` using the cleanup script.
+
+    Idempotent: the Lua script clamps at 0 and deletes the key when it hits
+    zero, so calling this extra times (e.g. both from the worker's finally
+    block AND from the watchdog recovery path) is a safe no-op once the
+    counter has already drained. Never re-raises — callers are either
+    exception handlers (must not mask the primary error) or cron tasks
+    (must not abort processing the remaining items).
+    """
+    global _concurrent_cleanup_sha_cache
+    try:
+        if _concurrent_cleanup_sha_cache is None:
+            _concurrent_cleanup_sha_cache = await redis.script_load(
+                _CONCURRENT_CLEANUP_SCRIPT
+            )
+        await redis.evalsha(
+            _concurrent_cleanup_sha_cache,
+            1,
+            f"concurrent:{user_id}",
+            str(settings.GENERATION_TIMEOUT_SECONDS + 60),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to release concurrent counter for user %s", user_id
+        )
 
 
 def _validate_provider_url(url: str) -> None:
@@ -600,10 +633,6 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     """
     supabase: Client = ctx["supabase"]
     redis = ctx["redis"]
-    cleanup_sha_key = "_concurrent_cleanup_sha"
-    if cleanup_sha_key not in ctx:
-        ctx[cleanup_sha_key] = await redis.script_load(_CONCURRENT_CLEANUP_SCRIPT)
-    cleanup_sha = ctx[cleanup_sha_key]
     cost_tracker = CostTracker(redis)
     if "generator" not in ctx:
         ctx["generator"] = _get_generator()
@@ -726,18 +755,7 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
         await _fail_job(job_repo, job_id, job_data, FAILURE_PROVIDER, supabase=supabase)
     finally:
         if user_id_for_concurrent:
-            try:
-                await redis.evalsha(
-                    cleanup_sha,
-                    1,
-                    f"concurrent:{user_id_for_concurrent}",
-                    str(settings.GENERATION_TIMEOUT_SECONDS + 60),
-                )
-            except Exception:
-                logger.error(
-                    "Failed to cleanup concurrent counter for user %s",
-                    user_id_for_concurrent,
-                )
+            await _release_concurrent_counter(redis, user_id_for_concurrent)
 
 
 async def _fail_job(
@@ -824,8 +842,16 @@ async def _fail_job(
 
 
 async def watchdog_stuck_jobs(ctx: dict) -> None:
-    """Cron: recover jobs stuck in 'processing' or 'finalizing' beyond timeout."""
+    """Cron: recover jobs stuck in 'processing' or 'finalizing' beyond timeout.
+
+    Also releases the Redis ``concurrent:{user_id}`` counter for each stuck
+    job — the worker's ``finally`` block can be bypassed by hard crashes
+    (SIGKILL / OOM / host loss). Without this, crashed workers would leak
+    the counter until TTL expiry and temporarily erode the user's
+    concurrency cap.
+    """
     supabase: Client = ctx["supabase"]
+    redis = ctx.get("redis")
     job_repo = JobRepository(supabase)
     threshold = datetime.now(tz=timezone.utc) - timedelta(
         seconds=settings.GENERATION_TIMEOUT_SECONDS + 30
@@ -836,3 +862,8 @@ async def watchdog_stuck_jobs(ctx: dict) -> None:
     for job in stuck_jobs:
         logger.warning("Recovering stuck job %s", job["id"])
         await _fail_job(job_repo, job["id"], job, FAILURE_TIMEOUT, supabase=supabase)
+        # Also reclaim the concurrent counter — idempotent, safe to call
+        # even if the worker's finally already ran before the crash.
+        user_id = job.get("user_id")
+        if redis is not None and user_id:
+            await _release_concurrent_counter(redis, user_id)
