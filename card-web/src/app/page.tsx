@@ -1,7 +1,7 @@
 import Link from 'next/link';
 
-import { APP_STORE_URL, PLAY_STORE_URL, SITE_NAME } from '@/config/constants';
 import { buildTheme } from '@/components/theme-provider';
+import { APP_STORE_URL, PLAY_STORE_URL, SITE_NAME } from '@/config/constants';
 
 /**
  * Photography-driven editorial landing page.
