@@ -1,8 +1,14 @@
 /**
  * MemoryList — user memories with add and swipe-to-delete.
  *
- * Memories are things Ada remembers about the user: goals, notes, accepted suggestions, etc.
- * Users can add goals/notes and delete any memory. Swipe left to reveal delete action.
+ * Mirrors ChatView's layout: list fills the tab, composer sits at the
+ * bottom of the screen, KeyboardAvoidingView lifts the composer with
+ * the keyboard, and the floating tab-bar is cleared via bottomPadding.
+ * The Goal / Note type chips sit at the top as a type selector — the
+ * actual input is the shared AdvisorComposer at the bottom.
+ *
+ * Memories are things Ada remembers about the user: goals, notes,
+ * accepted suggestions, etc. Swipe left on a row to reveal delete.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -12,19 +18,24 @@ import {
   Pressable,
   Alert,
   Animated,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   PanResponder,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { showToast } from "../../lib/toast";
-import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import { ADVISOR_CONFIG } from "../../constants/config";
+import { useCapabilities } from "../../lib/capabilities";
+import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
-import { EmptyState } from "../ui/EmptyState";
 import { AdvisorComposer } from "./AdvisorComposer";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PressableScale } from "../ui/PressableScale";
@@ -32,6 +43,10 @@ import { Caption } from "../ui/Text";
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
+/** The floating tab bar renders whenever at least two tabs are visible. */
+const MIN_TABS_FOR_FLOATING_BAR = 2;
+/** iOS keyboardVerticalOffset used by KeyboardAvoidingView — matches ChatView. */
+const IOS_KEYBOARD_VERTICAL_OFFSET = 90;
 
 /** Extract a display string from a memory content object. */
 function memoryContentText(content: Record<string, unknown>): string {
@@ -104,7 +119,6 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
       },
       onPanResponderRelease: (_, gesture) => {
         if (gesture.dx < SWIPE_DELETE_THRESHOLD) {
-          // Snap to reveal delete
           Animated.spring(translateX, {
             toValue: -DELETE_BUTTON_WIDTH,
             useNativeDriver: true,
@@ -112,7 +126,6 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
             friction: 7,
           }).start();
         } else {
-          // Snap back
           Animated.spring(translateX, {
             toValue: 0,
             useNativeDriver: true,
@@ -125,7 +138,6 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
   ).current;
 
   const handleDelete = useCallback(() => {
-    // Animate out then delete
     Animated.timing(translateX, {
       toValue: -400,
       duration: 200,
@@ -141,7 +153,6 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
 
   return (
     <View style={rowStyles.wrapper}>
-      {/* Delete button behind */}
       <View style={rowStyles.deleteContainer}>
         <Pressable
           onPress={handleDelete}
@@ -153,7 +164,6 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
         </Pressable>
       </View>
 
-      {/* Card on top, swipeable */}
       <Animated.View
         style={[rowStyles.card, { transform: [{ translateX }] }]}
         {...panResponder.panHandlers}
@@ -241,104 +251,71 @@ const rowStyles = StyleSheet.create({
 });
 
 // ---------------------------------------------------------------------------
-// Add Memory Form
+// Type selector row — sits at top, picks what kind of memory gets added
+// when the user submits the composer at the bottom.
 // ---------------------------------------------------------------------------
 
-interface AddMemoryFormProps {
-  onAdd: (type: MemoryType, content: string) => void;
-  isAdding: boolean;
+interface TypeChipsProps {
+  selectedType: MemoryType;
+  onSelect: (type: MemoryType) => void;
 }
 
-function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
+const ADDABLE_TYPES: { value: MemoryType; label: string }[] = [
+  { value: "goal", label: "Goal" },
+  { value: "user_note", label: "Note" },
+];
+
+function TypeChips({ selectedType, onSelect }: TypeChipsProps) {
   const { theme } = useTheme();
-  const [content, setContent] = useState("");
-  const [selectedType, setSelectedType] = useState<MemoryType>("goal");
-
-  const types: { value: MemoryType; label: string }[] = [
-    { value: "goal", label: "Goal" },
-    { value: "user_note", label: "Note" },
-  ];
-
-  const handleAdd = useCallback(() => {
-    const trimmed = content.trim();
-    if (!trimmed) return;
-    onAdd(selectedType, trimmed);
-    setContent("");
-  }, [content, selectedType, onAdd]);
-
-  const placeholder =
-    selectedType === "goal"
-      ? "e.g. Grow out my hair to shoulder length"
-      : "e.g. I prefer minimal jewelry";
-
   return (
-    <View style={formStyles.container}>
-      {/* Type selector — mirrors the top tab-pill aesthetic */}
-      <View style={formStyles.typeRow}>
-        {types.map((t) => {
-          const isActive = selectedType === t.value;
-          return (
-            <PressableScale
-              key={t.value}
-              scale={0.94}
-              haptic={false}
-              onPress={() => setSelectedType(t.value)}
-              style={[
-                formStyles.typeChip,
-                isActive && {
-                  backgroundColor: theme.accent + "1A",
-                  borderColor: theme.accent,
-                  ...THEME.shadow.glow(theme.accent),
-                },
-              ]}
-              accessibilityLabel={`Memory type: ${t.label}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: isActive }}
+    <View style={chipStyles.row}>
+      {ADDABLE_TYPES.map((t) => {
+        const isActive = selectedType === t.value;
+        return (
+          <PressableScale
+            key={t.value}
+            scale={0.94}
+            haptic={false}
+            onPress={() => onSelect(t.value)}
+            style={[
+              chipStyles.chip,
+              isActive && {
+                backgroundColor: theme.accent + "1A",
+                borderColor: theme.accent,
+                ...THEME.shadow.glow(theme.accent),
+              },
+            ]}
+            accessibilityLabel={`Memory type: ${t.label}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isActive }}
+          >
+            <Ionicons
+              name={memoryTypeIcon(t.value)}
+              size={18}
+              color={isActive ? theme.accent : THEME.colors.textSecondary}
+            />
+            <Caption
+              weight={isActive ? "semibold" : "medium"}
+              color={isActive ? theme.accent : "secondary"}
             >
-              <Ionicons
-                name={memoryTypeIcon(t.value)}
-                size={18}
-                color={isActive ? theme.accent : THEME.colors.textSecondary}
-              />
-              <Caption
-                weight={isActive ? "semibold" : "medium"}
-                color={isActive ? theme.accent : "secondary"}
-              >
-                {t.label}
-              </Caption>
-            </PressableScale>
-          );
-        })}
-      </View>
-
-      {/* Input — shared composer with chat */}
-      <AdvisorComposer
-        value={content}
-        onChangeText={setContent}
-        onSubmit={handleAdd}
-        placeholder={placeholder}
-        disabled={isAdding}
-        submitIcon="add"
-        maxLength={ADVISOR_CONFIG.MEMORY_MAX_LENGTH}
-        accessibilityLabel="Memory content"
-        submitAccessibilityLabel="Add memory"
-      />
+              {t.label}
+            </Caption>
+          </PressableScale>
+        );
+      })}
     </View>
   );
 }
 
-const formStyles = StyleSheet.create({
-  container: {
-    paddingTop: THEME.spacing.md,
-    paddingBottom: THEME.spacing.md,
-    gap: THEME.spacing.md,
-  },
-  typeRow: {
+const chipStyles = StyleSheet.create({
+  row: {
     flexDirection: "row",
     gap: THEME.spacing.sm,
     paddingHorizontal: THEME.spacing.md,
+    paddingTop: THEME.spacing.md,
+    paddingBottom: THEME.spacing.sm,
   },
-  typeChip: {
+  chip: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -350,7 +327,7 @@ const formStyles = StyleSheet.create({
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    minHeight: MIN_TOUCH_TARGET,
+    minHeight: 44,
     ...THEME.shadow.glass,
   },
 });
@@ -378,6 +355,7 @@ function MemorySkeleton() {
 
 const memSkeletonStyles = StyleSheet.create({
   container: {
+    flex: 1,
     padding: THEME.spacing.lg,
     gap: THEME.spacing.md,
   },
@@ -410,10 +388,42 @@ const memSkeletonStyles = StyleSheet.create({
 const MemorySeparator = () => <View style={styles.separator} />;
 
 export function MemoryList() {
+  const insets = useSafeAreaInsets();
+  const caps = useCapabilities();
+
+  // Floating tab bar visibility — same math as ChatView.
+  const visibleTabCount =
+    1 /* create */ +
+    (caps.canSeeFeed ? 2 : 0) +
+    (caps.canUseAdvisor ? 1 : 0);
+  const floatingTabBarVisible = visibleTabCount >= MIN_TABS_FOR_FLOATING_BAR;
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setIsKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setIsKeyboardVisible(false),
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+  const effectiveTabBarOffset =
+    floatingTabBarVisible && !isKeyboardVisible ? TAB_BAR_HEIGHT : 0;
+  const inputBottomPadding =
+    Math.max(insets.bottom, THEME.spacing.sm) + effectiveTabBarOffset;
+
+  // List + form state
   const [memories, setMemories] = useState<UserMemory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [content, setContent] = useState("");
+  const [selectedType, setSelectedType] = useState<MemoryType>("goal");
 
   // -------------------------------------------------------------------------
   // Load memories
@@ -440,22 +450,22 @@ export function MemoryList() {
   // -------------------------------------------------------------------------
   // Add memory
   // -------------------------------------------------------------------------
-  const handleAdd = useCallback(
-    async (type: MemoryType, content: string) => {
-      setIsAdding(true);
-      try {
-        const newMemory = await addMemory(type, { text: content });
-        setMemories((prev) => [newMemory, ...prev]);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Couldn't save that memory.";
-        showToast({ kind: 'error', message });
-      } finally {
-        setIsAdding(false);
-      }
-    },
-    [],
-  );
+  const handleAdd = useCallback(async () => {
+    const trimmed = content.trim();
+    if (!trimmed || isAdding) return;
+    setIsAdding(true);
+    try {
+      const newMemory = await addMemory(selectedType, { text: trimmed });
+      setMemories((prev) => [newMemory, ...prev]);
+      setContent("");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Couldn't save that memory.";
+      showToast({ kind: "error", message });
+    } finally {
+      setIsAdding(false);
+    }
+  }, [content, isAdding, selectedType]);
 
   // -------------------------------------------------------------------------
   // Delete memory
@@ -473,14 +483,11 @@ export function MemoryList() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            // Read from ref to avoid stale closure over memories
             const deletedItem = memoriesRef.current.find((m) => m.id === memoryId);
-            // Optimistic removal
             setMemories((prev) => prev.filter((m) => m.id !== memoryId));
             try {
               await deleteMemory(memoryId);
             } catch {
-              // Re-insert on failure, preserving sort order
               if (deletedItem) {
                 setMemories((prev) =>
                   [...prev, deletedItem].sort(
@@ -490,7 +497,7 @@ export function MemoryList() {
                   ),
                 );
               }
-              showToast({ kind: 'error', message: "Couldn't delete that memory. Try again." });
+              showToast({ kind: "error", message: "Couldn't delete that memory. Try again." });
             }
           },
         },
@@ -510,23 +517,55 @@ export function MemoryList() {
     [handleDelete],
   );
 
-  // -------------------------------------------------------------------------
-  // States
-  // -------------------------------------------------------------------------
-  if (isLoading) {
-    return (
-      <View style={styles.container}>
-        <AddMemoryForm onAdd={handleAdd} isAdding={isAdding} />
-        <MemorySkeleton />
-      </View>
-    );
-  }
+  const placeholder =
+    selectedType === "goal"
+      ? "e.g. Grow out my hair to shoulder length"
+      : "e.g. I prefer minimal jewelry";
 
-  if (error && memories.length === 0) {
-    return (
-      <View style={styles.container}>
-        <AddMemoryForm onAdd={handleAdd} isAdding={isAdding} />
-        <EmptyState
+  const composer = (
+    <AdvisorComposer
+      value={content}
+      onChangeText={setContent}
+      onSubmit={handleAdd}
+      placeholder={placeholder}
+      disabled={isAdding}
+      submitIcon="add"
+      maxLength={ADVISOR_CONFIG.MEMORY_MAX_LENGTH}
+      accessibilityLabel="Memory content"
+      submitAccessibilityLabel="Add memory"
+      bottomPadding={inputBottomPadding}
+      separator
+    />
+  );
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={
+        Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"
+      }
+      keyboardVerticalOffset={
+        Platform.OS === "ios" ? IOS_KEYBOARD_VERTICAL_OFFSET : 0
+      }
+    >
+      <TypeChips selectedType={selectedType} onSelect={setSelectedType} />
+
+      {isLoading ? (
+        <MemorySkeleton />
+      ) : (
+        <FlatList
+          data={memories}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={MemorySeparator}
+        />
+      )}
+
+      {/* Error overlay — centered with Try Again button. */}
+      {!isLoading && error && memories.length === 0 && (
+        <AdvisorEmptyOverlay
           icon="alert-circle-outline"
           title="Could not load memories"
           description={error}
@@ -536,31 +575,19 @@ export function MemoryList() {
             accessibilityLabel: "Retry loading memories",
           }}
         />
-      </View>
-    );
-  }
+      )}
 
-  return (
-    <View style={styles.container}>
-      <AddMemoryForm onAdd={handleAdd} isAdding={isAdding} />
-      <FlatList
-        data={memories}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={MemorySeparator}
-      />
-
-      {/* Fixed-center empty state — matches position across advisor tabs. */}
-      {memories.length === 0 && (
+      {/* Empty overlay — shown when no memories exist. */}
+      {!isLoading && !error && memories.length === 0 && (
         <AdvisorEmptyOverlay
           icon="bookmark-outline"
           title="No memories yet"
           description="Add goals or notes so Ada can personalise her advice"
         />
       )}
-    </View>
+
+      {composer}
+    </KeyboardAvoidingView>
   );
 }
 
