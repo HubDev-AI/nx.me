@@ -1,7 +1,7 @@
 ---
 title: "feat: Feature flags redesign — usage + ergonomics"
 type: feat
-status: active
+status: completed
 date: 2026-04-15
 origin: docs/superpowers/specs/2026-04-15-feature-flags-redesign-design.md
 ---
@@ -173,7 +173,7 @@ Result matrix (verbatim from origin §Guest profile fix):
 
 ---
 
-- [ ] **Unit 2: Guest profile fix (user-reported bug)**
+- [x] **Unit 2: Guest profile fix (user-reported bug)**
 
 **Goal:** Guest users with `auth_required=false` see their full profile + glowups grid, not a sign-in CTA. Menu omits Log Out / Sign In.
 
@@ -219,7 +219,7 @@ Result matrix (verbatim from origin §Guest profile fix):
 
 ---
 
-- [ ] **Unit 3: UI audit sweep — migrate remaining raw-flag reads to capabilities**
+- [x] **Unit 3: UI audit sweep — migrate remaining raw-flag reads to capabilities**
 
 **Goal:** Every UI file outside the capabilities module and the features infrastructure consumes `useCapabilities()`, never raw `features.X`, for gating decisions. (Non-gating reads — e.g., `isLoading` — remain fine.)
 
@@ -252,7 +252,7 @@ Result matrix (verbatim from origin §Guest profile fix):
 
 ---
 
-- [ ] **Unit 4: Backend router audit + coverage test + mis-gated route fix**
+- [x] **Unit 4: Backend router audit + coverage test + mis-gated route fix**
 
 **Goal:** Every router expected to be flag-gated carries `Depends(require_app_feature("<flag>"))` at the router level, enforced by a CI test. Mis-gated `/users/{username}/profile` route corrected.
 
@@ -291,7 +291,7 @@ Result matrix (verbatim from origin §Guest profile fix):
 
 ---
 
-- [ ] **Unit 5: Docs — add-a-flag playbook + convention**
+- [x] **Unit 5: Docs — add-a-flag playbook + convention**
 
 **Goal:** Onboard future contributors to the "capability + gate + parity test" workflow.
 
