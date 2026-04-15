@@ -287,10 +287,18 @@ export const CARD_ENDPOINTS = {
 
 /** Profile API paths */
 export const PROFILE_ENDPOINTS = {
+  /** Identity for the current session — works for JWT users and guest tokens. */
+  ME: "/v1/users/me",
   PROFILE: (username: string) => `/v1/users/${username}/profile`,
   HISTORY: (username: string) => `/v1/users/${username}/history`,
   UPDATE: (username: string) => `/v1/users/${username}`,
 } as const;
+
+/**
+ * Bound on how long AuthGuard waits for the guest /me lookup before
+ * releasing the splash screen. A stalled network must not strand users.
+ */
+export const GUEST_ME_TIMEOUT_MS = 5_000;
 
 /** Profile grid configuration */
 export const PROFILE_CONFIG = {

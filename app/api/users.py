@@ -25,8 +25,8 @@ from app.api.deps import (
     get_job_repo,
     get_redis,
     get_upload_repo,
+    get_user_or_guest,
     get_user_repo,
-    require_app_feature,
 )
 from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
@@ -51,6 +51,11 @@ _USERNAME_MAX_LENGTH = 30
 _USERNAME_CHANGE_COOLDOWN_HOURS = 24
 _USERNAME_CHECK_RATE_LIMIT = 30  # max requests per window
 _USERNAME_CHECK_RATE_WINDOW_SECONDS = 60  # 1 minute
+# Per-IP cap for the public profile-by-username endpoint. Mirrors
+# check-username's enumeration guard so removing the social_enabled gate
+# doesn't open a dictionary-scrape vector when social_enabled=false.
+_PROFILE_LOOKUP_RATE_LIMIT = 30
+_PROFILE_LOOKUP_RATE_WINDOW_SECONDS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +75,14 @@ class ProfileResponse(BaseModel):
     post_count: int
     total_reactions: int
     member_since: str
+
+
+class MeResponse(BaseModel):
+    """Identity payload for the current session — JWT user or guest token."""
+
+    username: str
+    display_name: str
+    avatar_url: str | None
 
 
 class HistoryEntry(BaseModel):
@@ -160,6 +173,49 @@ async def check_username(
 
 
 # ---------------------------------------------------------------------------
+# GET /users/me  — identity for the current session (JWT user or guest token)
+# ---------------------------------------------------------------------------
+# Declared BEFORE /users/{username}/profile so path matching prefers the
+# static "me" segment over the path-param branch.
+
+
+@router.get("/users/me", response_model=MeResponse)
+async def get_me(
+    claims: UserClaims = Depends(get_user_or_guest),
+    user_repo: UserRepository = Depends(get_user_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
+) -> MeResponse:
+    """Return the current session's identity (username, display_name, avatar).
+
+    Accepts either a JWT (real user) or X-Guest-Token (guest, when
+    FEATURE_AUTH_REQUIRED=false). Mobile uses this to learn its own username
+    after guest provisioning so screens like profile.tsx can call
+    /users/{username}/profile.
+    """
+    user = await run_sync(user_repo.get_profile_by_id, claims["sub"])
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    avatar_storage_key = user.get("avatar_storage_key")
+    avatar_url = (
+        await run_sync(
+            image_repo.build_avatar_signed_url,
+            avatar_storage_key,
+            settings.SIGNED_URL_EXPIRY_SECONDS,
+        )
+        if avatar_storage_key
+        else None
+    )
+    return MeResponse(
+        username=user["username"],
+        display_name=user["display_name"],
+        avatar_url=avatar_url,
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /users/{username}/profile  (public)
 # ---------------------------------------------------------------------------
 
@@ -167,17 +223,34 @@ async def check_username(
 @router.get(
     "/users/{username}/profile",
     response_model=ProfileResponse,
-    dependencies=[Depends(require_app_feature("social_enabled"))],
 )
 async def get_user_profile(
+    request: Request,
     username: str,
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
+    r: aioredis.Redis = Depends(get_redis),
 ) -> ProfileResponse:
     """Return public profile stats for the given username.
 
-    No auth required. Returns 404 for deleted or non-existent users.
+    No auth required. Per-IP rate limited to prevent username enumeration —
+    the route is reachable in any feature-flag configuration (no longer
+    gated on social_enabled, which used to provide an indirect cap), so the
+    same throttle as check-username applies here.
+
+    Returns 404 for deleted or non-existent users.
     """
+    client_ip = get_client_ip(request) or "unknown"
+    rate_key = f"profile_lookup:{client_ip}"
+    current = await r.incr(rate_key)
+    if current == 1:
+        await r.expire(rate_key, _PROFILE_LOOKUP_RATE_WINDOW_SECONDS)
+    if current > _PROFILE_LOOKUP_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please slow down.",
+        )
+
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
     user_id: str = user["id"]

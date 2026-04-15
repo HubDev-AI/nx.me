@@ -24,8 +24,9 @@ import { ProfileHeader } from "../../components/profile/ProfileHeader";
 import { GlowUpGrid } from "../../components/profile/GlowUpGrid";
 import { EditProfileSheet } from "../../components/profile/EditProfileSheet";
 import { useProfile } from "../../components/profile/useProfile";
-import type { RadialMenuItem } from "../../components/ui/RadialMenu";
+import { buildProfileMenu } from "../../components/profile/menu";
 import { useRadialMenu } from "../../lib/radial-menu-context";
+import { useCapabilities } from "../../lib/capabilities";
 import type { UpdateProfilePayload } from "../../components/profile/types";
 
 /**
@@ -37,9 +38,8 @@ export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const toggleMenuRef = useRef<() => void>(() => {});
-  const { session, username: authUsername, setSessionMode, setUsername: setAuthUsername } = useAuth();
-  const isAuthenticated = session.isUser;
-  const isGuest = session.isGuest;
+  const { username: authUsername, setSessionMode, setUsername: setAuthUsername } = useAuth();
+  const caps = useCapabilities();
   const { theme } = useTheme();
   const radialMenu = useRadialMenu();
   const [editSheetVisible, setEditSheetVisible] = useState(false);
@@ -60,12 +60,14 @@ export default function ProfileScreen() {
     updateProfile,
   } = useProfile();
 
-  // Load profile when authenticated and username is known
+  // Load profile once the session can view its own profile and the username
+  // is known. Gated on canViewOwnProfile (not isUser) so guests with a valid
+  // guest token in `auth_required=false` mode also fetch their data.
   useEffect(() => {
-    if (isAuthenticated && authUsername && profile === null) {
+    if (caps.canViewOwnProfile && authUsername && profile === null) {
       loadProfile(authUsername);
     }
-  }, [isAuthenticated, authUsername, profile, loadProfile]);
+  }, [caps.canViewOwnProfile, authUsername, profile, loadProfile]);
 
   const handleRefresh = useCallback(() => {
     if (profile) {
@@ -116,22 +118,16 @@ export default function ProfileScreen() {
     router.push("/(auth)/login");
   }, [router]);
 
-  // Menu items depend on session state. Guests get a reduced set (no account
-  // actions, since those require a real JWT) but still see Subscription and a
-  // secondary Sign In entry point. Anons see only Sign In.
-  const menuItems: RadialMenuItem[] = isAuthenticated
-    ? [
-        { label: "Edit Profile", icon: "create-outline", onPress: handleEditProfile },
-        { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
-        { label: "Settings", icon: "settings-outline", onPress: () => router.push("/settings") },
-        { label: "Log Out", icon: "log-out-outline", onPress: handleLogout, destructive: true },
-      ]
-    : isGuest
-      ? [
-          { label: "Sign In", icon: "log-in-outline", onPress: handleSignIn },
-          { label: "Subscription", icon: "diamond-outline", onPress: () => router.push("/subscription") },
-        ]
-      : [{ label: "Sign In", icon: "log-in-outline", onPress: handleSignIn }];
+  // Menu items derive from capabilities — single source of truth keeps this
+  // screen and any future profile actions in sync with the (features × session)
+  // matrix in mobile/lib/capabilities.ts.
+  const menuItems = buildProfileMenu(caps, {
+    onEditProfile: handleEditProfile,
+    onOpenSubscription: () => router.push("/subscription"),
+    onOpenSettings: () => router.push("/settings"),
+    onLogout: handleLogout,
+    onSignIn: handleSignIn,
+  });
 
   // Keep ref in sync so headerRight button can call it
   toggleMenuRef.current = () => radialMenu.open(menuItems);
@@ -153,16 +149,13 @@ export default function ProfileScreen() {
     });
   }, [navigation]);
 
-  // Not a real user (guest or anon) — render a centered sign-in CTA. The
-  // RadialMenu is mounted globally via RadialMenuProvider, so we only call
-  // `open(menuItems)` from the 3-dot button; no local rendering needed.
-  if (!isAuthenticated) {
-    const title = isGuest
-      ? "Sign in to save your glow-ups"
-      : "Sign in to see your profile";
-    const subtitle = isGuest
-      ? "Keep your history, reactions, and streaks across devices."
-      : "Track your glow-ups and reactions";
+  // No profile to show (anon, or impossible-state guest with auth_required=true)
+  // — render a centered sign-in CTA. The RadialMenu is mounted globally via
+  // RadialMenuProvider, so we only call `open(menuItems)` from the 3-dot
+  // button; no local rendering needed.
+  if (!caps.canViewOwnProfile) {
+    const title = "Sign in to see your profile";
+    const subtitle = "Track your glow-ups and reactions";
     return (
       <View style={styles.emptyStateScreen}>
         <PageBackground overlayOpacity={0.85} />
