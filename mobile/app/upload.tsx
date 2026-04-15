@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -40,12 +40,18 @@ import {
 import { THEME } from "../constants/theme";
 import { Button } from "../components/ui/Button";
 import { FaceErrorCard } from "../components/ui/FaceErrorCard";
-import { HeaderBackButton } from "../components/ui/HeaderBackButton";
+import {
+  HeaderBackButton,
+  HeaderBackButtonSpacer,
+} from "../components/ui/HeaderBackButton";
 import { PageBackground } from "../components/ui/PageBackground";
-import { Body, Caption, Label } from "../components/ui/Text";
+import { Body, Caption, Heading, Label } from "../components/ui/Text";
 import { hapticError, hapticMedium } from "../lib/haptics";
 import { useTheme } from "../lib/theme-context";
 import { ConsentDismissedError, useConsent } from "../lib/consent-context";
+
+/** Header title font size — matches the subscription screen pattern. */
+const HEADER_TITLE_FONT_SIZE = 20;
 
 // ---------------------------------------------------------------------------
 // Upload phase state machine
@@ -270,27 +276,23 @@ export default function UploadScreen() {
   const isAnalyzeDisabled = phase !== "uploaded";
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Upload",
-          headerStyle: { backgroundColor: THEME.colors.bg },
-          headerTintColor: THEME.colors.textPrimary,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => <HeaderBackButton onPress={handleBack} />,
-        }}
-      />
-      <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
-        <PageBackground overlayOpacity={0.88} />
+    <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
+      <PageBackground overlayOpacity={0.88} />
 
-        {/* Floating back button — renders when the native stack header isn't
-            available (e.g. when reached from a tab without a Stack wrapper). */}
-        <View style={[styles.floatingBack, { top: insets.top + 8 }]} pointerEvents="box-none">
-          <HeaderBackButton onPress={handleBack} />
-        </View>
+      {/* Custom header — matches the subscription screen pattern. */}
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <HeaderBackButton onPress={handleBack} />
+        <Heading
+          size="md"
+          style={styles.headerTitle}
+          maxFontSizeMultiplier={1.3}
+        >
+          Upload
+        </Heading>
+        <HeaderBackButtonSpacer />
+      </View>
 
-        <ScrollView
+      <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           contentInsetAdjustmentBehavior="automatic"
@@ -417,8 +419,7 @@ export default function UploadScreen() {
             />
           )}
         </View>
-      </SafeAreaView>
-    </>
+    </SafeAreaView>
   );
 }
 
@@ -431,10 +432,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.bg,
   },
-  floatingBack: {
-    position: "absolute",
-    left: THEME.spacing.sm,
-    zIndex: 100,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.sm,
+  },
+  headerTitle: {
+    fontSize: HEADER_TITLE_FONT_SIZE,
   },
   scroll: {
     flex: 1,
