@@ -232,6 +232,8 @@ export const ADVISOR_CONFIG = {
   MESSAGE_PAGE_SIZE: 30,
   /** Maximum message length (characters) */
   MESSAGE_MAX_LENGTH: 2000,
+  /** Maximum memory (goal/note) length (characters) */
+  MEMORY_MAX_LENGTH: 500,
   /** Typing indicator dot animation duration (ms) */
   TYPING_DOT_DURATION_MS: 400,
   /** Typing indicator dot delay between dots (ms) */

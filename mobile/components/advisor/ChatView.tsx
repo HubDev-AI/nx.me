@@ -9,7 +9,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   FlatList,
-  TextInput,
   Pressable,
   Text,
   Keyboard,
@@ -25,7 +24,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
-import { ADVISOR_CONFIG, MIN_TOUCH_TARGET, PAGINATION_CONFIG } from "../../constants/config";
+import { ADVISOR_CONFIG, PAGINATION_CONFIG } from "../../constants/config";
 import { useCapabilities } from "../../lib/capabilities";
 import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import {
@@ -36,6 +35,7 @@ import {
 import type { AdvisorMessage } from "../../lib/advisor";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
+import { AdvisorComposer } from "./AdvisorComposer";
 import { PaywallModal } from "../paywall/PaywallModal";
 import { EmptyState } from "../ui/EmptyState";
 
@@ -310,8 +310,6 @@ export function ChatView() {
     return null;
   }, [isLoadingMore, theme.accent]);
 
-  const canSend = inputText.trim().length > 0 && !isSending;
-
   if (isLoading) {
     return <ChatSkeleton />;
   }
@@ -377,40 +375,19 @@ export function ChatView() {
       )}
 
       {/* Input bar */}
-      <View style={[styles.inputBar, { paddingBottom: inputBottomPadding }]}>
-        <TextInput
-          style={styles.textInput}
-          value={inputText}
-          onChangeText={setInputText}
-          placeholder="Message Ada..."
-          placeholderTextColor={THEME.colors.textDisabled}
-          multiline
-          maxLength={ADVISOR_CONFIG.MESSAGE_MAX_LENGTH}
-          returnKeyType="default"
-          accessibilityLabel="Message input"
-        />
-        <Pressable
-          onPress={handleSend}
-          disabled={!canSend}
-          style={({ pressed }) => [
-            styles.sendButton,
-            canSend && [styles.sendButtonActive, { backgroundColor: theme.accent }],
-            pressed && canSend && styles.sendButtonPressed,
-          ]}
-          accessibilityLabel="Send message"
-          accessibilityRole="button"
-        >
-          {isSending ? (
-            <ActivityIndicator size="small" color={THEME.colors.bg} />
-          ) : (
-            <Ionicons
-              name="send"
-              size={20}
-              color={canSend ? THEME.colors.bg : THEME.colors.textDisabled}
-            />
-          )}
-        </Pressable>
-      </View>
+      <AdvisorComposer
+        value={inputText}
+        onChangeText={setInputText}
+        onSubmit={handleSend}
+        placeholder="Message Ada..."
+        disabled={isSending}
+        submitIcon="send"
+        maxLength={ADVISOR_CONFIG.MESSAGE_MAX_LENGTH}
+        accessibilityLabel="Message input"
+        submitAccessibilityLabel="Send message"
+        bottomPadding={inputBottomPadding}
+        separator
+      />
 
       {/* Paywall modal — shown on 402 */}
       <PaywallModal
@@ -459,46 +436,5 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.body,
     ...THEME.typography.caption,
     color: THEME.colors.destructive,
-  },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: THEME.spacing.md,
-    paddingVertical: THEME.spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: THEME.colors.glassBorder,
-    backgroundColor: THEME.colors.glass,
-    gap: THEME.spacing.sm,
-  },
-  textInput: {
-    flex: 1,
-    fontFamily: FONTS.body,
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.xl,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    paddingHorizontal: THEME.spacing.lg,
-    paddingTop: THEME.spacing.md - 2,
-    paddingBottom: THEME.spacing.md - 2,
-    ...THEME.typography.body,
-    color: THEME.colors.textPrimary,
-    maxHeight: 120,
-    minHeight: MIN_TOUCH_TARGET,
-  },
-  sendButton: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: THEME.colors.glass,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-  },
-  sendButtonActive: {
-    borderWidth: 0,
-  },
-  sendButtonPressed: {
-    opacity: 0.85,
   },
 });
