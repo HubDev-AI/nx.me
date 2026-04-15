@@ -11,7 +11,6 @@ import {
   FlatList,
   Pressable,
   Text,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -19,14 +18,12 @@ import {
   Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { ADVISOR_CONFIG, PAGINATION_CONFIG } from "../../constants/config";
-import { useCapabilities } from "../../lib/capabilities";
-import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
+import { useAdvisorComposerLayout } from "../../hooks/useAdvisorComposerLayout";
 import {
   fetchMessages,
   sendMessage,
@@ -38,9 +35,6 @@ import { TypingIndicator } from "./TypingIndicator";
 import { AdvisorComposer } from "./AdvisorComposer";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PaywallModal } from "../paywall/PaywallModal";
-
-/** The floating tab bar renders whenever at least two tabs are visible. */
-const MIN_TABS_FOR_FLOATING_BAR = 2;
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -87,38 +81,8 @@ const skeletonStyles = StyleSheet.create({
 
 export function ChatView() {
   const { theme } = useTheme();
-  const insets = useSafeAreaInsets();
-  const caps = useCapabilities();
-  // The floating tab bar renders on advisor + create (or more). When it's
-  // visible we must lift the input above it, otherwise paddingBottom only
-  // covers the home-indicator inset and the bar clips the TextInput.
-  const visibleTabCount =
-    1 /* create */ +
-    (caps.canSeeFeed ? 2 : 0) +
-    (caps.canUseAdvisor ? 1 : 0);
-  const floatingTabBarVisible = visibleTabCount >= MIN_TABS_FOR_FLOATING_BAR;
-  // Track keyboard so we drop the TAB_BAR_HEIGHT offset while it's open — the
-  // floating tab bar hides itself on keyboard show, so keeping the offset
-  // would leave a visible gap between the input and the keyboard (BUG 3).
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => setIsKeyboardVisible(true),
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setIsKeyboardVisible(false),
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-  const effectiveTabBarOffset =
-    floatingTabBarVisible && !isKeyboardVisible ? TAB_BAR_HEIGHT : 0;
-  const inputBottomPadding =
-    Math.max(insets.bottom, THEME.spacing.sm) + effectiveTabBarOffset;
+  const { keyboardVerticalOffset, inputBottomPadding } =
+    useAdvisorComposerLayout();
   // -------------------------------------------------------------------------
   // State
   // -------------------------------------------------------------------------
@@ -318,7 +282,7 @@ export function ChatView() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      keyboardVerticalOffset={keyboardVerticalOffset}
     >
       {/* Message list */}
       <FlatList

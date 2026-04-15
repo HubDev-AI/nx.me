@@ -18,22 +18,19 @@ import {
   Pressable,
   Alert,
   Animated,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
   PanResponder,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { showToast } from "../../lib/toast";
-import { ADVISOR_CONFIG } from "../../constants/config";
-import { useCapabilities } from "../../lib/capabilities";
-import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
+import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import { useAdvisorComposerLayout } from "../../hooks/useAdvisorComposerLayout";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
 import { AdvisorComposer } from "./AdvisorComposer";
@@ -43,10 +40,6 @@ import { Caption } from "../ui/Text";
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
-/** The floating tab bar renders whenever at least two tabs are visible. */
-const MIN_TABS_FOR_FLOATING_BAR = 2;
-/** iOS keyboardVerticalOffset used by KeyboardAvoidingView — matches ChatView. */
-const IOS_KEYBOARD_VERTICAL_OFFSET = 90;
 
 /** Extract a display string from a memory content object. */
 function memoryContentText(content: Record<string, unknown>): string {
@@ -327,7 +320,7 @@ const chipStyles = StyleSheet.create({
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-    minHeight: 44,
+    minHeight: MIN_TOUCH_TARGET,
     ...THEME.shadow.glass,
   },
 });
@@ -388,34 +381,8 @@ const memSkeletonStyles = StyleSheet.create({
 const MemorySeparator = () => <View style={styles.separator} />;
 
 export function MemoryList() {
-  const insets = useSafeAreaInsets();
-  const caps = useCapabilities();
-
-  // Floating tab bar visibility — same math as ChatView.
-  const visibleTabCount =
-    1 /* create */ +
-    (caps.canSeeFeed ? 2 : 0) +
-    (caps.canUseAdvisor ? 1 : 0);
-  const floatingTabBarVisible = visibleTabCount >= MIN_TABS_FOR_FLOATING_BAR;
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => setIsKeyboardVisible(true),
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setIsKeyboardVisible(false),
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-  const effectiveTabBarOffset =
-    floatingTabBarVisible && !isKeyboardVisible ? TAB_BAR_HEIGHT : 0;
-  const inputBottomPadding =
-    Math.max(insets.bottom, THEME.spacing.sm) + effectiveTabBarOffset;
+  const { keyboardVerticalOffset, inputBottomPadding } =
+    useAdvisorComposerLayout();
 
   // List + form state
   const [memories, setMemories] = useState<UserMemory[]>([]);
@@ -538,33 +505,43 @@ export function MemoryList() {
     />
   );
 
+  if (isLoading) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={
+          Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"
+        }
+        keyboardVerticalOffset={keyboardVerticalOffset}
+      >
+        <TypeChips selectedType={selectedType} onSelect={setSelectedType} />
+        <MemorySkeleton />
+        {composer}
+      </KeyboardAvoidingView>
+    );
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={
         Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"
       }
-      keyboardVerticalOffset={
-        Platform.OS === "ios" ? IOS_KEYBOARD_VERTICAL_OFFSET : 0
-      }
+      keyboardVerticalOffset={keyboardVerticalOffset}
     >
       <TypeChips selectedType={selectedType} onSelect={setSelectedType} />
 
-      {isLoading ? (
-        <MemorySkeleton />
-      ) : (
-        <FlatList
-          data={memories}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={MemorySeparator}
-        />
-      )}
+      <FlatList
+        data={memories}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={MemorySeparator}
+      />
 
       {/* Error overlay — centered with Try Again button. */}
-      {!isLoading && error && memories.length === 0 && (
+      {error && memories.length === 0 && (
         <AdvisorEmptyOverlay
           icon="alert-circle-outline"
           title="Could not load memories"
@@ -578,7 +555,7 @@ export function MemoryList() {
       )}
 
       {/* Empty overlay — shown when no memories exist. */}
-      {!isLoading && !error && memories.length === 0 && (
+      {!error && memories.length === 0 && (
         <AdvisorEmptyOverlay
           icon="bookmark-outline"
           title="No memories yet"
