@@ -23,6 +23,7 @@ from app.advisor.nudge_scheduler import (
     schedule_post_analysis_nudge,
     check_nudge_eligibility,
 )
+from app.workers.orphan_reclaim import reclaim_orphaned_blobs
 from app.workers.retention import run_retention
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class WorkerSettings:
         cron(check_nudge_eligibility, hour=6, minute=0),  # Daily at 06:00 UTC
         cron(reconcile_reaction_counts, hour=3, minute=0),  # Nightly at 03:00 UTC
         cron(run_retention, hour=3, minute=30),  # Nightly at 03:30 UTC
+        cron(reclaim_orphaned_blobs, hour=3, minute=45),  # Nightly at 03:45 UTC
     ]
 
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)

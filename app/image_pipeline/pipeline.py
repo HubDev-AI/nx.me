@@ -28,6 +28,7 @@ from app.image_pipeline.nsfw_screener import NSFWScreenerPort
 from app.image_pipeline.storage import StoragePort
 from app.image_pipeline.validators import DimensionValidator, MagicBytesValidator
 from app.repositories.image_repo import ImageRepository
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 
 from fastapi import HTTPException, status
 
@@ -77,6 +78,7 @@ class ImagePipeline:
 
     def __init__(self, supabase: Client) -> None:
         self._image_repo = ImageRepository(supabase)
+        self._orphan_repo = OrphanedStorageKeyRepository(supabase)
         self._magic_validator = MagicBytesValidator()
         self._dimension_validator = DimensionValidator()
         self._nsfw_screener = _get_nsfw_screener()
@@ -202,6 +204,14 @@ class ImagePipeline:
             except Exception:  # noqa: BLE001
                 logger.exception(
                     "Failed to delete orphaned file %s/%s", self.BUCKET, storage_key
+                )
+                # Inline cleanup failed too — durably record the orphan so the
+                # nightly reclaim worker can retry. Never re-raise from record():
+                # the original DB-insert exception must be the one the caller sees.
+                self._orphan_repo.record(
+                    bucket=self.BUCKET,
+                    storage_key=storage_key,
+                    reason="images_insert_failed_and_cleanup_failed",
                 )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
