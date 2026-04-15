@@ -65,7 +65,7 @@ export default function HomePage() {
       ─────────────────────────────────────────────────────── */}
       <section className="section-rule">
         <div className="px-6 sm:px-12 py-16 sm:py-24">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-12">The transformation</p>
+          <h2 className="text-xs tracking-[0.25em] uppercase text-[#555] mb-12 font-normal">The transformation</h2>
         </div>
         <div className="grid grid-cols-2">
           <div className="relative aspect-[3/4] sm:aspect-[4/5]">
@@ -101,7 +101,7 @@ export default function HomePage() {
       {/* ── WHAT WE ANALYSE ────────────────────────────────── */}
       <section className="section-rule">
         <div className="px-6 sm:px-12 py-16 sm:py-24">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555]">What we analyse</p>
+          <h2 className="text-xs tracking-[0.25em] uppercase text-[#555] font-normal">What we analyse</h2>
         </div>
 
         <div className="grid sm:grid-cols-2">
@@ -181,7 +181,7 @@ export default function HomePage() {
       {/* ── HOW IT WORKS ───────────────────────────────────── */}
       <section className="section-rule px-6 sm:px-12 py-24 sm:py-40">
         <div className="max-w-5xl">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20">How it works</p>
+          <h2 className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20 font-normal">How it works</h2>
           <div className="space-y-16 sm:space-y-20">
             {[
               { n: '01', title: 'Upload a selfie', desc: 'One photo. No angles, no filters. Just you.' },
@@ -214,7 +214,7 @@ export default function HomePage() {
       {/* ── WHAT YOU GET ───────────────────────────────────── */}
       <section className="section-rule px-6 sm:px-12 py-24 sm:py-40">
         <div className="max-w-5xl">
-          <p className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20">What you get</p>
+          <h2 className="text-xs tracking-[0.25em] uppercase text-[#555] mb-20 font-normal">What you get</h2>
           <div className="space-y-16 sm:space-y-24">
             {[
               { title: 'Ranked recommendations', desc: 'Specific changes ordered by impact. Hair, grooming, eyebrows, clothing, accessories, lighting — scored and prioritised.' },
