@@ -104,11 +104,18 @@ class AdvisorRepository:
         )
         if cursor:
             # A-7: Validate cursor format to return 400 on malformed input
-            try:
-                cursor_created_at, cursor_id = cursor.split("|", 1)
-            except ValueError:
+            parts = cursor.split("|", 1)
+            if len(parts) != 2 or not parts[0] or not parts[1]:
                 raise ValueError(
                     f"Malformed cursor: expected '{{created_at}}|{{id}}', got '{cursor}'"
+                )
+            cursor_created_at, cursor_id = parts
+            # Reject characters that would break the PostgREST filter grammar —
+            # commas, parentheses, or quotes inside a component smuggle filter
+            # tokens into `or_()` (same injection shape as SQL).
+            if any(ch in cursor_created_at + cursor_id for ch in ",()\"'"):
+                raise ValueError(
+                    f"Malformed cursor: illegal character in cursor components: '{cursor}'"
                 )
             query = query.or_(
                 f"created_at.gt.{cursor_created_at},"
