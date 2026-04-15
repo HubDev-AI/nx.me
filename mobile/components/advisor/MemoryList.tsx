@@ -9,11 +9,9 @@ import {
   View,
   FlatList,
   Text,
-  TextInput,
   Pressable,
   Alert,
   Animated,
-  ActivityIndicator,
   StyleSheet,
   PanResponder,
 } from "react-native";
@@ -23,10 +21,12 @@ import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { showToast } from "../../lib/toast";
-import { MIN_TOUCH_TARGET } from "../../constants/config";
+import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory, MemoryType } from "../../lib/advisor";
 import { EmptyState } from "../ui/EmptyState";
+import { AdvisorComposer } from "./AdvisorComposer";
+import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PressableScale } from "../ui/PressableScale";
 import { Caption } from "../ui/Text";
 
@@ -166,15 +166,13 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
           />
         </View>
         <View style={rowStyles.content}>
-          <View style={rowStyles.header}>
-            <Text style={[rowStyles.typeLabel, { color: theme.accent }]}>
-              {memoryTypeLabel(memory.type)}
-            </Text>
-            <Text style={rowStyles.date}>{dateStr}</Text>
-          </View>
+          <Text style={[rowStyles.typeLabel, { color: theme.accent }]}>
+            {memoryTypeLabel(memory.type)}
+          </Text>
           <Text style={rowStyles.body} numberOfLines={3}>
             {memoryContentText(memory.content)}
           </Text>
+          <Text style={rowStyles.date}>{dateStr}</Text>
         </View>
       </Animated.View>
     </View>
@@ -223,21 +221,15 @@ const rowStyles = StyleSheet.create({
     flex: 1,
     gap: THEME.spacing.xs,
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
   typeLabel: {
     fontFamily: FONTS.bodySemiBold,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: THEME.typography.caption.letterSpacing,
+    fontSize: 13,
   },
   date: {
     fontFamily: FONTS.body,
     fontSize: 12,
     color: THEME.colors.textMuted,
+    marginTop: THEME.spacing.xs,
   },
   body: {
     fontFamily: FONTS.body,
@@ -261,7 +253,6 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
   const { theme } = useTheme();
   const [content, setContent] = useState("");
   const [selectedType, setSelectedType] = useState<MemoryType>("goal");
-  const [isInputFocused, setIsInputFocused] = useState(false);
 
   const types: { value: MemoryType; label: string }[] = [
     { value: "goal", label: "Goal" },
@@ -275,7 +266,10 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
     setContent("");
   }, [content, selectedType, onAdd]);
 
-  const canAdd = content.trim().length > 0 && !isAdding;
+  const placeholder =
+    selectedType === "goal"
+      ? "e.g. Grow out my hair to shoulder length"
+      : "e.g. I prefer minimal jewelry";
 
   return (
     <View style={formStyles.container}>
@@ -317,67 +311,32 @@ function AddMemoryForm({ onAdd, isAdding }: AddMemoryFormProps) {
         })}
       </View>
 
-      {/* Input row */}
-      <View style={formStyles.inputRow}>
-        <TextInput
-          style={[
-            formStyles.input,
-            isInputFocused && { borderColor: theme.accent },
-          ]}
-          value={content}
-          onChangeText={setContent}
-          onFocus={() => setIsInputFocused(true)}
-          onBlur={() => setIsInputFocused(false)}
-          placeholder={
-            selectedType === "goal"
-              ? "e.g. Grow out my hair to shoulder length"
-              : "e.g. I prefer minimal jewelry"
-          }
-          placeholderTextColor={THEME.colors.textDisabled}
-          multiline
-          maxLength={500}
-          accessibilityLabel="Memory content"
-        />
-        <PressableScale
-          scale={0.92}
-          haptic={false}
-          onPress={handleAdd}
-          disabled={!canAdd}
-          style={[
-            formStyles.addButton,
-            canAdd && {
-              backgroundColor: theme.accent,
-              borderWidth: 0,
-              ...THEME.shadow.glow(theme.accent),
-            },
-          ]}
-          accessibilityLabel="Add memory"
-          accessibilityRole="button"
-        >
-          {isAdding ? (
-            <ActivityIndicator size="small" color={THEME.colors.bg} />
-          ) : (
-            <Ionicons
-              name="add"
-              size={24}
-              color={canAdd ? THEME.colors.bg : THEME.colors.textDisabled}
-            />
-          )}
-        </PressableScale>
-      </View>
+      {/* Input — shared composer with chat */}
+      <AdvisorComposer
+        value={content}
+        onChangeText={setContent}
+        onSubmit={handleAdd}
+        placeholder={placeholder}
+        disabled={isAdding}
+        submitIcon="add"
+        maxLength={ADVISOR_CONFIG.MEMORY_MAX_LENGTH}
+        accessibilityLabel="Memory content"
+        submitAccessibilityLabel="Add memory"
+      />
     </View>
   );
 }
 
 const formStyles = StyleSheet.create({
   container: {
-    paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.md,
     paddingBottom: THEME.spacing.md,
     gap: THEME.spacing.md,
   },
   typeRow: {
     flexDirection: "row",
     gap: THEME.spacing.sm,
+    paddingHorizontal: THEME.spacing.md,
   },
   typeChip: {
     flex: 1,
@@ -392,40 +351,6 @@ const formStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     minHeight: MIN_TOUCH_TARGET,
-    ...THEME.shadow.glass,
-  },
-  inputRow: {
-    flexDirection: "row",
-    gap: THEME.spacing.sm,
-    alignItems: "flex-end",
-  },
-  input: {
-    flex: 1,
-    fontFamily: FONTS.body,
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.xl,
-    borderCurve: "continuous",
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    paddingHorizontal: THEME.spacing.lg,
-    paddingTop: THEME.spacing.md,
-    paddingBottom: THEME.spacing.md,
-    ...THEME.typography.body,
-    color: THEME.colors.textPrimary,
-    maxHeight: 96,
-    minHeight: MIN_TOUCH_TARGET,
-    ...THEME.shadow.glass,
-  },
-  addButton: {
-    width: MIN_TOUCH_TARGET,
-    height: MIN_TOUCH_TARGET,
-    borderRadius: MIN_TOUCH_TARGET / 2,
-    borderCurve: "continuous",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: THEME.colors.glass,
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
     ...THEME.shadow.glass,
   },
 });
@@ -622,17 +547,19 @@ export function MemoryList() {
         data={memories}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        ListEmptyComponent={
-          <EmptyState
-            icon="bookmark-outline"
-            title="No memories yet"
-            description="Add goals or notes so Ada can personalise her advice"
-          />
-        }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={MemorySeparator}
       />
+
+      {/* Fixed-center empty state — matches position across advisor tabs. */}
+      {memories.length === 0 && (
+        <AdvisorEmptyOverlay
+          icon="bookmark-outline"
+          title="No memories yet"
+          description="Add goals or notes so Ada can personalise her advice"
+        />
+      )}
     </View>
   );
 }
@@ -641,7 +568,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "transparent",
-    paddingTop: THEME.spacing.md,
   },
   listContent: {
     flexGrow: 1,
