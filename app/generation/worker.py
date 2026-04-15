@@ -252,7 +252,9 @@ def _resolve_source_url(
 
             # NOTE: We don't have supabase here directly, so we re-use image_repo._sb.
             upload_repo = _UR(image_repo._sb)
-            upload = upload_repo.get_by_id(upload_id)
+            # Worker reads are internal machinery, not a user-initiated view —
+            # don't refresh retention clock (spec Q19 — resets on user return).
+            upload = upload_repo.get_by_id(upload_id, touch_access=False)
             if upload and upload.get("image_url"):
                 storage_key = upload["image_url"]
                 return image_repo.create_signed_url("raw-selfies", storage_key, 300)

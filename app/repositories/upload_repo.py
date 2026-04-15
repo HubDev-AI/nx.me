@@ -33,14 +33,23 @@ class UploadRepository:
     # Read (always reset last_accessed_at — Q19 retention clock)
     # ------------------------------------------------------------------
 
-    def get_by_id(self, upload_id: str) -> dict | None:
-        """Fetch an upload by ID, resetting last_accessed_at. Returns None if not found."""
-        now_utc = datetime.now(tz=timezone.utc).isoformat()
-        # Update last_accessed_at first, then fetch — guarantees the clock is
-        # always reset even if the fetch itself is the only read.
-        self._sb.table("uploads").update({"last_accessed_at": now_utc}).eq(
-            "id", upload_id
-        ).execute()
+    def get_by_id(self, upload_id: str, *, touch_access: bool = True) -> dict | None:
+        """Fetch an upload by ID, resetting last_accessed_at. Returns None if not found.
+
+        ``touch_access`` (default True) controls whether this read refreshes the
+        retention clock. User-initiated reads should leave it True (spec Q19 —
+        retention clock resets when the user returns). Internal machinery that
+        reads the row as part of a non-user-visible flow (e.g. the worker
+        fetching a storage key during generation) must pass ``touch_access=False``
+        so retention keeps decaying correctly for dormant users.
+        """
+        if touch_access:
+            now_utc = datetime.now(tz=timezone.utc).isoformat()
+            # Update last_accessed_at first, then fetch — guarantees the clock
+            # is always reset even if the fetch itself is the only read.
+            self._sb.table("uploads").update({"last_accessed_at": now_utc}).eq(
+                "id", upload_id
+            ).execute()
 
         result = (
             self._sb.table("uploads")
@@ -51,16 +60,22 @@ class UploadRepository:
         )
         return result.data if result else None
 
-    def get_by_id_for_owner_check(self, upload_id: str, user_id: str) -> dict | None:
+    def get_by_id_for_owner_check(
+        self, upload_id: str, user_id: str, *, touch_access: bool = True
+    ) -> dict | None:
         """Fetch upload by ID + user_id in one query. Resets last_accessed_at.
 
         Returns the row if it belongs to user_id, None otherwise.
         Avoids a separate ownership check round-trip.
+
+        ``touch_access`` — see ``get_by_id``; default True matches user-initiated
+        semantics, pass False for internal preflight checks.
         """
-        now_utc = datetime.now(tz=timezone.utc).isoformat()
-        self._sb.table("uploads").update({"last_accessed_at": now_utc}).eq(
-            "id", upload_id
-        ).eq("user_id", user_id).execute()
+        if touch_access:
+            now_utc = datetime.now(tz=timezone.utc).isoformat()
+            self._sb.table("uploads").update({"last_accessed_at": now_utc}).eq(
+                "id", upload_id
+            ).eq("user_id", user_id).execute()
 
         result = (
             self._sb.table("uploads")

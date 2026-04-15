@@ -3,7 +3,7 @@ import { FontAwesome6, Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { FONTS } from "../../hooks/useFonts";
-import { SOCIAL_GOOGLE_TEXT } from "../../constants/colors";
+import { SOCIAL_GOOGLE_BLUE, SOCIAL_GOOGLE_TEXT } from "../../constants/colors";
 import { PressableScale } from "../ui/PressableScale";
 import type { AuthProvider } from "../../constants/config";
 
@@ -66,7 +66,7 @@ export function SocialLoginButtons({
           style={disabled ? styles.disabledWrapper : undefined}
         >
           <View style={styles.googleButton}>
-            <Ionicons name="logo-google" size={20} color="#4285F4" />
+            <Ionicons name="logo-google" size={20} color={SOCIAL_GOOGLE_BLUE} />
             <Text style={styles.googleText}>Continue with Google</Text>
           </View>
         </PressableScale>
