@@ -25,6 +25,7 @@ from app.api.deps import (
     get_job_repo,
     get_redis,
     get_upload_repo,
+    get_user_or_guest,
     get_user_repo,
     require_app_feature,
 )
@@ -70,6 +71,14 @@ class ProfileResponse(BaseModel):
     post_count: int
     total_reactions: int
     member_since: str
+
+
+class MeResponse(BaseModel):
+    """Identity payload for the current session — JWT user or guest token."""
+
+    username: str
+    display_name: str
+    avatar_url: str | None
 
 
 class HistoryEntry(BaseModel):
@@ -157,6 +166,49 @@ async def check_username(
 
     result = await run_sync(user_repo.check_username_available_ci, username)
     return UsernameAvailabilityResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# GET /users/me  — identity for the current session (JWT user or guest token)
+# ---------------------------------------------------------------------------
+# Declared BEFORE /users/{username}/profile so path matching prefers the
+# static "me" segment over the path-param branch.
+
+
+@router.get("/users/me", response_model=MeResponse)
+async def get_me(
+    claims: UserClaims = Depends(get_user_or_guest),
+    user_repo: UserRepository = Depends(get_user_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
+) -> MeResponse:
+    """Return the current session's identity (username, display_name, avatar).
+
+    Accepts either a JWT (real user) or X-Guest-Token (guest, when
+    FEATURE_AUTH_REQUIRED=false). Mobile uses this to learn its own username
+    after guest provisioning so screens like profile.tsx can call
+    /users/{username}/profile.
+    """
+    user = await run_sync(user_repo.get_profile_by_id, claims["sub"])
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    avatar_storage_key = user.get("avatar_storage_key")
+    avatar_url = (
+        await run_sync(
+            image_repo.build_avatar_signed_url,
+            avatar_storage_key,
+            settings.SIGNED_URL_EXPIRY_SECONDS,
+        )
+        if avatar_storage_key
+        else None
+    )
+    return MeResponse(
+        username=user["username"],
+        display_name=user["display_name"],
+        avatar_url=avatar_url,
+    )
 
 
 # ---------------------------------------------------------------------------

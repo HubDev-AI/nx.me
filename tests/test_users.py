@@ -1,8 +1,8 @@
 """Tests for user profile and history API.
 
 Exercises production code in:
-  - app/api/users.py (_lookup_user, models, constants)
-  - app/api/deps.py (get_current_user)
+  - app/api/users.py (_lookup_user, models, constants, get_me)
+  - app/api/deps.py (get_current_user, get_user_or_guest)
 
 Note: We import models and helpers carefully to avoid triggering FastAPI
 route registration which can fail on FastAPI 0.104 / Python 3.10.
@@ -10,6 +10,7 @@ route registration which can fail on FastAPI 0.104 / Python 3.10.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -234,3 +235,146 @@ class TestGetCurrentUser:
         with pytest.raises(HTTPException) as exc_info:
             validate_jwt(token)
         assert exc_info.value.status_code == 401
+
+
+# ===========================================================================
+# GET /users/me — authenticated identity lookup (works for guests + users)
+# ===========================================================================
+
+
+@requires_routers
+class TestMeResponseModel:
+    """Response shape for GET /users/me."""
+
+    def test_me_response_with_avatar(self):
+        from app.api.users import MeResponse
+
+        resp = MeResponse(
+            username="alice",
+            display_name="Alice",
+            avatar_url="https://cdn.example.com/a.jpg",
+        )
+        assert resp.username == "alice"
+        assert resp.avatar_url == "https://cdn.example.com/a.jpg"
+
+    def test_me_response_without_avatar(self):
+        from app.api.users import MeResponse
+
+        resp = MeResponse(username="guest-abc", display_name="Guest", avatar_url=None)
+        assert resp.avatar_url is None
+
+
+@requires_routers
+class TestGetMeHandler:
+    """Handler-level tests for GET /users/me."""
+
+    @staticmethod
+    def _make_claims(user_id: str):
+        from app.api.middleware.auth import UserClaims
+
+        return UserClaims(sub=user_id, role="authenticated", exp=9999999999)
+
+    @staticmethod
+    def _make_image_repo(avatar_url: str | None = None) -> MagicMock:
+        repo = MagicMock()
+        repo.build_avatar_signed_url = MagicMock(return_value=avatar_url)
+        return repo
+
+    @pytest.mark.asyncio
+    async def test_returns_username_for_real_user(self):
+        from app.api.users import get_me
+
+        user_id = str(uuid4())
+        sb = MockSupabase()
+        sb.set_table_data(
+            "users",
+            [
+                {
+                    "id": user_id,
+                    "username": "alice",
+                    "display_name": "Alice",
+                    "avatar_storage_key": None,
+                }
+            ],
+        )
+        user_repo = UserRepository(sb)
+
+        resp = await get_me(
+            claims=self._make_claims(user_id),
+            user_repo=user_repo,
+            image_repo=self._make_image_repo(),
+        )
+        assert resp.username == "alice"
+        assert resp.display_name == "Alice"
+        assert resp.avatar_url is None
+
+    @pytest.mark.asyncio
+    async def test_returns_username_for_guest(self):
+        from app.api.users import get_me
+
+        guest_id = str(uuid4())
+        sb = MockSupabase()
+        sb.set_table_data(
+            "users",
+            [
+                {
+                    "id": guest_id,
+                    "username": "guest-abc123def456",
+                    "display_name": "Guest",
+                    "avatar_storage_key": None,
+                }
+            ],
+        )
+        user_repo = UserRepository(sb)
+
+        resp = await get_me(
+            claims=self._make_claims(guest_id),
+            user_repo=user_repo,
+            image_repo=self._make_image_repo(),
+        )
+        assert resp.username == "guest-abc123def456"
+        assert resp.display_name == "Guest"
+
+    @pytest.mark.asyncio
+    async def test_resolves_avatar_url_when_storage_key_present(self):
+        from app.api.users import get_me
+
+        user_id = str(uuid4())
+        sb = MockSupabase()
+        sb.set_table_data(
+            "users",
+            [
+                {
+                    "id": user_id,
+                    "username": "bob",
+                    "display_name": "Bob",
+                    "avatar_storage_key": "avatars/bob.jpg",
+                }
+            ],
+        )
+        user_repo = UserRepository(sb)
+        image_repo = self._make_image_repo(avatar_url="https://signed/bob.jpg")
+
+        resp = await get_me(
+            claims=self._make_claims(user_id),
+            user_repo=user_repo,
+            image_repo=image_repo,
+        )
+        assert resp.avatar_url == "https://signed/bob.jpg"
+        image_repo.build_avatar_signed_url.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_404_when_user_row_missing(self):
+        from app.api.users import get_me
+
+        sb = MockSupabase()
+        sb.set_table_data("users", None)
+        user_repo = UserRepository(sb)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_me(
+                claims=self._make_claims(str(uuid4())),
+                user_repo=user_repo,
+                image_repo=self._make_image_repo(),
+            )
+        assert exc_info.value.status_code == 404
