@@ -166,15 +166,13 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
           />
         </View>
         <View style={rowStyles.content}>
-          <View style={rowStyles.header}>
-            <Text style={[rowStyles.typeLabel, { color: theme.accent }]}>
-              {memoryTypeLabel(memory.type)}
-            </Text>
-            <Text style={rowStyles.date}>{dateStr}</Text>
-          </View>
+          <Text style={[rowStyles.typeLabel, { color: theme.accent }]}>
+            {memoryTypeLabel(memory.type)}
+          </Text>
           <Text style={rowStyles.body} numberOfLines={3}>
             {memoryContentText(memory.content)}
           </Text>
+          <Text style={rowStyles.date}>{dateStr}</Text>
         </View>
       </Animated.View>
     </View>
@@ -223,21 +221,15 @@ const rowStyles = StyleSheet.create({
     flex: 1,
     gap: THEME.spacing.xs,
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
   typeLabel: {
     fontFamily: FONTS.bodySemiBold,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: THEME.typography.caption.letterSpacing,
+    fontSize: 13,
   },
   date: {
     fontFamily: FONTS.body,
     fontSize: 12,
     color: THEME.colors.textMuted,
+    marginTop: THEME.spacing.xs,
   },
   body: {
     fontFamily: FONTS.body,
