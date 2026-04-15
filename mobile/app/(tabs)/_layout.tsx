@@ -19,6 +19,7 @@ import { BrandLabel } from "../../components/ui/BrandLabel";
 import { FeedCreditBadge } from "../../components/feed/FeedCreditBadge";
 import { TabBarProvider, useTabBar } from "../../lib/tab-bar-context";
 import { useFeatures } from "../../lib/features-context";
+import { useCapabilities } from "../../lib/capabilities";
 
 /** Height of the floating tab bar + bottom inset — used for paddingBottom in scroll views */
 export const TAB_BAR_HEIGHT = 90;
@@ -206,7 +207,10 @@ function HeaderCreditBadge() {
 
 function TabLayoutInner() {
   const { theme } = useTheme();
-  const { features, isLoading: featuresLoading } = useFeatures();
+  // useFeatures() stays for the loading-state check (capabilities derive from
+  // resolved flags; we still need to know when those have resolved).
+  const { isLoading: featuresLoading } = useFeatures();
+  const caps = useCapabilities();
 
   // Block the tab stack until feature flags resolve. Rendering with defaults
   // first causes a flash of the home tab before we know social is off, and
@@ -215,8 +219,8 @@ function TabLayoutInner() {
     return <View style={styles.splash} />;
   }
 
-  const socialOn = features.social_enabled;
-  const advisorOn = features.advisor_enabled;
+  const socialOn = caps.canSeeFeed;
+  const advisorOn = caps.canUseAdvisor;
 
   // Count of tabs that will appear in the bar. Create + Profile always visible.
   const visibleTabs =

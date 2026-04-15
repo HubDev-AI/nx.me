@@ -18,6 +18,7 @@ import { restoreStoredSession } from "../lib/api";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import type { SessionMode } from "../lib/session";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
+import { useCapabilities } from "../lib/capabilities";
 import { ConsentProvider } from "../lib/consent-context";
 import { RadialMenuProvider } from "../lib/radial-menu-context";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
@@ -50,7 +51,12 @@ SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
   const { session, setSessionMode, setUsername, markSessionReady } = useAuth();
+  // The session-bootstrap effect below reads `features.auth_required` raw —
+  // that runs before `useAuth()` is "ready" so it cannot consume capabilities
+  // (which compose useSession). All other gating routes through
+  // `useCapabilities()`. See mobile/lib/capabilities.ts for the contract.
   const { features, isLoading: featuresLoading } = useFeatures();
+  const caps = useCapabilities();
   const router = useRouter();
   const segments = useSegments();
   const guestInitRef = useRef(false);
@@ -128,7 +134,7 @@ function AuthGuard() {
     }
 
     // Guest mode: never land on the auth screens.
-    if (!features.auth_required) {
+    if (!caps.requiresAuth) {
       if (inAuthGroup) router.replace("/(tabs)");
       return;
     }
@@ -140,7 +146,7 @@ function AuthGuard() {
 
     if (!inAuthGroup) return;
 
-    if (!features.onboarding_enabled) {
+    if (!caps.canSeeOnboarding) {
       router.replace("/(tabs)");
       return;
     }
@@ -150,8 +156,8 @@ function AuthGuard() {
     });
   }, [
     featuresLoading,
-    features.auth_required,
-    features.onboarding_enabled,
+    caps.requiresAuth,
+    caps.canSeeOnboarding,
     session.isUser,
     segments,
     router,
