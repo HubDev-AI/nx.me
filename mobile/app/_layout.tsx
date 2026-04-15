@@ -12,6 +12,7 @@ import * as Sentry from "@sentry/react-native";
 import { deleteItem, getItem } from "../lib/secure-storage";
 
 import { getOrCreateGuestToken } from "../lib/guest-session";
+import { fetchMe } from "../lib/me";
 import { getStoredJwt } from "../lib/auth";
 import { restoreStoredSession } from "../lib/api";
 import { AuthProvider, useAuth } from "../lib/auth-context";
@@ -42,7 +43,7 @@ initSentry();
 SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { session, setSessionMode, markSessionReady } = useAuth();
+  const { session, setSessionMode, setUsername, markSessionReady } = useAuth();
   const { features, isLoading: featuresLoading } = useFeatures();
   const router = useRouter();
   const segments = useSegments();
@@ -61,8 +62,20 @@ function AuthGuard() {
     if (guestInitRef.current) return;
     guestInitRef.current = true;
     getOrCreateGuestToken()
-      .then(() => {
+      .then(async () => {
+        // Promote to "guest" first so apiFetch picks the X-Guest-Token branch
+        // for the /me call (it reads the token from SecureStore, not from
+        // session mode, but ordering keeps state coherent for any other
+        // listeners that may fire on the mode transition).
         setSessionMode("guest");
+        try {
+          const me = await fetchMe();
+          setUsername(me.username);
+        } catch (err) {
+          // Non-fatal — profile screens fall back to the "complete your
+          // profile" stub when authUsername is null. Log so dev can debug.
+          if (__DEV__) console.warn("Guest /me lookup failed:", err);
+        }
         markSessionReady();
       })
       .catch((err) => {
@@ -71,7 +84,13 @@ function AuthGuard() {
         guestInitRef.current = false;
         markSessionReady();
       });
-  }, [featuresLoading, features.auth_required, setSessionMode, markSessionReady]);
+  }, [
+    featuresLoading,
+    features.auth_required,
+    setSessionMode,
+    setUsername,
+    markSessionReady,
+  ]);
 
   useEffect(() => {
     if (featuresLoading) return;

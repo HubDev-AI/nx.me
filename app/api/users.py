@@ -27,7 +27,6 @@ from app.api.deps import (
     get_upload_repo,
     get_user_or_guest,
     get_user_repo,
-    require_app_feature,
 )
 from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
@@ -219,7 +218,6 @@ async def get_me(
 @router.get(
     "/users/{username}/profile",
     response_model=ProfileResponse,
-    dependencies=[Depends(require_app_feature("social_enabled"))],
 )
 async def get_user_profile(
     username: str,

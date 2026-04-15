@@ -287,6 +287,8 @@ export const CARD_ENDPOINTS = {
 
 /** Profile API paths */
 export const PROFILE_ENDPOINTS = {
+  /** Identity for the current session — works for JWT users and guest tokens. */
+  ME: "/v1/users/me",
   PROFILE: (username: string) => `/v1/users/${username}/profile`,
   HISTORY: (username: string) => `/v1/users/${username}/history`,
   UPDATE: (username: string) => `/v1/users/${username}`,
