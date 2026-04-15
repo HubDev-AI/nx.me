@@ -19,12 +19,18 @@ import pytest
 from app.generation import worker as worker_mod
 
 
+@pytest.fixture(autouse=True)
+def _reset_concurrent_sha_cache():
+    """Module-level SHA cache would leak across tests and make ordering
+    load-bearing. Reset before AND after every test in this module."""
+    worker_mod._concurrent_cleanup_sha_cache = None
+    yield
+    worker_mod._concurrent_cleanup_sha_cache = None
+
+
 @pytest.mark.asyncio
 class TestReleaseConcurrentCounter:
     async def test_loads_script_on_first_use_and_caches(self):
-        # Reset the cached SHA to ensure a fresh script_load.
-        worker_mod._concurrent_cleanup_sha_cache = None
-
         redis = MagicMock()
         redis.script_load = AsyncMock(return_value="sha-xyz")
         redis.evalsha = AsyncMock(return_value=0)
@@ -44,8 +50,6 @@ class TestReleaseConcurrentCounter:
         assert redis.evalsha.await_count == 2
 
     async def test_never_re_raises(self):
-        worker_mod._concurrent_cleanup_sha_cache = None
-
         redis = MagicMock()
         redis.script_load = AsyncMock(side_effect=RuntimeError("redis down"))
 
@@ -57,6 +61,7 @@ class TestReleaseConcurrentCounter:
 @pytest.mark.asyncio
 class TestWatchdogReclaim:
     async def test_watchdog_releases_counter_for_each_stuck_job(self):
+        # Pre-seed the SHA cache so evalsha doesn't need a preceding script_load.
         worker_mod._concurrent_cleanup_sha_cache = "pre-cached"
 
         redis = MagicMock()
