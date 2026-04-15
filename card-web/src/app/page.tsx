@@ -1,7 +1,13 @@
 import Link from 'next/link';
 
 import { buildTheme } from '@/components/theme-provider';
-import { APP_STORE_URL, PLAY_STORE_URL, SITE_NAME } from '@/config/constants';
+import {
+  APP_STORE_URL,
+  PLAY_STORE_URL,
+  PRIVACY_URL,
+  SITE_NAME,
+  TERMS_URL,
+} from '@/config/constants';
 
 /**
  * Photography-driven editorial landing page.
@@ -259,8 +265,8 @@ export default function HomePage() {
       <footer className="section-rule px-6 sm:px-12 py-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-[#444]">
         <span>&copy; {new Date().getFullYear()} {SITE_NAME}</span>
         <div className="flex gap-6">
-          <Link href="#" prefetch={false} className="hover:text-[#888] transition-colors">Privacy</Link>
-          <Link href="#" prefetch={false} className="hover:text-[#888] transition-colors">Terms</Link>
+          <Link href={PRIVACY_URL} prefetch={false} className="hover:text-[#888] transition-colors">Privacy</Link>
+          <Link href={TERMS_URL} prefetch={false} className="hover:text-[#888] transition-colors">Terms</Link>
         </div>
       </footer>
     </main>
