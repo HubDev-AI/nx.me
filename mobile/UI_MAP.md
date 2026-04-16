@@ -229,12 +229,15 @@ Header: BrandLabel (standard tab header)
 - [ ] Loading: skeleton cards
 
 ### Memories Tab (MemoryList)
-- [ ] Memory cards list
-- [ ] Each card: type chip + content text | Font: body | Style: glass
-- [ ] Delete button (swipe or icon)
-- [ ] Add memory form: type selector + text input + "Add" button
-- [ ] Empty state message
-- [ ] Loading: skeleton cards
+- [ ] SubTabs row (Goals / Notes) | Style: chip pair, pill, accent glow when active | Role: tablist
+- [ ] Memory cards list (filtered by active subtab)
+- [ ] Each card: type icon + content text + timestamp | Font: body | Style: glass
+- [ ] Delete button (swipe left reveals trash)
+- [ ] Per-tab composer: text input + "Add" button | Placeholder per tab (goal vs note)
+- [ ] Per-tab drafts preserved across tab switch within session
+- [ ] Per-tab empty state: "No goals yet / Tell Ada what you're working toward." or "No notes yet / Jot anything Ada should know about you."
+- [ ] Loading (initial mount): skeleton cards
+- [ ] Loading (tab switch refetch): small top-of-list ActivityIndicator, previous list stays visible
 
 ---
 
