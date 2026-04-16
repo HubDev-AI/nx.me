@@ -180,6 +180,78 @@ async def test_post_analysis_nudge_skips_when_no_insight_anywhere(monkeypatch):
     fake_repo.get_latest_analysis_insight.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"content": None, "created_at": "2026-04-16T00:00:00Z"},
+        {"content": {}, "created_at": "2026-04-16T00:00:00Z"},
+    ],
+    ids=["content-is-None", "content-is-empty-dict"],
+)
+@pytest.mark.asyncio
+async def test_post_analysis_nudge_skips_when_insight_row_has_empty_content(
+    monkeypatch, row
+):
+    """Partial / legacy insight rows must NOT slip through.
+
+    If the row exists but `content` is `None` or `{}`, the prompt would
+    render `face_shape: unknown` and Sonnet would happily ground the
+    nudge on `unknown` — the exact hallucination this module exists to
+    prevent. Treat an empty content payload as missing.
+    """
+    from app.advisor import nudge_scheduler
+
+    fake_llm, captured = _fake_llm_capture()
+    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(monkeypatch, latest_insight=row)
+
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        str(uuid4()),
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+    )
+
+    assert not captured, "LLM must not be called for empty insight content"
+    fake_repo.insert_nudge.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_post_analysis_nudge_does_not_persist_blank_llm_response(monkeypatch):
+    """If Sonnet ever returns whitespace-only content, do not save it.
+
+    Pinned because the persistence guard at line ~146 of nudge_scheduler
+    runs after the strip — without this test a future refactor that
+    moves the strip could silently insert empty nudges into the feed.
+    """
+    from app.advisor import nudge_scheduler
+    from app.advisor.models import LLMResponse
+
+    async def _blank_llm(**_kwargs):
+        return LLMResponse(content="   \n  ", input_tokens=1, output_tokens=1)
+
+    monkeypatch.setattr(
+        nudge_scheduler,
+        "_get_llm_adapter",
+        lambda: SimpleNamespace(create_message=_blank_llm),
+    )
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(monkeypatch)
+
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        str(uuid4()),
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+        {
+            "face_shape": "oval",
+            "symmetry_score": 0.9,
+            "recommendations": ["Some rec"],
+        },
+    )
+
+    fake_repo.insert_nudge.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_schedule_post_analysis_nudge_inline_passes_insight(monkeypatch):
     """No arq_pool in ctx → schedule runs generate_nudge inline WITH insight."""

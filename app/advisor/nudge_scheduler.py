@@ -182,11 +182,19 @@ def _load_latest_insight_content(
     Thin wrapper so test code can monkeypatch this one function instead
     of reconstructing the full repo stub. Returns only the nested
     ``content`` field — callers never need ``created_at`` here.
+
+    A row with ``content`` set to ``None`` or ``{}`` (partial write,
+    legacy shape, future schema drift) coalesces to ``None`` so the
+    caller's skip-on-missing guard fires. Returning ``{}`` here would
+    flow into the prompt as ``Face shape: unknown / Symmetry: unknown``
+    and re-introduce exactly the hallucination this module exists to
+    prevent.
     """
     row = advisor_repo.get_latest_analysis_insight(user_id)
     if row is None:
         return None
-    return row.get("content") or {}
+    content = row.get("content")
+    return content if content else None
 
 
 # ---------------------------------------------------------------------------
