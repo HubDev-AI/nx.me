@@ -104,29 +104,29 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
 
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dx < 0) {
-          translateX.setValue(Math.max(gesture.dx, -DELETE_BUTTON_WIDTH));
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        // Defensive: a NaN dx slipping past the comparison would
+        // cascade into translateX.setValue(NaN) below and surface
+        // as a CoreGraphics "invalid numeric value" warning on iOS.
+        if (!Number.isFinite(gesture.dx) || !Number.isFinite(gesture.dy)) {
+          return false;
         }
+        return (
+          Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+        );
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (!Number.isFinite(gesture.dx) || gesture.dx >= 0) return;
+        translateX.setValue(Math.max(gesture.dx, -DELETE_BUTTON_WIDTH));
       },
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx < SWIPE_DELETE_THRESHOLD) {
-          Animated.spring(translateX, {
-            toValue: -DELETE_BUTTON_WIDTH,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 7,
-          }).start();
-        } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 40,
-            friction: 7,
-          }).start();
-        }
+        const dx = Number.isFinite(gesture.dx) ? gesture.dx : 0;
+        Animated.spring(translateX, {
+          toValue: dx < SWIPE_DELETE_THRESHOLD ? -DELETE_BUTTON_WIDTH : 0,
+          useNativeDriver: true,
+          tension: 40,
+          friction: 7,
+        }).start();
       },
     }),
   ).current;
@@ -187,13 +187,21 @@ const rowStyles = StyleSheet.create({
     borderRadius: THEME.radius.lg,
   },
   deleteContainer: {
-    ...StyleSheet.absoluteFillObject,
+    // Anchor to the right edge with a fixed width and stretch the
+    // child via flex instead of `height: "100%"`. Percentage heights
+    // resolve to NaN on iOS during the first layout pass when the
+    // parent's measured height is briefly undefined, surfacing as
+    // CoreGraphics "invalid numeric value" warnings.
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    right: 0,
+    width: DELETE_BUTTON_WIDTH,
+    alignItems: "stretch",
     justifyContent: "center",
-    alignItems: "flex-end",
   },
   deleteButton: {
-    width: DELETE_BUTTON_WIDTH,
-    height: "100%",
+    flex: 1,
     backgroundColor: THEME.colors.destructive,
     borderTopRightRadius: THEME.radius.lg,
     borderBottomRightRadius: THEME.radius.lg,
