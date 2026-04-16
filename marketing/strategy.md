@@ -33,20 +33,39 @@ brand from the team that measures 468 facial landmarks and classifies face
 shape with ML — not the vibes crowd that rates your jaw on a 10-point scale
 and calls it a day.
 
-This wedge is chosen because:
-- It sharply differentiates from Umax / LooksMax / FaceScore (direct
-  competitors) and from YouCam / Lensa / Remini (filter / portrait
-  incumbents).
-- It pairs naturally with faceless content. The brand voice is
-  **technical + warm**, not **personality + charisma**. Engineer-authored
-  tone lets us ship without a founder face.
-- It captures demand leaking from LooksMax discourse users are tired of
-  (harsh, demoralizing scoring) without alienating the glow-up audience
-  that overlaps.
+This wedge pairs naturally with faceless content: the brand voice is
+**technical + warm**, not **personality + charisma**, so we ship without a
+founder face. It captures demand leaking from LooksMax discourse users are
+tired of without alienating the broader glow-up audience.
 
-Use phrases: *science-backed*, *468 landmarks*, *see yourself*,
-*identity-preserving*. Avoid: *score*, *rating*, *beautify*, *filter*,
-*Chad/Stacy*.
+### Verbatim-backed messaging angles
+
+Research pass (2026-04-16) documented ~120 verbatim quotes from App Store
+reviews, the looksmaxxing forum, and TikTok comment snippets. Full
+synthesis in [`./research/README.md`](./research/README.md). Each angle
+below is a direct answer to a ranked category pain.
+
+| # | Angle | Pain answered (freq rank) | Candidate line |
+|---|---|---|---|
+| 1 | No dark patterns | Pricing deception (#1 — 22 quotes, 9 apps) | *"See your result free. No trial ambush."* |
+| 2 | Determinism | AI inconsistency (#2) | *"Same photo. Same answer. Every time."* |
+| 3 | Identity preservation | Identity drift / whitewashing (#3) | *"Your face, upgraded — not replaced."* |
+| 4 | Explainability | Missing reasoning (#4 — Qoves's praise pattern) | *"We show our work. 468 landmarks, all labeled."* |
+| 5 | Privacy | FaceApp-shaped fear (#5) | *"Your selfie never trains a model."* |
+| 6 | Face-shape answer | Confusion (#6 — TikTok-specific) | *"Not another face-shape guess."* |
+| 7 | Aspirational floor | Self-doubt (#7) | Softer mainstream variant; harder angle only inside LooksMax-critique context |
+| 8 | Believable result | Fake/plastic output (#8) | *"The person in the after photo is still you."* |
+
+Use phrases: *science-backed*, *468 landmarks*, *measurements*, *show my
+work*, *without changing my face*, *detailed*, *structure*, *depth*, *your
+best look*, *identity-preserving*.
+
+Avoid: *score*, *rating*, *beautify*, *filter*, *Chad/Stacy*, *halo/fail*,
+*free trial* (poisoned by competitors — prefer *free result*), *AI
+portraits*, *AI avatars*, *magic*.
+
+Full language inventory in
+[`./product-marketing-context.md`](./product-marketing-context.md).
 
 ---
 
