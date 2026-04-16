@@ -15,6 +15,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+from typing import Literal
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -123,7 +124,9 @@ async def send_advisor_message(
         # In non-prod environments, surface the actual exception message in
         # the response body so clients can see it during local debugging
         # without having to tail the backend log. Prod stays opaque.
-        from app.config import settings as _settings  # local import to keep top-level imports stable
+        from app.config import (
+            settings as _settings,
+        )  # local import to keep top-level imports stable
 
         client_message = (
             f"Advisor service error: {error_msg}"
@@ -366,13 +369,25 @@ async def list_memories(
         None, description="Cursor ({created_at}|{id} composite)"
     ),
     limit: int = Query(50, ge=1, le=100),
+    type: Literal["goal", "user_note"] | None = Query(
+        None, description="Filter by memory type (goal or user_note only)"
+    ),
     claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> MemoryListPageResponse:
-    """List memories for the current user (paginated). All tiers."""
+    """List memories for the current user (paginated). All tiers.
+
+    The optional ``type`` query param restricts results to a single
+    user-authored memory type. Only ``goal`` and ``user_note`` are accepted —
+    Ada-internal memory types (analysis_insight, accepted_suggestion,
+    dismissed_suggestion) are intentionally not exposed via this filter so
+    callers cannot bypass the UX-level hiding.
+    """
     user_id = UUID(claims["sub"])
     try:
-        result = await svc.list_memories_page(user_id, limit=limit, cursor=cursor)
+        result = await svc.list_memories_page(
+            user_id, limit=limit, cursor=cursor, type_filter=type
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)

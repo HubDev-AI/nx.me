@@ -1,68 +1,56 @@
 appId: host.exp.Exponent
 ---
-# Test: Advisor Memories tab — attempt to add a memory/goal/note
+# Test: Advisor Memories tab — add a Goal via the Goals subtab composer
 - runFlow: 00-app-launch.yaml
 - runFlow: 00-ensure-logged-in.yaml
 
-# Wait for feed
+# Wait for feed to be ready
 - extendedWaitUntil:
     visible: "Sort by Newest"
     timeout: 15000
 - takeScreenshot: mem_add_01_on_feed
 
-# Navigate to Advisor tab if it exists
-- runFlow:
-    when:
-      visible: "Advisor"
-    commands:
-      - tapOn: "Advisor"
-      - waitForAnimationToEnd
-      - takeScreenshot: mem_add_02_advisor_landed
+# Navigate to Advisor tab
+- tapOn: "Advisor"
+- waitForAnimationToEnd
+- takeScreenshot: mem_add_02_advisor_landed
 
-      # Verify header
-      - runFlow:
-          when:
-            visible: "Ada"
-          commands:
-            - assertVisible: "Your style advisor"
+# Switch to Memories subtab within Advisor
+- tapOn: "Memories tab"
+- waitForAnimationToEnd
+- takeScreenshot: mem_add_03_memories_tab
 
-      # Tap Memories tab
-      - tapOn: "Memories tab"
-      - waitForAnimationToEnd
-      - takeScreenshot: mem_add_03_memories_tab
+# The Memories tab now has Goals / Notes subtabs above the list.
+# Default is Goals; tap it explicitly to make the selection deterministic
+# and to verify the tablist is tappable.
+- tapOn: "Goals"
+- waitForAnimationToEnd
+- takeScreenshot: mem_add_04_goals_subtab
 
-      # Try to find and tap Add button
-      - runFlow:
-          when:
-            visible: "Add"
-          commands:
-            - tapOn: "Add"
-            - waitForAnimationToEnd
-            - takeScreenshot: mem_add_04_add_tapped
+# Tap the composer by its per-tab accessibility label and type a goal.
+# The TextInput's accessibilityLabel comes from TAB_COPY[activeTab].composerA11yLabel.
+- tapOn: "Goal content"
+- inputText: "I want to improve my streetwear style this spring"
+- takeScreenshot: mem_add_05_typed_memory
 
-      # Try to find memory input field
-      - runFlow:
-          when:
-            visible: "Add a goal or note"
-          commands:
-            - tapOn: "Add a goal or note"
-            - inputText: "I want to improve my streetwear style this spring"
-            - takeScreenshot: mem_add_05_typed_memory
-            # Try submitting via Enter or a Submit button
-            - runFlow:
-                when:
-                  visible: "Save"
-                commands:
-                  - tapOn: "Save"
-                  - waitForAnimationToEnd
-                  - takeScreenshot: mem_add_06_saved
-            # Fallback: press Enter to submit
-            - pressKey: Enter
-            - waitForAnimationToEnd
-            - takeScreenshot: mem_add_07_submitted
+# Submit via the circular "Add memory" submit button (AdvisorComposer's
+# submitAccessibilityLabel). Assert the row appears.
+- tapOn: "Add memory"
+- waitForAnimationToEnd
+- assertVisible: "I want to improve my streetwear style this spring"
+- takeScreenshot: mem_add_06_goal_added
 
-      # Final state screenshot
-      - takeScreenshot: mem_add_08_final
+# Switch to Notes — draft must be empty (per-tab drafts), composer
+# placeholder / a11y label must flip.
+- tapOn: "Notes"
+- waitForAnimationToEnd
+- takeScreenshot: mem_add_07_notes_subtab
 
-# If no Advisor tab, capture final state
-- takeScreenshot: mem_add_final_state
+- tapOn: "Note content"
+- inputText: "I prefer silver over gold"
+- takeScreenshot: mem_add_08_typed_note
+
+- tapOn: "Add memory"
+- waitForAnimationToEnd
+- assertVisible: "I prefer silver over gold"
+- takeScreenshot: mem_add_09_note_added

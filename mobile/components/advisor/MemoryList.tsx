@@ -4,11 +4,16 @@
  * Mirrors ChatView's layout: list fills the tab, composer sits at the
  * bottom of the screen, KeyboardAvoidingView lifts the composer with
  * the keyboard, and the floating tab-bar is cleared via bottomPadding.
- * The Goal / Note type chips sit at the top as a type selector — the
- * actual input is the shared AdvisorComposer at the bottom.
+ * The Goals / Notes subtabs sit at the top as a list filter — each tab
+ * has its own draft, error, and isAdding state so submitting on one
+ * never locks the other. The actual input is the shared AdvisorComposer
+ * at the bottom, bound to the active tab's draft.
  *
  * Memories are things Ada remembers about the user: goals, notes,
- * accepted suggestions, etc. Swipe left on a row to reveal delete.
+ * accepted suggestions, etc. The Goals / Notes tabs only show
+ * user-authored rows; system-authored insights / accepted /
+ * dismissed suggestions are hidden via a server-side type filter.
+ * Swipe left on a row to reveal delete.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -18,6 +23,7 @@ import {
   Pressable,
   Alert,
   Animated,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -52,23 +58,12 @@ function memoryContentText(content: Record<string, unknown>): string {
 // Memory type display helpers
 // ---------------------------------------------------------------------------
 
-function memoryTypeLabel(type: MemoryType): string {
-  switch (type) {
-    case "goal":
-      return "Goal";
-    case "user_note":
-      return "Note";
-    case "accepted_suggestion":
-      return "Accepted";
-    case "dismissed_suggestion":
-      return "Dismissed";
-    case "analysis_insight":
-      return "Insight";
-    default:
-      return "Memory";
-  }
-}
-
+/**
+ * Icon glyph for each memory type. Only `goal` and `user_note` ever
+ * surface in the UI today (system-authored types are server-filtered),
+ * but the helper keeps every branch covered so a future "What Ada knows"
+ * surface can reuse it without touching the row component.
+ */
 function memoryTypeIcon(
   type: MemoryType,
 ): React.ComponentProps<typeof Ionicons>["name"] {
@@ -97,6 +92,12 @@ interface SwipeableRowProps {
   onDelete: (id: string) => void;
 }
 
+/**
+ * Single memory row with swipe-to-delete. The left icon container is
+ * the only visual cue for the row's type — the textual label was
+ * dropped because each tab's content is uniform, so the label was
+ * redundant chrome.
+ */
 function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
   const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
@@ -169,9 +170,6 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
           />
         </View>
         <View style={rowStyles.content}>
-          <Text style={[rowStyles.typeLabel, { color: theme.accent }]}>
-            {memoryTypeLabel(memory.type)}
-          </Text>
           <Text style={rowStyles.body} numberOfLines={3}>
             {memoryContentText(memory.content)}
           </Text>
@@ -224,10 +222,6 @@ const rowStyles = StyleSheet.create({
     flex: 1,
     gap: THEME.spacing.xs,
   },
-  typeLabel: {
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 13,
-  },
   date: {
     fontFamily: FONTS.body,
     fontSize: 12,
@@ -244,32 +238,36 @@ const rowStyles = StyleSheet.create({
 });
 
 // ---------------------------------------------------------------------------
-// Type selector row — sits at top, picks what kind of memory gets added
-// when the user submits the composer at the bottom.
+// SubTabs — Goals / Notes switcher. Filters the list and binds the
+// composer to the active tab's draft. Styled as a chip pair to match
+// the rest of the advisor surface; semantically a tablist for VoiceOver.
 // ---------------------------------------------------------------------------
 
-interface TypeChipsProps {
-  selectedType: MemoryType;
-  onSelect: (type: MemoryType) => void;
-}
+/** Tab values double as the server-side type filter (`?type=goal|user_note`). */
+type Tab = "goal" | "user_note";
 
-const ADDABLE_TYPES: { value: MemoryType; label: string }[] = [
-  { value: "goal", label: "Goal" },
-  { value: "user_note", label: "Note" },
+const SUB_TABS: { value: Tab; label: string }[] = [
+  { value: "goal", label: "Goals" },
+  { value: "user_note", label: "Notes" },
 ];
 
-function TypeChips({ selectedType, onSelect }: TypeChipsProps) {
+interface SubTabsProps {
+  activeTab: Tab;
+  onChange: (tab: Tab) => void;
+}
+
+function SubTabs({ activeTab, onChange }: SubTabsProps) {
   const { theme } = useTheme();
   return (
-    <View style={chipStyles.row}>
-      {ADDABLE_TYPES.map((t) => {
-        const isActive = selectedType === t.value;
+    <View style={chipStyles.row} accessibilityRole="tablist">
+      {SUB_TABS.map((t) => {
+        const isActive = activeTab === t.value;
         return (
           <PressableScale
             key={t.value}
             scale={0.94}
             haptic={false}
-            onPress={() => onSelect(t.value)}
+            onPress={() => onChange(t.value)}
             style={[
               chipStyles.chip,
               isActive && {
@@ -278,8 +276,8 @@ function TypeChips({ selectedType, onSelect }: TypeChipsProps) {
                 ...THEME.shadow.glow(theme.accent),
               },
             ]}
-            accessibilityLabel={`Memory type: ${t.label}`}
-            accessibilityRole="button"
+            accessibilityLabel={t.label}
+            accessibilityRole="tab"
             accessibilityState={{ selected: isActive }}
           >
             <Ionicons
@@ -380,62 +378,171 @@ const memSkeletonStyles = StyleSheet.create({
 
 const MemorySeparator = () => <View style={styles.separator} />;
 
+// ---------------------------------------------------------------------------
+// Per-tab copy — kept in one place so SubTabs, composer, and empty
+// overlay all read from the same source of truth.
+// ---------------------------------------------------------------------------
+
+interface TabCopy {
+  placeholder: string;
+  composerA11yLabel: string;
+  emptyTitle: string;
+  emptyDescription: string;
+}
+
+const TAB_COPY: Record<Tab, TabCopy> = {
+  goal: {
+    placeholder: "e.g. Grow out my hair to shoulder length",
+    composerA11yLabel: "Goal content",
+    emptyTitle: "No goals yet",
+    emptyDescription: "Tell Ada what you're working toward.",
+  },
+  user_note: {
+    placeholder: "e.g. I prefer minimal jewelry",
+    composerA11yLabel: "Note content",
+    emptyTitle: "No notes yet",
+    emptyDescription: "Jot anything Ada should know about you.",
+  },
+};
+
+/** First tab shown on mount. Persists within session via `activeTab` state. */
+const DEFAULT_TAB: Tab = "goal";
+
+interface TabState {
+  draft: string;
+  error: string | null;
+  isAdding: boolean;
+}
+
+const INITIAL_TAB_STATE: TabState = { draft: "", error: null, isAdding: false };
+
 export function MemoryList() {
   const { keyboardVerticalOffset, inputBottomPadding } =
     useAdvisorComposerLayout();
 
-  // List + form state
+  // -------------------------------------------------------------------------
+  // State — see plan §High-Level Technical Design
+  // -------------------------------------------------------------------------
+  const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB);
   const [memories, setMemories] = useState<UserMemory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
-  const [content, setContent] = useState("");
-  const [selectedType, setSelectedType] = useState<MemoryType>("goal");
+  const [byTab, setByTab] = useState<Record<Tab, TabState>>({
+    goal: INITIAL_TAB_STATE,
+    user_note: INITIAL_TAB_STATE,
+  });
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refetching, setRefetching] = useState(false);
+
+  // Monotonic request counter + activeTab ref. A fetch that resolves
+  // after a later fetch, or after the tab was switched, is discarded
+  // — prevents a stale Goals response from overwriting Notes' data.
+  // `activeTabRef` also gates `handleAdd`'s prepend so a row submitted
+  // on Goals doesn't land in the Notes list if the user switches tabs
+  // before the POST resolves.
+  const requestIdRef = useRef(0);
+  const activeTabRef = useRef<Tab>(DEFAULT_TAB);
+  activeTabRef.current = activeTab;
+
+  const updateTab = useCallback(
+    (tab: Tab, patch: Partial<TabState>) =>
+      setByTab((prev) => ({ ...prev, [tab]: { ...prev[tab], ...patch } })),
+    [],
+  );
 
   // -------------------------------------------------------------------------
-  // Load memories
+  // Unified load path — used by initial mount, tab switch, and retry.
+  // Stale responses (user switched tabs mid-fetch) are dropped via the
+  // request-id guard; only the most recent call for the currently-active
+  // tab is allowed to mutate `memories`.
   // -------------------------------------------------------------------------
-  const loadMemories = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await fetchMemories();
-      setMemories(response.memories);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "We couldn't load your memories.";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const loadTab = useCallback(
+    async (tab: Tab, { showRefetchIndicator = true } = {}) => {
+      const reqId = ++requestIdRef.current;
+      if (showRefetchIndicator) setRefetching(true);
+      updateTab(tab, { error: null });
+      try {
+        const response = await fetchMemories({ type: tab });
+        if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
+        setMemories(response.memories);
+      } catch (err) {
+        if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
+        const message =
+          err instanceof Error ? err.message : "We couldn't load your memories.";
+        updateTab(tab, { error: message });
+        setMemories([]);
+      } finally {
+        if (reqId === requestIdRef.current) setRefetching(false);
+      }
+    },
+    [updateTab],
+  );
 
+  // -------------------------------------------------------------------------
+  // Initial load — first mount only.
+  // -------------------------------------------------------------------------
   useEffect(() => {
-    loadMemories();
-  }, [loadMemories]);
+    (async () => {
+      await loadTab(DEFAULT_TAB, { showRefetchIndicator: false });
+      setInitialLoading(false);
+    })();
+  }, [loadTab]);
 
   // -------------------------------------------------------------------------
-  // Add memory
+  // Tab switching — refetch the new tab's rows via loadTab. We keep the
+  // previous list visible and show a subtle indicator (see plan) instead
+  // of the full-screen skeleton on every tap. Drafts are intentionally
+  // not cleared on switch — that's the whole point of per-tab state.
   // -------------------------------------------------------------------------
+  const handleTabChange = useCallback(
+    (tab: Tab) => {
+      if (tab === activeTab) return;
+      setActiveTab(tab);
+      activeTabRef.current = tab;
+      void loadTab(tab);
+    },
+    [activeTab, loadTab],
+  );
+
+  // -------------------------------------------------------------------------
+  // Add memory — scoped to the active tab. Clears ONLY the active
+  // tab's draft on success so the other tab's in-progress text stays
+  // put. Errors surface via toast and leave the draft intact for retry.
+  // -------------------------------------------------------------------------
+  const activeState = byTab[activeTab];
+
   const handleAdd = useCallback(async () => {
-    const trimmed = content.trim();
-    if (!trimmed || isAdding) return;
-    setIsAdding(true);
+    const trimmed = activeState.draft.trim();
+    if (!trimmed || activeState.isAdding) return;
+    const tab = activeTab;
+    updateTab(tab, { isAdding: true });
     try {
-      const newMemory = await addMemory(selectedType, { text: trimmed });
-      setMemories((prev) => [newMemory, ...prev]);
-      setContent("");
+      const newMemory = await addMemory(tab, { text: trimmed });
+      // The draft belongs to `tab`; clearing it is always safe. But
+      // `memories` reflects whichever tab is currently visible — only
+      // prepend if the user is still on the tab they submitted from.
+      // Otherwise the row would land in the wrong list visually until
+      // the next refetch of `tab`.
+      updateTab(tab, { draft: "", error: null });
+      if (activeTabRef.current === tab) {
+        setMemories((prev) => [newMemory, ...prev]);
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Couldn't save that memory.";
+      updateTab(tab, { error: message });
       showToast({ kind: "error", message });
     } finally {
-      setIsAdding(false);
+      updateTab(tab, { isAdding: false });
     }
-  }, [content, isAdding, selectedType]);
+  }, [activeState.draft, activeState.isAdding, activeTab, updateTab]);
+
+  const handleDraftChange = useCallback(
+    (text: string) => updateTab(activeTab, { draft: text }),
+    [activeTab, updateTab],
+  );
 
   // -------------------------------------------------------------------------
-  // Delete memory
+  // Delete memory — unchanged behavior: Alert.alert confirm, optimistic
+  // removal, restore-on-failure.
   // -------------------------------------------------------------------------
   const memoriesRef = useRef(memories);
   memoriesRef.current = memories;
@@ -484,28 +591,32 @@ export function MemoryList() {
     [handleDelete],
   );
 
-  const placeholder =
-    selectedType === "goal"
-      ? "e.g. Grow out my hair to shoulder length"
-      : "e.g. I prefer minimal jewelry";
+  const copy = TAB_COPY[activeTab];
 
+  // `key={activeTab}` forces AdvisorComposer to remount on tab switch
+  // so its focus state resets and the keyboard dismisses cleanly —
+  // otherwise the previous tab's focused input stays live under the
+  // new tab's draft value.
   const composer = (
     <AdvisorComposer
-      value={content}
-      onChangeText={setContent}
+      key={activeTab}
+      value={activeState.draft}
+      onChangeText={handleDraftChange}
       onSubmit={handleAdd}
-      placeholder={placeholder}
-      disabled={isAdding}
+      placeholder={copy.placeholder}
+      disabled={activeState.isAdding}
       submitIcon="add"
       maxLength={ADVISOR_CONFIG.MEMORY_MAX_LENGTH}
-      accessibilityLabel="Memory content"
+      accessibilityLabel={copy.composerA11yLabel}
       submitAccessibilityLabel="Add memory"
       bottomPadding={inputBottomPadding}
       separator
     />
   );
 
-  if (isLoading) {
+  const subTabs = <SubTabs activeTab={activeTab} onChange={handleTabChange} />;
+
+  if (initialLoading) {
     return (
       <KeyboardAvoidingView
         style={styles.container}
@@ -514,7 +625,7 @@ export function MemoryList() {
         }
         keyboardVerticalOffset={keyboardVerticalOffset}
       >
-        <TypeChips selectedType={selectedType} onSelect={setSelectedType} />
+        {subTabs}
         <MemorySkeleton />
         {composer}
       </KeyboardAvoidingView>
@@ -529,39 +640,53 @@ export function MemoryList() {
       }
       keyboardVerticalOffset={keyboardVerticalOffset}
     >
-      <TypeChips selectedType={selectedType} onSelect={setSelectedType} />
+      {subTabs}
 
-      <FlatList
-        data={memories}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={MemorySeparator}
-      />
-
-      {/* Error overlay — centered with Try Again button. */}
-      {error && memories.length === 0 && (
-        <AdvisorEmptyOverlay
-          icon="alert-circle-outline"
-          title="Could not load memories"
-          description={error}
-          action={{
-            label: "Try Again",
-            onPress: loadMemories,
-            accessibilityLabel: "Retry loading memories",
-          }}
+      {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
+          it. A future polish pass could call AccessibilityInfo.announce
+          ForAccessibility on tab change to cover iOS. */}
+      <View style={styles.listArea} accessibilityLiveRegion="polite">
+        <FlatList
+          data={memories}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={MemorySeparator}
         />
-      )}
 
-      {/* Empty overlay — shown when no memories exist. */}
-      {!error && memories.length === 0 && (
-        <AdvisorEmptyOverlay
-          icon="bookmark-outline"
-          title="No memories yet"
-          description="Add goals or notes so Ada can personalise her advice"
-        />
-      )}
+        {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
+        {refetching && (
+          <View style={styles.refetchIndicator} pointerEvents="none">
+            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+          </View>
+        )}
+
+        {/* Error overlay — scoped to the active tab; subtabs above stay
+            interactive so the user can switch away from a failed tab.
+            Retry reuses loadTab so the stale-response guard applies. */}
+        {activeState.error && memories.length === 0 && (
+          <AdvisorEmptyOverlay
+            icon="alert-circle-outline"
+            title="Could not load memories"
+            description={activeState.error}
+            action={{
+              label: "Try Again",
+              onPress: () => void loadTab(activeTab),
+              accessibilityLabel: "Retry loading memories",
+            }}
+          />
+        )}
+
+        {/* Empty overlay — per-tab copy. */}
+        {!activeState.error && !refetching && memories.length === 0 && (
+          <AdvisorEmptyOverlay
+            icon={memoryTypeIcon(activeTab)}
+            title={copy.emptyTitle}
+            description={copy.emptyDescription}
+          />
+        )}
+      </View>
 
       {composer}
     </KeyboardAvoidingView>
@@ -573,6 +698,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
   },
+  listArea: {
+    flex: 1,
+  },
   listContent: {
     flexGrow: 1,
     paddingHorizontal: THEME.spacing.lg,
@@ -580,5 +708,12 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: THEME.spacing.md - 2,
+  },
+  refetchIndicator: {
+    position: "absolute",
+    top: THEME.spacing.md,
+    left: 0,
+    right: 0,
+    alignItems: "center",
   },
 });

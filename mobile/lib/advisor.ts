@@ -53,6 +53,8 @@ export interface UserMemory {
 
 export interface MemoriesResponse {
   memories: UserMemory[];
+  next_cursor: string | null;
+  has_more: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,9 +121,19 @@ export async function markNudgeRead(nudgeId: string): Promise<void> {
 // Memories
 // ---------------------------------------------------------------------------
 
-/** Fetch all user memories. */
-export async function fetchMemories(): Promise<MemoriesResponse> {
-  return apiFetch<MemoriesResponse>(ADVISOR_ENDPOINTS.MEMORIES);
+/** Fetch user memories, optionally filtered by type. */
+export async function fetchMemories(opts?: {
+  type?: "goal" | "user_note";
+  cursor?: string;
+}): Promise<MemoriesResponse> {
+  const params = new URLSearchParams();
+  if (opts?.type) params.set("type", opts.type);
+  if (opts?.cursor) params.set("cursor", opts.cursor);
+  const query = params.toString();
+  const path = query
+    ? `${ADVISOR_ENDPOINTS.MEMORIES}?${query}`
+    : ADVISOR_ENDPOINTS.MEMORIES;
+  return apiFetch<MemoriesResponse>(path);
 }
 
 /** Add a new memory. */
