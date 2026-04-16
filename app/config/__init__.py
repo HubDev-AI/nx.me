@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     ADVISOR_MILESTONE_DEDUP_HOURS: int = (
         48  # Hours before a duplicate milestone nudge is allowed
     )
+    ADVISOR_MEMORY_CAP: int = 500  # Max memories per user (spec §10).
+    ADVISOR_CONTEXT_TOKEN_BUDGET: int = 5000  # Max input tokens to the LLM (spec §10).
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
@@ -262,7 +264,10 @@ class Settings(BaseSettings):
         APP_ENV is normalized (lowercase + strip) so `Production` or
         ` production ` cannot bypass the gate via casing/whitespace typos.
         """
-        if self.APP_ENV.strip().lower() == "production" and not self.FEATURE_AUTH_REQUIRED:
+        if (
+            self.APP_ENV.strip().lower() == "production"
+            and not self.FEATURE_AUTH_REQUIRED
+        ):
             raise ValueError(
                 "FEATURE_AUTH_REQUIRED=false is not allowed when APP_ENV=production. "
                 "Guest mode is a local-dev convenience; production must require auth. "

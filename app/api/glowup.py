@@ -269,10 +269,10 @@ async def analyze_glowup(
             "Analytics emit failed for glowup_analyze_completed", exc_info=True
         )
 
-    # Advisor: schedule a post-analysis nudge. ARQ-dispatched so the
-    # endpoint does not block on LLM latency. Any failure (pool missing,
-    # queue unavailable) is swallowed — a missed nudge must never turn a
-    # successful analysis into a 5xx.
+    # Advisor: schedule a post-analysis nudge and persist the analysis insight
+    # as a memory row. Both ARQ-dispatched so the endpoint does not block on
+    # LLM/embedding latency. Failures are swallowed — missing advisor state
+    # must never turn a successful analysis into a 5xx (spec §4.5, §16).
     if settings.ADVISOR_ENABLED:
         try:
             await request.app.state.arq_pool.enqueue_job(
@@ -281,6 +281,25 @@ async def analyze_glowup(
         except Exception:
             logger.warning(
                 "Failed to enqueue post-analysis nudge for user %s",
+                user_id,
+                exc_info=True,
+            )
+
+        try:
+            recommendations_text = [
+                r["suggestion_text"] for r in result.recommendations
+            ]
+            await request.app.state.arq_pool.enqueue_job(
+                "write_analysis_insight_job",
+                user_id,
+                result.face_shape,
+                result.symmetry_score,
+                recommendations_text,
+                upload_id_str,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to enqueue analysis insight for user %s",
                 user_id,
                 exc_info=True,
             )

@@ -19,7 +19,6 @@ import random
 import re
 import weakref
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -33,9 +32,11 @@ from app.advisor.context_builder import (
     build_context,
     build_user_data_block,
     has_visual_trigger,
+    trim_to_budget,
 )
 from app.advisor.memory_manager import MemoryManager
 from app.advisor.models import LLMResponse, MemoryType
+from app.advisor.persona import SOUL_MD as _SOUL_MD
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
@@ -45,15 +46,6 @@ logger = logging.getLogger(__name__)
 # Max tokens for chat response (keep concise per SOUL.md)
 _MAX_TOKENS_CHAT = 256
 _MAX_TOKENS_SUMMARY = 512
-
-# SOUL.md loaded once at import time
-_SOUL_MD_PATH = Path(__file__).parent / "SOUL.md"
-try:
-    _SOUL_MD: str = _SOUL_MD_PATH.read_text(encoding="utf-8")
-except FileNotFoundError:
-    raise RuntimeError(
-        f"SOUL.md not found at {_SOUL_MD_PATH}. Advisor service cannot start."
-    )
 
 _background_tasks: weakref.WeakSet = weakref.WeakSet()
 
@@ -175,6 +167,16 @@ class AdvisorService:
             message=message,
             rng=_rng,
         )
+
+        messages, dropped = trim_to_budget(
+            messages, settings.ADVISOR_CONTEXT_TOKEN_BUDGET
+        )
+        if dropped:
+            logger.info(
+                "Advisor context trimmed: dropped %d oldest messages to fit token budget",
+                dropped,
+                extra={"metric": "advisor.context_trimmed", "dropped": dropped},
+            )
 
         # Step 8: Call LLM (with post-generation check + one retry)
         recent_advisor_messages = [
@@ -563,11 +565,17 @@ class AdvisorService:
         try:
             response = await self._llm.create_message(
                 model=settings.ADVISOR_MODEL_HAIKU,
-                system=(
-                    "Summarise this conversation in 2-3 sentences, "
-                    "focusing on styling preferences and goals mentioned."
-                ),
-                messages=[{"role": "user", "content": history_text}],
+                system=_SOUL_MD,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Summarise this conversation in 2-3 sentences, "
+                            "styling preferences and goals only. Stay in your voice.\n\n"
+                            + history_text
+                        ),
+                    }
+                ],
                 max_tokens=_MAX_TOKENS_SUMMARY,
             )
             summary = response.content.strip()

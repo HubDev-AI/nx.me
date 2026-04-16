@@ -292,8 +292,11 @@ class TestAnalyzeGlowupHandler:
             glowup_svc=_make_glowup_service(),
         )
 
-        enqueue_job.assert_awaited_once_with(
-            "schedule_post_analysis_nudge", user_id
+        job_names = [c.args[0] for c in enqueue_job.await_args_list]
+        assert "schedule_post_analysis_nudge" in job_names
+        assert any(
+            c.args == ("schedule_post_analysis_nudge", user_id)
+            for c in enqueue_job.await_args_list
         )
 
     @pytest.mark.asyncio
@@ -329,7 +332,7 @@ class TestAnalyzeGlowupHandler:
         )
 
         assert result.face_shape == "oval"
-        enqueue_job.assert_awaited_once()
+        enqueue_job.assert_awaited()
 
 
 class TestGenerateGlowupHandler:

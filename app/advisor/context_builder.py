@@ -27,6 +27,75 @@ VISUAL_TRIGGER_KEYWORDS: tuple[str, ...] = (
 # Trajectory hint chance (spec Section 6.3)
 _TRAJECTORY_CHANCE = 0.15
 
+# Heuristic fallback used when tiktoken is unavailable: ~4 chars per token.
+_CHARS_PER_TOKEN = 4
+
+
+def _count_tokens(text: str) -> int:
+    """Count tokens for ``text``. Uses tiktoken when importable, else a heuristic."""
+    try:
+        import tiktoken
+
+        enc = tiktoken.get_encoding("cl100k_base")
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, len(text) // _CHARS_PER_TOKEN)
+
+
+def _message_tokens(msg: dict[str, Any]) -> int:
+    """Count tokens for a single message dict (string or content-block list)."""
+    content = msg.get("content", "")
+    if isinstance(content, str):
+        return _count_tokens(content)
+    total = 0
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            total += _count_tokens(str(block.get("text", "")))
+    return total
+
+
+def trim_to_budget(
+    messages: list[dict[str, Any]], budget: int
+) -> tuple[list[dict[str, Any]], int]:
+    """Trim conversation history so total tokens fit within ``budget``.
+
+    Preserves system messages, the incoming user message (the last message),
+    and drops oldest user/advisor turns first. Returns ``(trimmed_messages,
+    dropped_count)`` so callers can log eviction (spec §10).
+
+    When the irreducible core (system + last user message) already exceeds the
+    budget, the core is returned unchanged — the call will still happen; the
+    budget is a soft guard, not a hard limit.
+    """
+    if budget <= 0 or not messages:
+        return list(messages), 0
+
+    total = sum(_message_tokens(m) for m in messages)
+    if total <= budget:
+        return list(messages), 0
+
+    last_idx = len(messages) - 1
+    protected_indices: set[int] = {last_idx}
+    for i, m in enumerate(messages):
+        if m.get("role") == "system":
+            protected_indices.add(i)
+
+    trimmable_indices = [i for i in range(len(messages)) if i not in protected_indices]
+
+    dropped = 0
+    dropped_indices: set[int] = set()
+    for idx in trimmable_indices:  # oldest first
+        if total <= budget:
+            break
+        total -= _message_tokens(messages[idx])
+        dropped_indices.add(idx)
+        dropped += 1
+
+    return (
+        [m for i, m in enumerate(messages) if i not in dropped_indices],
+        dropped,
+    )
+
 
 def build_context(
     soul_md: str,

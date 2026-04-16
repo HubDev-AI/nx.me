@@ -22,6 +22,7 @@ from app.advisor.llm_port import LLMPort
 from app.advisor.models import MemoryType
 from app.advisor.nudge_policy import MODEL_HAIKU
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
@@ -131,7 +132,21 @@ class MemoryManager:
         memory_type: MemoryType,
         content: dict[str, Any],
     ) -> dict[str, Any]:
-        """Write a new memory row with embedding. Returns the created row."""
+        """Write a new memory row with embedding. Returns the created row.
+
+        Enforces `ADVISOR_MEMORY_CAP` per spec §10: if the user is already at or
+        above the cap, evict the oldest non-goal memory before inserting. Goals
+        are never auto-evicted — if the user hits the cap with goals only, the
+        write still proceeds (overflow logged; intent is preserved).
+
+        Soft-cap race: under concurrent extractions for the same user at the
+        boundary, two writes may each pass the count check and each evict one
+        row — final count can exceed the cap by one. Acceptable trade-off:
+        the cap is a bound on unbounded growth, not a hard invariant, and
+        real extraction volume is a few rows per turn.
+        """
+        await run_sync(self._enforce_memory_cap, user_id)
+
         text = summarize_memory_content(content)
         embedding = await self._embedding_adapter.compute_embedding(text)
 
@@ -145,6 +160,45 @@ class MemoryManager:
         created = self._repo.insert_memory(row)
         logger.info("Memory written: user=%s type=%s", user_id, memory_type)
         return created
+
+    def _enforce_memory_cap(self, user_id: UUID) -> None:
+        """If user is at or above the cap, delete the oldest non-goal memory."""
+        cap = settings.ADVISOR_MEMORY_CAP
+        try:
+            count = self._repo.count_memories(str(user_id))
+        except Exception:
+            logger.warning(
+                "Memory count failed for user %s — skipping cap check",
+                user_id,
+                exc_info=True,
+            )
+            return
+
+        if count < cap:
+            return
+
+        try:
+            evicted = self._repo.delete_oldest_memory_excluding_types(
+                str(user_id), exclude_types=(MemoryType.GOAL.value,)
+            )
+        except Exception:
+            logger.warning(
+                "Memory eviction failed for user %s",
+                user_id,
+                exc_info=True,
+            )
+            return
+
+        if not evicted:
+            logger.warning(
+                "Memory cap reached with goals only for user %s — accepting overflow",
+                user_id,
+                extra={
+                    "metric": "advisor.memory_cap_goal_only",
+                    "user_id": str(user_id),
+                    "count": count,
+                },
+            )
 
     async def get_relevant_memories(
         self,
@@ -305,43 +359,23 @@ class MemoryManager:
         face_shape: str,
         symmetry_score: float,
         recommendations: list[str],
-        image_id: str,
+        upload_id: str,
     ) -> None:
-        """Write an analysis_insight memory after a face analysis completes."""
-        # L-6: Verify image belongs to user before storing insight
-        try:
-            image_data = (
-                self._repo._sb.table("images")
-                .select("user_id")
-                .eq("id", image_id)
-                .maybe_single()
-                .execute()
-            )
-            if (
-                image_data
-                and image_data.data
-                and image_data.data.get("user_id") != str(user_id)
-            ):
-                logger.warning(
-                    "Image %s does not belong to user %s, skipping insight",
-                    image_id,
-                    user_id,
-                )
-                return
-        except Exception as exc:
-            # A-8: Log and skip instead of proceeding with unverified data
-            logger.warning(
-                "Could not verify image ownership for %s — skipping insight storage: %s",
-                image_id,
-                exc,
-            )
-            return
+        """Write an analysis_insight memory after a face analysis completes.
 
+        Upload ownership is verified at the API gate before this job is
+        enqueued (see `analyze_glowup` → `GlowupService.create_analysis`,
+        which calls `UploadRepository.get_by_id_for_owner_check`). The
+        `user_id` passed here comes from the JWT claims, so no secondary
+        lookup is required — doing one would cross the upload/image schema
+        boundary (uploads.id is not an images.id; see migrations 0001 and
+        0034).
+        """
         content: dict[str, Any] = {
             "face_shape": face_shape,
             "symmetry_score": symmetry_score,
             "recommendations": recommendations,
-            "image_id": image_id,
+            "upload_id": upload_id,
         }
         await self.write_memory(user_id, MemoryType.ANALYSIS_INSIGHT, content)
 

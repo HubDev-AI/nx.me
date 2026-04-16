@@ -22,6 +22,7 @@ from app.advisor.nudge_scheduler import (
     generate_nudge,
     schedule_post_analysis_nudge,
     check_nudge_eligibility,
+    write_analysis_insight_job,
 )
 from app.workers.orphan_reclaim import reclaim_orphaned_blobs
 from app.workers.retention import run_retention
@@ -64,6 +65,7 @@ class WorkerSettings:
         schedule_post_analysis_nudge,
         generate_nudge,
         check_nudge_eligibility,
+        write_analysis_insight_job,
         reconcile_reaction_counts,
     ]
 
