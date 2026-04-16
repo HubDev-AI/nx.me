@@ -24,6 +24,16 @@ export interface Capabilities {
   /** Can edit profile (requires real user identity — guests cannot). */
   canEditProfile: boolean;
   /**
+   * Can view real account details (email, plan, etc.) — only meaningful for
+   * signed-in users. Guests have no account record server-side.
+   */
+  canViewAccountDetails: boolean;
+  /**
+   * Can permanently delete their account — only meaningful for signed-in
+   * users. Guests have no server-side record to delete.
+   */
+  canDeleteAccount: boolean;
+  /**
    * Can sign out — only meaningful when auth is enabled AND the user is
    * actually signed in. With auth off the concept doesn't apply.
    */
@@ -69,6 +79,8 @@ export function useCapabilities(): Capabilities {
       canViewOwnProfile:
         session.isUser || (session.isGuest && !features.auth_required),
       canEditProfile: session.isUser,
+      canViewAccountDetails: session.isUser,
+      canDeleteAccount: session.isUser,
       canSignOut: features.auth_required && session.isUser,
       canSignIn: features.auth_required && !session.isUser,
       canSeeFeed: features.social_enabled,

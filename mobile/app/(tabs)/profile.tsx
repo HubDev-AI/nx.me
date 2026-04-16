@@ -252,6 +252,7 @@ export default function ProfileScreen() {
     <ProfileHeader
       profile={profile}
       onEditProfile={handleEditProfile}
+      showStats={caps.canSeeFeed}
     />
   );
 

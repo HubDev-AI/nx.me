@@ -40,3 +40,39 @@ async def test_advisor_role_mapped_to_assistant(monkeypatch):
     roles = [m["role"] for m in sent]
     assert roles == ["user", "assistant", "user"]
     assert "extra" in create_mock.await_args.kwargs["system"]
+
+
+@pytest.mark.asyncio
+async def test_strips_extra_fields_from_db_rows(monkeypatch):
+    """DB row fields (id, created_at) must not leak into the Anthropic request.
+
+    The Anthropic API rejects unknown keys with
+    ``messages.0.id: Extra inputs are not permitted``.
+    """
+    adapter = AnthropicAdapter.__new__(AnthropicAdapter)
+    create_mock = AsyncMock(return_value=_fake_response())
+    adapter._anthropic = SimpleNamespace(messages=SimpleNamespace(create=create_mock))
+
+    await adapter.create_message(
+        model="claude-sonnet",
+        system="sys",
+        messages=[
+            {
+                "role": "user",
+                "content": "hi",
+                "id": "abc-123",
+                "created_at": "2026-04-16T00:00:00Z",
+            },
+            {
+                "role": "advisor",
+                "content": "reply",
+                "id": "def-456",
+                "created_at": "2026-04-16T00:00:01Z",
+            },
+        ],
+        max_tokens=16,
+    )
+
+    sent = create_mock.await_args.kwargs["messages"]
+    for msg in sent:
+        assert set(msg.keys()) == {"role", "content"}
