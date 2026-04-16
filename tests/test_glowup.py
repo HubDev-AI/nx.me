@@ -294,8 +294,16 @@ class TestAnalyzeGlowupHandler:
 
         job_names = [c.args[0] for c in enqueue_job.await_args_list]
         assert "schedule_post_analysis_nudge" in job_names
+        # The nudge enqueue passes the analysis result through so the
+        # worker can ground the prompt without racing the insight write.
         assert any(
-            c.args == ("schedule_post_analysis_nudge", user_id)
+            c.args == (
+                "schedule_post_analysis_nudge",
+                user_id,
+                "oval",
+                0.85,
+                ["Try bangs"],
+            )
             for c in enqueue_job.await_args_list
         )
 

@@ -4,9 +4,14 @@ Wires together policy, templates, eligibility scans, and queue dispatch.
 The public interface (ARQ job names) is unchanged:
 
 Jobs:
-  generate_nudge            — generate + save a single nudge via Haiku
+  generate_nudge            — generate + save a single nudge via Sonnet
   schedule_post_analysis_nudge — lightweight wrapper called from analyses endpoint
   check_nudge_eligibility   — daily cron: scans all active users, enqueues eligible nudges
+
+Post-analysis nudges are grounded in the user's actual face-analysis
+result (face_shape, symmetry_score, top recommendations) — see
+`build_post_analysis_prompt` in `nudge_templates.py`. Other triggers
+use a generic template because they have no per-user fact to inject.
 
 See nudge_policy.py, nudge_templates.py, nudge_eligibility.py for the
 extracted concerns.
@@ -15,6 +20,7 @@ extracted concerns.
 from __future__ import annotations
 
 import logging
+from typing import Any
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -35,7 +41,7 @@ from app.advisor.nudge_policy import (
     TRIGGER_RE_ENGAGEMENT,
     TRIGGER_WEEKLY_CHECKIN,
 )
-from app.advisor.nudge_templates import get_prompt
+from app.advisor.nudge_templates import build_post_analysis_prompt, get_prompt
 from app.api.deps import get_llm_adapter as _get_llm_adapter
 from app.config import settings
 
@@ -47,16 +53,33 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
+async def generate_nudge(
+    ctx: dict,
+    user_id: str,
+    trigger: str,
+    insight: dict[str, Any] | None = None,
+) -> None:
     """Generate and save a single nudge for a user.
 
     Entitlement is checked before generation. Skips silently if the user has
     hit their nudge cap for the current period (spec Section 3).
 
+    For ``post_analysis`` the prompt is grounded in the user's actual
+    analysis result. The caller (``schedule_post_analysis_nudge``)
+    passes ``insight`` directly so the grounded content is available
+    even if ``write_analysis_insight_job`` has not persisted the memory
+    yet. If ``insight`` is ``None`` (cron retries, manual dispatch)
+    we fall back to ``repo.get_latest_analysis_insight``; when the
+    user has no insight at all, the nudge is skipped rather than
+    emitted with hallucinated details.
+
     Args:
         ctx:     ARQ worker context (supabase, redis injected at startup).
         user_id: UUID string of the target user.
         trigger: One of the TRIGGER_* constants.
+        insight: For ``post_analysis`` only — ``{"face_shape", "symmetry_score",
+                 "recommendations"}`` captured at the moment of analysis.
+                 Ignored for other triggers.
     """
     if not settings.ADVISOR_ENABLED:
         logger.debug("Advisor disabled — skipping nudge for user %s", user_id)
@@ -86,24 +109,38 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
         )
         return
 
-    # Build nudge prompt
-    prompt = get_prompt(trigger)
+    # Build the user-message prompt. Post-analysis is special-cased: it
+    # must be grounded in concrete result data, otherwise the LLM
+    # invents plausible-sounding details (e.g. "your face shape") the
+    # user never actually saw.
+    if trigger == TRIGGER_POST_ANALYSIS:
+        insight_data = insight or _load_latest_insight_content(advisor_repo, user_id)
+        if insight_data is None:
+            logger.info(
+                "Post-analysis nudge skipped — no analysis_insight for user %s",
+                user_id,
+            )
+            return
+        user_content = build_post_analysis_prompt(
+            face_shape=insight_data.get("face_shape"),
+            symmetry_score=insight_data.get("symmetry_score"),
+            recommendations=insight_data.get("recommendations"),
+        )
+    else:
+        user_content = (
+            "Write a brief check-in nudge in your voice. "
+            "One or two sentences, no greeting.\n\n" + get_prompt(trigger)
+        )
 
-    # Generate via Haiku — same SOUL.md persona as chat (spec §1, §12).
+    # Generate via Sonnet — same SOUL.md persona as chat (spec §1, §12).
+    # Haiku produced ungrounded, generic nudges; Sonnet is better at
+    # following the "reference a concrete element" instruction.
     llm = _get_llm_adapter()
     try:
         response = await llm.create_message(
-            model=settings.ADVISOR_MODEL_HAIKU,
+            model=settings.ADVISOR_MODEL_SONNET,
             system=SOUL_MD,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "Write a brief check-in nudge in your voice. "
-                        "One or two sentences, no greeting.\n\n" + prompt
-                    ),
-                }
-            ],
+            messages=[{"role": "user", "content": user_content}],
             max_tokens=MAX_TOKENS_NUDGE,
         )
         nudge_content = response.content.strip()
@@ -135,6 +172,29 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
         return
 
     logger.info("Nudge saved: user=%s trigger=%s", user_id, trigger)
+
+
+def _load_latest_insight_content(
+    advisor_repo: AdvisorRepository, user_id: str
+) -> dict[str, Any] | None:
+    """Return the content dict of the most recent analysis_insight, or None.
+
+    Thin wrapper so test code can monkeypatch this one function instead
+    of reconstructing the full repo stub. Returns only the nested
+    ``content`` field — callers never need ``created_at`` here.
+
+    A row with ``content`` set to ``None`` or ``{}`` (partial write,
+    legacy shape, future schema drift) coalesces to ``None`` so the
+    caller's skip-on-missing guard fires. Returning ``{}`` here would
+    flow into the prompt as ``Face shape: unknown / Symmetry: unknown``
+    and re-introduce exactly the hallucination this module exists to
+    prevent.
+    """
+    row = advisor_repo.get_latest_analysis_insight(user_id)
+    if row is None:
+        return None
+    content = row.get("content")
+    return content if content else None
 
 
 # ---------------------------------------------------------------------------
@@ -203,21 +263,40 @@ async def write_analysis_insight_job(
 # ---------------------------------------------------------------------------
 
 
-async def schedule_post_analysis_nudge(ctx: dict, user_id: str) -> None:
+async def schedule_post_analysis_nudge(
+    ctx: dict,
+    user_id: str,
+    face_shape: str,
+    symmetry_score: float,
+    recommendations: list[str],
+) -> None:
     """Enqueue a post-analysis nudge for a user.
 
     Called from the analysis endpoint after a successful analysis (spec Section
     16: one integration point guarded by ADVISOR_ENABLED).
 
+    The analysis result is passed through directly so the nudge
+    generator has the grounded facts even if ``write_analysis_insight_job``
+    has not yet persisted the memory row (they enqueue independently).
+
     This is a thin wrapper that immediately enqueues ``generate_nudge`` so the
     analysis endpoint does not block on LLM latency.
 
     Args:
-        ctx:     ARQ worker context.
-        user_id: UUID string of the user who completed the analysis.
+        ctx:             ARQ worker context.
+        user_id:         UUID string of the user who completed the analysis.
+        face_shape:      Detected face shape (e.g. "oval", "square").
+        symmetry_score:  Symmetry score the analysis produced.
+        recommendations: Raw suggestion strings from the analysis.
     """
     if not settings.ADVISOR_ENABLED:
         return
+
+    insight = {
+        "face_shape": face_shape,
+        "symmetry_score": symmetry_score,
+        "recommendations": recommendations,
+    }
 
     arq_pool: ArqRedis = ctx.get("arq_pool")
     if arq_pool is None:
@@ -225,10 +304,12 @@ async def schedule_post_analysis_nudge(ctx: dict, user_id: str) -> None:
         logger.debug(
             "No arq_pool in ctx — running generate_nudge inline for user %s", user_id
         )
-        await generate_nudge(ctx, user_id, TRIGGER_POST_ANALYSIS)
+        await generate_nudge(ctx, user_id, TRIGGER_POST_ANALYSIS, insight)
         return
 
-    await arq_pool.enqueue_job("generate_nudge", user_id, TRIGGER_POST_ANALYSIS)
+    await arq_pool.enqueue_job(
+        "generate_nudge", user_id, TRIGGER_POST_ANALYSIS, insight
+    )
     logger.debug("Enqueued post-analysis nudge for user %s", user_id)
 
 
