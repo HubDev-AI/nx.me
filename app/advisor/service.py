@@ -417,14 +417,20 @@ class AdvisorService:
         user_id: UUID,
         limit: int = 50,
         cursor: str | None = None,
+        type_filter: str | None = None,
     ) -> dict[str, Any]:
-        """Return a paginated page of memories."""
+        """Return a paginated page of memories.
+
+        ``type_filter`` is a passthrough to the repo; when ``None`` the page
+        contains every memory type for the user (default behavior).
+        """
         fetch_limit = limit + 1
         rows = await run_sync(
             self._repo.get_memories_page,
             user_id=str(user_id),
             fetch_limit=fetch_limit,
             cursor=cursor,
+            type_filter=type_filter,
         )
         has_more = len(rows) > limit
         if has_more:
