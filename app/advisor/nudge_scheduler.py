@@ -26,6 +26,7 @@ from app.advisor.nudge_eligibility import (
     find_re_engagement_eligible,
     find_weekly_checkin_eligible,
 )
+from app.advisor.persona import SOUL_MD
 from app.repositories.advisor_repo import AdvisorRepository
 from app.advisor.nudge_policy import (
     MAX_TOKENS_NUDGE,
@@ -88,16 +89,21 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
     # Build nudge prompt
     prompt = get_prompt(trigger)
 
-    # Generate via Haiku
+    # Generate via Haiku — same SOUL.md persona as chat (spec §1, §12).
     llm = _get_llm_adapter()
     try:
         response = await llm.create_message(
             model=settings.ADVISOR_MODEL_HAIKU,
-            system=(
-                f"You are {settings.ADVISOR_PERSONA_NAME}, a warm personal style advisor. "
-                "Keep responses brief and human. Never use generic phrases."
-            ),
-            messages=[{"role": "user", "content": prompt}],
+            system=SOUL_MD,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Write a brief check-in nudge in your voice. "
+                        "One or two sentences, no greeting.\n\n" + prompt
+                    ),
+                }
+            ],
             max_tokens=MAX_TOKENS_NUDGE,
         )
         nudge_content = response.content.strip()
@@ -129,6 +135,67 @@ async def generate_nudge(ctx: dict, user_id: str, trigger: str) -> None:
         return
 
     logger.info("Nudge saved: user=%s trigger=%s", user_id, trigger)
+
+
+# ---------------------------------------------------------------------------
+# Memory manager builder (also used by write_analysis_insight_job)
+# ---------------------------------------------------------------------------
+
+
+async def _build_memory_manager(ctx: dict):
+    """Construct a MemoryManager from worker context resources.
+
+    Extracted so tests can patch this without standing up real Supabase/Redis.
+    """
+    from app.advisor.memory_manager import MemoryManager
+    from app.api.deps import get_embedding_adapter, get_llm_adapter
+
+    supabase: Client = ctx["supabase"]
+    return MemoryManager(
+        advisor_repo=AdvisorRepository(supabase),
+        llm_adapter=get_llm_adapter(),
+        embedding_adapter=get_embedding_adapter(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# ARQ job: write_analysis_insight_job
+# ---------------------------------------------------------------------------
+
+
+async def write_analysis_insight_job(
+    ctx: dict,
+    user_id: str,
+    face_shape: str,
+    symmetry_score: float,
+    recommendations: list[str],
+    upload_id: str,
+) -> None:
+    """Persist an `analysis_insight` memory row after a face analysis completes.
+
+    Fire-and-forget: any failure is logged and swallowed so a missing memory
+    never turns a successful analysis into a 5xx (spec §4.5, §16).
+    """
+    if not settings.ADVISOR_ENABLED:
+        return
+
+    try:
+        mm = await _build_memory_manager(ctx)
+        await mm.write_analysis_insight(
+            user_id=UUID(user_id),
+            face_shape=face_shape,
+            symmetry_score=symmetry_score,
+            recommendations=recommendations,
+            upload_id=upload_id,
+        )
+        logger.info("Analysis insight written for user %s", user_id)
+    except Exception:
+        logger.warning(
+            "Failed to write analysis insight for user %s",
+            user_id,
+            exc_info=True,
+            extra={"metric": "advisor.analysis_insight_failure", "user_id": user_id},
+        )
 
 
 # ---------------------------------------------------------------------------

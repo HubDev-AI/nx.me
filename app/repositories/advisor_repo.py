@@ -269,9 +269,7 @@ class AdvisorRepository:
         membership to dedup eligibility scans in O(1) instead of N queries.
         """
         query = (
-            self._sb.table("advisor_nudges")
-            .select("user_id")
-            .gt("created_at", since)
+            self._sb.table("advisor_nudges").select("user_id").gt("created_at", since)
         )
         if trigger is not None:
             query = query.eq("trigger", trigger)
@@ -338,6 +336,51 @@ class AdvisorRepository:
         """Insert a memory row (including embedding) and return it."""
         result = self._sb.table("user_memories").insert(memory_data).execute()
         return (result.data or [{}])[0]
+
+    def count_memories(self, user_id: str) -> int:
+        """Return total memories for a user (spec §10 cap enforcement)."""
+        result = (
+            self._sb.table("user_memories")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        # supabase-py returns .count when count="exact"; fall back to len(data).
+        count = getattr(result, "count", None)
+        if count is None:
+            count = len(result.data or [])
+        return int(count)
+
+    def delete_oldest_memory_excluding_types(
+        self, user_id: str, exclude_types: tuple[str, ...]
+    ) -> list[dict[str, Any]]:
+        """Delete the single oldest memory whose type is not in ``exclude_types``.
+
+        Used to enforce the per-user memory cap without evicting user-declared
+        intent (goals). Returns deleted rows (empty list if nothing to evict).
+        """
+        victim = (
+            self._sb.table("user_memories")
+            .select("id")
+            .eq("user_id", user_id)
+            .not_.in_("type", list(exclude_types))
+            .order("created_at", desc=False)
+            .order("id", desc=False)
+            .limit(1)
+            .execute()
+        )
+        victim_rows = victim.data or []
+        if not victim_rows:
+            return []
+        victim_id = victim_rows[0]["id"]
+        deleted = (
+            self._sb.table("user_memories")
+            .delete()
+            .eq("id", victim_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        return deleted.data or []
 
     def delete_memory(self, memory_id: str, user_id: str) -> list[dict[str, Any]]:
         """Delete a user-owned memory. Returns deleted rows (empty if not found)."""
