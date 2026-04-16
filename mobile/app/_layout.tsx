@@ -11,7 +11,10 @@ import * as Sentry from "@sentry/react-native";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 
-import { getOrCreateGuestToken } from "../lib/guest-session";
+import {
+  getOrCreateGuestToken,
+  purgeGuestSessionIfNeeded,
+} from "../lib/guest-session";
 import { fetchMe } from "../lib/me";
 import { getStoredJwt } from "../lib/auth";
 import { restoreStoredSession } from "../lib/api";
@@ -67,6 +70,13 @@ function AuthGuard() {
   useEffect(() => {
     if (featuresLoading) return;
     if (features.auth_required) {
+      // Real-auth mode — purge any stale guest token left over from a
+      // prior dev-mode session so the credential leaves the device.
+      // Idempotent via the GUEST_PURGED_AT sentinel; safe to fire on
+      // every cold start under auth_required=true.
+      purgeGuestSessionIfNeeded().catch((err) => {
+        if (__DEV__) console.warn("Guest purge failed:", err);
+      });
       // Real-auth mode — bootstrap is done once we know the JWT result.
       markSessionReady();
       return;

@@ -1,4 +1,4 @@
-import { getItem, setItem } from "./secure-storage";
+import { deleteItem, getItem, setItem } from "./secure-storage";
 import {
   API_BASE_URL,
   AUTH_ENDPOINTS,
@@ -48,4 +48,25 @@ export async function getOrCreateGuestToken(): Promise<string> {
  */
 export async function getStoredGuestToken(): Promise<string | null> {
   return getItem(SECURE_STORE_KEYS.GUEST_TOKEN);
+}
+
+/**
+ * Delete any stored guest token and write the GUEST_PURGED_AT sentinel.
+ *
+ * Called by AuthGuard the first time it observes `auth_required=true`, so
+ * a guest credential left over from a prior dev-mode session does not
+ * linger on the device once the app moves to a real-auth deployment. The
+ * sentinel makes the call idempotent across launches: if it's already
+ * set, callers can short-circuit.
+ *
+ * Returns true if the purge ran, false if it was already done. The
+ * boolean is for callers that want to log or skip downstream work.
+ */
+export async function purgeGuestSessionIfNeeded(): Promise<boolean> {
+  const sentinel = await getItem(SECURE_STORE_KEYS.GUEST_PURGED_AT);
+  if (sentinel) return false;
+
+  await deleteItem(SECURE_STORE_KEYS.GUEST_TOKEN);
+  await setItem(SECURE_STORE_KEYS.GUEST_PURGED_AT, new Date().toISOString());
+  return true;
 }
