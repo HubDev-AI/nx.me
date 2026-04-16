@@ -6,6 +6,7 @@ Admin operations (create/delete auth users) require the service-role key.
 
 from supabase import create_client, Client
 from app.config import settings
+from app.db import postgrest_patch  # noqa: F401  — applies maybe_single 204 fix on import
 
 
 def get_supabase_service() -> Client:
