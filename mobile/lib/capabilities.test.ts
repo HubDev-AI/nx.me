@@ -60,6 +60,8 @@ describe("useCapabilities", () => {
 
     expect(caps.canViewOwnProfile).toBe(true);
     expect(caps.canEditProfile).toBe(true);
+    expect(caps.canViewAccountDetails).toBe(true);
+    expect(caps.canDeleteAccount).toBe(true);
     expect(caps.canSignOut).toBe(true);
     expect(caps.canSignIn).toBe(false);
     expect(caps.requiresAuth).toBe(true);
@@ -71,6 +73,9 @@ describe("useCapabilities", () => {
 
     expect(caps.canViewOwnProfile).toBe(true);
     expect(caps.canEditProfile).toBe(false);
+    // Guests have no account record — no account details to view or delete.
+    expect(caps.canViewAccountDetails).toBe(false);
+    expect(caps.canDeleteAccount).toBe(false);
     // Auth feature off → neither sign-in nor sign-out make sense.
     expect(caps.canSignOut).toBe(false);
     expect(caps.canSignIn).toBe(false);

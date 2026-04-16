@@ -90,13 +90,29 @@ export function AdvisorComposer({
       <TextInput
         style={[styles.input, isFocused && { borderColor: theme.accent }]}
         value={value}
-        onChangeText={onChangeText}
+        onChangeText={(next) => {
+          // Enter in multiline inserts a trailing "\n". Treat the single
+          // trailing newline as submit — or suppress it entirely when the
+          // input is empty — instead of letting it enter state. Length-delta
+          // guard avoids hijacking paste of multi-line text ending in a newline.
+          const isEnterKey =
+            next.length === value.length + 1 && next.endsWith("\n");
+          if (isEnterKey) {
+            if (canSubmit) {
+              onSubmit();
+            }
+            return;
+          }
+          onChangeText(next);
+        }}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
         placeholder={placeholder}
         placeholderTextColor={THEME.colors.textDisabled}
         multiline
         maxLength={maxLength}
+        returnKeyType="send"
+        blurOnSubmit={false}
         accessibilityLabel={accessibilityLabel}
       />
       <Pressable

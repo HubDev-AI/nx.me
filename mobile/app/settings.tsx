@@ -76,7 +76,7 @@ export default function SettingsScreen() {
   const { fadeInDown } = useEntering();
 
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(caps.canViewAccountDetails);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -84,9 +84,11 @@ export default function SettingsScreen() {
   const appVersion = Constants?.expoConfig?.version ?? "1.0.0";
 
   // -------------------------------------------------------------------------
-  // Fetch /v1/auth/me
+  // Fetch /v1/auth/me — only for real users; guests have no account record.
   // -------------------------------------------------------------------------
   useEffect(() => {
+    if (!caps.canViewAccountDetails) return;
+
     let cancelled = false;
 
     async function load() {
@@ -109,7 +111,7 @@ export default function SettingsScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [caps.canViewAccountDetails]);
 
   // -------------------------------------------------------------------------
   // Logout (best-effort server logout — always clear local tokens)
@@ -202,7 +204,13 @@ export default function SettingsScreen() {
               ACCOUNT
             </Label>
             <View style={styles.glassCard}>
-              {isLoading ? (
+              {!caps.canViewAccountDetails ? (
+                <Body color="secondary" style={styles.guestText}>
+                  You&apos;re using NXME as a guest. Your glow-ups are saved on
+                  this device only and won&apos;t sync across installs. Sign in
+                  from the profile menu to keep them tied to an account.
+                </Body>
+              ) : isLoading ? (
                 <View style={styles.accountSkeleton}>
                   <LoadingSkeleton height={18} width="40%" />
                   <LoadingSkeleton height={18} width="60%" />
@@ -335,34 +343,36 @@ export default function SettingsScreen() {
             </Animated.View>
           )}
 
-          {/* ─── Danger Zone ──────────────────────────────────────────── */}
-          <Animated.View entering={fadeInDown(200, 240)}>
-            <Label color="destructive" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
-              DANGER ZONE
-            </Label>
-            <View style={[styles.glassCard, styles.dangerCard]}>
-              <Body color="secondary" style={styles.dangerText}>
-                Permanently delete your account and all associated data. This
-                action cannot be undone.
-              </Body>
-              <Button
-                title="Delete Account"
-                onPress={handleDeleteAccount}
-                variant="destructive"
-                size="md"
-                block
-                isLoading={isDeleting}
-                leftIcon={
-                  <Ionicons
-                    name="trash-outline"
-                    size={18}
-                    color={THEME.colors.white}
-                  />
-                }
-                accessibilityLabel="Delete account"
-              />
-            </View>
-          </Animated.View>
+          {/* ─── Danger Zone — only for signed-in users ──────────────── */}
+          {caps.canDeleteAccount && (
+            <Animated.View entering={fadeInDown(200, 240)}>
+              <Label color="destructive" style={styles.sectionLabel} maxFontSizeMultiplier={1.3}>
+                DANGER ZONE
+              </Label>
+              <View style={[styles.glassCard, styles.dangerCard]}>
+                <Body color="secondary" style={styles.dangerText}>
+                  Permanently delete your account and all associated data. This
+                  action cannot be undone.
+                </Body>
+                <Button
+                  title="Delete Account"
+                  onPress={handleDeleteAccount}
+                  variant="destructive"
+                  size="md"
+                  block
+                  isLoading={isDeleting}
+                  leftIcon={
+                    <Ionicons
+                      name="trash-outline"
+                      size={18}
+                      color={THEME.colors.white}
+                    />
+                  }
+                  accessibilityLabel="Delete account"
+                />
+              </View>
+            </Animated.View>
+          )}
       </ScrollView>
     </View>
   );
@@ -473,6 +483,11 @@ const styles = StyleSheet.create({
   // Error
   errorText: {
     textAlign: "center",
+  },
+
+  // Guest explainer
+  guestText: {
+    lineHeight: 20,
   },
 
   // Navigation row (Subscription link)

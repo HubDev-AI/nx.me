@@ -36,6 +36,7 @@ const AVATAR_SIZE = 40;
 interface ProfileHeaderProps {
   profile: UserProfile;
   onEditProfile: () => void;
+  showStats: boolean;
 }
 
 /**
@@ -51,6 +52,7 @@ interface ProfileHeaderProps {
 export function ProfileHeader({
   profile,
   onEditProfile,
+  showStats,
 }: ProfileHeaderProps) {
   const { theme } = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -98,7 +100,6 @@ export function ProfileHeader({
   const expandedAnimatedStyle = useAnimatedStyle(() => ({
     opacity: expandProgress.value,
     maxHeight: interpolate(expandProgress.value, [0, 1], [0, 250]),
-    overflow: "hidden" as const,
   }));
 
   const toggle = useCallback(() => {
@@ -193,16 +194,19 @@ export function ProfileHeader({
       </Animated.View>
 
       {/* ---- Expanded content -- opacity + maxHeight animation ---- */}
-      <Animated.View style={[styles.expandedContent, expandedAnimatedStyle]}>
+      <Animated.View style={[styles.expandedWrapper, expandedAnimatedStyle]}>
+        <View style={styles.expandedInner}>
           {/* Separator between collapsed row and expanded content */}
           <View style={styles.expandSeparator} />
 
-          {/* Stats row */}
-          <View style={styles.statsRow}>
-            <StatItem value={profile.post_count} label="Posts" accent={theme.accent} />
-            <View style={styles.statsDivider} />
-            <StatItem value={profile.total_reactions} label="Reactions" accent={theme.accent} />
-          </View>
+          {/* Stats row — gated on social feature (posts + reactions only exist with social on) */}
+          {showStats ? (
+            <View style={styles.statsRow}>
+              <StatItem value={profile.post_count} label="Posts" accent={theme.accent} />
+              <View style={styles.statsDivider} />
+              <StatItem value={profile.total_reactions} label="Reactions" accent={theme.accent} />
+            </View>
+          ) : null}
 
           {/* Action buttons */}
           <View style={styles.buttonsRow}>
@@ -245,7 +249,8 @@ export function ProfileHeader({
               </Pressable>
             </Animated.View>
           </View>
-        </Animated.View>
+        </View>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -346,9 +351,12 @@ const styles = StyleSheet.create({
   },
 
   /* ---- Expanded content ---- */
-  expandedContent: {
-    paddingBottom: THEME.spacing.lg,
+  expandedWrapper: {
+    overflow: "hidden",
+  },
+  expandedInner: {
     paddingTop: THEME.spacing.xs,
+    paddingBottom: THEME.spacing.lg,
   },
 
   /* Stats row */
