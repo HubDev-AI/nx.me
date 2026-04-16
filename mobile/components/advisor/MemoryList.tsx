@@ -405,6 +405,9 @@ const TAB_COPY: Record<Tab, TabCopy> = {
   },
 };
 
+/** First tab shown on mount. Persists within session via `activeTab` state. */
+const DEFAULT_TAB: Tab = "goal";
+
 interface TabState {
   draft: string;
   error: string | null;
@@ -420,7 +423,7 @@ export function MemoryList() {
   // -------------------------------------------------------------------------
   // State — see plan §High-Level Technical Design
   // -------------------------------------------------------------------------
-  const [activeTab, setActiveTab] = useState<Tab>("goal");
+  const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB);
   const [memories, setMemories] = useState<UserMemory[]>([]);
   const [byTab, setByTab] = useState<Record<Tab, TabState>>({
     goal: INITIAL_TAB_STATE,
@@ -429,6 +432,16 @@ export function MemoryList() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
 
+  // Monotonic request counter + activeTab ref. A fetch that resolves
+  // after a later fetch, or after the tab was switched, is discarded
+  // — prevents a stale Goals response from overwriting Notes' data.
+  // `activeTabRef` also gates `handleAdd`'s prepend so a row submitted
+  // on Goals doesn't land in the Notes list if the user switches tabs
+  // before the POST resolves.
+  const requestIdRef = useRef(0);
+  const activeTabRef = useRef<Tab>(DEFAULT_TAB);
+  activeTabRef.current = activeTab;
+
   const updateTab = useCallback(
     (tab: Tab, patch: Partial<TabState>) =>
       setByTab((prev) => ({ ...prev, [tab]: { ...prev[tab], ...patch } })),
@@ -436,57 +449,57 @@ export function MemoryList() {
   );
 
   // -------------------------------------------------------------------------
-  // Initial load — first mount only; fetches the default tab's rows
-  // with the server-side type filter.
+  // Unified load path — used by initial mount, tab switch, and retry.
+  // Stale responses (user switched tabs mid-fetch) are dropped via the
+  // request-id guard; only the most recent call for the currently-active
+  // tab is allowed to mutate `memories`.
   // -------------------------------------------------------------------------
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const response = await fetchMemories({ type: "goal" });
-        if (cancelled) return;
-        setMemories(response.memories);
-      } catch (err) {
-        if (cancelled) return;
-        const message =
-          err instanceof Error ? err.message : "We couldn't load your memories.";
-        updateTab("goal", { error: message });
-      } finally {
-        if (!cancelled) setInitialLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [updateTab]);
-
-  // -------------------------------------------------------------------------
-  // Tab switching — refetch the new tab's rows. We keep the previous
-  // list visible and show a subtle indicator (see plan) instead of the
-  // full-screen skeleton on every tap. Drafts are intentionally not
-  // cleared on switch — that's the whole point of per-tab state.
-  // -------------------------------------------------------------------------
-  const handleTabChange = useCallback(
-    async (tab: Tab) => {
-      if (tab === activeTab) return;
-      setActiveTab(tab);
-      setRefetching(true);
-      // Clear any prior error for the tab we're entering — user is
-      // consenting to retry by navigating here.
+  const loadTab = useCallback(
+    async (tab: Tab, { showRefetchIndicator = true } = {}) => {
+      const reqId = ++requestIdRef.current;
+      if (showRefetchIndicator) setRefetching(true);
       updateTab(tab, { error: null });
       try {
         const response = await fetchMemories({ type: tab });
+        if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
         setMemories(response.memories);
       } catch (err) {
+        if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
         const message =
           err instanceof Error ? err.message : "We couldn't load your memories.";
         updateTab(tab, { error: message });
         setMemories([]);
       } finally {
-        setRefetching(false);
+        if (reqId === requestIdRef.current) setRefetching(false);
       }
     },
-    [activeTab, updateTab],
+    [updateTab],
+  );
+
+  // -------------------------------------------------------------------------
+  // Initial load — first mount only.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    (async () => {
+      await loadTab(DEFAULT_TAB, { showRefetchIndicator: false });
+      setInitialLoading(false);
+    })();
+  }, [loadTab]);
+
+  // -------------------------------------------------------------------------
+  // Tab switching — refetch the new tab's rows via loadTab. We keep the
+  // previous list visible and show a subtle indicator (see plan) instead
+  // of the full-screen skeleton on every tap. Drafts are intentionally
+  // not cleared on switch — that's the whole point of per-tab state.
+  // -------------------------------------------------------------------------
+  const handleTabChange = useCallback(
+    (tab: Tab) => {
+      if (tab === activeTab) return;
+      setActiveTab(tab);
+      activeTabRef.current = tab;
+      void loadTab(tab);
+    },
+    [activeTab, loadTab],
   );
 
   // -------------------------------------------------------------------------
@@ -503,8 +516,15 @@ export function MemoryList() {
     updateTab(tab, { isAdding: true });
     try {
       const newMemory = await addMemory(tab, { text: trimmed });
-      setMemories((prev) => [newMemory, ...prev]);
+      // The draft belongs to `tab`; clearing it is always safe. But
+      // `memories` reflects whichever tab is currently visible — only
+      // prepend if the user is still on the tab they submitted from.
+      // Otherwise the row would land in the wrong list visually until
+      // the next refetch of `tab`.
       updateTab(tab, { draft: "", error: null });
+      if (activeTabRef.current === tab) {
+        setMemories((prev) => [newMemory, ...prev]);
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Couldn't save that memory.";
@@ -574,8 +594,9 @@ export function MemoryList() {
   const copy = TAB_COPY[activeTab];
 
   // `key={activeTab}` forces AdvisorComposer to remount on tab switch
-  // so its internal focus/height state resets cleanly — otherwise a
-  // long note's expanded height bleeds into a shorter goal draft.
+  // so its focus state resets and the keyboard dismisses cleanly —
+  // otherwise the previous tab's focused input stays live under the
+  // new tab's draft value.
   const composer = (
     <AdvisorComposer
       key={activeTab}
@@ -621,6 +642,9 @@ export function MemoryList() {
     >
       {subTabs}
 
+      {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
+          it. A future polish pass could call AccessibilityInfo.announce
+          ForAccessibility on tab change to cover iOS. */}
       <View style={styles.listArea} accessibilityLiveRegion="polite">
         <FlatList
           data={memories}
@@ -639,7 +663,8 @@ export function MemoryList() {
         )}
 
         {/* Error overlay — scoped to the active tab; subtabs above stay
-            interactive so the user can switch away from a failed tab. */}
+            interactive so the user can switch away from a failed tab.
+            Retry reuses loadTab so the stale-response guard applies. */}
         {activeState.error && memories.length === 0 && (
           <AdvisorEmptyOverlay
             icon="alert-circle-outline"
@@ -647,21 +672,7 @@ export function MemoryList() {
             description={activeState.error}
             action={{
               label: "Try Again",
-              onPress: () => {
-                // Force a retry by re-running the tab-change path.
-                updateTab(activeTab, { error: null });
-                setRefetching(true);
-                fetchMemories({ type: activeTab })
-                  .then((response) => setMemories(response.memories))
-                  .catch((err: unknown) => {
-                    const message =
-                      err instanceof Error
-                        ? err.message
-                        : "We couldn't load your memories.";
-                    updateTab(activeTab, { error: message });
-                  })
-                  .finally(() => setRefetching(false));
-              },
+              onPress: () => void loadTab(activeTab),
               accessibilityLabel: "Retry loading memories",
             }}
           />
