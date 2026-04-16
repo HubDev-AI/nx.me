@@ -46,15 +46,19 @@ class AnthropicAdapter:
         ``vision_content`` is appended to the last user message as image blocks.
         """
         # Anthropic API: system is a top-level param, not a message role.
-        # Filter out system messages from the messages list and collect them.
+        # Filter system messages out and normalize internal "advisor" role to
+        # Claude's "assistant" — Anthropic only accepts user/assistant.
         system_parts: list[str] = [system]
         api_messages: list[dict[str, Any]] = []
 
         for msg in messages:
-            if msg.get("role") == "system":
+            role = msg.get("role")
+            if role == "system":
                 system_parts.append(str(msg.get("content", "")))
-            else:
-                api_messages.append(msg)
+                continue
+            if role != "user":
+                msg = {**msg, "role": "assistant"}
+            api_messages.append(msg)
 
         combined_system = "\n\n".join(p for p in system_parts if p)
 
