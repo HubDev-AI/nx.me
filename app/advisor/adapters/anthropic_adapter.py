@@ -1,7 +1,10 @@
-"""Anthropic LLM adapter — real Claude API calls.
+"""Anthropic LLM adapter — real Claude API calls (chat only).
 
 Uses claude-3-5-sonnet for chat and claude-3-haiku for memory extraction/nudges.
 Lazy-imports anthropic SDK so tests don't require the package installed.
+
+Embeddings are NOT handled here — pick an embedding backend separately via
+`ADAPTER__EMBEDDING_ADAPTER` (openai | ollama | mock).
 """
 
 from __future__ import annotations
@@ -14,34 +17,18 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Embedding dimensions (fixed for text-embedding-3-small)
-_EMBEDDING_DIMENSIONS = 1536
-
 
 class AnthropicAdapter:
-    """Real Anthropic adapter — calls Claude API and OpenAI embeddings."""
+    """Real Anthropic adapter — calls Claude API for chat."""
 
     def __init__(self) -> None:
         import anthropic
         import httpx
-        import openai
 
         self._anthropic = anthropic.AsyncAnthropic(
             api_key=settings.ANTHROPIC_API_KEY,
             timeout=httpx.Timeout(settings.ADVISOR_LLM_TIMEOUT_SECONDS),
             max_retries=settings.LLM_MAX_RETRIES,
-        )
-        # A-4: Fail fast if OPENAI_API_KEY missing — embeddings are required
-        openai_key = settings.OPENAI_API_KEY
-        if not openai_key:
-            raise ValueError(
-                "OPENAI_API_KEY is required for advisor embeddings. "
-                "Set it in .env or environment variables."
-            )
-        self._openai = openai.AsyncOpenAI(
-            api_key=openai_key,
-            timeout=settings.ADVISOR_EMBEDDING_TIMEOUT_SECONDS,
-            max_retries=settings.EMBEDDING_MAX_RETRIES,
         )
 
     async def create_message(
@@ -109,12 +96,3 @@ class AnthropicAdapter:
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
         )
-
-    async def compute_embedding(self, text: str) -> list[float]:
-        """Compute a 1536-dim text embedding via OpenAI text-embedding-3-small."""
-        response = await self._openai.embeddings.create(
-            model=settings.ADVISOR_EMBEDDING_MODEL,
-            input=text,
-            dimensions=_EMBEDDING_DIMENSIONS,
-        )
-        return response.data[0].embedding

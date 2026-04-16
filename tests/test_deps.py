@@ -324,3 +324,39 @@ class TestAdapterFactories:
 
         adapter = get_llm_adapter()
         assert adapter is not None
+
+    def test_embedding_adapter_mock(self):
+        from app.api.deps import get_embedding_adapter
+
+        adapter = get_embedding_adapter()
+        # Default in test env is mock; just ensure factory returns something callable.
+        assert hasattr(adapter, "compute_embedding")
+
+    def test_embedding_adapter_factory_selects_ollama(self):
+        from app.api.deps import get_embedding_adapter
+
+        with patch("app.config.settings.ADAPTER__EMBEDDING_ADAPTER", "ollama"):
+            adapter = get_embedding_adapter()
+        from app.advisor.adapters.embeddings.ollama import OllamaEmbeddingAdapter
+
+        assert isinstance(adapter, OllamaEmbeddingAdapter)
+
+    def test_embedding_adapter_factory_selects_openai(self):
+        pytest.importorskip("openai")
+        from app.api.deps import get_embedding_adapter
+
+        with (
+            patch("app.config.settings.ADAPTER__EMBEDDING_ADAPTER", "openai"),
+            patch("app.config.settings.OPENAI_API_KEY", "sk-test"),
+        ):
+            adapter = get_embedding_adapter()
+        from app.advisor.adapters.embeddings.openai import OpenAIEmbeddingAdapter
+
+        assert isinstance(adapter, OpenAIEmbeddingAdapter)
+
+    def test_embedding_adapter_factory_rejects_unknown_value(self):
+        from app.api.deps import get_embedding_adapter
+
+        with patch("app.config.settings.ADAPTER__EMBEDDING_ADAPTER", "Ollama"):
+            with pytest.raises(ValueError, match="Unknown ADAPTER__EMBEDDING_ADAPTER"):
+                get_embedding_adapter()

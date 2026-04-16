@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
+from app.advisor.embedding_port import EmbeddingPort
 from app.advisor.llm_port import LLMPort
 
 from app.advisor.models import MemoryType
@@ -110,9 +111,15 @@ def summarize_memory_content(content: dict[str, Any]) -> str:
 class MemoryManager:
     """Manages user memories with pgvector storage and hybrid retrieval."""
 
-    def __init__(self, advisor_repo: AdvisorRepository, llm_adapter: LLMPort) -> None:
+    def __init__(
+        self,
+        advisor_repo: AdvisorRepository,
+        llm_adapter: LLMPort,
+        embedding_adapter: EmbeddingPort,
+    ) -> None:
         self._repo = advisor_repo
         self._llm_adapter = llm_adapter
+        self._embedding_adapter = embedding_adapter
 
     # -----------------------------------------------------------------------
     # Public API
@@ -126,7 +133,7 @@ class MemoryManager:
     ) -> dict[str, Any]:
         """Write a new memory row with embedding. Returns the created row."""
         text = summarize_memory_content(content)
-        embedding = await self._llm_adapter.compute_embedding(text)
+        embedding = await self._embedding_adapter.compute_embedding(text)
 
         row = {
             "user_id": str(user_id),
@@ -157,7 +164,7 @@ class MemoryManager:
         if limit is None:
             limit = settings.ADVISOR_CONTEXT_MEMORY_LIMIT
 
-        embedding = await self._llm_adapter.compute_embedding(query)
+        embedding = await self._embedding_adapter.compute_embedding(query)
 
         candidates = self._repo.match_memories(
             str(user_id), embedding, _CANDIDATE_LIMIT

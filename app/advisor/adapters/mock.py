@@ -1,14 +1,13 @@
-"""Mock LLM adapter — deterministic results for testing.
+"""Mock LLM adapter — deterministic chat responses for testing.
 
-Returns canned responses. No Anthropic API calls. Deterministic non-zero
-embedding vectors seeded from input text.
+Returns canned responses. No Anthropic API calls. Embeddings live in a
+sibling adapter (`adapters/embeddings/mock.py`) so chat and embedding
+mocks can be combined freely with real adapters.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
-import random
 from typing import Any
 
 from app.advisor.models import LLMResponse
@@ -44,14 +43,3 @@ class MockLLMAdapter:
             max_tokens,
         )
         return LLMResponse(content=content, input_tokens=10, output_tokens=8)
-
-    async def compute_embedding(self, text: str) -> list[float]:
-        """Return a deterministic non-zero unit vector seeded from input text.
-
-        Zero vectors cause NaN in pgvector cosine similarity.
-        """
-        seed = int(hashlib.md5(text.encode()).hexdigest(), 16) % (2**32)
-        rng = random.Random(seed)
-        vec = [rng.gauss(0, 1) for _ in range(1536)]
-        norm = sum(x * x for x in vec) ** 0.5
-        return [x / norm for x in vec]
