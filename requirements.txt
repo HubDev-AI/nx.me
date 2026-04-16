@@ -58,3 +58,14 @@ stripe==14.4.1
 
 # DB driver
 psycopg2-binary==2.9.10
+
+# Advisor LLM chat (Anthropic Claude). Required when
+# ADAPTER__LLM_ADAPTER=anthropic; lazy-imported by AnthropicAdapter.
+anthropic==0.95.0
+
+# Advisor embeddings (OpenAI text-embedding-3-small). Required only when
+# ADAPTER__EMBEDDING_ADAPTER=openai; lazy-imported by OpenAIEmbeddingAdapter.
+# Local dev defaults to ollama (`nomic-embed-text`) and doesn't need this
+# package at runtime, but listing it keeps the openai adapter installable
+# without a separate manual step.
+openai==2.32.0
