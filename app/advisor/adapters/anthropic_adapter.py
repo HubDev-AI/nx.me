@@ -9,6 +9,7 @@ Embeddings are NOT handled here — pick an embedding backend separately via
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from typing import Any
@@ -17,6 +18,28 @@ from app.advisor.models import LLMResponse
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_REDACTED_IMAGE_SOURCE = "<redacted-image-source>"
+
+
+def _redact_image_sources(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a deep-copied messages array with every image block's source
+    replaced by a placeholder.
+
+    Image sources are either ephemeral signed Supabase URLs or raw base64
+    payloads. Neither belongs in a log stream if DEBUG ever gets shipped to
+    a collector — the URLs can be replayed while they're live and the
+    base64 blobs make the logs unreadable.
+    """
+    redacted = copy.deepcopy(messages)
+    for msg in redacted:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "image":
+                block["source"] = _REDACTED_IMAGE_SOURCE
+    return redacted
 
 
 class AnthropicAdapter:
@@ -82,7 +105,11 @@ class AnthropicAdapter:
                 model,
                 max_tokens,
                 combined_system,
-                json.dumps(api_messages, default=str, ensure_ascii=False),
+                json.dumps(
+                    _redact_image_sources(api_messages),
+                    default=str,
+                    ensure_ascii=False,
+                ),
             )
 
         response = await self._anthropic.messages.create(
