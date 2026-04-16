@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -248,6 +248,24 @@ class Settings(BaseSettings):
     # Set to True only in dev/staging to exercise premium-gated endpoints
     # (e.g., POST /v1/advisor/messages) with guest or free-tier accounts.
     FEATURE_PREMIUM_BYPASS: bool = False
+
+    @model_validator(mode="after")
+    def _refuse_prod_with_guest_mode(self) -> "Settings":
+        """Hard-fail at settings load when prod is configured to accept guests.
+
+        Guest mode (`FEATURE_AUTH_REQUIRED=false`) is a local-dev convenience.
+        Allowing it in production would let anyone create a `users.is_guest=true`
+        row and use the app without an account, which is not the prod product.
+        Re-enabling it later (when "real guest" ships) means loosening this
+        check or splitting it into a dedicated flag — explicit, code-visible.
+        """
+        if self.APP_ENV == "production" and not self.FEATURE_AUTH_REQUIRED:
+            raise ValueError(
+                "FEATURE_AUTH_REQUIRED=false is not allowed when APP_ENV=production. "
+                "Guest mode is a local-dev convenience; production must require auth. "
+                "Set FEATURE_AUTH_REQUIRED=true or change APP_ENV."
+            )
+        return self
 
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""
