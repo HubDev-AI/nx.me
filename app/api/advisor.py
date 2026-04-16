@@ -101,7 +101,7 @@ async def send_advisor_message(
     user_id = UUID(claims["sub"])
 
     try:
-        row = await svc.send_message(user_id=user_id, raw_message=body.message)
+        row = await svc.send_message(user_id=user_id, raw_message=body.content)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

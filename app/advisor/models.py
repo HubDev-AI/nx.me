@@ -59,7 +59,10 @@ class MemoryListResponse(BaseModel):
 
 
 class MessageRequest(BaseModel):
-    message: str
+    # Field named `content` to mirror MessageResponse.content and the mobile
+    # AdvisorMessage type — request and response shapes were asymmetric and
+    # mobile already shipped sending {content}.
+    content: str
 
 
 class MessageResponse(BaseModel):
