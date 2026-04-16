@@ -9,6 +9,7 @@ Embeddings are NOT handled here — pick an embedding backend separately via
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -74,6 +75,15 @@ class AnthropicAdapter:
                     "content": [{"type": "text", "text": text_content}]
                     + vision_content,
                 }
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Anthropic request: model=%s max_tokens=%d\nsystem=%s\nmessages=%s",
+                model,
+                max_tokens,
+                combined_system,
+                json.dumps(api_messages, default=str, ensure_ascii=False),
+            )
 
         response = await self._anthropic.messages.create(
             model=model,

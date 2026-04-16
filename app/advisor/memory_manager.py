@@ -377,6 +377,7 @@ class MemoryManager:
             "recommendations": recommendations,
             "upload_id": upload_id,
         }
+        content["summary"] = summarize_memory_content(content)
         await self.write_memory(user_id, MemoryType.ANALYSIS_INSIGHT, content)
 
 

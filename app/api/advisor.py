@@ -315,7 +315,7 @@ async def mark_nudge_read(
 )
 async def add_memory(
     body: MemoryCreateRequest,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Add a user-authored memory (goal or note). All tiers.
@@ -403,7 +403,7 @@ async def list_memories(
 )
 async def delete_memory(
     memory_id: UUID,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Delete a user-owned memory. All tiers."""
