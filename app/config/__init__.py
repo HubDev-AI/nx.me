@@ -46,13 +46,16 @@ class Settings(BaseSettings):
     # bundles so they can sanity-check against the compiled-in key.
     STRIPE_PUBLISHABLE_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""  # Required when ADAPTER__LLM_ADAPTER=anthropic (used for embeddings via OpenAI API)
+    OPENAI_API_KEY: str = ""  # Required when ADAPTER__EMBEDDING_ADAPTER=openai
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
 
     # Adapter selection
     ADAPTER__NSFW_ADAPTER: str = "mock"
     ADAPTER__FACE_ANALYSIS_ADAPTER: str = "mock"
     ADAPTER__IMAGE_GENERATION_ADAPTER: str = "mock"
     ADAPTER__LLM_ADAPTER: str = "mock"
+    ADAPTER__EMBEDDING_ADAPTER: str = "mock"  # mock | openai | ollama
     ADAPTER__PAYMENT_ADAPTER: str = "mock"
     ADAPTER__STORAGE_ADAPTER: str = "supabase"
 
@@ -80,6 +83,11 @@ class Settings(BaseSettings):
     # Advisor tuning (audit A-3, A-5, A-6)
     ADVISOR_CHAT_RATE_LIMIT_WINDOW_SECONDS: int = 3600
     ADVISOR_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # Embedding vector size — must match the DB column dimension. Ollama's
+    # nomic-embed-text outputs 768 natively; OpenAI text-embedding-3-small
+    # supports any dim 1..1536 via Matryoshka. Migration 0020 sets the
+    # vector(768) column.
+    EMBEDDING_DIMENSIONS: int = 768
     ADVISOR_MODEL_HAIKU: str = "claude-haiku-4-5-20251001"
 
     # Identity retry tuning (audit G-4)

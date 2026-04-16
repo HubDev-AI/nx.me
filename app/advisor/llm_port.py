@@ -1,6 +1,8 @@
 """LLM adapter port (Protocol) — port/adapter pattern.
 
-Consumers depend on LLMPort, not on any concrete adapter.
+Consumers depend on LLMPort, not on any concrete adapter. Embeddings live
+behind a separate `EmbeddingPort` so chat backends and embedding backends
+can be selected independently.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from app.advisor.models import LLMResponse
 
 @runtime_checkable
 class LLMPort(Protocol):
-    """Port for LLM inference.
+    """Port for LLM chat inference.
 
     Concrete implementations: AnthropicAdapter (production), MockLLMAdapter (testing).
     """
@@ -26,8 +28,4 @@ class LLMPort(Protocol):
         vision_content: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         """Send messages to the LLM and return the response."""
-        ...
-
-    async def compute_embedding(self, text: str) -> list[float]:
-        """Compute a text embedding vector."""
         ...

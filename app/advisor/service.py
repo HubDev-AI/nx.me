@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from app.advisor.embedding_port import EmbeddingPort
 from app.advisor.llm_port import LLMPort
 
 import redis.asyncio as aioredis
@@ -74,12 +75,15 @@ class AdvisorService:
         advisor_repo: AdvisorRepository,
         redis_client: aioredis.Redis,
         llm_adapter: LLMPort,
+        embedding_adapter: EmbeddingPort,
     ) -> None:
         self._repo = advisor_repo
         self._redis = redis_client
         self._llm = llm_adapter
         self._memory_manager = MemoryManager(
-            advisor_repo=advisor_repo, llm_adapter=llm_adapter
+            advisor_repo=advisor_repo,
+            llm_adapter=llm_adapter,
+            embedding_adapter=embedding_adapter,
         )
 
     # -----------------------------------------------------------------------

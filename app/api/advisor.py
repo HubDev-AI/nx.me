@@ -64,13 +64,13 @@ def get_advisor_service(
     redis_client: aioredis.Redis = Depends(get_redis),
 ) -> AdvisorService:
     """Return an AdvisorService wired to app-level infrastructure."""
-    from app.api.deps import get_llm_adapter
+    from app.api.deps import get_embedding_adapter, get_llm_adapter
 
-    llm_adapter = get_llm_adapter()
     return AdvisorService(
         advisor_repo=AdvisorRepository(supabase),
         redis_client=redis_client,
-        llm_adapter=llm_adapter,
+        llm_adapter=get_llm_adapter(),
+        embedding_adapter=get_embedding_adapter(),
     )
 
 
