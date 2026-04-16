@@ -108,7 +108,11 @@ async def send_advisor_message(
             detail={"error": {"code": "INVALID_MESSAGE", "message": str(exc)}},
         ) from exc
     except Exception as exc:
-        # A-16: Structured error codes for LLM failures
+        # A-16: Structured error codes for LLM failures.
+        # Always log the full traceback — the route returns a generic 502 to
+        # the client, so without the server log the actual cause (Anthropic
+        # auth, Ollama unreachable, embedding dim mismatch, etc.) is invisible.
+        logger.exception("Advisor send_message failed for user=%s", user_id)
         error_msg = str(exc)
         if "timeout" in error_msg.lower():
             code = "LLM_TIMEOUT"
@@ -116,9 +120,19 @@ async def send_advisor_message(
             code = "RATE_LIMITED"
         else:
             code = "LLM_ERROR"
+        # In non-prod environments, surface the actual exception message in
+        # the response body so clients can see it during local debugging
+        # without having to tail the backend log. Prod stays opaque.
+        from app.config import settings as _settings  # local import to keep top-level imports stable
+
+        client_message = (
+            f"Advisor service error: {error_msg}"
+            if _settings.APP_ENV != "production"
+            else "Advisor service error"
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail={"error": {"code": code, "message": "Advisor service error"}},
+            detail={"error": {"code": code, "message": client_message}},
         ) from exc
 
     message_id = row.get("id", "")
