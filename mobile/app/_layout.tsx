@@ -74,6 +74,12 @@ function AuthGuard() {
       // prior dev-mode session so the credential leaves the device.
       // Idempotent via the GUEST_PURGED_AT sentinel; safe to fire on
       // every cold start under auth_required=true.
+      //
+      // Fire-and-forget is safe here because the next effect below
+      // redirects unauthenticated users to /(auth)/login before any
+      // apiFetch call could read the stale token. If we ever introduce
+      // a pre-login network call, await this first or guard apiFetch
+      // on the GUEST_PURGED_AT sentinel.
       purgeGuestSessionIfNeeded().catch((err) => {
         if (__DEV__) console.warn("Guest purge failed:", err);
       });

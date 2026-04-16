@@ -258,8 +258,11 @@ class Settings(BaseSettings):
         row and use the app without an account, which is not the prod product.
         Re-enabling it later (when "real guest" ships) means loosening this
         check or splitting it into a dedicated flag — explicit, code-visible.
+
+        APP_ENV is normalized (lowercase + strip) so `Production` or
+        ` production ` cannot bypass the gate via casing/whitespace typos.
         """
-        if self.APP_ENV == "production" and not self.FEATURE_AUTH_REQUIRED:
+        if self.APP_ENV.strip().lower() == "production" and not self.FEATURE_AUTH_REQUIRED:
             raise ValueError(
                 "FEATURE_AUTH_REQUIRED=false is not allowed when APP_ENV=production. "
                 "Guest mode is a local-dev convenience; production must require auth. "

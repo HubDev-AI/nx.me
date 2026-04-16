@@ -71,11 +71,14 @@ PUBLIC_ROUTE_ALLOWLIST: frozenset[str] = frozenset(
         "__PREFIX__/api/public/cards",
         # Provider webhooks (signed at HMAC layer, not FastAPI deps).
         "/webhooks/stripe",
-        # Routes that perform inline guest-token validation rather than
-        # using get_user_or_guest. These are pre-existing patterns; a
-        # follow-up should refactor them to the canonical dep so the
-        # auth path is uniform. Allowlisted here so the test can land
-        # without an ambient refactor scope.
+        # Reactions endpoints inline-validate the X-Guest-Token via
+        # validate_guest_token() in social.py instead of using
+        # get_user_or_guest. They DO honor FEATURE_AUTH_REQUIRED (R1
+        # exercises this — a guest token under auth_required=true returns
+        # 401), so the lockdown invariant holds. They live on the
+        # allowlist because R3 walks the FastAPI dependency tree, which
+        # cannot see inline branching. Follow-up: refactor to use
+        # get_user_or_guest so the auth surface is uniform.
         "/v1/posts/{post_id}/reactions",
         "/v1/posts/{post_id}/react",
     }
@@ -150,6 +153,18 @@ class TestProdAuthSettingsInvariant:
             **_settings_kwargs(APP_ENV="staging", FEATURE_AUTH_REQUIRED=False),
         )
         assert s.APP_ENV == "staging"
+
+    def test_prod_check_is_case_insensitive(self):
+        # `Production` (capital P) and ` production ` (whitespace) must NOT
+        # bypass the gate via casing/whitespace typos.
+        for variant in ("Production", " production ", "PRODUCTION"):
+            with pytest.raises(Exception, match="FEATURE_AUTH_REQUIRED"):
+                Settings(
+                    _env_file=None,
+                    **_settings_kwargs(
+                        APP_ENV=variant, FEATURE_AUTH_REQUIRED=False
+                    ),
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -234,10 +249,9 @@ def auth_required_client(app_under_test: FastAPI):
 
 
 # Status codes that mean "the auth gate did its job before any handler logic".
-# 405 covers routes that don't accept the GET we're probing with — the auth
-# dep would still have fired on the real method, and 405 means we never even
-# reached the handler.
-_AUTH_REJECTED_CODES = {401, 403, 405}
+# We probe each route with its OWN methods so 405 (method not allowed) would
+# be a test bug, not a valid auth response.
+_AUTH_REJECTED_CODES = {401, 403}
 
 
 class TestRoutesRejectGuestTokenWhenAuthRequired:
@@ -270,25 +284,30 @@ class TestRoutesRejectGuestTokenWhenAuthRequired:
             if _is_public(route.path):
                 continue
 
-            # Probe with GET; routes that don't accept GET return 405 which
-            # is also "auth gate didn't pass through".
             url = _instantiate_path(route.path)
-            response = auth_required_client.get(
-                url, headers={"X-Guest-Token": _FAKE_GUEST_TOKEN}
+            # Probe each method the route actually accepts (skip HEAD and
+            # OPTIONS — they're CORS/health and don't run the auth dep).
+            methods = sorted(
+                (route.methods or set()) - {"HEAD", "OPTIONS"}
             )
-
-            if response.status_code not in _AUTH_REJECTED_CODES:
-                failures.append(
-                    f"{route.path} ({sorted(route.methods or [])}) → "
-                    f"{response.status_code} (expected one of "
-                    f"{sorted(_AUTH_REJECTED_CODES)}); body: "
-                    f"{response.text[:120]}"
+            for method in methods:
+                response = auth_required_client.request(
+                    method, url, headers={"X-Guest-Token": _FAKE_GUEST_TOKEN}
                 )
+
+                if response.status_code not in _AUTH_REJECTED_CODES:
+                    failures.append(
+                        f"{method} {route.path} → "
+                        f"{response.status_code} (expected one of "
+                        f"{sorted(_AUTH_REJECTED_CODES)}); body: "
+                        f"{response.text[:120]}"
+                    )
 
         assert not failures, (
             "Routes leaked guest tokens past the auth gate. Each route "
             "either needs an auth dep (get_current_user / get_user_or_guest "
-            "/ require_admin) or must be added to PUBLIC_ROUTE_ALLOWLIST:\n  "
+            "/ require_admin), or must inline-check FEATURE_AUTH_REQUIRED, "
+            "or must be added to PUBLIC_ROUTE_ALLOWLIST:\n  "
             + "\n  ".join(failures)
         )
 
