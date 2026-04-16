@@ -31,6 +31,12 @@ export const SECURE_STORE_KEYS = {
   REFRESH_TOKEN: "nxme_refresh_token",
   /** Set to "1" after registration when email_verification_required is true */
   PENDING_EMAIL_VERIFICATION: "nxme_pending_email_verification",
+  /**
+   * ISO timestamp written when AuthGuard observes auth_required=true and
+   * purges any stale GUEST_TOKEN. Acts as an idempotency sentinel so the
+   * purge runs once across launches in production builds.
+   */
+  GUEST_PURGED_AT: "nxme_guest_purged_at",
 } as const;
 
 /** OAuth Client IDs — sourced from env / Expo config extras */
