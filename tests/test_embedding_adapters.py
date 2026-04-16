@@ -103,6 +103,20 @@ class TestOllamaEmbeddingAdapter:
             with pytest.raises(RuntimeError, match="Ollama embedding call failed"):
                 await adapter.compute_embedding("hello")
 
+    @pytest.mark.asyncio
+    async def test_raises_when_payload_missing_embedding_list(self):
+        from app.advisor.adapters.embeddings.ollama import OllamaEmbeddingAdapter
+
+        async def fake_post(self, url, json=None, **kwargs):
+            response = httpx.Response(200, json={"error": "model not found"})
+            response._request = httpx.Request("POST", url)
+            return response
+
+        with patch.object(httpx.AsyncClient, "post", new=fake_post):
+            adapter = OllamaEmbeddingAdapter()
+            with pytest.raises(RuntimeError, match="unexpected payload"):
+                await adapter.compute_embedding("hello")
+
 
 # ---------------------------------------------------------------------------
 # OpenAI embedding adapter

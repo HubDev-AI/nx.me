@@ -17,8 +17,11 @@
 -- Drop dependent index first (PG won't drop a column with an index in some configs).
 DROP INDEX IF EXISTS idx_user_memories_embedding;
 
--- Drop the RPC that references the old column type.
-DROP FUNCTION IF EXISTS match_user_memories(UUID, vector, INT);
+-- Drop the RPC that references the old column type. Use the exact original
+-- signature so PG matches the existing 1536-dim overload — bare `vector`
+-- can silently fail to match, leaving two overloads and a "function not
+-- unique" PostgREST error on the next RPC call.
+DROP FUNCTION IF EXISTS match_user_memories(UUID, vector(1536), INT);
 
 -- Swap the column type by dropping and re-adding (pgvector limitation).
 ALTER TABLE user_memories DROP COLUMN embedding;

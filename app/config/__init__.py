@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     ADVISOR_EMBEDDING_MODEL: str = "text-embedding-3-small"
     # Embedding vector size — must match the DB column dimension. Ollama's
     # nomic-embed-text outputs 768 natively; OpenAI text-embedding-3-small
-    # supports any dim 1..1536 via Matryoshka. Migration 0020 sets the
-    # vector(768) column.
+    # supports any dim 1..1536 via Matryoshka. Migration
+    # 0037_advisor_embedding_dim_768.sql sets the vector(768) column.
     EMBEDDING_DIMENSIONS: int = 768
     ADVISOR_MODEL_HAIKU: str = "claude-haiku-4-5-20251001"
 

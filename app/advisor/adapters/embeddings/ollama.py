@@ -2,7 +2,7 @@
 
 POSTs to `{OLLAMA_BASE_URL}/api/embeddings` with the configured model.
 Default model is `nomic-embed-text` (768-dim native), which matches the
-DB column dimension set by migration 0020.
+DB column dimension set by migration 0037_advisor_embedding_dim_768.sql.
 """
 
 from __future__ import annotations

@@ -353,3 +353,10 @@ class TestAdapterFactories:
         from app.advisor.adapters.embeddings.openai import OpenAIEmbeddingAdapter
 
         assert isinstance(adapter, OpenAIEmbeddingAdapter)
+
+    def test_embedding_adapter_factory_rejects_unknown_value(self):
+        from app.api.deps import get_embedding_adapter
+
+        with patch("app.config.settings.ADAPTER__EMBEDDING_ADAPTER", "Ollama"):
+            with pytest.raises(ValueError, match="Unknown ADAPTER__EMBEDDING_ADAPTER"):
+                get_embedding_adapter()

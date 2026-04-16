@@ -387,20 +387,30 @@ def get_embedding_adapter() -> "EmbeddingPort":
     Selection driven by ADAPTER__EMBEDDING_ADAPTER config value. Decoupled
     from get_llm_adapter so any chat backend can pair with any embedding
     backend (e.g. Anthropic chat + Ollama embeddings for local dev).
+
+    Unknown values raise loudly — silently falling back to the mock adapter
+    would write deterministic-but-meaningless vectors to the DB and corrupt
+    similarity search without any error visibility.
     """
     from app.config import settings
 
-    if settings.ADAPTER__EMBEDDING_ADAPTER == "openai":
+    choice = settings.ADAPTER__EMBEDDING_ADAPTER
+    if choice == "openai":
         from app.advisor.adapters.embeddings.openai import OpenAIEmbeddingAdapter
 
         return OpenAIEmbeddingAdapter()
-    if settings.ADAPTER__EMBEDDING_ADAPTER == "ollama":
+    if choice == "ollama":
         from app.advisor.adapters.embeddings.ollama import OllamaEmbeddingAdapter
 
         return OllamaEmbeddingAdapter()
-    from app.advisor.adapters.embeddings.mock import MockEmbeddingAdapter
+    if choice == "mock":
+        from app.advisor.adapters.embeddings.mock import MockEmbeddingAdapter
 
-    return MockEmbeddingAdapter()
+        return MockEmbeddingAdapter()
+    raise ValueError(
+        f"Unknown ADAPTER__EMBEDDING_ADAPTER={choice!r}; "
+        "expected one of: openai, ollama, mock"
+    )
 
 
 def require_entitlement(action: str):
