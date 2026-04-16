@@ -300,7 +300,10 @@ async def get_user_history(
         le=_MAX_HISTORY_PAGE_SIZE,
         description="Page size",
     ),
-    claims: UserClaims = Depends(get_current_user),
+    # Accept both JWT and guest tokens — guests are real DB rows and own their
+    # uploads. The owner check below (`claims["sub"] != user_id`) still gates
+    # cross-user access; both auth shapes resolve to the same kind of `sub`.
+    claims: UserClaims = Depends(get_user_or_guest),
     user_repo: UserRepository = Depends(get_user_repo),
     upload_repo: UploadRepository = Depends(get_upload_repo),
     job_repo: JobRepository = Depends(get_job_repo),

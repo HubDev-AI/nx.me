@@ -176,7 +176,31 @@ export async function apiFetch<T = unknown>(
     throw new Error("API calls must use HTTPS in production");
   }
 
+  // Dev-only request log — visible in the Metro terminal so we can see what
+  // the app actually sends without instrumenting every callsite. Auth header
+  // is summarized (not printed in full) to avoid leaking JWTs into terminal
+  // history when sharing screenshots.
+  if (__DEV__) {
+    const method = options.method ?? "GET";
+    const auth = jwt ? "JWT" : guestToken ? "Guest" : "none";
+    const bodyPreview =
+      typeof options.body === "string"
+        ? options.body.slice(0, 500)
+        : isFormData
+          ? "[FormData]"
+          : "";
+    console.log(`[api] → ${method} ${url} auth=${auth} ${bodyPreview}`);
+  }
+
   const response = await fetch(url, { ...options, headers });
+
+  if (__DEV__ && !response.ok) {
+    const cloned = response.clone();
+    const errBody = await cloned.text().catch(() => "");
+    console.log(
+      `[api] ← ${response.status} ${url} ${errBody.slice(0, 500)}`,
+    );
+  }
 
   // On 401 with a JWT, attempt token refresh and retry once
   if (response.status === 401 && jwt) {
