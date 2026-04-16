@@ -442,6 +442,12 @@ export function MemoryList() {
   const activeTabRef = useRef<Tab>(DEFAULT_TAB);
   activeTabRef.current = activeTab;
 
+  // Abort controller for the current in-flight list fetch. A rapid
+  // tab tap cancels the prior request instead of firing a second
+  // network round-trip, and the effect cleanup aborts the initial
+  // load (relevant under React StrictMode's double-invoke in dev).
+  const abortRef = useRef<AbortController | null>(null);
+
   const updateTab = useCallback(
     (tab: Tab, patch: Partial<TabState>) =>
       setByTab((prev) => ({ ...prev, [tab]: { ...prev[tab], ...patch } })),
@@ -456,14 +462,26 @@ export function MemoryList() {
   // -------------------------------------------------------------------------
   const loadTab = useCallback(
     async (tab: Tab, { showRefetchIndicator = true } = {}) => {
+      // Cancel any prior in-flight fetch so fast tab tapping does
+      // not fire N parallel round-trips.
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const reqId = ++requestIdRef.current;
       if (showRefetchIndicator) setRefetching(true);
       updateTab(tab, { error: null });
       try {
-        const response = await fetchMemories({ type: tab });
+        const response = await fetchMemories({
+          type: tab,
+          signal: controller.signal,
+        });
         if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
         setMemories(response.memories);
       } catch (err) {
+        // Aborted fetches are expected when the user switches tabs
+        // mid-request or the effect cleans up — swallow silently.
+        if (err instanceof Error && err.name === "AbortError") return;
         if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
         const message =
           err instanceof Error ? err.message : "We couldn't load your memories.";
@@ -477,13 +495,16 @@ export function MemoryList() {
   );
 
   // -------------------------------------------------------------------------
-  // Initial load — first mount only.
+  // Initial load — first mount only. Cleanup aborts the in-flight
+  // fetch so React StrictMode's dev-only double-invoke doesn't fire
+  // two identical network calls.
   // -------------------------------------------------------------------------
   useEffect(() => {
     (async () => {
       await loadTab(DEFAULT_TAB, { showRefetchIndicator: false });
       setInitialLoading(false);
     })();
+    return () => abortRef.current?.abort();
   }, [loadTab]);
 
   // -------------------------------------------------------------------------

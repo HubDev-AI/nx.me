@@ -121,10 +121,18 @@ export async function markNudgeRead(nudgeId: string): Promise<void> {
 // Memories
 // ---------------------------------------------------------------------------
 
-/** Fetch user memories, optionally filtered by type. */
+/**
+ * Fetch user memories, optionally filtered by type.
+ *
+ * `signal` lets callers cancel an in-flight request — used by
+ * `MemoryList` to drop the previous tab's fetch when the user taps
+ * a different subtab, and to cancel the initial load when React
+ * StrictMode double-mounts the effect in development.
+ */
 export async function fetchMemories(opts?: {
   type?: "goal" | "user_note";
   cursor?: string;
+  signal?: AbortSignal;
 }): Promise<MemoriesResponse> {
   const params = new URLSearchParams();
   if (opts?.type) params.set("type", opts.type);
@@ -133,7 +141,7 @@ export async function fetchMemories(opts?: {
   const path = query
     ? `${ADVISOR_ENDPOINTS.MEMORIES}?${query}`
     : ADVISOR_ENDPOINTS.MEMORIES;
-  return apiFetch<MemoriesResponse>(path);
+  return apiFetch<MemoriesResponse>(path, { signal: opts?.signal });
 }
 
 /** Add a new memory. */
