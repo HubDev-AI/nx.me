@@ -13,7 +13,7 @@ import { ADVISOR_ENDPOINTS } from "../constants/config";
 
 export interface AdvisorMessage {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "advisor";
   content: string;
   created_at: string;
 }
