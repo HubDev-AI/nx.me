@@ -30,6 +30,10 @@ _TRAJECTORY_CHANCE = 0.15
 # Heuristic fallback used when tiktoken is unavailable: ~4 chars per token.
 _CHARS_PER_TOKEN = 4
 
+# Cap on number of recommendations rendered into the user_data block.
+# Matches the top-3 convention used in summarize_memory_content (memory_manager).
+_USER_DATA_MAX_RECOMMENDATIONS = 3
+
 
 def _count_tokens(text: str) -> int:
     """Count tokens for ``text``. Uses tiktoken when importable, else a heuristic."""
@@ -140,23 +144,51 @@ def build_user_data_block(
     face_shape: str | None,
     symmetry_score: float | None,
     analysis_count: int,
+    recommendations: list[str] | None = None,
+    summary: str | None = None,
 ) -> str:
     """Build the user_data system message block (spec Section 6.1).
 
-    Example output: "oval face, symmetry 0.87, 4 analyses"
+    Basics-only output is a single comma-joined fragment:
+        "oval face, symmetry 0.87, 4 analyses"
+
+    When recommendations or summary are present, output is a label-free
+    multi-line fragment (basics first, then recs, then summary):
+        "oval face, symmetry 0.87, 4 analyses\n"
+        "try bangs, clean up brows, hydrate skin\n"
+        "narrow forehead, strong jaw"
+
+    Matches the comma-joined, no-label style of
+    ``summarize_memory_content`` / ``format_memory`` per SOUL.md §6.2.
     """
-    parts: list[str] = []
+    basics: list[str] = []
 
     if face_shape:
-        parts.append(f"{face_shape} face")
+        basics.append(f"{face_shape} face")
     if symmetry_score is not None:
-        parts.append(f"symmetry {symmetry_score:.2f}")
+        basics.append(f"symmetry {symmetry_score:.2f}")
     if analysis_count > 0:
-        parts.append(
+        basics.append(
             f"{analysis_count} {'analysis' if analysis_count == 1 else 'analyses'}"
         )
 
-    return ", ".join(parts) if parts else ""
+    lines: list[str] = []
+    if basics:
+        lines.append(", ".join(basics))
+
+    rec_line = ""
+    if recommendations:
+        rec_items = [str(r).strip() for r in recommendations if str(r).strip()]
+        if rec_items:
+            rec_line = ", ".join(rec_items[:_USER_DATA_MAX_RECOMMENDATIONS])
+    if rec_line:
+        lines.append(rec_line)
+
+    summary_line = summary.strip() if summary else ""
+    if summary_line:
+        lines.append(summary_line)
+
+    return "\n".join(lines)
 
 
 def maybe_add_trajectory(

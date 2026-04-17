@@ -529,12 +529,16 @@ class AdvisorService:
         content = latest.get("content", {})
         face_shape = content.get("face_shape")
         symmetry_score = content.get("symmetry_score")
+        recommendations = content.get("recommendations")
+        summary = content.get("summary")
         analysis_count = self._repo.count_analysis_insights(str(user_id))
 
         return build_user_data_block(
             face_shape=face_shape,
             symmetry_score=symmetry_score,
             analysis_count=analysis_count,
+            recommendations=recommendations,
+            summary=summary,
         )
 
     def _fetch_vision_content(self, user_id: UUID) -> list[dict[str, Any]] | None:
