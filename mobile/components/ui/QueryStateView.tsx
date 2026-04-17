@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { THEME } from '../../constants/theme';
+import { EMPTY_STATE_OPTICAL_LIFT } from './EmptyState';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import type { AppError } from '../../lib/errors';
 
@@ -189,6 +190,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: THEME.spacing.xxl,
+    paddingBottom: THEME.spacing.xxl + EMPTY_STATE_OPTICAL_LIFT,
     gap: THEME.spacing.md,
   },
   iconCircle: {

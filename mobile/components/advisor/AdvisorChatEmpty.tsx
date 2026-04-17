@@ -20,6 +20,7 @@ import {
 } from "../../constants/config";
 import { THEME } from "../../constants/theme";
 import { Button } from "../ui/Button";
+import { EMPTY_STATE_OPTICAL_LIFT } from "../ui/EmptyState";
 import { Body, Heading } from "../ui/Text";
 
 export interface AdvisorChatEmptyProps {
@@ -85,6 +86,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
+    paddingBottom: EMPTY_STATE_OPTICAL_LIFT,
     gap: THEME.spacing.md,
   },
   /* Title + body get their own horizontal padding; the ScrollView

@@ -18,7 +18,11 @@
 import { StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { EmptyState, type EmptyStateAction } from "../ui/EmptyState";
+import {
+  EMPTY_STATE_OPTICAL_LIFT,
+  EmptyState,
+  type EmptyStateAction,
+} from "../ui/EmptyState";
 
 interface AdvisorEmptyOverlayProps {
   icon: React.ComponentProps<typeof Ionicons>["name"];
@@ -53,5 +57,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingBottom: EMPTY_STATE_OPTICAL_LIFT,
   },
 });
