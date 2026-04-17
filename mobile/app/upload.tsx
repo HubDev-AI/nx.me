@@ -49,6 +49,7 @@ import { Body, Caption, Heading, Label } from "../components/ui/Text";
 import { hapticError, hapticMedium } from "../lib/haptics";
 import { useTheme } from "../lib/theme-context";
 import { ConsentDismissedError, useConsent } from "../lib/consent-context";
+import { showToast } from "../lib/toast";
 
 /** Header title font size — matches the subscription screen pattern. */
 const HEADER_TITLE_FONT_SIZE = 20;
@@ -80,7 +81,7 @@ export default function UploadScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { requestConsentIfNeeded } = useConsent();
+  const { requestConsentIfNeeded, markConsentGranted } = useConsent();
 
   const [photo, setPhoto] = useState<SelectedPhoto | null>(null);
   const [phase, setPhase] = useState<UploadPhase>("idle");
@@ -194,8 +195,23 @@ export default function UploadScreen() {
     try {
       await requestConsentIfNeeded();
     } catch (err) {
-      if (err instanceof ConsentDismissedError) return;
-      throw err;
+      if (err instanceof ConsentDismissedError) {
+        // User dismissed the consent modal. Surface a quiet nudge so
+        // they know the tap registered and why nothing happened.
+        hapticError();
+        showToast({
+          kind: "info",
+          message: "Consent is required to analyze a photo.",
+        });
+        return;
+      }
+      // Grant API failure. The consent provider no longer lies on
+      // catch, so this path actually runs. Tell the user and bail.
+      hapticError();
+      const message =
+        err instanceof Error ? err.message : "Couldn't save consent.";
+      showToast({ kind: "error", message });
+      return;
     }
 
     hapticMedium();
@@ -223,8 +239,18 @@ export default function UploadScreen() {
 
       if (err instanceof ApiError) {
         if (err.status === HTTP_FACE_MOD_CONSENT_REQUIRED) {
-          // Defensive — consent was granted above, but tolerate races.
-          setPhase("uploaded");
+          // Server disagrees with our cached consent state — client's
+          // `hasConsent` is stale. Force the consent provider back to
+          // "unknown" so the next Analyze tap re-prompts, and surface
+          // a toast so the user understands why this attempt didn't
+          // go through. Previous behavior silently reset phase with
+          // no feedback, making the button look broken.
+          hapticError();
+          markConsentGranted(false);
+          setErrorMessage(
+            "Please confirm consent to analyze this photo, then try again.",
+          );
+          setPhase("error");
           return;
         }
         try {
@@ -254,7 +280,7 @@ export default function UploadScreen() {
       setErrorMessage("Something unexpected happened. Give it another try.");
       setPhase("error");
     }
-  }, [uploadId, phase, requestConsentIfNeeded, router]);
+  }, [uploadId, phase, requestConsentIfNeeded, markConsentGranted, router]);
 
   const handleCancel = useCallback(() => {
     abortControllerRef.current?.abort();

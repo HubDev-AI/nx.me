@@ -31,11 +31,17 @@ import { grantFaceModConsent } from "./analysis";
 interface ConsentContextValue {
   /** Whether the current user has consented. Null = unknown (not yet loaded). */
   hasConsent: boolean | null;
-  /** Mark consent as granted (called after POST /users/me/face-mod-consent). */
-  markConsentGranted: () => void;
+  /**
+   * Hydrate consent state from the server. Pass `true` after POST
+   * /users/me/face-mod-consent succeeds, or when GET /users/me
+   * returns a non-null `face_mod_consent_at`. Pass `false` to reset
+   * (sign-out, account switch, user deletion via the settings flow).
+   */
+  markConsentGranted: (granted?: boolean) => void;
   /**
    * Resolves if user has (or grants) consent.
-   * Rejects with ConsentDismissedError if user dismisses the modal.
+   * Rejects with ConsentDismissedError if user dismisses the modal,
+   * or with the underlying error if the grant API call fails.
    */
   requestConsentIfNeeded: () => Promise<void>;
 }
@@ -69,8 +75,8 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
   const pendingResolveRef = useRef<(() => void) | null>(null);
   const pendingRejectRef = useRef<((reason: ConsentDismissedError) => void) | null>(null);
 
-  const markConsentGranted = useCallback(() => {
-    setHasConsent(true);
+  const markConsentGranted = useCallback((granted: boolean = true) => {
+    setHasConsent(granted);
   }, []);
 
   const requestConsentIfNeeded = useCallback((): Promise<void> => {
@@ -91,11 +97,17 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
       await grantFaceModConsent();
       setHasConsent(true);
       pendingResolveRef.current?.();
-    } catch {
-      // Consent API failed — still resolve so the user can proceed; the
-      // backend will 428 on the analyze call if consent isn't persisted.
-      setHasConsent(true);
-      pendingResolveRef.current?.();
+    } catch (err) {
+      // Consent API failed — DO NOT flip hasConsent to true. The old
+      // behavior was to pretend success, which then 428'd the analyze
+      // call and left the Analyze button looking broken. Reject the
+      // pending promise so the caller (upload.tsx) can surface a real
+      // error and the user can retry.
+      pendingRejectRef.current?.(
+        err instanceof Error
+          ? err
+          : new Error("Failed to save consent. Try again."),
+      );
     } finally {
       pendingResolveRef.current = null;
       pendingRejectRef.current = null;
