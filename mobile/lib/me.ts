@@ -13,6 +13,14 @@ export interface MeResponse {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  /**
+   * ISO timestamp when the user granted face-mod consent, or null if
+   * they haven't. `ConsentProvider` hydrates its `hasConsent` from
+   * this on app boot so the client's cached state never drifts from
+   * the server's — if it did, the analyze endpoint would 428 and the
+   * Analyze button would appear to do nothing.
+   */
+  face_mod_consent_at: string | null;
 }
 
 export function fetchMe(): Promise<MeResponse> {

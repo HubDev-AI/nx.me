@@ -253,15 +253,23 @@ class TestMeResponseModel:
             username="alice",
             display_name="Alice",
             avatar_url="https://cdn.example.com/a.jpg",
+            face_mod_consent_at="2026-04-17T00:00:00+00:00",
         )
         assert resp.username == "alice"
         assert resp.avatar_url == "https://cdn.example.com/a.jpg"
+        assert resp.face_mod_consent_at == "2026-04-17T00:00:00+00:00"
 
     def test_me_response_without_avatar(self):
         from app.api.users import MeResponse
 
-        resp = MeResponse(username="guest-abc", display_name="Guest", avatar_url=None)
+        resp = MeResponse(
+            username="guest-abc",
+            display_name="Guest",
+            avatar_url=None,
+            face_mod_consent_at=None,
+        )
         assert resp.avatar_url is None
+        assert resp.face_mod_consent_at is None
 
 
 @requires_routers

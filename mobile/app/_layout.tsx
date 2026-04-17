@@ -22,7 +22,7 @@ import { AuthProvider, useAuth } from "../lib/auth-context";
 import type { SessionMode } from "../lib/session";
 import { FeaturesProvider, useFeatures } from "../lib/features-context";
 import { useCapabilities } from "../lib/capabilities";
-import { ConsentProvider } from "../lib/consent-context";
+import { ConsentProvider, useConsent } from "../lib/consent-context";
 import { RadialMenuProvider } from "../lib/radial-menu-context";
 import { isAllowedDeepLink } from "../lib/deep-link-guard";
 import { THEME } from "../constants/theme";
@@ -60,6 +60,7 @@ function AuthGuard() {
   // `useCapabilities()`. See mobile/lib/capabilities.ts for the contract.
   const { features, isLoading: featuresLoading } = useFeatures();
   const caps = useCapabilities();
+  const { markConsentGranted } = useConsent();
   const router = useRouter();
   const segments = useSegments();
   const guestInitRef = useRef(false);
@@ -111,6 +112,13 @@ function AuthGuard() {
             ),
           ]);
           setUsername(me.username);
+          // Hydrate ConsentProvider from the server's source of truth so
+          // subsequent Analyze taps trust the server state rather than
+          // whatever hasConsent happened to be cached on this device.
+          // Without this, a DB reset (pre-launch this happens often)
+          // leaves the client believing consent is granted while the
+          // server 428s the analyze call.
+          markConsentGranted(me.face_mod_consent_at !== null);
         } catch (err) {
           // Non-fatal — profile screens fall back to the "complete your
           // profile" stub when authUsername is null. Log so dev can debug.
@@ -132,6 +140,7 @@ function AuthGuard() {
     setSessionMode,
     setUsername,
     markSessionReady,
+    markConsentGranted,
   ]);
 
   useEffect(() => {

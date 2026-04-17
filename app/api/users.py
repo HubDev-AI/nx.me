@@ -83,6 +83,12 @@ class MeResponse(BaseModel):
     username: str
     display_name: str
     avatar_url: str | None
+    # ISO timestamp when the user granted face-modification consent, or
+    # None if they haven't. Mobile hydrates its ConsentProvider from
+    # this so the client never starts from a stale "consent granted"
+    # assumption (which would silently 428 the analyze endpoint and
+    # leave the user staring at an unchanged Analyze button).
+    face_mod_consent_at: str | None
 
 
 class HistoryEntry(BaseModel):
@@ -212,6 +218,7 @@ async def get_me(
         username=user["username"],
         display_name=user["display_name"],
         avatar_url=avatar_url,
+        face_mod_consent_at=user.get("face_mod_consent_at"),
     )
 
 

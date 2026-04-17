@@ -25,11 +25,18 @@ class UserRepository:
     # ------------------------------------------------------------------
 
     def get_profile_by_id(self, user_id: str) -> dict | None:
-        """Fetch core profile fields for the authenticated user, or None if not found."""
+        """Fetch core profile fields for the authenticated user, or None if not found.
+
+        ``face_mod_consent_at`` is included so the /users/me endpoint can
+        hand the mobile ConsentProvider a source-of-truth value on boot —
+        without it the client starts from ``hasConsent=null`` and silently
+        lies its way into a 428 on the analyze call.
+        """
         result = (
             self._sb.table("users")
             .select(
-                "id, username, display_name, email, avatar_storage_key, username_changed_at"
+                "id, username, display_name, email, avatar_storage_key, "
+                "username_changed_at, face_mod_consent_at"
             )
             .eq("id", user_id)
             .is_("deleted_at", "null")

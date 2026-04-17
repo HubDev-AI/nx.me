@@ -12,7 +12,7 @@
  * 6. Share: view-shot composite via useShareComposite()
  * 7. Try-another: navigate back to upload
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -52,6 +52,16 @@ import { parseApiError, shouldRetry } from "../../lib/errors";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
+/**
+ * Grace window after mount during which a 404 is treated as
+ * "job still being persisted" rather than "job missing". Covers the
+ * race between POST /v1/uploads/{id}/glowup/generate returning a
+ * job_id and the worker's initial row being visible to reads. After
+ * this window, a 404 stops polling and surfaces the Go to Profile
+ * CTA.
+ */
+const JOB_CREATION_GRACE_MS = 10_000;
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -68,6 +78,12 @@ export default function ResultScreen() {
   const { ShareCompositeView, generateAndShare, isCapturing } =
     useShareComposite();
 
+  // Screen-mount timestamp drives the 404 grace window. If generate just
+  // returned a job_id, the worker's initial row insert may not be visible
+  // for up to a second or two; we tolerate 404s for JOB_CREATION_GRACE_MS
+  // before giving up.
+  const mountedAtRef = useRef<number>(Date.now());
+
   // Poll job until terminal status. `refetchInterval` must also stop on
   // non-retryable errors (404, 403, 401) — otherwise a missing/forbidden
   // job ID triggers a 2s poll loop that never resolves and hammers the
@@ -79,7 +95,17 @@ export default function ResultScreen() {
     refetchInterval: (query) => {
       const err = query.state.error;
       if (err) {
-        return shouldRetry(parseApiError(err)) ? 2000 : false;
+        const appError = parseApiError(err);
+        // Within the grace window, a 404 means "job not yet visible"
+        // rather than "job missing" — keep polling so the screen
+        // catches the row the moment it lands.
+        if (
+          appError.kind === "notFound" &&
+          Date.now() - mountedAtRef.current < JOB_CREATION_GRACE_MS
+        ) {
+          return 2000;
+        }
+        return shouldRetry(appError) ? 2000 : false;
       }
       const data = query.state.data;
       if (!data) return 2000;
