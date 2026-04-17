@@ -378,27 +378,31 @@ async def get_user_history(
 
     # 3. Assemble entries — no image signing needed; uploads.image_url and
     #    jobs.after_image_url are stable CDN paths stored directly.
+    #    Only include uploads whose analysis has at least one completed job
+    #    with a non-empty after_image_url. Entries without a completed job
+    #    would surface on the profile grid as an empty glass card and read
+    #    as broken to the user. This matches the endpoint's documented
+    #    contract ("at least one completed job") which was previously a
+    #    docstring claim rather than an enforced filter.
     entries: list[HistoryEntry] = []
     for row in uploads:
         upload_id = row["id"]
         analysis = analysis_by_upload.get(upload_id)
+        if analysis is None:
+            continue
 
-        analysis_id: str | None = analysis["id"] if analysis else None
-        face_shape: str | None = analysis.get("face_shape") if analysis else None
-        symmetry_score: float | None = (
-            analysis.get("symmetry_score") if analysis else None
-        )
-        raw_recs: list[dict] = (
-            (analysis.get("recommendations") or []) if analysis else []
-        )
+        analysis_id: str = analysis["id"]
+        after_url: str | None = jobs_by_analysis.get(analysis_id)
+        if not after_url:
+            continue
 
-        after_url: str | None = (
-            jobs_by_analysis.get(analysis_id) if analysis_id else None
-        )
+        face_shape: str | None = analysis.get("face_shape")
+        symmetry_score: float | None = analysis.get("symmetry_score")
+        raw_recs: list[dict] = analysis.get("recommendations") or []
 
         entries.append(
             HistoryEntry(
-                analysis_id=analysis_id or upload_id,
+                analysis_id=analysis_id,
                 face_shape=face_shape,
                 symmetry_score=symmetry_score,
                 recommendations=[

@@ -215,8 +215,23 @@ export default function ResultScreen() {
                     color={THEME.colors.textDisabled}
                   />
                   <Text style={styles.missingText}>
-                    Images are not available yet.
+                    {result && TERMINAL_STATUSES.has(result.status)
+                      ? "Images didn't come through for this run."
+                      : "Images are not available yet."}
                   </Text>
+                  {/* Recovery CTA — without this, a completed-but-missing
+                      result leaves the user with only the native back
+                      button. Always visible while images are absent;
+                      harmless during a still-polling state since the
+                      user can opt to start over if they want to. */}
+                  <PressableScale
+                    onPress={handleTryAnother}
+                    style={[styles.retryButton, { backgroundColor: theme.accent }]}
+                    accessibilityLabel="Upload another photo"
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.retryText}>Upload Another</Text>
+                  </PressableScale>
                 </View>
               )}
 
