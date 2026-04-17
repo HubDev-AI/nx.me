@@ -15,7 +15,6 @@ import {
   Modal,
   PanResponder,
   StyleSheet,
-  Text,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -26,11 +25,11 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { THEME } from "../../constants/theme";
-import { FONTS } from "../../hooks/useFonts";
-import { HeaderBackButton } from "./HeaderBackButton";
+import { HeaderBackButton, HeaderBackButtonSpacer } from "./HeaderBackButton";
+import { Heading } from "./Text";
 import {
   clampScale,
   shouldDismissOnSwipeDown,
@@ -65,6 +64,11 @@ export function ZoomableImageModal({
   onClose,
 }: ZoomableImageModalProps) {
   const { width: winW, height: winH } = useWindowDimensions();
+  // SafeAreaView sometimes reports insets=0 on the first frame when
+  // presented inside a Modal with `statusBarTranslucent`, which made
+  // the header look missing on the first open. Reading the insets
+  // explicitly keeps the header visible on mount #1.
+  const insets = useSafeAreaInsets();
 
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -207,19 +211,23 @@ export function ZoomableImageModal({
     >
       <StatusBar style="light" />
       <View style={styles.backdrop}>
-        <SafeAreaView style={styles.headerSafe} edges={["top"]}>
-          <View style={styles.headerRow}>
-            <HeaderBackButton
-              onPress={onClose}
-              tintColor={THEME.colors.white}
-              accessibilityLabel="Close image viewer"
-            />
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {altText}
-            </Text>
-            <View style={styles.headerSpacer} />
-          </View>
-        </SafeAreaView>
+        <View style={[styles.headerRow, { paddingTop: insets.top }]}>
+          <HeaderBackButton
+            onPress={onClose}
+            tintColor={THEME.colors.white}
+            accessibilityLabel="Close image viewer"
+          />
+          <Heading
+            size="md"
+            color={THEME.colors.white}
+            style={styles.headerTitle}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.3}
+          >
+            {altText}
+          </Heading>
+          <HeaderBackButtonSpacer />
+        </View>
         <View
           style={styles.imageArea}
           accessibilityLabel={`${altText}, enlarged view`}
@@ -245,33 +253,25 @@ export function ZoomableImageModal({
 // Styles
 // ---------------------------------------------------------------------------
 
-const HEADER_BTN_SIZE = 44;
+const HEADER_TITLE_FONT_SIZE = 20;
 
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: "#000",
   },
-  headerSafe: {
-    backgroundColor: "transparent",
-  },
+  // Mirrors the Upload / Result header row — Back button left, Heading
+  // size="md" centered, spacer right. paddingTop is applied at the
+  // call site so useSafeAreaInsets can survive a Modal remount.
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: THEME.spacing.md,
-    minHeight: HEADER_BTN_SIZE,
+    paddingHorizontal: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.sm,
   },
   headerTitle: {
-    flex: 1,
-    textAlign: "center",
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 15,
-    color: THEME.colors.white,
-  },
-  headerSpacer: {
-    width: HEADER_BTN_SIZE,
-    height: HEADER_BTN_SIZE,
+    fontSize: HEADER_TITLE_FONT_SIZE,
   },
   imageArea: {
     flex: 1,

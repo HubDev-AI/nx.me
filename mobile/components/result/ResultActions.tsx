@@ -210,19 +210,14 @@ export function ResultActions({
         </View>
       </View>
 
-      {/* Secondary row: Try another */}
+      {/* Secondary row: Start a new glow-up with a different photo. */}
       <View style={styles.secondaryRow}>
-        <Pressable
-          onPress={() => {
-            hapticLight();
-            onTryAnother();
-          }}
-          style={styles.tryAnotherButton}
-          accessibilityRole="button"
-          accessibilityLabel="Try another photo"
-        >
-          <Text style={styles.tryAnotherText}>Try another photo</Text>
-        </Pressable>
+        <ActionButton
+          label="New glow-up"
+          iconName="add-circle-outline"
+          onPress={onTryAnother}
+          variant="secondary"
+        />
 
         {/* Credit badge (optional) */}
         {creditsRemaining != null && (
@@ -284,18 +279,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: THEME.spacing.sm,
-  },
-  tryAnotherButton: {
-    minHeight: MIN_TOUCH_TARGET,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.sm,
-  },
-  tryAnotherText: {
-    fontFamily: FONTS.body,
-    fontSize: 14,
-    color: TEXT_SECONDARY,
-    letterSpacing: 0.1,
   },
   creditBadge: {
     flexDirection: "row",

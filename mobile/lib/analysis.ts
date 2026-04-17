@@ -97,6 +97,13 @@ export interface JobResult {
   credit_refunded: boolean | null;
   retry_eligible: boolean | null;
   user_guidance: string | null;
+  /**
+   * ISO timestamp when the user first tapped Save on this job, or
+   * null if the job has not been saved yet. Used by the result screen
+   * to hydrate the Save button in its "saved" (disabled + check-mark)
+   * variant when the user re-opens a saved job.
+   */
+  saved_at: string | null;
 }
 
 export interface EntitlementInfo {
