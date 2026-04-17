@@ -53,15 +53,13 @@ const HANDLE_SIZE = 36;
 /** Thickness of the glow-ring on the handle (brand accent). */
 const GLOW_RING_WIDTH = 2;
 
-/** Extra touch area around the handle so the divider is easy to grab. */
-const HANDLE_HIT_PADDING = 24;
-
 /**
- * Minimum horizontal-dominance (in px) a move must clear before the
- * slider claims the gesture. Below this, the parent ScrollView keeps
- * the drag — so vertical scrolls pass through cleanly.
+ * Visible range of the divider x-position. Keeps the handle fully
+ * inside the image frame at both ends (split = 0 and split = 1) so
+ * the user can always see and grab it — including at split = 1, where
+ * the glow-up is fully revealed.
  */
-const DIRECTION_THRESHOLD_PX = 10;
+const VISIBLE_MARGIN_PX = HANDLE_SIZE / 2 + 4;
 
 /** Spring config for entrance + accessibility-toggle animations. */
 const ENTRANCE_SPRING = {
@@ -142,14 +140,14 @@ export default function BeforeAfterSlider({
   // PanResponder on the whole container.
   // - `onStartShouldSetPanResponder` claims the responder on every
   //   touch-start, which is required for tap-to-zoom to fire at
-  //   release regardless of horizontal travel.
-  // - Because Start already captured the responder,
-  //   `onMoveShouldSetPanResponder` never fires on its own — vertical
-  //   pass-through to the parent ScrollView relies on
-  //   `onPanResponderTerminationRequest` returning true, which lets
-  //   the ScrollView reclaim the gesture when a vertical drag starts.
-  //   The directional filter is still expressed here as a defensive
-  //   signal in case Start claim is ever relaxed.
+  //   release and for drags to begin without the parent stealing the
+  //   gesture.
+  // - `onPanResponderTerminationRequest` returns `false` so the
+  //   slider keeps the gesture even when the user drifts vertically.
+  //   Previously the parent ScrollView could reclaim mid-drag, which
+  //   looked like the handle had "stopped" following the finger. The
+  //   result screen no longer uses a ScrollView, so horizontal drags
+  //   stay owned by the slider throughout the gesture.
   // - A near-zero-travel release counts as a tap and fires the
   //   side-appropriate onPress callback (zoom viewer). Drag releases
   //   leave the divider at its current position.
@@ -157,15 +155,18 @@ export default function BeforeAfterSlider({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_evt, gs) =>
-          Math.abs(gs.dx) > Math.abs(gs.dy) + DIRECTION_THRESHOLD_PX,
-        onPanResponderTerminationRequest: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderTerminationRequest: () => false,
+        onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: (evt) => {
           gestureStartSplit.current = splitPosition.value;
           gestureStartX.current = evt.nativeEvent.locationX;
           hapticLight();
         },
         onPanResponderMove: (_evt, gestureState) => {
+          // Track only the horizontal delta — vertical drift is
+          // ignored so the divider keeps following the finger even
+          // when the user's path is not perfectly horizontal.
           const delta = gestureState.dx / sliderWidth;
           splitPosition.value = clamp(
             gestureStartSplit.current + delta,
@@ -198,11 +199,27 @@ export default function BeforeAfterSlider({
     width: splitPosition.value * sliderWidth,
   }));
 
-  const dividerStyle = useAnimatedStyle(() => ({
+  // The divider line tracks the literal split boundary, end-to-end,
+  // so the visible seam matches what the user dragged to.
+  const dividerLineStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: splitPosition.value * sliderWidth - DIVIDER_WIDTH / 2 },
     ],
   }));
+
+  // The handle is clamped inside a visible margin so the user always
+  // has a grab target — including at split = 0 and split = 1 where
+  // the divider line sits on the very edge of the image frame.
+  const handleStyle = useAnimatedStyle(() => {
+    const clamped = clamp(
+      splitPosition.value * sliderWidth,
+      VISIBLE_MARGIN_PX,
+      sliderWidth - VISIBLE_MARGIN_PX,
+    );
+    return {
+      transform: [{ translateX: clamped - HANDLE_SIZE / 2 }],
+    };
+  });
 
   // Label pills sit as siblings of the clip (not children of it) so each
   // label's position is anchored to full sliderWidth. Visibility is a
@@ -253,11 +270,14 @@ export default function BeforeAfterSlider({
       </Animated.View>
 
       <Animated.View
-        style={[styles.dividerContainer, dividerStyle]}
+        style={[styles.dividerLine, dividerLineStyle]}
+        pointerEvents="none"
+      />
+
+      <Animated.View
+        style={[styles.handleWrapper, handleStyle]}
         pointerEvents="none"
       >
-        <View style={styles.dividerLine} />
-
         <View
           style={[
             styles.handle,
@@ -325,14 +345,6 @@ const styles = StyleSheet.create({
     left: 0,
     overflow: "hidden",
   },
-  dividerContainer: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: HANDLE_SIZE + HANDLE_HIT_PADDING,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   dividerLine: {
     position: "absolute",
     top: 0,
@@ -340,6 +352,14 @@ const styles = StyleSheet.create({
     width: DIVIDER_WIDTH,
     backgroundColor: THEME.colors.white,
     opacity: 0.9,
+  },
+  handleWrapper: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: HANDLE_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
   },
   handle: {
     width: HANDLE_SIZE,

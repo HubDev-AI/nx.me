@@ -213,7 +213,8 @@ export function useProfile(): UseProfileReturn {
           if (
             entry.status === result.status &&
             entry.after_image_url === result.after_image_url &&
-            entry.before_image_url === result.before_image_url
+            entry.before_image_url === result.before_image_url &&
+            entry.saved_at === result.saved_at
           ) {
             return entry;
           }
@@ -225,6 +226,10 @@ export function useProfile(): UseProfileReturn {
               result.after_image_url ?? entry.after_image_url,
             before_image_url:
               result.before_image_url ?? entry.before_image_url,
+            // saved_at is authoritative from the server; use the new
+            // value directly so an admin-side clear also propagates
+            // down to the grid.
+            saved_at: result.saved_at,
           };
         });
         return touched ? next : prev;

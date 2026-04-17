@@ -122,9 +122,6 @@ export const HTTP_FACE_MOD_CONSENT_REQUIRED = 428;
 export const RETENTION_DISCLOSURE =
   "Photos auto-delete after 30 days of no activity.";
 
-/** AI disclosure text — shown on result screen. */
-export const AI_DISCLOSURE = "AI-generated · not a photo";
-
 /** Analysis polling configuration */
 export const ANALYSIS_POLLING = {
   /** Interval between job status polls (ms) */

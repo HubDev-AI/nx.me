@@ -60,6 +60,7 @@ function makeJob(overrides: Partial<JobResult> = {}): JobResult {
     credit_refunded: true,
     retry_eligible: null,
     user_guidance: null,
+    saved_at: null,
     ...overrides,
   };
 }

@@ -15,6 +15,8 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
+import { Ionicons } from "@expo/vector-icons";
+
 import { THEME } from "../../constants/theme";
 import {
   PROFILE_CONFIG,
@@ -281,6 +283,23 @@ const GlowUpCell = React.memo(function GlowUpCell({
             />
           </View>
         ) : null}
+
+        {/* Saved badge — surfaces which transformations the user has
+            already kept so the profile grid answers "did I save this?"
+            at a glance without tapping through to the result screen. */}
+        {item.saved_at ? (
+          <View
+            style={styles.savedBadge}
+            accessibilityLabel="Saved"
+            accessible
+          >
+            <Ionicons
+              name="checkmark"
+              size={14}
+              color={THEME.colors.white}
+            />
+          </View>
+        ) : null}
       </Pressable>
     </Animated.View>
   );
@@ -336,6 +355,21 @@ const styles = StyleSheet.create({
   beforeThumbnail: {
     width: "100%",
     height: "100%",
+  },
+  // Saved check-mark badge — top-right corner of a saved cell. Uses a
+  // dark-glass pill so the mark reads on both light and dark thumbnails.
+  savedBadge: {
+    position: "absolute",
+    top: THEME.spacing.xs,
+    right: THEME.spacing.xs,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.8)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   footer: {
     paddingVertical: THEME.spacing.lg,

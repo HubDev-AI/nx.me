@@ -36,6 +36,13 @@ export interface GlowUpItem {
   before_image_url: string | null;
   after_image_url: string | null;
   created_at: string;
+  /**
+   * ISO timestamp when the user tapped Save for this job, or null when
+   * unsaved. The profile grid renders a small check-mark badge on saved
+   * cells so the user can tell at a glance which transformations they
+   * have already kept.
+   */
+  saved_at: string | null;
 }
 
 /** Matches HistoryResponse in app/api/users.py */

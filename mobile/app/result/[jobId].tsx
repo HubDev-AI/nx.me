@@ -22,12 +22,14 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   Alert,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Animated, {
   Easing,
   FadeIn,
@@ -56,10 +58,10 @@ import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { PressableScale } from "../../components/ui/PressableScale";
 import { QueryStateView } from "../../components/ui/QueryStateView";
+import { Heading } from "../../components/ui/Text";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import {
-  AI_DISCLOSURE,
   RESULT_HARD_TIMEOUT_COPY,
   RESULT_SCREEN_HARD_TIMEOUT_MS,
   RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS,
@@ -96,10 +98,14 @@ const HOURGLASS_ROTATION_MS = 2_400;
 // Component
 // ---------------------------------------------------------------------------
 
+/** Title font size — matches Upload's custom header (Heading size="md"). */
+const HEADER_TITLE_FONT_SIZE = 20;
+
 export default function ResultScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const router = useRouter();
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const [saveState, setSaveState] = useState<SaveState>("pending");
   // Zoom viewer — which image, if any, is currently presented full-screen.
@@ -188,6 +194,16 @@ export default function ResultScreen() {
 
   const result = jobQuery.data;
   const error = jobQuery.appError;
+
+  // Hydrate the save button from the server-known state: if the job was
+  // already saved (persisted `saved_at`), start in "saved" so the button
+  // renders as disabled and the check-mark shows. Without this, re-opening
+  // a previously-saved job would let the user click Save again.
+  useEffect(() => {
+    if (result?.saved_at && saveState === "pending") {
+      setSaveState("saved");
+    }
+  }, [result?.saved_at, saveState]);
 
   // Surface the one-time refund toast when the worker auto-refunds a
   // failed/cancelled job. Module-level dedup ensures the user sees
@@ -386,17 +402,21 @@ export default function ResultScreen() {
     <View style={styles.screen}>
       {/* Root layout is <Slot/>, not <Stack/>, so this Stack.Screen is
           an inert defensive marker — matches post/[postId].tsx:273.
-          The visible header is the SafeAreaView + custom row below. */}
+          The visible header is the custom row below, which mirrors the
+          Upload-screen header (Heading size="md", manual top inset). */}
       <Stack.Screen options={{ headerShown: false }} />
-      <SafeAreaView style={styles.headerSafeArea} edges={["top"]}>
-        <View style={styles.headerRow}>
-          <HeaderBackButton onPress={handleBack} />
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {headerTitle}
-          </Text>
-          <HeaderBackButtonSpacer />
-        </View>
-      </SafeAreaView>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <HeaderBackButton onPress={handleBack} />
+        <Heading
+          size="md"
+          style={styles.headerTitle}
+          numberOfLines={1}
+          maxFontSizeMultiplier={1.3}
+        >
+          {headerTitle}
+        </Heading>
+        <HeaderBackButtonSpacer />
+      </View>
       <QueryStateView
         isLoading={false}
         error={queryStateError}
@@ -459,21 +479,22 @@ export default function ResultScreen() {
             </PressableScale>
           </View>
         ) : isSuccess ? (
-          /* Success — before/after reveal + actions */
+          /* Success — before/after reveal + actions. Non-scrolling
+             column so the slider's horizontal pan never competes with
+             a parent ScrollView's vertical gesture (feedback #4). */
           <>
             <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
               <PageBackground overlayOpacity={0.88} />
-              <ScrollView
-                style={styles.scroll}
-                contentContainerStyle={styles.scrollContent}
-              >
-                <BeforeAfterSlider
-                  beforeUrl={result.before_image_url!}
-                  afterUrl={result.after_image_url!}
-                  rightLabel="Glow Up"
-                  onPressBeforeImage={handleZoomBefore}
-                  onPressAfterImage={handleZoomAfter}
-                />
+              <View style={styles.content}>
+                <View style={styles.sliderSlot}>
+                  <BeforeAfterSlider
+                    beforeUrl={result.before_image_url!}
+                    afterUrl={result.after_image_url!}
+                    rightLabel="Glow Up"
+                    onPressBeforeImage={handleZoomBefore}
+                    onPressAfterImage={handleZoomAfter}
+                  />
+                </View>
 
                 <Animated.View entering={FadeIn.duration(300).delay(400)}>
                   <ResultActions
@@ -484,8 +505,6 @@ export default function ResultScreen() {
                   />
                 </Animated.View>
 
-                <Text style={styles.aiDisclosure}>{AI_DISCLOSURE}</Text>
-
                 {/* Capturing overlay hint */}
                 {isCapturing && (
                   <Animated.View
@@ -495,7 +514,7 @@ export default function ResultScreen() {
                     <Text style={styles.capturingText}>Preparing share…</Text>
                   </Animated.View>
                 )}
-              </ScrollView>
+              </View>
             </SafeAreaView>
 
             {/* Offscreen composite for share (must be in tree) */}
@@ -533,32 +552,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.bg,
   },
-  headerSafeArea: {
-    backgroundColor: THEME.colors.bg,
-  },
-  headerRow: {
+  // Header row — mirrors Upload (app/upload.tsx): HeaderBackButton on
+  // the left, Heading size="md" centered, spacer on the right so the
+  // title is perfectly balanced. Top inset comes from useSafeAreaInsets.
+  header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: THEME.spacing.md,
-    minHeight: 44,
+    paddingHorizontal: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.sm,
+    backgroundColor: THEME.colors.bg,
   },
   headerTitle: {
-    flex: 1,
-    textAlign: "center",
-    fontFamily: FONTS.bodySemiBold,
-    fontSize: 17,
-    color: THEME.colors.textPrimary,
+    fontSize: HEADER_TITLE_FONT_SIZE,
   },
   safeArea: {
     flex: 1,
     backgroundColor: THEME.colors.bg,
   },
-  scroll: {
+  // Success content lives in a flex column (no ScrollView) so the
+  // before/after slider owns its gesture cleanly. Top gap keeps the
+  // image away from the header (feedback #4).
+  content: {
     flex: 1,
+    paddingTop: THEME.spacing.lg,
+    paddingBottom: THEME.spacing.md,
   },
-  scrollContent: {
-    paddingBottom: THEME.spacing.xxxl * 2,
+  sliderSlot: {
+    alignItems: "center",
   },
   // Centered container shared between waiting + terminal-failure states
   centeredContainer: {
@@ -616,16 +637,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.body,
     fontSize: 15,
     color: THEME.colors.textSecondary,
-  },
-  // AI disclosure
-  aiDisclosure: {
-    fontFamily: FONTS.body,
-    fontSize: 12,
-    color: THEME.colors.textMuted,
-    textAlign: "center",
-    paddingHorizontal: THEME.spacing.xl,
-    paddingBottom: THEME.spacing.lg,
-    opacity: 0.7,
   },
   // Capturing badge
   capturingBadge: {

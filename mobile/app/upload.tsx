@@ -232,7 +232,10 @@ export default function UploadScreen() {
       if (controller.signal.aborted) return;
 
       setCurrentJobId(job_id);
-      router.push(`/result/${job_id}`);
+      // Replace (not push) so the result screen's back chevron returns
+      // the user to wherever they launched from (the Create tab) rather
+      // than dropping them back on the picker they just used.
+      router.replace(`/result/${job_id}`);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (err instanceof Error && err.name === "AbortError") return;

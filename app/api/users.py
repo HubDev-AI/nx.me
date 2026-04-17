@@ -131,6 +131,11 @@ class HistoryEntry(BaseModel):
     before_image_url: str | None
     after_image_url: str | None
     created_at: str
+    # ISO timestamp when the user tapped Save for this job, or None when
+    # unsaved. The mobile profile grid renders a check-mark overlay on
+    # saved cells so the user can tell at a glance which transformations
+    # they have already kept.
+    saved_at: str | None = None
 
 
 class HistoryResponse(BaseModel):
@@ -482,6 +487,11 @@ async def get_user_history(
             else None
         )
 
+        saved_at_raw = job.get("saved_at")
+        saved_at_value: str | None = (
+            saved_at_raw if isinstance(saved_at_raw, str) else None
+        )
+
         entries.append(
             HistoryEntry(
                 analysis_id=analysis_id,
@@ -501,6 +511,7 @@ async def get_user_history(
                 before_image_url=before_url,
                 after_image_url=after_url,
                 created_at=row["created_at"],
+                saved_at=saved_at_value,
             )
         )
 
