@@ -646,7 +646,6 @@ export function MemoryList() {
       accessibilityLabel={copy.composerA11yLabel}
       submitAccessibilityLabel="Add memory"
       bottomPadding={inputBottomPadding}
-      separator
     />
   );
 
