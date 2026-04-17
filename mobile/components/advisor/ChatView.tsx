@@ -305,7 +305,7 @@ export function ChatView() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior="translate-with-padding"
+      behavior="padding"
       keyboardVerticalOffset={keyboardVerticalOffset}
       enabled={Platform.OS !== "web"}
     >

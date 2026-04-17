@@ -652,7 +652,7 @@ export function MemoryList() {
     return (
       <KeyboardAvoidingView
         style={styles.container}
-        behavior="translate-with-padding"
+        behavior="padding"
         keyboardVerticalOffset={keyboardVerticalOffset}
         enabled={Platform.OS !== "web"}
       >
@@ -666,7 +666,7 @@ export function MemoryList() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior="translate-with-padding"
+      behavior="padding"
       keyboardVerticalOffset={keyboardVerticalOffset}
       enabled={Platform.OS !== "web"}
     >

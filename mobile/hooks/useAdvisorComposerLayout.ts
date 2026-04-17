@@ -74,6 +74,14 @@ export function useAdvisorComposerLayout(): AdvisorComposerLayout {
   const effectiveTabBarOffset =
     floatingTabBarVisible && !isKeyboardVisible ? TAB_BAR_HEIGHT : 0;
 
+  // When the keyboard is open the composer is glued above the keyboard
+  // by KAV — the home-indicator / bottom-safe-area padding becomes an
+  // unnecessary gap between input and keyboard top. Drop it in that
+  // state so the input sits flush. A small design gap stays (`sm`).
+  const baseBottomPadding = isKeyboardVisible
+    ? THEME.spacing.sm
+    : Math.max(insets.bottom, THEME.spacing.sm);
+
   return {
     // On Android, adjustResize is on by default for Expo projects, so
     // the native layout already shrinks when the keyboard opens — KAV
@@ -81,7 +89,6 @@ export function useAdvisorComposerLayout(): AdvisorComposerLayout {
     // web, KAV handles the lift and needs the top offset to subtract
     // from the keyboard's absolute Y.
     keyboardVerticalOffset: Platform.OS === "ios" ? topOffset : 0,
-    inputBottomPadding:
-      Math.max(insets.bottom, THEME.spacing.sm) + effectiveTabBarOffset,
+    inputBottomPadding: baseBottomPadding + effectiveTabBarOffset,
   };
 }
