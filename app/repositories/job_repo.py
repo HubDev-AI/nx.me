@@ -17,9 +17,11 @@ from supabase import Client
 
 logger = logging.getLogger(__name__)
 
-# Columns needed for job status polling
+# Columns needed for job status polling. created_at is used by the dev-only
+# DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS gate in app/api/jobs.py to
+# simulate read-after-write replica lag.
 JOB_STATUS_SELECT = (
-    "id, user_id, status, source_type, source_id, updated_at, "
+    "id, user_id, status, source_type, source_id, created_at, updated_at, "
     "before_image_url, after_image_url, failure_reason, saved_at, "
     "identity_preserved, credit_reservation_id"
 )

@@ -308,6 +308,37 @@ export const PROFILE_ENDPOINTS = {
  */
 export const GUEST_ME_TIMEOUT_MS = 5_000;
 
+/**
+ * Result-screen latency tolerance.
+ *
+ * - HARD_TIMEOUT_MS bounds the entire waiting period after Analyze. Must
+ *   stay above the server-side `GENERATION_TIMEOUT_SECONDS + 30`
+ *   watchdog (180 + 30 = 210s) so the client never gives up while a
+ *   legitimate worker run is still in progress. 240_000 = 4 min buffer.
+ * - IMAGE_URL_TIMEOUT_MS gives a status=completed-with-null-URLs row a
+ *   chance to land its `after_image_url` before falling to the
+ *   terminal-failure branch. 60s matches the observed worker write
+ *   envelope; data bug if exceeded.
+ */
+export const RESULT_SCREEN_HARD_TIMEOUT_MS = 240_000;
+export const RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS = 60_000;
+
+/**
+ * Waiting-view copy. Surfaces the "leave is safe" message without using
+ * "wait" / "loading" language that primes a failure-shaped read.
+ */
+export const RESULT_WAITING_TITLE = "Your glow-up is being generated.";
+export const RESULT_WAITING_BODY =
+  "You can leave this screen — we'll drop the result on your profile when it's done.";
+
+/**
+ * Terminal-failure copy when the hard timeout fires before the worker
+ * resolves. Distinct from the "Generation failed" copy because it
+ * indicates client-side give-up, not server-confirmed failure.
+ */
+export const RESULT_HARD_TIMEOUT_COPY =
+  "We couldn't reach the result in time. Try again or check your profile.";
+
 /** Profile grid configuration */
 export const PROFILE_CONFIG = {
   /** Number of columns in the glow-up grid */

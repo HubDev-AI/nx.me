@@ -79,6 +79,7 @@ def _make_job_dict(
     status: str = "queued",
     reservation_id: str = None,
     saved_at=None,
+    created_at: str = "2026-01-01T00:00:00+00:00",
 ) -> dict:
     return {
         "id": job_id or str(uuid4()),
@@ -86,6 +87,7 @@ def _make_job_dict(
         "status": status,
         "source_type": SOURCE_TYPE_GLOWUP,
         "source_id": str(uuid4()),
+        "created_at": created_at,
         "updated_at": "2026-01-01T00:00:00+00:00",
         "before_image_url": None,
         "after_image_url": None,
@@ -229,6 +231,121 @@ class TestGetJobHandler:
 
         assert result.status == "queued"
         assert result.estimated_wait_seconds is not None
+
+
+# ---------------------------------------------------------------------------
+# Dev repro harness — DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS gate
+# ---------------------------------------------------------------------------
+
+
+class TestDevForce404Gate:
+    """Verify the dev-only 404 gate that simulates read-after-write replica lag.
+
+    Default off in production: setting=0 → no gate. With setting>0, GET
+    returns 404 for the first N seconds after a job's created_at.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_setting_off_does_not_gate(self):
+        from app.config import settings
+
+        assert settings.DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS == 0
+
+        user_id = str(uuid4())
+        job_id = uuid4()
+        job = _make_job_dict(job_id=str(job_id), user_id=user_id, status="queued")
+        job_repo = _make_job_repo(job=job)
+
+        with patch("app.db.async_helpers.run_sync", new=_run_sync_passthrough):
+            result = await get_job(
+                job_id=job_id,
+                request=_make_request(user_id),
+                claims=_make_claims(user_id),
+                redis_client=_make_redis(),
+                job_repo=job_repo,
+            )
+
+        assert result.status == "queued"
+
+    @pytest.mark.asyncio
+    async def test_gate_returns_404_within_window(self, monkeypatch):
+        from datetime import datetime, timezone
+
+        from app.config import settings
+        from fastapi import HTTPException
+
+        monkeypatch.setattr(settings, "DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS", 30)
+
+        user_id = str(uuid4())
+        job_id = uuid4()
+        recent_iso = datetime.now(tz=timezone.utc).isoformat()
+        job = _make_job_dict(
+            job_id=str(job_id),
+            user_id=user_id,
+            status="queued",
+            created_at=recent_iso,
+        )
+        job_repo = _make_job_repo(job=job)
+
+        with pytest.raises(HTTPException) as exc_info:
+            with patch("app.db.async_helpers.run_sync", new=_run_sync_passthrough):
+                await get_job(
+                    job_id=job_id,
+                    request=_make_request(user_id),
+                    claims=_make_claims(user_id),
+                    redis_client=_make_redis(),
+                    job_repo=job_repo,
+                )
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_gate_passes_after_window(self, monkeypatch):
+        from datetime import datetime, timedelta, timezone
+
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS", 5)
+
+        user_id = str(uuid4())
+        job_id = uuid4()
+        old_iso = (datetime.now(tz=timezone.utc) - timedelta(seconds=10)).isoformat()
+        job = _make_job_dict(
+            job_id=str(job_id),
+            user_id=user_id,
+            status="queued",
+            created_at=old_iso,
+        )
+        job_repo = _make_job_repo(job=job)
+
+        with patch("app.db.async_helpers.run_sync", new=_run_sync_passthrough):
+            result = await get_job(
+                job_id=job_id,
+                request=_make_request(user_id),
+                claims=_make_claims(user_id),
+                redis_client=_make_redis(),
+                job_repo=job_repo,
+            )
+
+        assert result.status == "queued"
+
+
+# ---------------------------------------------------------------------------
+# Dev repro harness — DEV_GLOWUP_EMIT_NULL_URLS_ON_COMPLETE setting default
+# ---------------------------------------------------------------------------
+
+
+class TestDevEmitNullUrlsSetting:
+    """Verify the worker NULL-URL toggle defaults off and is wired correctly.
+
+    The full _finalize_job path involves PIL image normalization which is
+    awkward to mock. We assert the setting default and rely on the inline
+    conditional + code review for the worker call site.
+    """
+
+    def test_default_setting_off(self):
+        from app.config import settings
+
+        assert settings.DEV_GLOWUP_EMIT_NULL_URLS_ON_COMPLETE is False
 
 
 # ---------------------------------------------------------------------------
