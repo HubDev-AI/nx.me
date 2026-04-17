@@ -138,22 +138,52 @@ export default function ResultScreen() {
     }
   }, [result, generateAndShare, username]);
 
-  const handleTryAnother = useCallback(() => {
+  // Post-result navigation targets. Kept distinct so copy can match the
+  // user's mental model at each state: "Try Again" = start a new attempt
+  // from the upload screen; "Go to Profile" = leave this screen and pick
+  // up the result from the profile feed later.
+  const handleTryAgain = useCallback(() => {
     router.replace("/upload");
   }, [router]);
 
+  const handleGoToProfile = useCallback(() => {
+    router.replace("/(tabs)/profile");
+  }, [router]);
+
   // ---------------------------------------------------------------------------
-  // Render
+  // Render — state machine:
+  //   jobQuery error       → QueryStateView (Try again + Go to Profile)
+  //   non-terminal status  → Waiting view   (Go to Profile)
+  //   terminal failure*    → Error view     (Try Again + Cancel)
+  //   completed + images   → Success view   (slider + ResultActions)
+  //
+  // *"terminal failure" covers `failed`, `cancelled`, AND `completed`
+  // with missing image URLs — the latter is a data bug the user should
+  // never be stranded on. All three surface the same CTA shape per
+  // product direction, only the copy changes.
   // ---------------------------------------------------------------------------
+
+  const hasImages = !!(result?.before_image_url && result?.after_image_url);
+  const isWaiting = result !== undefined && !TERMINAL_STATUSES.has(result.status);
+  const isSuccess = result?.status === "completed" && hasImages;
+  const terminalFailure = result && !isSuccess && !isWaiting;
+
+  const failureCopy = (() => {
+    if (!terminalFailure) return null;
+    if (result.status === "cancelled") return "Generation was cancelled.";
+    if (result.status === "failed")
+      return result.failure_reason ?? "Generation failed.";
+    return "Images didn't come through for this run.";
+  })();
 
   return (
     <>
       {/* Header with native back button — stays visible across every
-          branch (loading, error, failed-job, success) so the user is
-          never stranded on a screen with no way back. */}
+          branch (loading, error, waiting, failed, success) so the user
+          is never stranded on a screen with no way back. */}
       <Stack.Screen
         options={{
-          title: "Result",
+          title: isSuccess ? "Your Glow-Up" : "Result",
           headerStyle: { backgroundColor: THEME.colors.bg },
           headerTintColor: THEME.colors.textPrimary,
           headerShadowVisible: false,
@@ -163,94 +193,88 @@ export default function ResultScreen() {
       isLoading={jobQuery.isLoading}
       error={jobQuery.appError}
       onRetry={() => jobQuery.refetch()}
-      errorAction={{ label: "Upload Another", onPress: handleTryAnother }}
+      errorAction={{ label: "Go to Profile", onPress: handleGoToProfile }}
     >
-      {/* Job failed/cancelled */}
-      {result && (result.status === "failed" || result.status === "cancelled") ? (
-        <>
-          <View style={styles.centeredContainer}>
-            <PageBackground overlayOpacity={0.88} />
-            <Ionicons
-              name={result.status === "cancelled" ? "close-circle-outline" : "alert-circle-outline"}
-              size={48}
-              color={result.status === "cancelled" ? THEME.colors.textSecondary : THEME.colors.destructive}
-            />
-            <Text style={styles.errorText}>
-              {result.status === "cancelled"
-                ? "Generation was cancelled."
-                : result.failure_reason ?? "Generation failed."}
-            </Text>
-            <PressableScale
-              onPress={handleTryAnother}
-              style={[styles.retryButton, { backgroundColor: theme.accent }]}
-              accessibilityLabel="Try another photo"
-              accessibilityRole="button"
-            >
-              <Text style={styles.retryText}>Try Another</Text>
-            </PressableScale>
-          </View>
-        </>
-      ) : (
+      {isWaiting ? (
+        <View style={styles.centeredContainer}>
+          <PageBackground overlayOpacity={0.88} />
+          <Ionicons
+            name="hourglass-outline"
+            size={48}
+            color={THEME.colors.textSecondary}
+          />
+          <Text style={styles.errorText}>
+            Your glow-up is still cooking. We&apos;ll keep it in your profile
+            when it&apos;s done.
+          </Text>
+          <PressableScale
+            onPress={handleGoToProfile}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
+            accessibilityLabel="Go to profile"
+            accessibilityRole="button"
+          >
+            <Text style={styles.retryText}>Go to Profile</Text>
+          </PressableScale>
+        </View>
+      ) : terminalFailure ? (
+        <View style={styles.centeredContainer}>
+          <PageBackground overlayOpacity={0.88} />
+          <Ionicons
+            name={
+              result.status === "cancelled"
+                ? "close-circle-outline"
+                : "alert-circle-outline"
+            }
+            size={48}
+            color={
+              result.status === "cancelled"
+                ? THEME.colors.textSecondary
+                : THEME.colors.destructive
+            }
+          />
+          <Text style={styles.errorText}>{failureCopy}</Text>
+          <PressableScale
+            onPress={handleTryAgain}
+            style={[styles.retryButton, { backgroundColor: theme.accent }]}
+            accessibilityLabel="Try again with a new photo"
+            accessibilityRole="button"
+          >
+            <Text style={styles.retryText}>Try Again</Text>
+          </PressableScale>
+          <PressableScale
+            onPress={handleGoToProfile}
+            style={styles.cancelButton}
+            accessibilityLabel="Cancel and go to profile"
+            accessibilityRole="button"
+          >
+            <Text style={styles.cancelText}>Cancel</Text>
+          </PressableScale>
+        </View>
+      ) : isSuccess ? (
         /* Success — before/after reveal + actions */
         <>
-          <Stack.Screen options={{ title: "Your Glow-Up" }} />
           <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
             <PageBackground overlayOpacity={0.88} />
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
             >
-              {/* Before / After Slider */}
-              {result?.before_image_url && result.after_image_url ? (
-                <BeforeAfterSlider
-                  beforeUrl={result.before_image_url}
-                  afterUrl={result.after_image_url}
-                  rightLabel="Glow Up"
+              <BeforeAfterSlider
+                beforeUrl={result.before_image_url!}
+                afterUrl={result.after_image_url!}
+                rightLabel="Glow Up"
+              />
+
+              <Animated.View entering={FadeIn.duration(300).delay(400)}>
+                <ResultActions
+                  onSave={handleSave}
+                  onShare={handleShare}
+                  onTryAnother={handleTryAgain}
+                  saveState={saveState}
                 />
-              ) : (
-                <View style={styles.missingImages}>
-                  <Ionicons
-                    name="image-outline"
-                    size={48}
-                    color={THEME.colors.textDisabled}
-                  />
-                  <Text style={styles.missingText}>
-                    {result && TERMINAL_STATUSES.has(result.status)
-                      ? "Images didn't come through for this run."
-                      : "Images are not available yet."}
-                  </Text>
-                  {/* Recovery CTA — without this, a completed-but-missing
-                      result leaves the user with only the native back
-                      button. Always visible while images are absent;
-                      harmless during a still-polling state since the
-                      user can opt to start over if they want to. */}
-                  <PressableScale
-                    onPress={handleTryAnother}
-                    style={[styles.retryButton, { backgroundColor: theme.accent }]}
-                    accessibilityLabel="Upload another photo"
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.retryText}>Upload Another</Text>
-                  </PressableScale>
-                </View>
-              )}
+              </Animated.View>
 
-              {/* ResultActions — Save / Share / Try-another */}
-              {result?.before_image_url && result.after_image_url && (
-                <Animated.View entering={FadeIn.duration(300).delay(400)}>
-                  <ResultActions
-                    onSave={handleSave}
-                    onShare={handleShare}
-                    onTryAnother={handleTryAnother}
-                    saveState={saveState}
-                  />
-                </Animated.View>
-              )}
-
-              {/* AI disclosure footer */}
-              {result?.before_image_url && result.after_image_url && (
-                <Text style={styles.aiDisclosure}>{AI_DISCLOSURE}</Text>
-              )}
+              <Text style={styles.aiDisclosure}>{AI_DISCLOSURE}</Text>
 
               {/* Capturing overlay hint */}
               {isCapturing && (
@@ -267,7 +291,7 @@ export default function ResultScreen() {
           {/* Offscreen composite for share (must be in tree) */}
           {ShareCompositeView}
         </>
-      )}
+      ) : null}
     </QueryStateView>
     </>
   );
@@ -317,16 +341,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: THEME.colors.bg,
   },
-  // Missing images
-  missingImages: {
+  // Secondary action on terminal-failure / cancelled — styled as a
+  // text-only link so the primary CTA (Try Again) stays visually
+  // dominant. Matches the muted-button pattern in QueryStateView.
+  cancelButton: {
+    paddingVertical: THEME.spacing.sm,
+    paddingHorizontal: THEME.spacing.xl,
     alignItems: "center",
     justifyContent: "center",
-    padding: THEME.spacing.xxxl + THEME.spacing.lg,
-    gap: THEME.spacing.lg,
+    minHeight: 44,
   },
-  missingText: {
+  cancelText: {
     fontFamily: FONTS.body,
-    ...THEME.typography.caption,
+    fontSize: 15,
     color: THEME.colors.textSecondary,
   },
   // AI disclosure
