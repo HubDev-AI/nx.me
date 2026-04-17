@@ -4,7 +4,12 @@ import { View, Animated, StyleSheet } from "react-native";
 import { THEME } from "../../constants/theme";
 import { FEED_IMAGE_HEIGHT } from "./FeedCard";
 
-const SHIMMER_DURATION_MS = 1200;
+/**
+ * Half-cycle duration of the shimmer pulse. Exported so other skeletons
+ * (e.g. profile pending-glow-up cells) animate at the same cadence —
+ * inconsistent shimmer reads as visual noise.
+ */
+export const SHIMMER_DURATION_MS = 1200;
 const SKELETON_CARD_COUNT = 3;
 const IMAGE_HEIGHT = FEED_IMAGE_HEIGHT;
 

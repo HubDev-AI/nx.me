@@ -16,10 +16,15 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { THEME } from "../../constants/theme";
-import { PROFILE_CONFIG } from "../../constants/config";
+import {
+  PROFILE_CONFIG,
+  PROFILE_PENDING_CELL_MAX_VISIBLE,
+} from "../../constants/config";
 import { useTheme } from "../../lib/theme-context";
 import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import { EmptyState } from "../ui/EmptyState";
+import type { JobResult } from "../../lib/analysis";
+import { PendingGlowUpCell } from "./PendingGlowUpCell";
 import type { GlowUpItem } from "./types";
 
 interface GlowUpGridProps {
@@ -28,6 +33,18 @@ interface GlowUpGridProps {
   hasMore: boolean;
   onLoadMore: () => void;
   onItemPress?: (item: GlowUpItem) => void;
+  /**
+   * Long-press handler — only called for items that should be
+   * dismissable (the parent decides which ones based on status).
+   */
+  onItemLongPress?: (item: GlowUpItem) => void;
+  /**
+   * Callback fired by PendingGlowUpCell when its poll observes a
+   * fresh job state. Parent should reconcile the item's status +
+   * URLs into local state so the cell flips to thumbnail / errored
+   * variant on the next render.
+   */
+  onJobResolved?: (jobId: string, result: JobResult) => void;
   ListHeaderComponent?: React.ComponentType | React.ReactElement | null;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -44,6 +61,8 @@ export function GlowUpGrid({
   hasMore,
   onLoadMore,
   onItemPress,
+  onItemLongPress,
+  onJobResolved,
   ListHeaderComponent,
   refreshing = false,
   onRefresh,
@@ -62,19 +81,79 @@ export function GlowUpGrid({
     return { itemSize: size, containerPadding: padding };
   }, [screenWidth]);
 
-  const renderItem = useCallback(
-    ({ item }: { item: GlowUpItem }) => (
-      <GlowUpCell
-        item={item}
-        size={itemSize}
-        onPress={onItemPress ? () => onItemPress(item) : undefined}
-      />
-    ),
-    [itemSize, onItemPress],
+  // Compute the set of job_ids allowed to poll concurrently. First N
+  // non-terminal items by display order get a polling slot; over-cap
+  // pending cells render shimmer but skip the network request. Errored
+  // cells (failed/cancelled) are terminal — they don't need polling
+  // and don't count against the cap.
+  const pollingJobIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of items) {
+      if (ids.size >= PROFILE_PENDING_CELL_MAX_VISIBLE) break;
+      if (
+        item.job_id &&
+        item.status !== "completed" &&
+        item.status !== "failed" &&
+        item.status !== "cancelled"
+      ) {
+        ids.add(item.job_id);
+      }
+    }
+    return ids;
+  }, [items]);
+
+  const handleJobResolved = useCallback(
+    (jobId: string, result: JobResult) => {
+      onJobResolved?.(jobId, result);
+    },
+    [onJobResolved],
   );
 
+  const renderItem = useCallback(
+    ({ item }: { item: GlowUpItem }) => {
+      const isCompleted = item.status === "completed";
+      if (!isCompleted) {
+        return (
+          <PendingGlowUpCell
+            item={item}
+            size={itemSize}
+            onPress={onItemPress ? () => onItemPress(item) : undefined}
+            onLongPress={
+              onItemLongPress ? () => onItemLongPress(item) : undefined
+            }
+            shouldPoll={
+              item.job_id ? pollingJobIds.has(item.job_id) : false
+            }
+            onJobResolved={handleJobResolved}
+          />
+        );
+      }
+      return (
+        <GlowUpCell
+          item={item}
+          size={itemSize}
+          onPress={onItemPress ? () => onItemPress(item) : undefined}
+          onLongPress={
+            onItemLongPress ? () => onItemLongPress(item) : undefined
+          }
+        />
+      );
+    },
+    [
+      itemSize,
+      onItemPress,
+      onItemLongPress,
+      pollingJobIds,
+      handleJobResolved,
+    ],
+  );
+
+  // Prefer job_id when available so the optimistic-pending-row insert
+  // (U6) and the server's /history rehydrate row collapse to a single
+  // FlatList item — React reconciles them in place rather than rendering
+  // both. Legacy rows without a job_id fall back to analysis_id.
   const keyExtractor = useCallback(
-    (item: GlowUpItem) => item.analysis_id,
+    (item: GlowUpItem) => item.job_id ?? item.analysis_id,
     [],
   );
 
@@ -148,9 +227,15 @@ interface GlowUpCellProps {
   item: GlowUpItem;
   size: number;
   onPress?: () => void;
+  onLongPress?: () => void;
 }
 
-const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
+const GlowUpCell = React.memo(function GlowUpCell({
+  item,
+  size,
+  onPress,
+  onLongPress,
+}: GlowUpCellProps) {
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -167,6 +252,7 @@ const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowU
     <Animated.View style={[{ width: size, height: size }, pressStyle]}>
       <Pressable
         onPress={onPress}
+        onLongPress={onLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         style={[styles.cell, { width: size, height: size }]}
@@ -207,7 +293,11 @@ const styles = StyleSheet.create({
     // region — matches the advisor tabs via the shared EmptyState
     // primitive instead of a per-screen padding hack.
     flexGrow: 1,
-    paddingTop: THEME.spacing.sm,
+    // `lg` matches the horizontal padding the grid uses so the air
+    // gap between ProfileHeader and the first row reads as one rhythm
+    // unit, not a tight stack. `sm` was visually cramped on iPhone 15
+    // Pro — see plan U5 (decision 2).
+    paddingTop: THEME.spacing.lg,
     paddingBottom: TAB_BAR_HEIGHT,
   },
   row: {

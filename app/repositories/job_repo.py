@@ -17,9 +17,11 @@ from supabase import Client
 
 logger = logging.getLogger(__name__)
 
-# Columns needed for job status polling
+# Columns needed for job status polling. created_at is used by the dev-only
+# DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS gate in app/api/jobs.py to
+# simulate read-after-write replica lag.
 JOB_STATUS_SELECT = (
-    "id, user_id, status, source_type, source_id, updated_at, "
+    "id, user_id, status, source_type, source_id, created_at, updated_at, "
     "before_image_url, after_image_url, failure_reason, saved_at, "
     "identity_preserved, credit_reservation_id"
 )
@@ -170,6 +172,31 @@ class JobRepository:
             .eq("source_type", source_type)
             .in_("source_id", source_ids)
             .eq("status", "completed")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+
+    def get_latest_jobs_for_sources(
+        self,
+        source_type: str,
+        source_ids: list[str],
+        statuses: list[str],
+    ) -> list[dict]:
+        """Fetch jobs for a list of source_ids filtered by source_type + status set.
+
+        Returns id, status, source_id, after_image_url, created_at ordered desc by
+        created_at. Callers take the first occurrence per source_id to get the
+        most recent job in any included status. Used by the history endpoint to
+        surface non-terminal (queued/processing/finalizing) and errored
+        (failed/cancelled) rows on the profile grid alongside completed ones.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, source_id, after_image_url, created_at")
+            .eq("source_type", source_type)
+            .in_("source_id", source_ids)
+            .in_("status", statuses)
             .order("created_at", desc=True)
             .execute()
         )

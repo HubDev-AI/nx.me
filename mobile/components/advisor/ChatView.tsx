@@ -33,6 +33,7 @@ import type { AdvisorMessage } from "../../lib/advisor";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
 import { AdvisorComposer } from "./AdvisorComposer";
+import { AdvisorChatEmpty } from "./AdvisorChatEmpty";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PaywallModal } from "../paywall/PaywallModal";
 
@@ -178,62 +179,85 @@ export function ChatView() {
 
   // -------------------------------------------------------------------------
   // Send message
+  //
+  // Accepts an optional `text` argument so callers (chip taps from
+  // AdvisorChatEmpty) can submit without round-tripping through
+  // setInputText — that round-trip races with isSending and would
+  // occasionally drop the chip text on a fast double-tap.
   // -------------------------------------------------------------------------
-  const handleSend = useCallback(async () => {
-    const trimmed = inputText.trim();
-    if (!trimmed || isSending) return;
+  const handleSend = useCallback(
+    async (text?: string) => {
+      const source = text ?? inputText;
+      const trimmed = source.trim();
+      if (!trimmed || isSending) return;
 
-    setInputText("");
-    setIsSending(true);
-
-    // Optimistic: add user message immediately
-    const optimisticUserMsg: AdvisorMessage = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      content: trimmed,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, optimisticUserMsg]);
-
-    try {
-      // Send and get Ada's response (backend returns the assistant reply)
-      const adaResponse = await sendMessage(trimmed);
-
-      // Replace optimistic user message with the real one from the response
-      // and append Ada's reply
-      setMessages((prev) => {
-        const withoutOptimistic = prev.filter(
-          (m) => m.id !== optimisticUserMsg.id,
-        );
-        // Add user message with correct ID (the backend may echo it) and Ada's reply
-        return [
-          ...withoutOptimistic,
-          { ...optimisticUserMsg, id: `user-${Date.now()}` },
-          adaResponse,
-        ];
-      });
-
-      // Auto-scroll to bottom
-      setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: true });
-      }, ADVISOR_CONFIG.AUTO_SCROLL_DELAY_MS);
-    } catch (err) {
-      if (isPremiumRequired(err)) {
-        // Remove optimistic message and show paywall
-        setMessages((prev) =>
-          prev.filter((m) => m.id !== optimisticUserMsg.id),
-        );
-        savedMessageRef.current = trimmed;
-        setInputText(trimmed); // Restore input immediately
-        setShowPaywall(true);
-      } else {
-        // Mark optimistic message as failed (keep in list)
-        setError("Couldn't send that. Tap retry.");
+      // Only clear the composer when the send originated there. Chip
+      // taps don't write to the composer in the first place.
+      const fromComposer = text === undefined;
+      if (fromComposer) {
+        setInputText("");
       }
-    } finally {
-      setIsSending(false);
-    }
-  }, [inputText, isSending]);
+      setIsSending(true);
+
+      // Optimistic: add user message immediately
+      const optimisticUserMsg: AdvisorMessage = {
+        id: `temp-${Date.now()}`,
+        role: "user",
+        content: trimmed,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, optimisticUserMsg]);
+
+      try {
+        // Send and get Ada's response (backend returns the assistant reply)
+        const adaResponse = await sendMessage(trimmed);
+
+        // Replace optimistic user message with the real one from the response
+        // and append Ada's reply
+        setMessages((prev) => {
+          const withoutOptimistic = prev.filter(
+            (m) => m.id !== optimisticUserMsg.id,
+          );
+          // Add user message with correct ID (the backend may echo it) and Ada's reply
+          return [
+            ...withoutOptimistic,
+            { ...optimisticUserMsg, id: `user-${Date.now()}` },
+            adaResponse,
+          ];
+        });
+
+        // Auto-scroll to bottom
+        setTimeout(() => {
+          listRef.current?.scrollToEnd({ animated: true });
+        }, ADVISOR_CONFIG.AUTO_SCROLL_DELAY_MS);
+      } catch (err) {
+        if (isPremiumRequired(err)) {
+          // Remove optimistic message and show paywall
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== optimisticUserMsg.id),
+          );
+          savedMessageRef.current = trimmed;
+          setInputText(trimmed); // Restore input immediately
+          setShowPaywall(true);
+        } else {
+          // Network / server error. Remove the optimistic bubble and
+          // hand the text back to the composer so the user can edit
+          // and retry — chip-triggered sends would otherwise leave the
+          // user with nothing visible to act on.
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== optimisticUserMsg.id),
+          );
+          if (!fromComposer) {
+            setInputText(trimmed);
+          }
+          setError("Couldn't send that. Tap retry.");
+        }
+      } finally {
+        setIsSending(false);
+      }
+    },
+    [inputText, isSending],
+  );
 
   // -------------------------------------------------------------------------
   // Auto-scroll only when a NEW message is appended (not on prepend/pagination)
@@ -321,12 +345,15 @@ export function ChatView() {
           />
         )}
 
-        {/* Fixed-center empty state — matches position across advisor tabs. */}
+        {/* Scoped seed state — replaces the generic
+            AdvisorEmptyOverlay on the Chat tab so first-time users see
+            what Ada actually does. Pure function of `messages.length`,
+            so a paywall-dismissed-without-purchase send naturally
+            re-renders the card. */}
         {!error && messages.length === 0 && (
-          <AdvisorEmptyOverlay
-            icon="sparkles-outline"
-            title="Start a conversation"
-            description="Ask Ada for style advice"
+          <AdvisorChatEmpty
+            onChipPress={(text) => handleSend(text)}
+            isSending={isSending}
           />
         )}
       </View>

@@ -95,9 +95,7 @@ async def _release_concurrent_counter(redis: Any, user_id: str) -> None:
             str(settings.GENERATION_TIMEOUT_SECONDS + 60),
         )
     except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to release concurrent counter for user %s", user_id
-        )
+        logger.exception("Failed to release concurrent counter for user %s", user_id)
 
 
 def _validate_provider_url(url: str) -> None:
@@ -602,11 +600,18 @@ async def _finalize_job(
         # instead of a generated_image_id FK. The route layer signs it on demand.
         # Also persist before_image_url (source storage key) so GET /jobs/{id}
         # can return both without a second lookup.
+        #
+        # Dev repro: DEV_GLOWUP_EMIT_NULL_URLS_ON_COMPLETE forces after_image_url
+        # to NULL so the mobile waiting view's "completed with missing URLs"
+        # branch can be exercised. Default off in production.
+        after_url_for_completion: str | None = (
+            None if settings.DEV_GLOWUP_EMIT_NULL_URLS_ON_COMPLETE else storage_key
+        )
         job_repo.update(
             job_id,
             {
                 "status": JobStatus.COMPLETED,
-                "after_image_url": storage_key,
+                "after_image_url": after_url_for_completion,
                 "identity_preserved": True,
                 "updated_at": datetime.now(tz=timezone.utc).isoformat(),
             },

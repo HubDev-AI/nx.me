@@ -71,9 +71,15 @@ export interface GenerateResponse {
   queue_position: number;
 }
 
+/**
+ * Job status values returned by GET /v1/jobs/{id}. Mirrors the backend
+ * enum at app/generation/models.py JobStatus — keep in sync. The mobile
+ * "pending" alias was historical; backend has never emitted it.
+ */
 export type JobStatus =
-  | "pending"
+  | "queued"
   | "processing"
+  | "finalizing"
   | "completed"
   | "failed"
   | "cancelled";

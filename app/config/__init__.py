@@ -157,6 +157,25 @@ class Settings(BaseSettings):
     IMAGE_GEN_COST_CEILING_USD: float = 0.20
     GENERATION_TIMEOUT_SECONDS: int = 180
     CREDIT_COST_ALERT_USD: float = 0.12
+
+    # Dev-only repro harness for the result screen's latency tolerance.
+    # Both default off in production. The mobile result screen relies on
+    # these to deterministically reproduce the two known failure shapes —
+    # client-side env flags can't simulate the real race because the worker
+    # row-insert and the URL write happen server-side.
+    #
+    #   FORCE_404 — GET /v1/jobs/{id} returns 404 for the first N seconds
+    #   after a job's created_at, simulating read-after-write replica lag.
+    #   Mobile's grace window (JOB_CREATION_GRACE_MS = 10s) and hard
+    #   timeout (RESULT_SCREEN_HARD_TIMEOUT_MS = 240s) gate the user-facing
+    #   behavior on top of this.
+    #
+    #   EMIT_NULL_URLS — worker._finalize_job writes after_image_url=NULL on
+    #   completed jobs, exercising the "completed with missing URLs" branch
+    #   that the result screen now waits out for up to
+    #   RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS (60s) before falling to error.
+    DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS: int = 0
+    DEV_GLOWUP_EMIT_NULL_URLS_ON_COMPLETE: bool = False
     IDENTITY_MAX_RETRIES: int = 1
     MAX_PROMPT_KEYWORDS: int = 6
     FACE_CROP_THRESHOLD: float = 0.25

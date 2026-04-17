@@ -111,6 +111,20 @@ async def get_job(
             detail="Job not found",
         )
 
+    # Dev repro harness — simulate read-after-write replica lag so the mobile
+    # waiting view's grace + hard-timeout branches can be deterministically
+    # exercised. Default 0 (off) in production.
+    if settings.DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS > 0:
+        created_at_raw = job.get("created_at")
+        if created_at_raw:
+            created_at = datetime.fromisoformat(created_at_raw)
+            elapsed = (datetime.now(tz=timezone.utc) - created_at).total_seconds()
+            if elapsed < settings.DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Job not found",
+                )
+
     job_status = job["status"]
 
     # Queued / Processing: compute estimated wait

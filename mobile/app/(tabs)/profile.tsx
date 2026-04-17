@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   View,
@@ -14,7 +15,13 @@ import { TAB_BAR_HEIGHT } from "./_layout";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Caption } from "../../components/ui/Text";
-import { AUTH_ENDPOINTS } from "../../constants/config";
+import {
+  AUTH_ENDPOINTS,
+  DISMISS_ERRORED_JOB_BODY,
+  DISMISS_ERRORED_JOB_CANCEL_LABEL,
+  DISMISS_ERRORED_JOB_REMOVE_LABEL,
+  DISMISS_ERRORED_JOB_TITLE,
+} from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
 import { apiFetch } from "../../lib/api";
 import { useTheme } from "../../lib/theme-context";
@@ -26,7 +33,10 @@ import { useProfile } from "../../components/profile/useProfile";
 import { buildProfileMenu } from "../../components/profile/menu";
 import { useRadialMenu } from "../../lib/radial-menu-context";
 import { useCapabilities } from "../../lib/capabilities";
-import type { UpdateProfilePayload } from "../../components/profile/types";
+import type { GlowUpItem, UpdateProfilePayload } from "../../components/profile/types";
+
+/** Status values that surface as a dismissable errored cell on the grid. */
+const ERRORED_STATUSES = new Set<string>(["failed", "cancelled"]);
 
 /**
  * Profile screen: shows user avatar, stats, glow-up history grid,
@@ -57,6 +67,8 @@ export default function ProfileScreen() {
     refresh,
     loadMoreGlowUps,
     updateProfile,
+    dismissErroredItem,
+    reconcileWithJob,
   } = useProfile();
 
   // Load profile once the session can view its own profile and the username
@@ -116,6 +128,41 @@ export default function ProfileScreen() {
   const handleSignIn = useCallback(() => {
     router.push("/(auth)/login");
   }, [router]);
+
+  // Tap a glow-up cell → /result/[jobId]. The result screen renders the
+  // right branch based on status (waiting / success / terminal-failure)
+  // so a single destination covers pending, completed, and errored.
+  const handleItemPress = useCallback(
+    (item: GlowUpItem) => {
+      if (!item.job_id) return; // Legacy row with no job — non-tappable.
+      router.push(`/result/${item.job_id}`);
+    },
+    [router],
+  );
+
+  // Long-press a failed/cancelled cell → confirm + dismiss. Completed
+  // and pending cells ignore long-press; the prompt only fires for
+  // dismissable rows.
+  const handleItemLongPress = useCallback(
+    (item: GlowUpItem) => {
+      if (!item.job_id) return;
+      if (!ERRORED_STATUSES.has(item.status)) return;
+      const dismissedJobId = item.job_id;
+      Alert.alert(
+        DISMISS_ERRORED_JOB_TITLE,
+        DISMISS_ERRORED_JOB_BODY,
+        [
+          { text: DISMISS_ERRORED_JOB_CANCEL_LABEL, style: "cancel" },
+          {
+            text: DISMISS_ERRORED_JOB_REMOVE_LABEL,
+            style: "destructive",
+            onPress: () => dismissErroredItem(dismissedJobId),
+          },
+        ],
+      );
+    },
+    [dismissErroredItem],
+  );
 
   // Menu items derive from capabilities — single source of truth keeps this
   // screen and any future profile actions in sync with the (features × session)
@@ -261,6 +308,9 @@ export default function ProfileScreen() {
         isLoadingMore={isLoadingMore}
         hasMore={hasMoreGlowUps}
         onLoadMore={handleLoadMoreGlowUps}
+        onItemPress={handleItemPress}
+        onItemLongPress={handleItemLongPress}
+        onJobResolved={reconcileWithJob}
         ListHeaderComponent={profileHeader}
         refreshing={isRefreshing}
         onRefresh={handleRefresh}

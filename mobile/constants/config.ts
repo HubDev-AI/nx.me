@@ -230,6 +230,33 @@ export const ADVISOR_ENDPOINTS = {
   MEMORY_DELETE: (id: string) => `/v1/memories/${id}`,
 } as const;
 
+/**
+ * Advisor Chat scoped seed-state copy. Replaces the generic
+ * "Start a conversation / Ask Ada for style advice" overlay shown on
+ * the Chat tab so first-time users see what Ada actually does. Other
+ * advisor tabs (Nudges, Memories) still use AdvisorEmptyOverlay.
+ *
+ * The body's italic trailing clause is non-negotiable: the chip list
+ * shouldn't read as exhaustive (Ada handles anything). If SOUL.md
+ * persona lanes change, update this text and the chips below in lockstep
+ * — see ADVISOR_PERSONA_NAME and app/advisor/SOUL.md.
+ */
+export const ADVISOR_CHAT_EMPTY_TITLE = "Hi, I'm Ada.";
+export const ADVISOR_CHAT_EMPTY_BODY =
+  "I can help with hair, beard, fit, skincare, or grooming — or ask me anything else you're thinking about.";
+
+/**
+ * Starter chips for the Chat empty state. Tap → handleSend(chipText)
+ * fires the LLM call immediately (no extra Send tap). Keep these
+ * short, conversational, and aligned with SOUL.md's lanes.
+ */
+export const ADVISOR_CHAT_STARTER_CHIPS: readonly string[] = [
+  "What hairstyle would suit me?",
+  "Should I try a beard?",
+  "How do I fix the fit of my clothes?",
+  "What should I focus on next?",
+] as const;
+
 /** Advisor configuration */
 export const ADVISOR_CONFIG = {
   /** Number of nudges per page */
@@ -307,6 +334,88 @@ export const PROFILE_ENDPOINTS = {
  * releasing the splash screen. A stalled network must not strand users.
  */
 export const GUEST_ME_TIMEOUT_MS = 5_000;
+
+/**
+ * Result-screen latency tolerance.
+ *
+ * - HARD_TIMEOUT_MS bounds the entire waiting period after Analyze. Must
+ *   stay above the server-side `GENERATION_TIMEOUT_SECONDS + 30s
+ *   watchdog grace + watchdog cron cadence`. The watchdog runs on a
+ *   `cron(second=0)` schedule (~once per minute), so the worst-case
+ *   server-side reconcile window is 180 + 30 + 60 = 270s. 300_000
+ *   gives the client a 30s buffer above that ceiling so a
+ *   legitimately-still-running job never trips the client cap before
+ *   the server flips it to failed.
+ * - IMAGE_URL_TIMEOUT_MS gives a status=completed-with-null-URLs row a
+ *   chance to land its `after_image_url` before falling to the
+ *   terminal-failure branch. 60s matches the observed worker write
+ *   envelope; data bug if exceeded.
+ */
+export const RESULT_SCREEN_HARD_TIMEOUT_MS = 300_000;
+export const RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS = 60_000;
+
+/**
+ * Waiting-view copy. Surfaces the "leave is safe" message without using
+ * "wait" / "loading" language that primes a failure-shaped read.
+ */
+export const RESULT_WAITING_TITLE = "Your glow-up is being generated.";
+export const RESULT_WAITING_BODY =
+  "You can leave this screen — we'll drop the result on your profile when it's done.";
+
+/**
+ * Terminal-failure copy when the hard timeout fires before the worker
+ * resolves. Distinct from the "Generation failed" copy because it
+ * indicates client-side give-up, not server-confirmed failure.
+ */
+export const RESULT_HARD_TIMEOUT_COPY =
+  "We couldn't reach the result in time. Try again or check your profile.";
+
+/**
+ * AsyncStorage keys (kept centralized so a typo can't silently leak data
+ * into the wrong namespace).
+ */
+export const PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY =
+  "@nxme:dismissed_errored_jobs";
+
+/**
+ * Profile pending-cell polling cadence. Matches the result screen's
+ * existing 2s poll so the result screen + a pending cell observing the
+ * same job collapse to a single React Query observer (`['job', jobId]`)
+ * and only one network request fires per 2s.
+ */
+export const PROFILE_PENDING_CELL_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Visible pending cells that may run a poll concurrently. The cap
+ * bounds polling load — per-user entitlement usually caps lower
+ * anyway (3 concurrent generations). Extras render a static shimmer
+ * but don't poll until a slot frees.
+ */
+export const PROFILE_PENDING_CELL_MAX_VISIBLE = 3;
+
+/**
+ * Refund-toast dedup. The store remembers which job_ids have already
+ * fired their toast so the user sees one banner per refunded job
+ * across the device's lifetime — even after kill+relaunch.
+ *
+ * The cap bounds the persisted entry count; oldest entries fall off
+ * first. 200 covers months of normal-cadence use given how rare
+ * refunds are in steady state.
+ */
+export const REFUND_TOAST_SEEN_STORAGE_KEY = "@nxme:refund_toasts_seen";
+export const REFUND_TOAST_SEEN_MAX_ENTRIES = 200;
+
+/** Refund-toast copy. Unified noun ("credit") across status branches. */
+export const REFUND_TOAST_FAILED =
+  "That one's on us — your credit's back. Try a new photo?";
+export const REFUND_TOAST_CANCELLED = "Cancelled — your credit's back.";
+
+/** Errored-cell dismiss action sheet copy. */
+export const DISMISS_ERRORED_JOB_TITLE = "Remove from profile?";
+export const DISMISS_ERRORED_JOB_BODY =
+  "Hides this glow-up from your grid on this device. The credit refund still stands.";
+export const DISMISS_ERRORED_JOB_REMOVE_LABEL = "Remove from profile";
+export const DISMISS_ERRORED_JOB_CANCEL_LABEL = "Cancel";
 
 /** Profile grid configuration */
 export const PROFILE_CONFIG = {
