@@ -21,6 +21,15 @@ import { Body, Heading } from "./Text";
 /** Icon size used in every empty state across the app — single source of truth. */
 const EMPTY_STATE_ICON_SIZE = 56;
 
+/**
+ * Vertical bias applied as bottom padding on every centered empty state so
+ * the title lands above geometric center. Geometric center makes hero copy
+ * read as "low" because the eye expects optical center (≈40% from top).
+ * Re-export so any sibling that does its own centering (overlays, chat
+ * seed states, QueryStateView) can match the lift exactly.
+ */
+export const EMPTY_STATE_OPTICAL_LIFT = 96;
+
 /** Matches labels like "Try Again", "Retry", "Retry now" — triggers leading refresh icon. */
 const RETRY_LABEL_PATTERN = /retry|try again/i;
 
@@ -109,6 +118,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: THEME.spacing.xxxl,
+    paddingBottom: EMPTY_STATE_OPTICAL_LIFT,
     gap: THEME.spacing.md,
   },
   inline: {
