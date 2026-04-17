@@ -21,7 +21,10 @@ def test_redacts_signed_url_image_blocks():
                 {"type": "text", "text": "look at this"},
                 {
                     "type": "image",
-                    "source": {"type": "url", "url": "https://signed.example/a?sig=secret"},
+                    "source": {
+                        "type": "url",
+                        "url": "https://signed.example/a?sig=secret",
+                    },
                 },
             ],
         }
@@ -42,7 +45,11 @@ def test_redacts_base64_image_blocks():
             "content": [
                 {
                     "type": "image",
-                    "source": {"type": "base64", "media_type": "image/jpeg", "data": "AAAA" * 100},
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "AAAA" * 100,
+                    },
                 },
             ],
         }

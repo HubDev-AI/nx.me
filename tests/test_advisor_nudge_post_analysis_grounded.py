@@ -33,7 +33,9 @@ def _fake_llm_capture():
         from app.advisor.models import LLMResponse
 
         captured.update(kwargs)
-        return LLMResponse(content="short grounded nudge", input_tokens=1, output_tokens=1)
+        return LLMResponse(
+            content="short grounded nudge", input_tokens=1, output_tokens=1
+        )
 
     return SimpleNamespace(create_message=_capturing_create), captured
 

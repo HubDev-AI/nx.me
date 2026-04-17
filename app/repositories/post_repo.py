@@ -166,10 +166,7 @@ class PostRepository:
                 item
                 for item in sorted_items
                 if item[1] < cursor_updated_at
-                or (
-                    item[1] == cursor_updated_at
-                    and item[0] > cursor_username
-                )
+                or (item[1] == cursor_updated_at and item[0] > cursor_username)
             ]
 
         # Return limit + 1 so the caller can compute next_cursor.

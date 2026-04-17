@@ -44,23 +44,17 @@ class TestMalformedCursor:
         """Comma would break PostgREST .or_() filter grammar."""
         repo = _build_repo()
         with pytest.raises(ValueError, match="illegal character"):
-            repo.get_messages_page(
-                "conv-1", 50, cursor="2026-04-15T10:00:00Z,evil|abc"
-            )
+            repo.get_messages_page("conv-1", 50, cursor="2026-04-15T10:00:00Z,evil|abc")
 
     def test_paren_in_cursor_raises(self):
         repo = _build_repo()
         with pytest.raises(ValueError, match="illegal character"):
-            repo.get_messages_page(
-                "conv-1", 50, cursor="2026-04-15T10:00:00Z|abc)"
-            )
+            repo.get_messages_page("conv-1", 50, cursor="2026-04-15T10:00:00Z|abc)")
 
     def test_quote_in_cursor_raises(self):
         repo = _build_repo()
         with pytest.raises(ValueError, match="illegal character"):
-            repo.get_messages_page(
-                "conv-1", 50, cursor="2026-04-15T10:00:00Z|abc'"
-            )
+            repo.get_messages_page("conv-1", 50, cursor="2026-04-15T10:00:00Z|abc'")
 
 
 class TestValidCursor:

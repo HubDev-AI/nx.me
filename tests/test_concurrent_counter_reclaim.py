@@ -78,17 +78,16 @@ class TestWatchdogReclaim:
         job_repo_mock = MagicMock()
         job_repo_mock.get_stuck_jobs.return_value = fake_jobs
 
-        with patch.object(
-            worker_mod, "JobRepository", lambda _sb: job_repo_mock
-        ), patch.object(worker_mod, "_fail_job", new=AsyncMock()) as fail_job_mock:
+        with (
+            patch.object(worker_mod, "JobRepository", lambda _sb: job_repo_mock),
+            patch.object(worker_mod, "_fail_job", new=AsyncMock()) as fail_job_mock,
+        ):
             await worker_mod.watchdog_stuck_jobs(ctx)
 
         # Two jobs stuck → two _fail_job calls + two counter releases.
         assert fail_job_mock.await_count == 2
         assert redis.evalsha.await_count == 2
-        released_keys = [
-            call.args[2] for call in redis.evalsha.await_args_list
-        ]
+        released_keys = [call.args[2] for call in redis.evalsha.await_args_list]
         assert "concurrent:user-a" in released_keys
         assert "concurrent:user-b" in released_keys
 
@@ -102,9 +101,10 @@ class TestWatchdogReclaim:
             {"id": "job-1", "user_id": "user-a"}
         ]
 
-        with patch.object(
-            worker_mod, "JobRepository", lambda _sb: job_repo_mock
-        ), patch.object(worker_mod, "_fail_job", new=AsyncMock()) as fail_job_mock:
+        with (
+            patch.object(worker_mod, "JobRepository", lambda _sb: job_repo_mock),
+            patch.object(worker_mod, "_fail_job", new=AsyncMock()) as fail_job_mock,
+        ):
             await worker_mod.watchdog_stuck_jobs(ctx)
 
         # _fail_job still runs — reclaim silently skipped.
@@ -120,9 +120,10 @@ class TestWatchdogReclaim:
             {"id": "job-1"}  # no user_id
         ]
 
-        with patch.object(
-            worker_mod, "JobRepository", lambda _sb: job_repo_mock
-        ), patch.object(worker_mod, "_fail_job", new=AsyncMock()):
+        with (
+            patch.object(worker_mod, "JobRepository", lambda _sb: job_repo_mock),
+            patch.object(worker_mod, "_fail_job", new=AsyncMock()),
+        ):
             await worker_mod.watchdog_stuck_jobs(ctx)
 
         # Release skipped because user_id missing — no evalsha call.

@@ -89,12 +89,7 @@ class OrphanedStorageKeyRepository:
 
     def delete(self, row_id: str) -> None:
         """Remove a DLQ row once the storage delete succeeded."""
-        (
-            self._sb.table("orphaned_storage_keys")
-            .delete()
-            .eq("id", row_id)
-            .execute()
-        )
+        (self._sb.table("orphaned_storage_keys").delete().eq("id", row_id).execute())
 
     def mark_attempt(self, row_id: str) -> None:
         """Bump ``attempts`` and set ``last_attempt_at`` after a failed retry."""

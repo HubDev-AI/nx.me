@@ -575,7 +575,9 @@ class LoginResponse(BaseModel):
 class RefreshRequest(BaseModel):
     """Refresh an expired session using a refresh_token."""
 
-    refresh_token: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    refresh_token: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1)
+    ]
 
 
 async def _resolve_login_username(

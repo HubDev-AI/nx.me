@@ -66,7 +66,11 @@ def build_post_analysis_prompt(
     recs_block = "\n".join(f"- {r}" for r in recs) if recs else "- (none recorded)"
     shape = face_shape or "unknown"
     # Round symmetry to one decimal for prompt brevity; display value only.
-    sym = f"{symmetry_score:.1f}" if isinstance(symmetry_score, (int, float)) else "unknown"
+    sym = (
+        f"{symmetry_score:.1f}"
+        if isinstance(symmetry_score, (int, float))
+        else "unknown"
+    )
     return (
         "The user just completed a face analysis. Their actual result:\n"
         f"- Face shape: {shape}\n"
