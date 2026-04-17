@@ -36,6 +36,7 @@ from arq import ArqRedis
 from supabase import Client
 
 from app.advisor._hashing import hash_user_id
+from app.advisor._json_utils import strip_json_code_fence
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_glowup import (
     _handle_get_latest_glowup,
@@ -80,6 +81,7 @@ METRIC_NUDGE_NO_PROFILE = "advisor.nudge_no_profile"
 _RAPID_RETRY_KEY_FMT = "advisor:nudge:post_glowup:{user_id}:{upload_id}"
 _RAPID_RETRY_VALUE = "1"
 _SECONDS_PER_MINUTE = 60
+
 
 # Triggers that flow through the vision-grounded path (Unit 8).
 _VISION_TRIGGERS: frozenset[str] = frozenset(
@@ -508,7 +510,7 @@ def _parse_vision_nudge_json(raw: str) -> tuple[str, str] | None:
     ``json.loads`` guard — dropping on failure rather than retrying.
     """
     try:
-        data = json.loads(raw)
+        data = json.loads(strip_json_code_fence(raw))
     except (TypeError, ValueError):
         return None
     if not isinstance(data, dict):

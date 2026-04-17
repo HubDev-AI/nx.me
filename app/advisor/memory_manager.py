@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
+from app.advisor._json_utils import strip_json_code_fence
 from app.advisor.embedding_port import EmbeddingPort
 from app.advisor.llm_port import LLMPort
 
@@ -327,7 +328,7 @@ class MemoryManager:
                 response=response,
                 purpose="memory_extract",
             )
-            extracted = json.loads(response.content)
+            extracted = json.loads(strip_json_code_fence(response.content))
         except Exception as exc:  # includes json.JSONDecodeError and LLM errors
             logger.warning("Memory extraction failed: %s", exc)
             return

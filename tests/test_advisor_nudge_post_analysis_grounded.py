@@ -213,6 +213,48 @@ async def test_vision_nudge_persists_body_and_observation_tag(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_vision_nudge_accepts_fenced_json(monkeypatch):
+    """Model wraps JSON in ```json … ``` → fence stripped, nudge persisted.
+
+    Observed 2026-04-17: Haiku wraps strict-JSON responses in a markdown
+    fence even when the prompt forbids markdown, which silently dropped
+    every post_glowup / post_analysis nudge. ``_strip_json_code_fence``
+    unwraps the fence before ``json.loads``.
+    """
+    from app.advisor import nudge_scheduler
+
+    fake_llm, _captured = _fake_llm_capture(
+        response_text=(
+            "```json\n"
+            '{"body": "warm sentence about the new look",'
+            ' "observation_tag": "warmer tone"}\n'
+            "```"
+        )
+    )
+    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(
+        monkeypatch,
+        style_profile={
+            "content": {"face_shape": "oblong", "symmetry_score": 0.97},
+            "created_at": "2026-04-17T00:00:00Z",
+        },
+    )
+    _patch_image_fetch(monkeypatch)
+
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        _TEST_USER_ID,
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+    )
+
+    fake_repo.insert_nudge.assert_called_once()
+    persisted = fake_repo.insert_nudge.call_args[0][0]
+    assert persisted["content"] == "warm sentence about the new look"
+    assert persisted["observation_tag"] == "warmer tone"
+
+
+@pytest.mark.asyncio
 async def test_vision_nudge_drops_malformed_json(monkeypatch, caplog):
     """Model returns non-JSON → nudge dropped, no partial row persisted."""
     from app.advisor import nudge_scheduler
