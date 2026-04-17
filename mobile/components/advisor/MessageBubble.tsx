@@ -1,20 +1,24 @@
 /**
  * MessageBubble — renders a single chat message with Ada vs user styling.
  *
- * Ada messages: elevated card with subtle left border accent (#161616 bg, coral left border).
- * User messages: coral-tinted background (rgba(244,63,94,0.08)), right-aligned.
+ * Ada messages: accent-tinted bubble, left-aligned.
+ * User messages: dark glass overlay (matches app-wide glass surfaces), right-aligned.
  */
-import { memo } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import * as Clipboard from "expo-clipboard";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
+import { hapticMedium } from "../../lib/haptics";
 import type { AdvisorMessage } from "../../lib/advisor";
 
 interface MessageBubbleProps {
   message: AdvisorMessage;
 }
+
+const COPIED_RESET_MS = 1500;
 
 function formatTime(isoDate: string): string {
   const date = new Date(isoDate);
@@ -27,26 +31,56 @@ function formatTime(isoDate: string): string {
 function MessageBubbleInner({ message }: MessageBubbleProps) {
   const { theme } = useTheme();
   const isAda = message.role === "assistant";
+  const [copied, setCopied] = useState(false);
+  const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimeoutRef.current) {
+        clearTimeout(resetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleLongPress = useCallback(async () => {
+    await Clipboard.setStringAsync(message.content);
+    hapticMedium();
+    setCopied(true);
+    if (resetTimeoutRef.current) {
+      clearTimeout(resetTimeoutRef.current);
+    }
+    resetTimeoutRef.current = setTimeout(() => {
+      setCopied(false);
+      resetTimeoutRef.current = null;
+    }, COPIED_RESET_MS);
+  }, [message.content]);
 
   return (
-    <View
-      style={[styles.row, isAda ? styles.rowLeft : styles.rowRight]}
-      accessibilityLabel={
-        isAda
-          ? `Ada said: ${message.content}`
-          : `You said: ${message.content}`
-      }
-    >
-      <View style={[
-        styles.bubble,
-        isAda
-          ? styles.adaBubble
-          : [styles.userBubble, { backgroundColor: theme.accentMuted }],
-      ]}>
+    <View style={[styles.row, isAda ? styles.rowLeft : styles.rowRight]}>
+      <Pressable
+        onLongPress={handleLongPress}
+        delayLongPress={350}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isAda
+            ? `Ada said: ${message.content}. Long press to copy.`
+            : `You said: ${message.content}. Long press to copy.`
+        }
+        accessibilityHint="Long press to copy message"
+        style={({ pressed }) => [
+          styles.bubble,
+          isAda
+            ? [styles.adaBubble, { backgroundColor: theme.accentMuted }]
+            : styles.userBubble,
+          pressed && styles.bubblePressed,
+        ]}
+      >
         {isAda && <Text style={[styles.senderLabel, { color: theme.accent }]}>Ada</Text>}
         <Text style={styles.content}>{message.content}</Text>
-        <Text style={styles.timestamp}>{formatTime(message.created_at)}</Text>
-      </View>
+        <Text style={[styles.timestamp, copied && { color: theme.accent }]}>
+          {copied ? "Copied" : formatTime(message.created_at)}
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -55,15 +89,16 @@ export const MessageBubble = memo(MessageBubbleInner);
 
 const styles = StyleSheet.create({
   row: {
+    flexDirection: "row",
     paddingHorizontal: THEME.spacing.lg,
     paddingVertical: THEME.spacing.xs,
-    maxWidth: "100%",
+    width: "100%",
   },
   rowLeft: {
-    alignSelf: "flex-start",
+    justifyContent: "flex-start",
   },
   rowRight: {
-    alignSelf: "flex-end",
+    justifyContent: "flex-end",
   },
   bubble: {
     maxWidth: "80%",
@@ -72,12 +107,16 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.md - 2,
   },
   adaBubble: {
+    borderTopLeftRadius: THEME.radius.sm / 2,
+  },
+  userBubble: {
     backgroundColor: THEME.colors.glass,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
-  },
-  userBubble: {
     borderTopRightRadius: THEME.radius.sm / 2,
+  },
+  bubblePressed: {
+    opacity: 0.7,
   },
   senderLabel: {
     fontFamily: FONTS.bodySemiBold,
