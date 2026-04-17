@@ -2,7 +2,7 @@
  * MemoryList — user memories with add and swipe-to-delete.
  *
  * Mirrors ChatView's layout: list fills the tab, composer sits at the
- * bottom of the screen, KeyboardAvoidingView lifts the composer with
+ * bottom of the screen, AdvisorComposer's KeyboardStickyView lifts it with
  * the keyboard, and the floating tab-bar is cleared via bottomPadding.
  * The Goals / Notes subtabs sit at the top as a list filter — each tab
  * has its own draft, error, and isAdding state so submitting on one
@@ -24,11 +24,9 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
-  Platform,
   StyleSheet,
   PanResponder,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -428,8 +426,7 @@ interface TabState {
 const INITIAL_TAB_STATE: TabState = { draft: "", error: null, isAdding: false };
 
 export function MemoryList() {
-  const { keyboardVerticalOffset, inputBottomPadding } =
-    useAdvisorComposerLayout();
+  const { inputBottomPadding } = useAdvisorComposerLayout();
 
   // -------------------------------------------------------------------------
   // State — see plan §High-Level Technical Design
@@ -650,26 +647,16 @@ export function MemoryList() {
 
   if (initialLoading) {
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior="padding"
-        keyboardVerticalOffset={keyboardVerticalOffset}
-        enabled={Platform.OS !== "web"}
-      >
+      <View style={styles.container}>
         {subTabs}
         <MemorySkeleton />
         {composer}
-      </KeyboardAvoidingView>
+      </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior="padding"
-      keyboardVerticalOffset={keyboardVerticalOffset}
-      enabled={Platform.OS !== "web"}
-    >
+    <View style={styles.container}>
       {subTabs}
 
       {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
@@ -719,7 +706,7 @@ export function MemoryList() {
       </View>
 
       {composer}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

@@ -3,20 +3,20 @@
  *
  * Premium-only: if a 402 is received on POST /advisor/messages,
  * the PaywallModal is shown. Includes auto-scroll to bottom,
- * typing indicator, skeleton loading, and KeyboardAvoidingView.
+ * typing indicator, and skeleton loading. Composer lift is owned by
+ * `AdvisorComposer`'s KeyboardStickyView — no KAV wrapping here.
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   FlatList,
+  Keyboard,
   Pressable,
   Text,
-  Platform,
   ActivityIndicator,
   StyleSheet,
   Dimensions,
 } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -82,8 +82,7 @@ const skeletonStyles = StyleSheet.create({
 
 export function ChatView() {
   const { theme } = useTheme();
-  const { keyboardVerticalOffset, inputBottomPadding } =
-    useAdvisorComposerLayout();
+  const { inputBottomPadding } = useAdvisorComposerLayout();
   // -------------------------------------------------------------------------
   // State
   // -------------------------------------------------------------------------
@@ -277,6 +276,17 @@ export function ChatView() {
     }
   }, [messages, isLoading]);
 
+  // Scroll to end whenever the keyboard opens. The composer lifts via
+  // KeyboardStickyView's `transform`, not layout — the FlatList keeps
+  // its pre-keyboard height, so the newest message can end up behind
+  // the lifted composer. Scrolling to end keeps it in view.
+  useEffect(() => {
+    const sub = Keyboard.addListener("keyboardDidShow", () => {
+      listRef.current?.scrollToEnd({ animated: true });
+    });
+    return () => sub.remove();
+  }, []);
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -303,12 +313,7 @@ export function ChatView() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior="padding"
-      keyboardVerticalOffset={keyboardVerticalOffset}
-      enabled={Platform.OS !== "web"}
-    >
+    <View style={styles.container}>
       {/* List + empty-state region. Wrapping the FlatList in a flex:1 view
           bounds the AdvisorEmptyOverlay to the empty space ABOVE the
           composer — otherwise the overlay's StyleSheet.absoluteFill
@@ -401,7 +406,7 @@ export function ChatView() {
           }
         }}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
