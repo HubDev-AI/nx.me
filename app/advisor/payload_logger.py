@@ -238,6 +238,9 @@ def log_llm_call(
     dropped: int,
     memory_count: int | None = None,
     nudge_count: int | None = None,
+    tool_call_count: int | None = None,
+    tool_names: list[str] | None = None,
+    tool_errors: int | None = None,
 ) -> None:
     """Emit one INFO log record for an Ada LLM call.
 
@@ -255,6 +258,12 @@ def log_llm_call(
     positional inference over the system-role messages (SOUL.md,
     user_data, memories, nudges), which works when blocks arrive in
     that order but is fragile when an earlier block is absent.
+
+    ``tool_call_count`` / ``tool_names`` / ``tool_errors`` (Plan Unit 9)
+    are optional additions describing the advertised or invoked tool
+    surface. Unit 9 passes only ``tool_names`` (what was advertised to
+    the model); the two counts are reserved for callers that track
+    dispatch results directly (future units).
 
     This function catches every serialization failure (``_safe_serialize``)
     and never raises — the request path must not break because a log field
@@ -306,6 +315,16 @@ def log_llm_call(
     if vision_hosts:
         info_extra["vision_sources"] = _safe_serialize(vision_hosts)
 
+    # Plan Unit 9 — optional tool-surface fields. Only emit when the
+    # caller explicitly set them so pre-Unit-9 callers produce identical
+    # records (test invariant).
+    if tool_call_count is not None:
+        info_extra["tool_call_count"] = int(tool_call_count)
+    if tool_names is not None:
+        info_extra["tool_names"] = _safe_serialize(list(tool_names))
+    if tool_errors is not None:
+        info_extra["tool_errors"] = int(tool_errors)
+
     # Verify the dict is serializable end-to-end — if any field slipped
     # past per-field ``_safe_serialize`` (unlikely), fall back to repr of
     # that field so log aggregators accept the record.
@@ -340,6 +359,12 @@ def log_llm_call(
         "messages": _safe_serialize(messages),
         "vision_content": _safe_serialize(vision_content),
     }
+    if tool_call_count is not None:
+        debug_extra["tool_call_count"] = int(tool_call_count)
+    if tool_names is not None:
+        debug_extra["tool_names"] = _safe_serialize(list(tool_names))
+    if tool_errors is not None:
+        debug_extra["tool_errors"] = int(tool_errors)
     try:
         json.dumps(debug_extra, sort_keys=True)
     except (TypeError, ValueError):

@@ -34,6 +34,7 @@ from app.advisor.context_builder import (
     has_visual_trigger,
     trim_to_budget,
 )
+from app.advisor.mcp import McpContext, ToolRegistry
 from app.advisor.memory_manager import MemoryManager, summarize_memory_content
 from app.advisor.models import LLMResponse, MemoryType
 from app.advisor.payload_logger import log_llm_call
@@ -184,6 +185,23 @@ class AdvisorService:
                 extra={"metric": "advisor.context_trimmed", "dropped": dropped},
             )
 
+        # Step 7b: Build per-turn tool registry (Plan Unit 9).
+        # The registry carries a frozen ``McpContext`` scoped to this user
+        # and is dropped when the turn ends. ``ADVISOR_TOOLS_ENABLED`` is
+        # the kill switch — when False, tools are not advertised to the
+        # model and the eager-vision path above remains authoritative.
+        tool_registry: ToolRegistry | None = None
+        tool_schemas: list[dict[str, Any]] | None = None
+        if settings.ADVISOR_TOOLS_ENABLED:
+            mcp_ctx = McpContext(
+                user_id=user_id,
+                supabase=getattr(self._repo, "_sb", None),
+                advisor_repo=self._repo,
+                logger=logger,
+            )
+            tool_registry = ToolRegistry(ctx=mcp_ctx)
+            tool_schemas = tool_registry.schemas()
+
         # Step 8: Call LLM (with post-generation check + one retry)
         recent_advisor_messages = [
             m["content"] for m in history if m.get("role") == "advisor"
@@ -202,6 +220,8 @@ class AdvisorService:
             dropped=dropped,
             memory_count=memory_count,
             nudge_count=nudge_count,
+            tool_schemas=tool_schemas,
+            tool_registry=tool_registry,
         )
 
         # Step 9: Persist messages
@@ -250,15 +270,27 @@ class AdvisorService:
         dropped: int,
         memory_count: int | None = None,
         nudge_count: int | None = None,
+        tool_schemas: list[dict[str, Any]] | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> str:
         """Call LLM, apply post-generation check, retry once if needed (spec Section 11).
 
         ``memory_count`` / ``nudge_count`` (Plan Unit 4) are forwarded to
         the payload logger so the INFO line reports the authoritative
         counts rather than positional inference.
+
+        ``tool_schemas`` + ``tool_registry`` (Plan Unit 9) enable the
+        inline tool-use loop inside the adapter. When both are supplied,
+        the adapter's internal loop dispatches the tools the model
+        requests and returns only the final text. The service layer never
+        sees tool_use blocks directly.
         """
         # Determine model based on daily usage guard (spec Section 10)
         model = await self._select_model(str(user_id))
+
+        tool_names = (
+            [str(s.get("name", "")) for s in tool_schemas] if tool_schemas else None
+        )
 
         for attempt in range(2):
             # Plan 2026-04-17-003 Unit 5 — log every LLM call. Both the
@@ -276,6 +308,7 @@ class AdvisorService:
                 dropped=dropped,
                 memory_count=memory_count,
                 nudge_count=nudge_count,
+                tool_names=tool_names,
             )
             response: LLMResponse = await self._llm.create_message(
                 model=model,
@@ -283,6 +316,8 @@ class AdvisorService:
                 messages=[m for m in messages if m.get("role") != "system"],
                 max_tokens=_MAX_TOKENS_CHAT,
                 vision_content=vision_content,
+                tools=tool_schemas,
+                tool_registry=tool_registry,
             )
             text = response.content.strip()
 

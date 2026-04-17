@@ -627,6 +627,68 @@ class AdvisorRepository:
     # Images / storage (vision context)
     # ------------------------------------------------------------------
 
+    def get_latest_completed_job_with_images(
+        self, user_id: str
+    ) -> dict[str, Any] | None:
+        """Return the user's most recent completed job that has BOTH URLs.
+
+        Plan 2026-04-17-003 Unit 9. Used by the cross-feature
+        ``get_latest_generation`` tool (polymorphic ``source_type``,
+        treated uniformly by the advisor surface). Rows where either
+        ``before_image_url`` or ``after_image_url`` is NULL are excluded —
+        the advisor tool needs both to render the pair. Selects the
+        polymorphic ``source_type`` alongside so the handler can surface
+        ``feature="glowup" / "makeup"`` metadata without cross-table joins.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select(
+                "id, status, source_type, created_at, completed_at, "
+                "before_image_url, after_image_url"
+            )
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .not_.is_("before_image_url", "null")
+            .not_.is_("after_image_url", "null")
+            .order("completed_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def get_latest_job_for_user(self, user_id: str) -> dict[str, Any] | None:
+        """Return the user's most recent job regardless of status.
+
+        Plan 2026-04-17-003 Unit 9 — backs the ``get_latest_job_status``
+        tool. Returns status + timestamps + feature so the advisor can
+        tell the user "your glow-up is still running" without exposing
+        URLs.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, source_type, created_at, completed_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def fetch_image_bytes(self, bucket: str, path: str) -> bytes:
+        """Download raw bytes from a Supabase storage bucket.
+
+        Plan 2026-04-17-003 Unit 9. Used by the vision-tool handlers to
+        fetch the before/after images inline; the bytes are base64
+        encoded into an Anthropic ``image`` content block by the caller.
+        Signed URLs are NEVER generated on this path — the whole point of
+        the Unit 9 rework is that no ephemeral URL enters the LLM
+        payload or log stream.
+        """
+        return self._sb.storage.from_(bucket).download(path)
+
     def get_cleared_images(self, user_id: str, limit: int = 2) -> list[dict[str, Any]]:
         """Fetch the most recent cleared images for a user."""
         result = (

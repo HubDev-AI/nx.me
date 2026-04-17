@@ -101,6 +101,18 @@ class Settings(BaseSettings):
     ADVISOR_CONTEXT_NUDGE_LIMIT: int = 5
     ADVISOR_CONTEXT_NUDGE_AGE_DAYS: int = 14
 
+    # Advisor tool surface (Plan 2026-04-17-003 Unit 9).
+    # Ada chat operates via a tool surface the model invokes on demand.
+    # ``ADVISOR_MAX_TOOL_ROUNDS`` caps the number of tool-use rounds the
+    # model can request per user turn — on exhaustion, remaining tool_use
+    # blocks receive a synthetic "tool round cap exceeded" tool_result so
+    # the model can still finalize its text rather than loop indefinitely.
+    # ``ADVISOR_TOOLS_ENABLED`` is the kill switch: when False, tools are
+    # not advertised to the model and the legacy eager-vision path remains
+    # authoritative.
+    ADVISOR_MAX_TOOL_ROUNDS: int = 3
+    ADVISOR_TOOLS_ENABLED: bool = True
+
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
     IDENTITY_SIMILARITY_THRESHOLD: float = 0.80
