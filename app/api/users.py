@@ -32,6 +32,7 @@ from app.api.public import RecommendationItem
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
+from app.generation.models import JobStatus
 from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
@@ -44,6 +45,28 @@ router = APIRouter(tags=["users"])
 
 _DEFAULT_HISTORY_PAGE_SIZE = 20
 _MAX_HISTORY_PAGE_SIZE = 100
+
+# Cap on non-terminal job rows (queued/processing/finalizing) per page. Bounds
+# the response payload if a worker-failure loop leaves many uploads stuck in a
+# non-terminal state. Completed/failed/cancelled rows are not capped — they
+# flow through normal pagination.
+_MAX_PENDING_ROWS_PER_PAGE = 10
+
+# Job statuses included in history. Non-terminal rows render as pending
+# shimmer cells on the mobile grid; completed render as thumbnails; failed and
+# cancelled render as a muted errored variant.
+_NON_TERMINAL_HISTORY_JOB_STATUSES: frozenset[str] = frozenset(
+    [
+        JobStatus.QUEUED.value,
+        JobStatus.PROCESSING.value,
+        JobStatus.FINALIZING.value,
+    ]
+)
+_HISTORY_INCLUDED_JOB_STATUSES: frozenset[str] = _NON_TERMINAL_HISTORY_JOB_STATUSES | {
+    JobStatus.COMPLETED.value,
+    JobStatus.FAILED.value,
+    JobStatus.CANCELLED.value,
+}
 
 _USERNAME_PATTERN = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
 _USERNAME_MIN_LENGTH = 3
@@ -93,6 +116,15 @@ class MeResponse(BaseModel):
 
 class HistoryEntry(BaseModel):
     analysis_id: str
+    # Job correlation lets the client tap-through to /result/{job_id} (the
+    # before/after slider for completed rows; the waiting view for pending
+    # rows; the terminal-failure view for errored rows). Nullable so legacy
+    # analyses with no associated job stay representable.
+    job_id: str | None
+    # JobStatus value for the latest job tied to this analysis. The mobile
+    # grid uses this to pick the cell variant (pending shimmer, completed
+    # thumbnail, errored muted). Empty string when job_id is null.
+    status: str
     face_shape: str | None
     symmetry_score: float | None
     recommendations: list[RecommendationItem]
@@ -322,9 +354,16 @@ async def get_user_history(
     Owner only — returns 404 if the token does not belong to the requested user.
     Cursor-paginated using created_at timestamp.
 
-    History = uploads that have a glowup_analyses row and at least one completed job.
-    The before_image_url comes directly from uploads.image_url; the after_image_url
-    comes from jobs.after_image_url of the most recent completed job.
+    History = uploads whose latest job is in queued, processing, finalizing,
+    completed, failed, or cancelled state. The before_image_url comes directly
+    from uploads.image_url; after_image_url comes from jobs.after_image_url of
+    the latest job (null for non-completed rows).
+
+    Non-terminal rows (queued/processing/finalizing) render as pending shimmer
+    cells on the mobile grid; completed render as thumbnails; failed/cancelled
+    render as a muted errored variant. The non-terminal subset is server-capped
+    at _MAX_PENDING_ROWS_PER_PAGE per page so a worker-failure loop can't
+    inflate the payload.
     """
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
@@ -371,33 +410,33 @@ async def get_user_history(
         ):
             analysis_by_upload[analysis["upload_id"]] = analysis
 
-    # 2. Fetch latest completed job per glowup_analysis in one query.
-    #    PostgREST doesn't support DISTINCT ON, so pick latest per source_id in Python.
+    # 2. Fetch latest job per glowup_analysis in one query, scoped to the
+    #    statuses the mobile grid renders. PostgREST doesn't support DISTINCT
+    #    ON, so pick latest per source_id in Python (rows arrive desc by
+    #    created_at).
     analysis_ids = [a["id"] for a in analysis_by_upload.values()]
-    jobs_by_analysis: dict[str, str] = {}  # analysis_id -> after_image_url
+    jobs_by_analysis: dict[str, dict] = {}  # analysis_id -> latest job row
     if analysis_ids:
         for job in await run_sync(
-            job_repo.get_completed_jobs_for_sources, SOURCE_TYPE_GLOWUP, analysis_ids
+            job_repo.get_latest_jobs_for_sources,
+            SOURCE_TYPE_GLOWUP,
+            analysis_ids,
+            sorted(_HISTORY_INCLUDED_JOB_STATUSES),
         ):
             sid = job["source_id"]
             # First seen per source_id is the latest (ordered desc by created_at)
-            if sid not in jobs_by_analysis and job.get("after_image_url"):
-                jobs_by_analysis[sid] = job["after_image_url"]
+            if sid not in jobs_by_analysis:
+                jobs_by_analysis[sid] = job
 
     # 3. Assemble entries. The `uploads.image_url` and `jobs.after_image_url`
-    #    columns store storage keys (not public URLs) — the jobs endpoint
-    #    signs them on demand (see app/api/jobs.py::get_job), and so must
-    #    we here. Handing raw storage keys to the mobile client produced a
-    #    ghost glass card on the profile grid because the <Image> source
-    #    URI "6000a5a0-.../xxx.jpg" is not a fetchable URL.
+    #    columns store storage keys (not public URLs) — sign them on demand
+    #    so the mobile <Image> source URI is fetchable.
     #
-    #    Only include uploads whose analysis has at least one completed job
-    #    with a non-empty after_image_url; entries without a completed job
-    #    would surface on the profile grid as an empty glass card and read
-    #    as broken to the user. This matches the endpoint's documented
-    #    contract ("at least one completed job") which was previously a
-    #    docstring claim rather than an enforced filter.
+    #    Skip uploads whose analysis has no associated job in the included
+    #    status set: legacy rows produced before the polymorphic jobs table
+    #    have nothing to render and would show as empty glass cards.
     entries: list[HistoryEntry] = []
+    non_terminal_emitted = 0
     for row in uploads:
         upload_id = row["id"]
         analysis = analysis_by_upload.get(upload_id)
@@ -405,9 +444,15 @@ async def get_user_history(
             continue
 
         analysis_id: str = analysis["id"]
-        after_key: str | None = jobs_by_analysis.get(analysis_id)
-        if not after_key:
+        job = jobs_by_analysis.get(analysis_id)
+        if not job:
             continue
+
+        job_status: str = job["status"]
+        if job_status in _NON_TERMINAL_HISTORY_JOB_STATUSES:
+            if non_terminal_emitted >= _MAX_PENDING_ROWS_PER_PAGE:
+                continue
+            non_terminal_emitted += 1
 
         face_shape: str | None = analysis.get("face_shape")
         symmetry_score: float | None = analysis.get("symmetry_score")
@@ -424,16 +469,24 @@ async def get_user_history(
             if before_key
             else None
         )
-        after_url: str = await run_sync(
-            image_repo.create_signed_url,
-            "generated-images",
-            after_key,
-            settings.SIGNED_URL_EXPIRY_SECONDS,
+
+        after_key: str | None = job.get("after_image_url")
+        after_url: str | None = (
+            await run_sync(
+                image_repo.create_signed_url,
+                "generated-images",
+                after_key,
+                settings.SIGNED_URL_EXPIRY_SECONDS,
+            )
+            if after_key
+            else None
         )
 
         entries.append(
             HistoryEntry(
                 analysis_id=analysis_id,
+                job_id=job["id"],
+                status=job_status,
                 face_shape=face_shape,
                 symmetry_score=symmetry_score,
                 recommendations=[
