@@ -44,6 +44,7 @@ import { useAppQuery } from "../../lib/hooks/use-app-query";
 import { useAppMutation } from "../../lib/hooks/use-app-mutation";
 import { showToast } from "../../lib/toast";
 import { useAuth } from "../../lib/auth-context";
+import { parseApiError, shouldRetry } from "../../lib/errors";
 
 // ---------------------------------------------------------------------------
 // Terminal statuses — polling stops when job reaches these
@@ -67,12 +68,19 @@ export default function ResultScreen() {
   const { ShareCompositeView, generateAndShare, isCapturing } =
     useShareComposite();
 
-  // Poll job until terminal status
+  // Poll job until terminal status. `refetchInterval` must also stop on
+  // non-retryable errors (404, 403, 401) — otherwise a missing/forbidden
+  // job ID triggers a 2s poll loop that never resolves and hammers the
+  // API for the lifetime of the screen.
   const jobQuery = useAppQuery<JobResult>({
     queryKey: ["job", jobId],
     queryFn: () => getJobStatus(jobId as string),
     enabled: !!jobId,
     refetchInterval: (query) => {
+      const err = query.state.error;
+      if (err) {
+        return shouldRetry(parseApiError(err)) ? 2000 : false;
+      }
       const data = query.state.data;
       if (!data) return 2000;
       if (TERMINAL_STATUSES.has(data.status)) return false;
@@ -139,22 +147,27 @@ export default function ResultScreen() {
   // ---------------------------------------------------------------------------
 
   return (
+    <>
+      {/* Header with native back button — stays visible across every
+          branch (loading, error, failed-job, success) so the user is
+          never stranded on a screen with no way back. */}
+      <Stack.Screen
+        options={{
+          title: "Result",
+          headerStyle: { backgroundColor: THEME.colors.bg },
+          headerTintColor: THEME.colors.textPrimary,
+          headerShadowVisible: false,
+        }}
+      />
     <QueryStateView
       isLoading={jobQuery.isLoading}
       error={jobQuery.appError}
       onRetry={() => jobQuery.refetch()}
+      errorAction={{ label: "Upload Another", onPress: handleTryAnother }}
     >
       {/* Job failed/cancelled */}
       {result && (result.status === "failed" || result.status === "cancelled") ? (
         <>
-          <Stack.Screen
-            options={{
-              title: "Result",
-              headerStyle: { backgroundColor: THEME.colors.bg },
-              headerTintColor: THEME.colors.textPrimary,
-              headerShadowVisible: false,
-            }}
-          />
           <View style={styles.centeredContainer}>
             <PageBackground overlayOpacity={0.88} />
             <Ionicons
@@ -180,14 +193,7 @@ export default function ResultScreen() {
       ) : (
         /* Success — before/after reveal + actions */
         <>
-          <Stack.Screen
-            options={{
-              title: "Your Glow-Up",
-              headerStyle: { backgroundColor: THEME.colors.bg },
-              headerTintColor: THEME.colors.textPrimary,
-              headerShadowVisible: false,
-            }}
-          />
+          <Stack.Screen options={{ title: "Your Glow-Up" }} />
           <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
             <PageBackground overlayOpacity={0.88} />
             <ScrollView
@@ -248,6 +254,7 @@ export default function ResultScreen() {
         </>
       )}
     </QueryStateView>
+    </>
   );
 }
 

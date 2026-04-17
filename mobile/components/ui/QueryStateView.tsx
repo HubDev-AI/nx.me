@@ -5,6 +5,11 @@ import { THEME } from '../../constants/theme';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import type { AppError } from '../../lib/errors';
 
+interface ErrorAction {
+  label: string;
+  onPress: () => void;
+}
+
 interface QueryStateViewProps {
   isLoading: boolean;
   isEmpty?: boolean;
@@ -13,6 +18,14 @@ interface QueryStateViewProps {
   skeleton?: React.ReactNode;
   emptyMessage?: string;
   emptyAction?: { label: string; onPress: () => void };
+  /**
+   * Extra action shown in the error state. Pair with non-retryable
+   * errors (notFound, permission, auth) so the user is never stranded
+   * on a screen with only a "Try again" button that won't help. When
+   * the error IS retryable, `errorAction` renders as a secondary
+   * option next to Retry.
+   */
+  errorAction?: ErrorAction;
   children: React.ReactNode;
 }
 
@@ -24,6 +37,7 @@ export function QueryStateView({
   skeleton,
   emptyMessage = 'Nothing here yet.',
   emptyAction,
+  errorAction,
   children,
 }: QueryStateViewProps) {
   if (isLoading) {
@@ -31,7 +45,7 @@ export function QueryStateView({
   }
 
   if (error) {
-    return <ErrorState error={error} onRetry={onRetry} />;
+    return <ErrorState error={error} onRetry={onRetry} errorAction={errorAction} />;
   }
 
   if (isEmpty) {
@@ -52,7 +66,15 @@ function DefaultSkeleton() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: AppError; onRetry?: () => void }) {
+function ErrorState({
+  error,
+  onRetry,
+  errorAction,
+}: {
+  error: AppError;
+  onRetry?: () => void;
+  errorAction?: ErrorAction;
+}) {
   const canRetry = onRetry !== undefined && isRetryable(error.kind);
   return (
     <View style={styles.stateContainer} accessibilityRole="alert">
@@ -70,6 +92,19 @@ function ErrorState({ error, onRetry }: { error: AppError; onRetry?: () => void 
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text style={styles.buttonText}>Try again</Text>
+        </Pressable>
+      )}
+      {errorAction && (
+        <Pressable
+          onPress={errorAction.onPress}
+          style={canRetry ? styles.buttonSecondary : styles.button}
+          accessibilityRole="button"
+          accessibilityLabel={errorAction.label}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={canRetry ? styles.buttonSecondaryText : styles.buttonText}>
+            {errorAction.label}
+          </Text>
         </Pressable>
       )}
     </View>
@@ -186,5 +221,15 @@ const styles = StyleSheet.create({
     ...THEME.typography.body,
     color: THEME.colors.textPrimary,
     fontWeight: '600',
+  },
+  buttonSecondary: {
+    marginTop: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.sm,
+    paddingHorizontal: THEME.spacing.xl,
+  },
+  buttonSecondaryText: {
+    ...THEME.typography.body,
+    color: THEME.colors.textSecondary,
+    fontWeight: '500',
   },
 });
