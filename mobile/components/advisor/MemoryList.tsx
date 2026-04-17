@@ -59,10 +59,6 @@ const SWIPE_VELOCITY_THRESHOLD = 0.3;
 // to 70% of fully-open so the tick lands when the user can SEE the
 // trash button is mostly revealed — matches Mail's perceived "click".
 const SWIPE_HAPTIC_THRESHOLD = -DELETE_BUTTON_WIDTH * 0.7;
-// Resistance factor for rubber-band beyond the natural range. 0.3 =
-// keep 30% of the overshoot, drop the other 70% — matches the iOS
-// scroll bounce feel.
-const SWIPE_OVERSCROLL_DAMPENING = 0.3;
 // Min |dx| before claiming the responder. Lowered slightly from the
 // previous 10pt so the gesture feels more responsive without
 // stealing vertical scrolls.
@@ -277,24 +273,19 @@ function SwipeableMemoryRow({
       onPanResponderMove: (_, gesture) => {
         if (!Number.isFinite(gesture.dx)) return;
         const startX = isOpenRef.current ? -DELETE_BUTTON_WIDTH : 0;
-        let delta = gesture.dx;
-        const absoluteX = startX + delta;
-
-        // Rubber-band past the natural range in either direction:
-        // - Past -DELETE_BUTTON_WIDTH (further left than fully open)
-        // - Past 0 (further right than fully closed; can happen when
-        //   the user swipes right on an open row past the rest pos
-        //   before releasing).
-        if (absoluteX < -DELETE_BUTTON_WIDTH) {
-          const overshoot = absoluteX - -DELETE_BUTTON_WIDTH;
-          delta = delta - overshoot * (1 - SWIPE_OVERSCROLL_DAMPENING);
-        } else if (absoluteX > 0) {
-          const overshoot = absoluteX;
-          delta = delta - overshoot * (1 - SWIPE_OVERSCROLL_DAMPENING);
-        }
+        // Hard clamp to [-DELETE_BUTTON_WIDTH, 0]. Rubber-band past
+        // the open position would reveal background between the card's
+        // right edge and the trash button's left edge — the user
+        // reads that as the card "disconnecting" from the button.
+        // Clamping keeps the two glued throughout the gesture.
+        const absoluteX = Math.min(
+          0,
+          Math.max(-DELETE_BUTTON_WIDTH, startX + gesture.dx),
+        );
+        const delta = absoluteX - startX;
 
         translateX.setValue(delta);
-        const newAbs = startX + delta;
+        const newAbs = absoluteX;
         lastValueRef.current = newAbs;
 
         // One haptic tick per threshold crossing in either direction.
