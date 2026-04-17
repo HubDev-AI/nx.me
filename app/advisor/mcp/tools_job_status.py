@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.advisor.mcp.context import McpContext
+from app.db.async_helpers import run_sync
 
 _TOOL_NAME = "get_latest_job_status"
 
@@ -49,11 +50,19 @@ TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
-async def handle(ctx: McpContext) -> list[dict[str, Any]]:
-    """Return text describing the most recent job's state."""
-    row = ctx.advisor_repo.get_latest_job_for_user(str(ctx.user_id))
+async def handle(ctx: McpContext) -> dict[str, Any]:
+    """Return text describing the most recent job's state.
+
+    Returns ``{"content": [text block], "is_error": False}`` — the
+    "no jobs yet" case is a reportable outcome for the model, not an
+    error on the ``tool_result`` envelope.
+    """
+    row = await run_sync(ctx.advisor_repo.get_latest_job_for_user, str(ctx.user_id))
     if not row:
-        return [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": "no jobs yet"}]
+        return {
+            "content": [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": "no jobs yet"}],
+            "is_error": False,
+        }
 
     status = str(row.get("status") or "unknown")
     feature = str(row.get("source_type") or "unknown")
@@ -64,4 +73,7 @@ async def handle(ctx: McpContext) -> list[dict[str, Any]]:
         parts.append(f"created_at={created_at}")
     if completed_at:
         parts.append(f"completed_at={completed_at}")
-    return [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": "; ".join(parts)}]
+    return {
+        "content": [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": "; ".join(parts)}],
+        "is_error": False,
+    }

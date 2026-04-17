@@ -115,13 +115,19 @@ def _patch_handlers(
 
     async def _fake_glowup(_ctx):
         if glowup_blocks is not None:
-            return list(glowup_blocks)
-        return [{"type": "text", "text": "no completed glow-up", "is_error": True}]
+            return {"content": list(glowup_blocks), "is_error": False}
+        return {
+            "content": [{"type": "text", "text": "no completed glow-up"}],
+            "is_error": True,
+        }
 
     async def _fake_photo(_ctx):
         if photo_blocks is not None:
-            return list(photo_blocks)
-        return [{"type": "text", "text": "no source photo", "is_error": True}]
+            return {"content": list(photo_blocks), "is_error": False}
+        return {
+            "content": [{"type": "text", "text": "no source photo"}],
+            "is_error": True,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _fake_glowup)
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_photo", _fake_photo)
@@ -323,13 +329,22 @@ async def test_worker_user_id_is_authoritative_over_llm_input(monkeypatch):
 
     async def _glowup(ctx: McpContext):
         seen_user_ids.append(str(ctx.user_id))
-        return [_image_block(_FAKE_BEFORE_BYTES), _image_block(_FAKE_AFTER_BYTES)]
+        return {
+            "content": [
+                _image_block(_FAKE_BEFORE_BYTES),
+                _image_block(_FAKE_AFTER_BYTES),
+            ],
+            "is_error": False,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _glowup)
 
     async def _photo(ctx: McpContext):
         seen_user_ids.append(str(ctx.user_id))
-        return [{"type": "text", "text": "no source photo", "is_error": True}]
+        return {
+            "content": [{"type": "text", "text": "no source photo"}],
+            "is_error": True,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_photo", _photo)
 
@@ -373,7 +388,10 @@ async def test_vision_nudge_handlers_called_with_frozen_context(monkeypatch):
 
     async def _glowup(ctx: McpContext):
         captured_ctx.append(ctx)
-        return [_image_block(_FAKE_BEFORE_BYTES)]
+        return {
+            "content": [_image_block(_FAKE_BEFORE_BYTES)],
+            "is_error": False,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _glowup)
 

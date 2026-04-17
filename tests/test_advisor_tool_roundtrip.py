@@ -141,7 +141,11 @@ async def test_script_exceeding_cap_marks_over_cap_rounds_as_round_cap_exceeded(
 
 @pytest.mark.asyncio
 async def test_handler_error_produces_text_tool_result_not_exception():
-    """A broken handler still produces a tool_result the loop can consume."""
+    """A broken handler still produces a tool_result the loop can consume.
+
+    The envelope carries ``is_error=True`` (per Anthropic's spec); the
+    inner content is a clean text block with no ``is_error`` key.
+    """
 
     async def _boom(ctx: McpContext) -> Any:
         raise ValueError("nope")
@@ -167,14 +171,18 @@ async def test_handler_error_produces_text_tool_result_not_exception():
     )
 
     assert response.content == MOCK_FINAL_TEXT_AFTER_TOOLS
-    # Exactly one tool_result, and its content is a text block mentioning failure.
+    # Exactly one tool_result envelope.
     assert len(mock_llm.executed_tool_results) == 1
     round_results = mock_llm.executed_tool_results[0]
     assert len(round_results) == 1
-    result_content = round_results[0]["content"]
+    envelope = round_results[0]
+    # is_error rides on the envelope, not inside content.
+    assert envelope.get("is_error") is True
+    result_content = envelope["content"]
     assert isinstance(result_content, list)
     assert result_content[0]["type"] == "text"
     assert "failed" in result_content[0]["text"].lower()
+    assert "is_error" not in result_content[0]
 
 
 @pytest.mark.asyncio

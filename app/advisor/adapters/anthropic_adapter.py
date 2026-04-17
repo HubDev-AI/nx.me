@@ -325,6 +325,10 @@ class AnthropicAdapter:
                 )
 
             # Normal round: dispatch every tool_use and append results.
+            # ``dispatch`` returns {"content": [...], "is_error": bool};
+            # we lift ``is_error`` onto the tool_result ENVELOPE (per
+            # Anthropic's spec — it is an envelope field, not a nested
+            # content-block field).
             for block in tool_use_blocks:
                 name = str(block.get("name") or "")
                 raw_input_candidate = block.get("input")
@@ -332,14 +336,15 @@ class AnthropicAdapter:
                     raw_input_candidate if isinstance(raw_input_candidate, dict) else {}
                 )
                 tool_use_id = block.get("id", "")
-                result_content = await tool_registry.dispatch(name, raw_inputs)
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_use_id,
-                        "content": result_content,
-                    }
-                )
+                result_payload = await tool_registry.dispatch(name, raw_inputs)
+                result_envelope: dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": result_payload.get("content", []),
+                }
+                if result_payload.get("is_error"):
+                    result_envelope["is_error"] = True
+                tool_results.append(result_envelope)
             messages.append({"role": "user", "content": tool_results})
             rounds += 1
 

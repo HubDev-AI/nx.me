@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.advisor.mcp.context import McpContext
+from app.db.async_helpers import run_sync
 
 _TOOL_NAME = "get_style_profile"
 _TOOL_DESCRIPTION = (
@@ -48,16 +49,20 @@ TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
-async def handle(ctx: McpContext) -> list[dict[str, Any]]:
+async def handle(ctx: McpContext) -> dict[str, Any]:
     """Return a single text content block summarizing the profile.
 
     No image blocks — this tool is text-only. Returns a terse "no profile"
     message when the user has never completed an analysis so the model can
-    reply sensibly instead of crashing.
+    reply sensibly instead of crashing. The "no profile" case is a normal
+    outcome (not an envelope error).
     """
-    profile = ctx.advisor_repo.get_style_profile(str(ctx.user_id))
+    profile = await run_sync(ctx.advisor_repo.get_style_profile, str(ctx.user_id))
     if not profile:
-        return [{"type": "text", "text": "no profile yet"}]
+        return {
+            "content": [{"type": "text", "text": "no profile yet"}],
+            "is_error": False,
+        }
 
     content = profile.get("content") or {}
     parts: list[str] = []
@@ -79,4 +84,4 @@ async def handle(ctx: McpContext) -> list[dict[str, Any]]:
     if last_updated:
         parts.append(f"updated {last_updated}")
     text = "; ".join(parts) if parts else "profile exists but empty"
-    return [{"type": "text", "text": text}]
+    return {"content": [{"type": "text", "text": text}], "is_error": False}

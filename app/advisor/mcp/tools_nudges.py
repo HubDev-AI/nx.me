@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.advisor.mcp.context import McpContext
+from app.db.async_helpers import run_sync
 
 _TOOL_NAME = "get_recent_nudges"
 
@@ -83,12 +84,14 @@ async def handle(
     ctx: McpContext,
     limit: int | None = None,
     since_days: int | None = None,
-) -> list[dict[str, Any]]:
+) -> dict[str, Any]:
     """Return the newest matching nudges as a single text block.
 
     Output shape is a human-readable bullet list so the model can quote
     or reference it verbatim. JSON would force the model to parse and
     re-render which is cheaper on tokens but worse for voice fidelity.
+    Returns ``{"content": [...], "is_error": False}`` — an empty nudge
+    list is a reportable outcome, not an envelope-level error.
     """
     n_limit = _clamp(
         limit if limit is not None else _DEFAULT_LIMIT,
@@ -103,13 +106,17 @@ async def handle(
         _DEFAULT_SINCE_DAYS,
     )
     since_iso = (datetime.now(tz=timezone.utc) - timedelta(days=n_days)).isoformat()
-    rows = ctx.advisor_repo.get_recent_nudges_for_context(
+    rows = await run_sync(
+        ctx.advisor_repo.get_recent_nudges_for_context,
         user_id=str(ctx.user_id),
         limit=n_limit,
         since_iso=since_iso,
     )
     if not rows:
-        return [{"type": "text", "text": "no recent nudges"}]
+        return {
+            "content": [{"type": "text", "text": "no recent nudges"}],
+            "is_error": False,
+        }
 
     lines: list[str] = []
     for row in rows:
@@ -128,4 +135,4 @@ async def handle(
         else:
             lines.append(f"- ({trigger}) {body_str}")
     text = "\n".join(lines) if lines else "no recent nudges"
-    return [{"type": "text", "text": text}]
+    return {"content": [{"type": "text", "text": text}], "is_error": False}

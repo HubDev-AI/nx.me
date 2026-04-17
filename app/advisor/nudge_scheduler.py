@@ -444,20 +444,28 @@ async def _fetch_vision_blocks(
     ``get_latest_glowup`` first and fall back to ``get_latest_photo``
     when no glow-up is available yet.
 
-    The handlers may return ``is_error=True`` text blocks (no glow-up,
-    no cleared image) — those are filtered out before the prompt is
-    assembled. The prompt explicitly handles the "only one image" case
-    (post_analysis pre-generation) via its degenerate-case instruction.
+    The handlers now return ``{"content": [...], "is_error": bool}``
+    (envelope-shaped payload). We unwrap ``content`` and keep only the
+    image blocks; error payloads naturally drop to zero image blocks
+    and trigger the fallback or skip path.
     """
+
+    def _content(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        inner = payload.get("content")
+        return inner if isinstance(inner, list) else []
+
     if trigger == TRIGGER_POST_GLOWUP:
-        blocks = await _handle_get_latest_glowup(mcp_ctx)
+        payload = await _handle_get_latest_glowup(mcp_ctx)
+        blocks = _content(payload)
     else:
         # post_analysis: prefer the glow-up if one exists (user may
         # have completed one already), otherwise fall back to the
         # most recent source photo.
-        blocks = await _handle_get_latest_glowup(mcp_ctx)
+        payload = await _handle_get_latest_glowup(mcp_ctx)
+        blocks = _content(payload)
         if not any(b.get("type") == CONTENT_BLOCK_TYPE_IMAGE for b in blocks):
-            blocks = await _handle_get_latest_photo(mcp_ctx)
+            payload = await _handle_get_latest_photo(mcp_ctx)
+            blocks = _content(payload)
 
     return [b for b in blocks if b.get("type") == CONTENT_BLOCK_TYPE_IMAGE]
 

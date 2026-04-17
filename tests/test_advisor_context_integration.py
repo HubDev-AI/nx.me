@@ -509,11 +509,16 @@ async def test_minimal_profile_no_nudges_no_glowup(
     assert info_records, "no INFO record captured"
     assert info_records[0].nudge_count == 0
 
-    # --- Tool returned is_error=True text block -----------------------
+    # --- Tool returned is_error=True at the ENVELOPE level ------------
+    # Plan 2026-04-17 review fix: ``is_error`` rides on the tool_result
+    # envelope per Anthropic's spec, not on inner content blocks (where
+    # Claude silently ignores it).
     assert len(mock_llm.executed_tool_results) == 1
-    blocks = mock_llm.executed_tool_results[0][0]["content"]
+    envelope = mock_llm.executed_tool_results[0][0]
+    assert envelope.get("is_error") is True
+    blocks = envelope["content"]
     assert all(b.get("type") == "text" for b in blocks)
-    assert any(b.get("is_error") is True for b in blocks)
+    assert all("is_error" not in b for b in blocks)
 
 
 # ---------------------------------------------------------------------------

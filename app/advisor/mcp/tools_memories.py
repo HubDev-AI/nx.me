@@ -103,11 +103,20 @@ async def handle(
     *,
     query: str,
     limit: int | None = None,
-) -> list[dict[str, Any]]:
-    """Return the top matching memories as a bulleted text block."""
+) -> dict[str, Any]:
+    """Return the top matching memories as a bulleted text block.
+
+    Returns ``{"content": [...], "is_error": False}`` — empty matches
+    and empty queries are reportable outcomes, not envelope-level
+    errors. ``MemoryManager.get_relevant_memories`` is already async,
+    so no ``run_sync`` wrap is needed.
+    """
     q_str = str(query).strip()
     if not q_str:
-        return [{"type": "text", "text": "empty query"}]
+        return {
+            "content": [{"type": "text", "text": "empty query"}],
+            "is_error": False,
+        }
     if len(q_str) > _MAX_QUERY_LENGTH:
         q_str = q_str[:_MAX_QUERY_LENGTH]
 
@@ -116,7 +125,7 @@ async def handle(
     manager = _get_manager(ctx)
     rows = await manager.get_relevant_memories(ctx.user_id, q_str, limit=n_limit)
     if not rows:
-        return [{"type": "text", "text": "no matches"}]
+        return {"content": [{"type": "text", "text": "no matches"}], "is_error": False}
 
     lines: list[str] = []
     for row in rows:
@@ -131,4 +140,4 @@ async def handle(
             continue
         lines.append(f"- ({kind}) {summary_one_line}")
     text = "\n".join(lines) if lines else "no matches"
-    return [{"type": "text", "text": text}]
+    return {"content": [{"type": "text", "text": text}], "is_error": False}

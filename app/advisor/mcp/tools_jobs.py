@@ -22,6 +22,7 @@ import logging
 from typing import Any
 
 from app.advisor.mcp.context import McpContext
+from app.db.async_helpers import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +108,24 @@ TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
-async def handle(ctx: McpContext) -> list[dict[str, Any]]:
-    """Return the latest generation's before/after images + feature metadata."""
-    row = ctx.advisor_repo.get_latest_completed_job_with_images(str(ctx.user_id))
+async def handle(ctx: McpContext) -> dict[str, Any]:
+    """Return the latest generation's before/after images + feature metadata.
+
+    Shape matches the Plan 2026-04-17 review fix for the ``tool_result``
+    envelope: handlers return ``{"content": [...], "is_error": bool}``
+    so the adapter can place ``is_error`` on the envelope (not on an
+    inner content block, where Anthropic silently ignores it).
+    """
+    row = await run_sync(
+        ctx.advisor_repo.get_latest_completed_job_with_images, str(ctx.user_id)
+    )
     if not row:
-        return [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": "no completed generation"}]
+        return {
+            "content": [
+                {"type": CONTENT_BLOCK_TYPE_TEXT, "text": "no completed generation"}
+            ],
+            "is_error": False,
+        }
 
     feature = str(row.get("source_type") or "unknown")
     before_key = str(row.get("before_image_url") or "")
@@ -119,7 +133,9 @@ async def handle(ctx: McpContext) -> list[dict[str, Any]]:
 
     blocks: list[dict[str, Any]] = []
     try:
-        before_bytes = ctx.advisor_repo.fetch_image_bytes(BUCKET_BEFORE, before_key)
+        before_bytes = await run_sync(
+            ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, before_key
+        )
         blocks.append(_encode_image_block(before_bytes, before_key))
     except Exception as exc:
         ctx.logger.warning(
@@ -127,7 +143,9 @@ async def handle(ctx: McpContext) -> list[dict[str, Any]]:
         )
 
     try:
-        after_bytes = ctx.advisor_repo.fetch_image_bytes(BUCKET_AFTER, after_key)
+        after_bytes = await run_sync(
+            ctx.advisor_repo.fetch_image_bytes, BUCKET_AFTER, after_key
+        )
         blocks.append(_encode_image_block(after_bytes, after_key))
     except Exception as exc:
         ctx.logger.warning(
@@ -137,12 +155,15 @@ async def handle(ctx: McpContext) -> list[dict[str, Any]]:
     if not blocks:
         # Both downloads failed — surface as recoverable text rather than
         # raising (registry would otherwise emit a generic error result).
-        return [
-            {
-                "type": CONTENT_BLOCK_TYPE_TEXT,
-                "text": (f"feature={feature}; image fetch unavailable right now"),
-            }
-        ]
+        return {
+            "content": [
+                {
+                    "type": CONTENT_BLOCK_TYPE_TEXT,
+                    "text": (f"feature={feature}; image fetch unavailable right now"),
+                }
+            ],
+            "is_error": True,
+        }
 
     # One text block with feature metadata after the images so the model
     # can reason about which feature it's looking at when both are
@@ -155,4 +176,4 @@ async def handle(ctx: McpContext) -> list[dict[str, Any]]:
     elif created_at:
         summary_parts.append(f"created_at={created_at}")
     blocks.append({"type": CONTENT_BLOCK_TYPE_TEXT, "text": "; ".join(summary_parts)})
-    return blocks
+    return {"content": blocks, "is_error": False}

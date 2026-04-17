@@ -150,19 +150,35 @@ def _filter_inputs(
 
 def _as_anthropic_result_content(
     handler_output: Any,
-) -> list[dict[str, Any]]:
-    """Normalize handler output into a valid Anthropic tool_result ``content`` list.
+) -> tuple[list[dict[str, Any]], bool]:
+    """Normalize handler output into ``(content_blocks, is_error)``.
 
-    Handlers may return a string, a single content-block dict, or a list of
-    content-block dicts. Anything else is wrapped in a text block carrying
-    ``repr()`` of the value so the dispatcher never emits a malformed
-    tool_result (which Anthropic would reject on the next call).
+    Handlers may return:
+
+    * ``{"content": [...], "is_error": bool}`` — the preferred shape
+      (Plan 2026-04-17 review fix for the ``tool_result`` envelope).
+      ``is_error`` is surfaced at the envelope level by the adapter.
+    * A list of content-block dicts — historic shape; treated as a
+      success (``is_error=False``). Any per-block ``is_error`` keys are
+      stripped by the adapter before sending to Anthropic since they are
+      not part of the API's content-block shape.
+    * A single content-block dict — wrapped in a single-element list.
+    * Anything else — wrapped in a text block carrying ``str()`` of the
+      value so the dispatcher never emits a malformed tool_result.
     """
+    if isinstance(handler_output, dict) and "content" in handler_output:
+        content = handler_output.get("content")
+        is_error_flag = bool(handler_output.get("is_error", False))
+        if isinstance(content, list):
+            return [b for b in content if isinstance(b, dict)], is_error_flag
+        if isinstance(content, dict):
+            return [content], is_error_flag
+        return [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": str(content)}], is_error_flag
     if isinstance(handler_output, list):
-        return [b for b in handler_output if isinstance(b, dict)]
+        return [b for b in handler_output if isinstance(b, dict)], False
     if isinstance(handler_output, dict):
-        return [handler_output]
-    return [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": str(handler_output)}]
+        return [handler_output], False
+    return [{"type": CONTENT_BLOCK_TYPE_TEXT, "text": str(handler_output)}], False
 
 
 class ToolRegistry:
@@ -212,19 +228,20 @@ class ToolRegistry:
     async def dispatch(
         self,
         name: str,
-        raw_inputs: dict[str, Any] | None,
-    ) -> list[dict[str, Any]]:
-        """Run a tool by name and return Anthropic-shaped tool_result content.
+        raw_inputs: Any,
+    ) -> dict[str, Any]:
+        """Run a tool by name and return an Anthropic-shaped tool_result payload.
 
-        The caller (adapter) is responsible for wrapping the returned list
-        in a ``{"type": "tool_result", "tool_use_id": <id>, "content": ...}``
-        block and appending it to the next user message. This method
-        handles only the registry-side concerns: argument filtering,
-        handler invocation, exception → is_error translation, and
-        telemetry.
+        Returns a dict ``{"content": list[dict], "is_error": bool}``.
+        The caller (adapter) is responsible for wrapping the payload in
+        a ``{"type": "tool_result", "tool_use_id": <id>, "content": ...,
+        "is_error": ...}`` envelope — ``is_error`` is an envelope-level
+        field per Anthropic's spec, NOT an inner content-block key.
+        Placing ``is_error`` on inner blocks gets silently ignored by
+        Claude, which is the review finding this shape change addresses.
 
         Errors never propagate — the dispatcher always returns a
-        well-formed content list so the adapter can emit a tool_result and
+        well-formed payload so the adapter can emit a tool_result and
         keep the loop going.
         """
         schema = self._tools.get(name)
@@ -242,12 +259,15 @@ class ToolRegistry:
                     "error_class": ERROR_CLASS_UNKNOWN_TOOL,
                 },
             )
-            return [
-                {
-                    "type": CONTENT_BLOCK_TYPE_TEXT,
-                    "text": f"Unknown tool: {name}",
-                }
-            ]
+            return {
+                "content": [
+                    {
+                        "type": CONTENT_BLOCK_TYPE_TEXT,
+                        "text": f"Unknown tool: {name}",
+                    }
+                ],
+                "is_error": True,
+            }
 
         accepted, stripped = _filter_inputs(schema, raw_inputs)
         if stripped:
@@ -284,12 +304,15 @@ class ToolRegistry:
                     "error_class": type(exc).__name__ or ERROR_CLASS_HANDLER_EXCEPTION,
                 },
             )
-            return [
-                {
-                    "type": CONTENT_BLOCK_TYPE_TEXT,
-                    "text": f"Tool '{name}' failed: {type(exc).__name__}",
-                }
-            ]
+            return {
+                "content": [
+                    {
+                        "type": CONTENT_BLOCK_TYPE_TEXT,
+                        "text": f"Tool '{name}' failed: {type(exc).__name__}",
+                    }
+                ],
+                "is_error": True,
+            }
 
         duration_ms = int((time.monotonic() - start) * 1000)
         self._ctx.logger.info(
@@ -304,7 +327,8 @@ class ToolRegistry:
                 "duration_ms": duration_ms,
             },
         )
-        return _as_anthropic_result_content(result)
+        content, is_error_flag = _as_anthropic_result_content(result)
+        return {"content": content, "is_error": is_error_flag}
 
     # ------------------------------------------------------------------
     # Discovery

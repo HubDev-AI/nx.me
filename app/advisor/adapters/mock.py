@@ -144,14 +144,15 @@ class MockLLMAdapter:
                 name = str(tool_use.get("name") or "")
                 raw_inputs = dict(tool_use.get("input") or {})
                 self.tool_dispatch_log.append((name, raw_inputs))
-                result = await tool_registry.dispatch(name, raw_inputs)
-                round_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": f"{MOCK_TOOL_USE_ID_PREFIX}{round_idx}_{block_idx}",
-                        "content": result,
-                    }
-                )
+                payload = await tool_registry.dispatch(name, raw_inputs)
+                envelope: dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": f"{MOCK_TOOL_USE_ID_PREFIX}{round_idx}_{block_idx}",
+                    "content": payload.get("content", []),
+                }
+                if payload.get("is_error"):
+                    envelope["is_error"] = True
+                round_results.append(envelope)
             executed_results.append(round_results)
 
         # Over-cap rounds — synthesize round-cap errors so tests can

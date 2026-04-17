@@ -72,15 +72,26 @@ def _patch_repo(
 
 
 def _patch_handlers(monkeypatch, *, glowup_blocks: list[dict] | None = None):
+    """Patch handlers to return envelope-shaped dicts (Plan 2026-04-17 review fix).
+
+    ``{"content": [...], "is_error": bool}`` — ``is_error`` rides on the
+    envelope per Anthropic's spec, never on an inner content block.
+    """
     from app.advisor import nudge_scheduler
 
     async def _glowup(_ctx):
         if glowup_blocks is not None:
-            return list(glowup_blocks)
-        return [{"type": "text", "text": "no completed glow-up", "is_error": True}]
+            return {"content": list(glowup_blocks), "is_error": False}
+        return {
+            "content": [{"type": "text", "text": "no completed glow-up"}],
+            "is_error": True,
+        }
 
     async def _photo(_ctx):
-        return [{"type": "text", "text": "no source photo", "is_error": True}]
+        return {
+            "content": [{"type": "text", "text": "no source photo"}],
+            "is_error": True,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _glowup)
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_photo", _photo)

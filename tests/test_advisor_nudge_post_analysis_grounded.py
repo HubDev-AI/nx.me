@@ -86,10 +86,11 @@ def _patch_repo(
 def _patch_image_fetch(monkeypatch, image_blocks: list[dict] | None = None):
     """Patch the two MCP vision handlers so the scheduler sees deterministic output.
 
-    Defaults to returning a single ``is_error`` text block for
+    Defaults to returning an envelope with ``is_error=True`` for
     ``_handle_get_latest_glowup`` (no glow-up yet) and a single image
     block for ``_handle_get_latest_photo`` — the degenerate
-    post_analysis shape.
+    post_analysis shape. Handler shape is
+    ``{"content": [...], "is_error": bool}`` (Plan 2026-04-17 review fix).
     """
     from app.advisor import nudge_scheduler
 
@@ -106,11 +107,14 @@ def _patch_image_fetch(monkeypatch, image_blocks: list[dict] | None = None):
         ]
 
     async def _fake_glowup(_ctx):
-        # No glow-up → handler returns is_error text block.
-        return [{"type": "text", "text": "no completed glow-up", "is_error": True}]
+        # No glow-up → envelope is_error=True, text block with no inner flag.
+        return {
+            "content": [{"type": "text", "text": "no completed glow-up"}],
+            "is_error": True,
+        }
 
     async def _fake_photo(_ctx):
-        return list(image_blocks)
+        return {"content": list(image_blocks), "is_error": False}
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _fake_glowup)
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_photo", _fake_photo)

@@ -43,6 +43,7 @@ from typing import Any
 
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_jobs import BUCKET_AFTER, BUCKET_BEFORE
+from app.db.async_helpers import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ _GLOWUP_TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
-async def _handle_get_latest_glowup(ctx: McpContext) -> list[dict[str, Any]]:
+async def _handle_get_latest_glowup(ctx: McpContext) -> dict[str, Any]:
     """Return before + after glow-up images + ``feature=glowup`` metadata.
 
     Behavior:
@@ -154,38 +155,46 @@ async def _handle_get_latest_glowup(ctx: McpContext) -> list[dict[str, Any]]:
       to ``glowup_analysis``). Repo-level filter prevents a make-up
       session (or any future polymorphic row) from leaking through this
       feature-specific tool.
-    * When no glow-up exists, returns an ``is_error``-flavored text
-      block describing the missing state so the model can surface it
-      without crashing. The surrounding tool-result envelope is added
-      by the registry, which forwards error text up the stack.
+    * When no glow-up exists, returns ``{"content": [...], "is_error":
+      True}`` so the adapter can place ``is_error`` on the
+      ``tool_result`` envelope per Anthropic's spec (not on an inner
+      content block, where it is silently ignored).
     * Downloads before/after bytes via ``fetch_image_bytes`` (server-side
       storage creds; NEVER a signed URL). Each image becomes one Anthropic
       base64 ``image`` block. A single text block follows with
       ``feature=glowup`` + completed_at metadata so the model can
       reference the specific generation when replying.
     """
-    row = ctx.advisor_repo.get_latest_completed_glowup_with_images(str(ctx.user_id))
+    row = await run_sync(
+        ctx.advisor_repo.get_latest_completed_glowup_with_images, str(ctx.user_id)
+    )
     if not row:
-        return [
-            {
-                "type": CONTENT_BLOCK_TYPE_TEXT,
-                "text": "no completed glow-up",
-                "is_error": True,
-            }
-        ]
+        return {
+            "content": [
+                {
+                    "type": CONTENT_BLOCK_TYPE_TEXT,
+                    "text": "no completed glow-up",
+                }
+            ],
+            "is_error": True,
+        }
 
     before_key = str(row.get("before_image_url") or "")
     after_key = str(row.get("after_image_url") or "")
 
     blocks: list[dict[str, Any]] = []
     try:
-        before_bytes = ctx.advisor_repo.fetch_image_bytes(BUCKET_BEFORE, before_key)
+        before_bytes = await run_sync(
+            ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, before_key
+        )
         blocks.append(_encode_image_block(before_bytes, before_key))
     except Exception as exc:
         ctx.logger.warning("get_latest_glowup: failed to fetch before image: %s", exc)
 
     try:
-        after_bytes = ctx.advisor_repo.fetch_image_bytes(BUCKET_AFTER, after_key)
+        after_bytes = await run_sync(
+            ctx.advisor_repo.fetch_image_bytes, BUCKET_AFTER, after_key
+        )
         blocks.append(_encode_image_block(after_bytes, after_key))
     except Exception as exc:
         ctx.logger.warning("get_latest_glowup: failed to fetch after image: %s", exc)
@@ -193,15 +202,18 @@ async def _handle_get_latest_glowup(ctx: McpContext) -> list[dict[str, Any]]:
     if not blocks:
         # Both downloads failed — surface as a recoverable text block so
         # the model can apologize without the whole turn crashing.
-        return [
-            {
-                "type": CONTENT_BLOCK_TYPE_TEXT,
-                "text": (
-                    f"feature={FEATURE_TAG_GLOWUP}; image fetch unavailable right now"
-                ),
-                "is_error": True,
-            }
-        ]
+        return {
+            "content": [
+                {
+                    "type": CONTENT_BLOCK_TYPE_TEXT,
+                    "text": (
+                        f"feature={FEATURE_TAG_GLOWUP}; "
+                        "image fetch unavailable right now"
+                    ),
+                }
+            ],
+            "is_error": True,
+        }
 
     completed_at = str(row.get("completed_at") or "")
     created_at = str(row.get("created_at") or "")
@@ -211,7 +223,7 @@ async def _handle_get_latest_glowup(ctx: McpContext) -> list[dict[str, Any]]:
     elif created_at:
         summary_parts.append(f"created_at={created_at}")
     blocks.append({"type": CONTENT_BLOCK_TYPE_TEXT, "text": "; ".join(summary_parts)})
-    return blocks
+    return {"content": blocks, "is_error": False}
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +260,7 @@ _PHOTO_TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
-async def _handle_get_latest_photo(ctx: McpContext) -> list[dict[str, Any]]:
+async def _handle_get_latest_photo(ctx: McpContext) -> dict[str, Any]:
     """Return the single most recent cleared source photo + metadata.
 
     Uses the existing ``get_cleared_images(user_id, limit=1)`` repo
@@ -256,57 +268,70 @@ async def _handle_get_latest_photo(ctx: McpContext) -> list[dict[str, Any]]:
     is ``BUCKET_BEFORE`` (``raw-selfies``) — cleared uploads live
     alongside the glow-up's before-image pointer in the same bucket.
 
-    When the user has no cleared images, the tool returns an
-    ``is_error``-flavored text block so the model can surface the
-    missing state without crashing. Download failures degrade the same
-    way: better a textual "image fetch unavailable" than a pending
-    tool_use the model cannot satisfy.
+    When the user has no cleared images, the tool returns
+    ``{"content": [text block], "is_error": True}`` so the adapter
+    places ``is_error`` on the ``tool_result`` envelope. Download
+    failures degrade the same way: better a textual "image fetch
+    unavailable" than a pending tool_use the model cannot satisfy.
     """
-    rows = ctx.advisor_repo.get_cleared_images(
-        str(ctx.user_id), limit=SOURCE_PHOTO_FETCH_LIMIT
+    rows = await run_sync(
+        ctx.advisor_repo.get_cleared_images,
+        str(ctx.user_id),
+        limit=SOURCE_PHOTO_FETCH_LIMIT,
     )
     if not rows:
-        return [
-            {
-                "type": CONTENT_BLOCK_TYPE_TEXT,
-                "text": "no source photo",
-                "is_error": True,
-            }
-        ]
+        return {
+            "content": [
+                {
+                    "type": CONTENT_BLOCK_TYPE_TEXT,
+                    "text": "no source photo",
+                }
+            ],
+            "is_error": True,
+        }
 
     row = rows[0]
     storage_path = str(row.get("storage_path") or "")
     if not storage_path:
-        return [
-            {
-                "type": CONTENT_BLOCK_TYPE_TEXT,
-                "text": "no source photo",
-                "is_error": True,
-            }
-        ]
+        return {
+            "content": [
+                {
+                    "type": CONTENT_BLOCK_TYPE_TEXT,
+                    "text": "no source photo",
+                }
+            ],
+            "is_error": True,
+        }
 
     try:
-        img_bytes = ctx.advisor_repo.fetch_image_bytes(BUCKET_BEFORE, storage_path)
+        img_bytes = await run_sync(
+            ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, storage_path
+        )
     except Exception as exc:
         ctx.logger.warning("get_latest_photo: failed to fetch source image: %s", exc)
-        return [
+        return {
+            "content": [
+                {
+                    "type": CONTENT_BLOCK_TYPE_TEXT,
+                    "text": (
+                        f"feature={FEATURE_TAG_SOURCE_PHOTO}; "
+                        "image fetch unavailable right now"
+                    ),
+                }
+            ],
+            "is_error": True,
+        }
+
+    return {
+        "content": [
+            _encode_image_block(img_bytes, storage_path),
             {
                 "type": CONTENT_BLOCK_TYPE_TEXT,
-                "text": (
-                    f"feature={FEATURE_TAG_SOURCE_PHOTO}; "
-                    "image fetch unavailable right now"
-                ),
-                "is_error": True,
-            }
-        ]
-
-    return [
-        _encode_image_block(img_bytes, storage_path),
-        {
-            "type": CONTENT_BLOCK_TYPE_TEXT,
-            "text": f"feature={FEATURE_TAG_SOURCE_PHOTO}",
-        },
-    ]
+                "text": f"feature={FEATURE_TAG_SOURCE_PHOTO}",
+            },
+        ],
+        "is_error": False,
+    }
 
 
 # ---------------------------------------------------------------------------

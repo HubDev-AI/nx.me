@@ -3,15 +3,18 @@
 Covers ``get_latest_glowup`` and ``get_latest_photo``:
 
 - Happy paths for both tools — correct shape, correct base64 decode,
-  correct feature metadata.
+  correct feature metadata. Handlers return envelope-shaped dicts
+  ``{"content": [...], "is_error": bool}`` so the registry can place
+  ``is_error`` on the ``tool_result`` envelope (not on inner content
+  blocks, where Anthropic silently ignores it).
 - Error paths — user with no glow-up / no cleared image returns
-  ``is_error=True`` text block.
+  ``is_error=True`` at the envelope level.
 - Schema introspection — neither tool's ``input_schema`` accepts a
   ``user_id``-shaped key (belt-and-suspenders on top of Unit 9's
   registry-wide audit).
 - Registry-level dispatch — both tools are discovered from the shared
   ``tools_glowup.py`` module via the plural ``TOOL_SCHEMAS`` +
-  ``HANDLERS`` surface.
+  ``HANDLERS`` surface. ``dispatch`` returns the envelope-shaped dict.
 """
 
 from __future__ import annotations
@@ -106,11 +109,16 @@ async def test_get_latest_glowup_returns_before_after_and_feature_metadata() -> 
     repo = _stub_repo_with_glowup()
     result = await _handle_get_latest_glowup(_ctx(repo=repo))
 
-    image_blocks = [b for b in result if b.get("type") == "image"]
-    text_blocks = [b for b in result if b.get("type") == "text"]
+    assert isinstance(result, dict)
+    assert result["is_error"] is False
+    content = result["content"]
+    image_blocks = [b for b in content if b.get("type") == "image"]
+    text_blocks = [b for b in content if b.get("type") == "text"]
 
     assert len(image_blocks) == 2, f"expected 2 image blocks, got {len(image_blocks)}"
     assert len(text_blocks) == 1, f"expected 1 text block, got {len(text_blocks)}"
+    # Inner blocks must NOT carry is_error — it belongs on the envelope.
+    assert all("is_error" not in b for b in content)
 
     # First image is the "before" (source); second is "after".
     before_block, after_block = image_blocks
@@ -144,32 +152,31 @@ async def test_get_latest_glowup_uses_authenticated_user_id() -> None:
 
 @pytest.mark.asyncio
 async def test_get_latest_glowup_returns_is_error_when_no_glowup_exists() -> None:
-    """No completed glow-up → single text block with is_error=True."""
+    """No completed glow-up → is_error on envelope, clean text content."""
     repo = MagicMock()
     repo.get_latest_completed_glowup_with_images.return_value = None
 
     result = await _handle_get_latest_glowup(_ctx(repo=repo))
-    assert result == [
-        {
-            "type": "text",
-            "text": "no completed glow-up",
-            "is_error": True,
-        }
-    ]
+    assert result == {
+        "content": [{"type": "text", "text": "no completed glow-up"}],
+        "is_error": True,
+    }
 
 
 @pytest.mark.asyncio
 async def test_get_latest_glowup_degrades_when_both_downloads_fail() -> None:
-    """Both storage downloads fail → recoverable text block with is_error=True."""
+    """Both storage downloads fail → recoverable text + is_error on envelope."""
     repo = MagicMock()
     repo.get_latest_completed_glowup_with_images.return_value = _completed_glowup_row()
     repo.fetch_image_bytes.side_effect = RuntimeError("storage outage")
 
     result = await _handle_get_latest_glowup(_ctx(repo=repo))
-    assert len(result) == 1
-    assert result[0]["type"] == "text"
-    assert result[0]["is_error"] is True
-    assert FEATURE_TAG_GLOWUP in result[0]["text"]
+    assert result["is_error"] is True
+    content = result["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "text"
+    assert "is_error" not in content[0]
+    assert FEATURE_TAG_GLOWUP in content[0]["text"]
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +190,11 @@ async def test_get_latest_photo_returns_single_base64_block_plus_metadata() -> N
     repo = _stub_repo_with_source_photo()
     result = await _handle_get_latest_photo(_ctx(repo=repo))
 
-    image_blocks = [b for b in result if b.get("type") == "image"]
-    text_blocks = [b for b in result if b.get("type") == "text"]
+    assert isinstance(result, dict)
+    assert result["is_error"] is False
+    content = result["content"]
+    image_blocks = [b for b in content if b.get("type") == "image"]
+    text_blocks = [b for b in content if b.get("type") == "text"]
 
     assert len(image_blocks) == 1, f"expected 1 image block, got {len(image_blocks)}"
     assert len(text_blocks) == 1
@@ -192,6 +202,8 @@ async def test_get_latest_photo_returns_single_base64_block_plus_metadata() -> N
     assert image_blocks[0]["source"]["type"] == "base64"
     assert base64.b64decode(image_blocks[0]["source"]["data"]) == _FAKE_SOURCE_BYTES
     assert text_blocks[0]["text"] == f"feature={FEATURE_TAG_SOURCE_PHOTO}"
+    # No per-block is_error — the envelope carries it.
+    assert all("is_error" not in b for b in content)
 
 
 @pytest.mark.asyncio
@@ -210,18 +222,15 @@ async def test_get_latest_photo_fetches_from_before_bucket() -> None:
 
 @pytest.mark.asyncio
 async def test_get_latest_photo_returns_is_error_when_no_cleared_images() -> None:
-    """Empty cleared-images list → is_error text block."""
+    """Empty cleared-images list → is_error on envelope."""
     repo = MagicMock()
     repo.get_cleared_images.return_value = []
     result = await _handle_get_latest_photo(_ctx(repo=repo))
 
-    assert result == [
-        {
-            "type": "text",
-            "text": "no source photo",
-            "is_error": True,
-        }
-    ]
+    assert result == {
+        "content": [{"type": "text", "text": "no source photo"}],
+        "is_error": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -233,12 +242,14 @@ async def test_get_latest_photo_returns_is_error_when_storage_path_missing() -> 
     ]
     result = await _handle_get_latest_photo(_ctx(repo=repo))
 
-    assert result[0]["is_error"] is True
+    assert result["is_error"] is True
+    assert result["content"][0]["text"] == "no source photo"
+    assert "is_error" not in result["content"][0]
 
 
 @pytest.mark.asyncio
 async def test_get_latest_photo_degrades_when_download_fails() -> None:
-    """Download error → recoverable text block with is_error=True."""
+    """Download error → recoverable text + is_error on envelope."""
     repo = MagicMock()
     repo.get_cleared_images.return_value = [
         {"id": "img_1", "storage_path": "user_a/selfie.jpg"},
@@ -246,9 +257,12 @@ async def test_get_latest_photo_degrades_when_download_fails() -> None:
     repo.fetch_image_bytes.side_effect = RuntimeError("storage outage")
     result = await _handle_get_latest_photo(_ctx(repo=repo))
 
-    assert len(result) == 1
-    assert result[0]["is_error"] is True
-    assert FEATURE_TAG_SOURCE_PHOTO in result[0]["text"]
+    assert result["is_error"] is True
+    content = result["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "text"
+    assert "is_error" not in content[0]
+    assert FEATURE_TAG_SOURCE_PHOTO in content[0]["text"]
 
 
 # ---------------------------------------------------------------------------
@@ -297,13 +311,16 @@ def test_registry_auto_discovers_both_glowup_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_registry_dispatch_routes_get_latest_glowup_to_handler() -> None:
-    """Dispatching by name returns the glow-up handler's output verbatim."""
+    """Dispatching by name returns the envelope-shaped dispatch payload."""
     repo = _stub_repo_with_glowup()
     registry = ToolRegistry(ctx=_ctx(repo=repo))
     result = await registry.dispatch("get_latest_glowup", {})
 
-    image_blocks = [b for b in result if b.get("type") == "image"]
-    text_blocks = [b for b in result if b.get("type") == "text"]
+    assert isinstance(result, dict)
+    assert result["is_error"] is False
+    content = result["content"]
+    image_blocks = [b for b in content if b.get("type") == "image"]
+    text_blocks = [b for b in content if b.get("type") == "text"]
     assert len(image_blocks) == 2
     assert any(FEATURE_TAG_GLOWUP in b["text"] for b in text_blocks)
 
