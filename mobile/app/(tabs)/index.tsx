@@ -14,7 +14,6 @@ import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
 import { useTheme } from "../../lib/theme-context";
 import { PageBackground } from "../../components/ui/PageBackground";
-import { QueryStateView } from "../../components/ui/QueryStateView";
 import { FEED_CONFIG } from "../../constants/config";
 import { FeedCard } from "../../components/feed/FeedCard";
 import { FeedSkeleton } from "../../components/feed/FeedSkeleton";
@@ -174,8 +173,28 @@ export default function HomeScreen() {
     );
   }, [isLoadingMore, theme.accent]);
 
+  // One source of truth for the feed's empty region: the FlatList's
+  // ListEmptyComponent + contentContainerStyle flexGrow:1 (styles.listContent)
+  // lets EmptyState (center={true}) stretch to the full available area
+  // below the list header. Error branch renders the same primitive with
+  // a Try Again action so the title lands at the same vertical spot
+  // whether the list is empty-by-success or empty-by-failure.
   const renderEmpty = useCallback(() => {
     if (isLoading) return null;
+    if (error) {
+      return (
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Could not load posts"
+          description={error.message}
+          action={{
+            label: "Try Again",
+            onPress: loadFeed,
+            accessibilityLabel: "Retry loading feed",
+          }}
+        />
+      );
+    }
     return (
       <EmptyState
         icon="images-outline"
@@ -183,7 +202,7 @@ export default function HomeScreen() {
         description="Be the first to share your glow-up"
       />
     );
-  }, [isLoading]);
+  }, [isLoading, error, loadFeed]);
 
   const renderHeader = useCallback(
     () => (
@@ -209,41 +228,34 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <PageBackground overlayOpacity={0.88} />
-      <QueryStateView
-        isLoading={false}
-        isEmpty={false}
-        error={posts.length === 0 && error ? error : null}
-        onRetry={loadFeed}
-      >
-        <AnimatedFlatList
-          ref={flatListRef}
-          data={posts}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          ListHeaderComponent={renderHeader}
-          ListFooterComponent={renderFooter}
-          ListEmptyComponent={renderEmpty}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.5}
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={() => { hapticLight(); refresh(); }}
-              colors={[theme.accent]}
-              tintColor={theme.accent}
-              progressBackgroundColor={THEME.colors.bg}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={Platform.OS === "android"}
-          maxToRenderPerBatch={FEED_CONFIG.MAX_TO_RENDER_PER_BATCH}
-          updateCellsBatchingPeriod={FEED_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
-          windowSize={FEED_CONFIG.WINDOW_SIZE}
-          contentContainerStyle={styles.listContent}
-        />
-      </QueryStateView>
+      <AnimatedFlatList
+        ref={flatListRef}
+        data={posts}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmpty}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => { hapticLight(); refresh(); }}
+            colors={[theme.accent]}
+            tintColor={theme.accent}
+            progressBackgroundColor={THEME.colors.bg}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={Platform.OS === "android"}
+        maxToRenderPerBatch={FEED_CONFIG.MAX_TO_RENDER_PER_BATCH}
+        updateCellsBatchingPeriod={FEED_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
+        windowSize={FEED_CONFIG.WINDOW_SIZE}
+        contentContainerStyle={styles.listContent}
+      />
 
       <CommentsSheet
         visible={isCommentsVisible}
@@ -268,5 +280,4 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.xl,
     alignItems: "center",
   },
-  // retryButton and retryText removed — handled by QueryStateView
 });

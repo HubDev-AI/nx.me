@@ -154,6 +154,11 @@ export default function BlockedUsersScreen() {
     return <Redirect href="/settings" />;
   }
 
+  // Loading / error / empty states don't need a scroll region — render a
+  // plain flex:1 view and let EmptyState (center={true}) do the centering.
+  // Matches the canonical "the bounding view IS the empty region" rule.
+  const showEmptyScreen = isLoading || error !== null || blockedUsers.length === 0;
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
@@ -175,31 +180,19 @@ export default function BlockedUsersScreen() {
       <View style={styles.container}>
         <PageBackground overlayOpacity={0.88} />
 
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: insets.bottom + THEME.spacing.xxxl },
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Loading state */}
-          {isLoading ? (
-            <Animated.View
-              entering={FadeInDown.duration(400)}
-              style={styles.centered}
-            >
-              <ActivityIndicator color={theme.accent} size="large" />
-              <Caption color="secondary" style={styles.loadingText}>
-                Loading blocked users…
-              </Caption>
-            </Animated.View>
-          ) : error ? (
-            /* Error state */
-            <Animated.View
-              entering={FadeInDown.duration(400)}
-              style={styles.centered}
-            >
+        {showEmptyScreen ? (
+          <Animated.View
+            entering={FadeInDown.duration(400)}
+            style={styles.fillCentered}
+          >
+            {isLoading ? (
+              <>
+                <ActivityIndicator color={theme.accent} size="large" />
+                <Caption color="secondary" style={styles.loadingText}>
+                  Loading blocked users…
+                </Caption>
+              </>
+            ) : error ? (
               <EmptyState
                 icon="alert-circle-outline"
                 title="Could not load blocked users"
@@ -209,24 +202,25 @@ export default function BlockedUsersScreen() {
                   onPress: loadBlockedUsers,
                   accessibilityLabel: "Retry loading blocked users",
                 }}
-                center={false}
               />
-            </Animated.View>
-          ) : blockedUsers.length === 0 ? (
-            /* Empty state */
-            <Animated.View
-              entering={FadeInDown.duration(400)}
-              style={styles.centered}
-            >
+            ) : (
               <EmptyState
                 icon="shield-checkmark-outline"
                 title="No blocked users"
                 description="Users you block will appear here"
-                center={false}
               />
-            </Animated.View>
-          ) : (
-            /* Blocked users list */
+            )}
+          </Animated.View>
+        ) : (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: insets.bottom + THEME.spacing.xxxl },
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Blocked users list */}
             <View style={styles.list}>
               {blockedUsers.map((user, index) => {
                 const isUnblocking = unblockingIds.has(user.blocked_id);
@@ -292,8 +286,8 @@ export default function BlockedUsersScreen() {
                 );
               })}
             </View>
-          )}
-        </ScrollView>
+          </ScrollView>
+        )}
       </View>
     </>
   );
@@ -317,12 +311,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  // Centered states (loading, error, empty)
-  centered: {
+  // Fill-centered wrapper for loading / error / empty states. flex:1
+  // bounds the empty region to the entire screen below the header, which
+  // lets EmptyState's built-in centering (center={true}) do the work.
+  fillCentered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: THEME.spacing.xxxl * 2 + THEME.spacing.lg,
     gap: THEME.spacing.md,
   },
   loadingText: {

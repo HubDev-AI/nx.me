@@ -284,45 +284,52 @@ export function ChatView() {
       behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"}
       keyboardVerticalOffset={keyboardVerticalOffset}
     >
-      {/* Message list */}
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        ListHeaderComponent={renderHeader}
-        ListFooterComponent={isSending ? TypingIndicator : null}
-        onStartReached={loadOlderMessages}
-        onStartReachedThreshold={0.3}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        maxToRenderPerBatch={ADVISOR_CONFIG.MAX_TO_RENDER_PER_BATCH}
-        updateCellsBatchingPeriod={ADVISOR_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
-        windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
-      />
-
-      {/* Error overlay — centered with Try Again button. */}
-      {error && messages.length === 0 && (
-        <AdvisorEmptyOverlay
-          icon="alert-circle-outline"
-          title="Could not load messages"
-          description={error}
-          action={{
-            label: "Try Again",
-            onPress: loadMessages,
-            accessibilityLabel: "Retry loading messages",
-          }}
+      {/* List + empty-state region. Wrapping the FlatList in a flex:1 view
+          bounds the AdvisorEmptyOverlay to the empty space ABOVE the
+          composer — otherwise the overlay's StyleSheet.absoluteFill
+          extends behind the composer and drags the visual center down.
+          Matches MemoryList's listArea pattern so the empty-state title
+          lands at the same vertical spot across every advisor tab. */}
+      <View style={styles.listArea}>
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          ListHeaderComponent={renderHeader}
+          ListFooterComponent={isSending ? TypingIndicator : null}
+          onStartReached={loadOlderMessages}
+          onStartReachedThreshold={0.3}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          maxToRenderPerBatch={ADVISOR_CONFIG.MAX_TO_RENDER_PER_BATCH}
+          updateCellsBatchingPeriod={ADVISOR_CONFIG.UPDATE_CELLS_BATCHING_PERIOD_MS}
+          windowSize={ADVISOR_CONFIG.WINDOW_SIZE}
         />
-      )}
 
-      {/* Fixed-center empty state — matches position across advisor tabs. */}
-      {!error && messages.length === 0 && (
-        <AdvisorEmptyOverlay
-          icon="sparkles-outline"
-          title="Start a conversation"
-          description="Ask Ada for style advice"
-        />
-      )}
+        {/* Error overlay — centered with Try Again button. */}
+        {error && messages.length === 0 && (
+          <AdvisorEmptyOverlay
+            icon="alert-circle-outline"
+            title="Could not load messages"
+            description={error}
+            action={{
+              label: "Try Again",
+              onPress: loadMessages,
+              accessibilityLabel: "Retry loading messages",
+            }}
+          />
+        )}
+
+        {/* Fixed-center empty state — matches position across advisor tabs. */}
+        {!error && messages.length === 0 && (
+          <AdvisorEmptyOverlay
+            icon="sparkles-outline"
+            title="Start a conversation"
+            description="Ask Ada for style advice"
+          />
+        )}
+      </View>
 
       {/* Send error banner */}
       {error && messages.length > 0 && (
@@ -374,6 +381,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "transparent",
+  },
+  listArea: {
+    flex: 1,
   },
   listContent: {
     flexGrow: 1,
