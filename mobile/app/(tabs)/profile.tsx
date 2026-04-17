@@ -68,6 +68,7 @@ export default function ProfileScreen() {
     loadMoreGlowUps,
     updateProfile,
     dismissErroredItem,
+    reconcileWithJob,
   } = useProfile();
 
   // Load profile once the session can view its own profile and the username
@@ -309,6 +310,7 @@ export default function ProfileScreen() {
         onLoadMore={handleLoadMoreGlowUps}
         onItemPress={handleItemPress}
         onItemLongPress={handleItemLongPress}
+        onJobResolved={reconcileWithJob}
         ListHeaderComponent={profileHeader}
         refreshing={isRefreshing}
         onRefresh={handleRefresh}

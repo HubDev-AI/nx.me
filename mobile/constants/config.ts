@@ -373,6 +373,22 @@ export const RESULT_HARD_TIMEOUT_COPY =
 export const PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY =
   "@nxme:dismissed_errored_jobs";
 
+/**
+ * Profile pending-cell polling cadence. Matches the result screen's
+ * existing 2s poll so the result screen + a pending cell observing the
+ * same job collapse to a single React Query observer (`['job', jobId]`)
+ * and only one network request fires per 2s.
+ */
+export const PROFILE_PENDING_CELL_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Visible pending cells that may run a poll concurrently. The cap
+ * bounds polling load — per-user entitlement usually caps lower
+ * anyway (3 concurrent generations). Extras render a static shimmer
+ * but don't poll until a slot frees.
+ */
+export const PROFILE_PENDING_CELL_MAX_VISIBLE = 3;
+
 /** Errored-cell dismiss action sheet copy. */
 export const DISMISS_ERRORED_JOB_TITLE = "Remove from profile?";
 export const DISMISS_ERRORED_JOB_BODY =

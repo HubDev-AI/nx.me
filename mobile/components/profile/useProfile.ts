@@ -7,6 +7,7 @@ import {
   getDismissedJobIdsSync,
   loadDismissedJobIds,
 } from "../../lib/dismissed-jobs-store";
+import type { JobResult } from "../../lib/analysis";
 import type {
   UserProfile,
   GlowUpItem,
@@ -52,6 +53,13 @@ interface UseProfileReturn {
    * to AsyncStorage. The next /history refetch will skip the row.
    */
   dismissErroredItem: (jobId: string) => void;
+  /**
+   * Reconcile a single GET /v1/jobs/{id} poll result back into the
+   * grid. PendingGlowUpCell calls this when its observer sees an
+   * update; the row's status, after_image_url, and before_image_url
+   * are updated in place. No-op for items not currently in glowUps.
+   */
+  reconcileWithJob: (jobId: string, result: JobResult) => void;
 }
 
 /**
@@ -196,6 +204,35 @@ export function useProfile(): UseProfileReturn {
     setGlowUps((prev) => prev.filter((entry) => entry.job_id !== jobId));
   }, []);
 
+  const reconcileWithJob = useCallback(
+    (jobId: string, result: JobResult) => {
+      setGlowUps((prev) => {
+        let touched = false;
+        const next = prev.map((entry) => {
+          if (entry.job_id !== jobId) return entry;
+          if (
+            entry.status === result.status &&
+            entry.after_image_url === result.after_image_url &&
+            entry.before_image_url === result.before_image_url
+          ) {
+            return entry;
+          }
+          touched = true;
+          return {
+            ...entry,
+            status: result.status,
+            after_image_url:
+              result.after_image_url ?? entry.after_image_url,
+            before_image_url:
+              result.before_image_url ?? entry.before_image_url,
+          };
+        });
+        return touched ? next : prev;
+      });
+    },
+    [],
+  );
+
   const updateProfile = useCallback(
     async (
       username: string,
@@ -253,5 +290,6 @@ export function useProfile(): UseProfileReturn {
     loadMoreGlowUps,
     updateProfile,
     dismissErroredItem,
+    reconcileWithJob,
   };
 }

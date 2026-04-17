@@ -16,10 +16,15 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { THEME } from "../../constants/theme";
-import { PROFILE_CONFIG } from "../../constants/config";
+import {
+  PROFILE_CONFIG,
+  PROFILE_PENDING_CELL_MAX_VISIBLE,
+} from "../../constants/config";
 import { useTheme } from "../../lib/theme-context";
 import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import { EmptyState } from "../ui/EmptyState";
+import type { JobResult } from "../../lib/analysis";
+import { PendingGlowUpCell } from "./PendingGlowUpCell";
 import type { GlowUpItem } from "./types";
 
 interface GlowUpGridProps {
@@ -33,6 +38,13 @@ interface GlowUpGridProps {
    * dismissable (the parent decides which ones based on status).
    */
   onItemLongPress?: (item: GlowUpItem) => void;
+  /**
+   * Callback fired by PendingGlowUpCell when its poll observes a
+   * fresh job state. Parent should reconcile the item's status +
+   * URLs into local state so the cell flips to thumbnail / errored
+   * variant on the next render.
+   */
+  onJobResolved?: (jobId: string, result: JobResult) => void;
   ListHeaderComponent?: React.ComponentType | React.ReactElement | null;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -50,6 +62,7 @@ export function GlowUpGrid({
   onLoadMore,
   onItemPress,
   onItemLongPress,
+  onJobResolved,
   ListHeaderComponent,
   refreshing = false,
   onRefresh,
@@ -68,18 +81,71 @@ export function GlowUpGrid({
     return { itemSize: size, containerPadding: padding };
   }, [screenWidth]);
 
+  // Compute the set of job_ids allowed to poll concurrently. First N
+  // non-terminal items by display order get a polling slot; over-cap
+  // pending cells render shimmer but skip the network request. Errored
+  // cells (failed/cancelled) are terminal — they don't need polling
+  // and don't count against the cap.
+  const pollingJobIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const item of items) {
+      if (ids.size >= PROFILE_PENDING_CELL_MAX_VISIBLE) break;
+      if (
+        item.job_id &&
+        item.status !== "completed" &&
+        item.status !== "failed" &&
+        item.status !== "cancelled"
+      ) {
+        ids.add(item.job_id);
+      }
+    }
+    return ids;
+  }, [items]);
+
+  const handleJobResolved = useCallback(
+    (jobId: string, result: JobResult) => {
+      onJobResolved?.(jobId, result);
+    },
+    [onJobResolved],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: GlowUpItem }) => (
-      <GlowUpCell
-        item={item}
-        size={itemSize}
-        onPress={onItemPress ? () => onItemPress(item) : undefined}
-        onLongPress={
-          onItemLongPress ? () => onItemLongPress(item) : undefined
-        }
-      />
-    ),
-    [itemSize, onItemPress, onItemLongPress],
+    ({ item }: { item: GlowUpItem }) => {
+      const isCompleted = item.status === "completed";
+      if (!isCompleted) {
+        return (
+          <PendingGlowUpCell
+            item={item}
+            size={itemSize}
+            onPress={onItemPress ? () => onItemPress(item) : undefined}
+            onLongPress={
+              onItemLongPress ? () => onItemLongPress(item) : undefined
+            }
+            shouldPoll={
+              item.job_id ? pollingJobIds.has(item.job_id) : false
+            }
+            onJobResolved={handleJobResolved}
+          />
+        );
+      }
+      return (
+        <GlowUpCell
+          item={item}
+          size={itemSize}
+          onPress={onItemPress ? () => onItemPress(item) : undefined}
+          onLongPress={
+            onItemLongPress ? () => onItemLongPress(item) : undefined
+          }
+        />
+      );
+    },
+    [
+      itemSize,
+      onItemPress,
+      onItemLongPress,
+      pollingJobIds,
+      handleJobResolved,
+    ],
   );
 
   // Prefer job_id when available so the optimistic-pending-row insert
