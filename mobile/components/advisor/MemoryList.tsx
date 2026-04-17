@@ -686,27 +686,36 @@ export function MemoryList() {
       keyboardVerticalOffset={keyboardVerticalOffset}
       enabled={Platform.OS !== "web"}
     >
-      {subTabs}
+      {/* contentArea wraps subtabs + listArea so the empty/error overlays
+          (siblings, absoluteFill) cover the SAME vertical region the chat
+          tab's listArea covers (full tab content minus composer). Without
+          this wrapper the overlay would absoluteFill the shorter listArea
+          (full minus subtabs minus composer) and the hero would float
+          higher than the chat / nudges heroes. The subtabs row stays
+          interactive — overlays use pointerEvents="box-none". */}
+      <View style={styles.contentArea}>
+        {subTabs}
 
-      {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
-          it. A future polish pass could call AccessibilityInfo.announce
-          ForAccessibility on tab change to cover iOS. */}
-      <View style={styles.listArea} accessibilityLiveRegion="polite">
-        <FlatList
-          data={memories}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={MemorySeparator}
-        />
+        {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
+            it. A future polish pass could call AccessibilityInfo.announce
+            ForAccessibility on tab change to cover iOS. */}
+        <View style={styles.listArea} accessibilityLiveRegion="polite">
+          <FlatList
+            data={memories}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            ItemSeparatorComponent={MemorySeparator}
+          />
 
-        {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
-        {refetching && (
-          <View style={styles.refetchIndicator} pointerEvents="none">
-            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
-          </View>
-        )}
+          {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
+          {refetching && (
+            <View style={styles.refetchIndicator} pointerEvents="none">
+              <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+            </View>
+          )}
+        </View>
 
         {/* Error overlay — scoped to the active tab; subtabs above stay
             interactive so the user can switch away from a failed tab.
@@ -744,6 +753,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "transparent",
+  },
+  contentArea: {
+    flex: 1,
   },
   listArea: {
     flex: 1,
