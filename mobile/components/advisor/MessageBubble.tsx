@@ -30,7 +30,7 @@ function formatTime(isoDate: string): string {
 
 function MessageBubbleInner({ message }: MessageBubbleProps) {
   const { theme } = useTheme();
-  const isAda = message.role === "assistant";
+  const isAda = message.role === "advisor";
   const [copied, setCopied] = useState(false);
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
