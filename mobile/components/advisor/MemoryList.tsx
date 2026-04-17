@@ -35,6 +35,7 @@ import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { showToast } from "../../lib/toast";
+import { hapticLight } from "../../lib/haptics";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { useAdvisorComposerLayout } from "../../hooks/useAdvisorComposerLayout";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
@@ -44,8 +45,39 @@ import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { PressableScale } from "../ui/PressableScale";
 import { Caption } from "../ui/Text";
 
-const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
+// Position past which a release commits to the open state. iOS Mail
+// uses ~50% of the action width as the snap point, with velocity able
+// to override.
+const SWIPE_OPEN_POSITION_THRESHOLD = -DELETE_BUTTON_WIDTH / 2;
+// |vx| past which a flick commits open/closed regardless of position.
+// Picked to match iOS Mail-style flicks: a slow drag uses position,
+// a quick wrist flick wins on velocity. Units are points-per-ms from
+// PanResponder.
+const SWIPE_VELOCITY_THRESHOLD = 0.3;
+// Visual position at which we fire the open/close edge haptic. Set
+// to 70% of fully-open so the tick lands when the user can SEE the
+// trash button is mostly revealed — matches Mail's perceived "click".
+const SWIPE_HAPTIC_THRESHOLD = -DELETE_BUTTON_WIDTH * 0.7;
+// Resistance factor for rubber-band beyond the natural range. 0.3 =
+// keep 30% of the overshoot, drop the other 70% — matches the iOS
+// scroll bounce feel.
+const SWIPE_OVERSCROLL_DAMPENING = 0.3;
+// Min |dx| before claiming the responder. Lowered slightly from the
+// previous 10pt so the gesture feels more responsive without
+// stealing vertical scrolls.
+const SWIPE_RESPONDER_THRESHOLD = 8;
+// Spring config for snap and reset animations. Tension 100 + friction
+// 14 hits a quick, slightly underdamped settle that reads as
+// responsive without overshoot. Velocity from gestureState.vx is
+// passed in so a release-flick continues into the snap smoothly.
+const SWIPE_SPRING_TENSION = 100;
+const SWIPE_SPRING_FRICTION = 14;
+// Exit animation when the user confirms delete in the Alert. Slides
+// the row off-screen left while fading, then the parent removes it
+// from the list.
+const DELETE_EXIT_DURATION_MS = 220;
+const DELETE_EXIT_TRANSLATE_X = -400;
 
 /** Extract a display string from a memory content object. */
 function memoryContentText(content: Record<string, unknown>): string {
@@ -89,6 +121,12 @@ function memoryTypeIcon(
 
 interface SwipeableRowProps {
   memory: UserMemory;
+  /**
+   * Trash-button intent. The row stays in its currently-open swipe
+   * position (does NOT animate away yet) — the parent shows the
+   * confirmation Alert and only commits removal after the user picks
+   * "Delete". The exit animation is then driven by ``isPendingDelete``.
+   */
   onDelete: (id: string) => void;
   /**
    * Whether THIS row is the currently-open one (trash button revealed).
@@ -100,6 +138,17 @@ interface SwipeableRowProps {
   isOpen: boolean;
   /** Notify parent that this row opened (id) or closed (null). */
   onOpenChange: (id: string | null) => void;
+  /**
+   * Parent has confirmed deletion via the Alert. The row plays its
+   * exit animation (slide off left + fade), then fires
+   * ``onExitAnimationComplete`` — at which point the parent removes
+   * the row from ``memories``. Decoupling animation from removal lets
+   * us keep the row visible during the Alert (so the user is not
+   * staring at empty space while they confirm) and gives the removal
+   * the polish of a Mail-style sweep instead of a hard pop.
+   */
+  isPendingDelete: boolean;
+  onExitAnimationComplete: (id: string) => void;
 }
 
 /**
@@ -117,9 +166,29 @@ function SwipeableMemoryRow({
   onDelete,
   isOpen,
   onOpenChange,
+  isPendingDelete,
+  onExitAnimationComplete,
 }: SwipeableRowProps) {
   const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  // Mirror the controlled ``isOpen`` prop in a ref so the
+  // PanResponder closures (created once on mount) always see the
+  // current state when computing the gesture's starting offset and
+  // the haptic edge crossing. A ref is appropriate here because the
+  // PanResponder must NOT be recreated on every prop change — that
+  // would cancel an in-flight gesture mid-swipe.
+  const isOpenRef = useRef(isOpen);
+  // The current visual translateX (after offset + delta), tracked in
+  // a ref so the release handler can decide open/close based on the
+  // last on-screen position rather than reading from the Animated
+  // node (which is on the native side when useNativeDriver is true).
+  const lastValueRef = useRef(0);
+  // Edge-detect for the haptic tick — true while the row is past the
+  // SWIPE_HAPTIC_THRESHOLD position. Flipping this drives one tick
+  // per crossing (open and re-close both feel a tick).
+  const crossedThresholdRef = useRef(false);
 
   // When the parent flips isOpen to false (another row opened, or a
   // tap-outside fired), spring the trash button back behind the card.
@@ -129,22 +198,54 @@ function SwipeableMemoryRow({
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
+      isOpenRef.current = isOpen;
+      crossedThresholdRef.current = isOpen;
       return;
     }
-    if (!isOpen) {
+    // Only animate a close — open is driven by the gesture itself,
+    // and the parent setting isOpen=true mid-gesture would fight the
+    // user's finger.
+    if (!isOpen && isOpenRef.current) {
+      isOpenRef.current = false;
+      crossedThresholdRef.current = false;
+      lastValueRef.current = 0;
       Animated.spring(translateX, {
         toValue: 0,
         useNativeDriver: true,
-        tension: 40,
-        friction: 7,
+        tension: SWIPE_SPRING_TENSION,
+        friction: SWIPE_SPRING_FRICTION,
       }).start();
     }
   }, [isOpen, translateX]);
 
-  // PanResponder is recreated when ``onOpenChange`` identity changes
-  // (it never does for setState's setter, but the closure is captured
-  // here so the latest value is always used). The release handler
-  // notifies the parent so the open id state updates atomically.
+  // Confirmed-delete exit animation — slides the card off-screen
+  // left while fading out. On completion the parent removes the
+  // memory from the list. Kept as Animated.parallel so both
+  // properties land at the same instant for a clean sweep.
+  const onExitDoneRef = useRef(onExitAnimationComplete);
+  onExitDoneRef.current = onExitAnimationComplete;
+  useEffect(() => {
+    if (!isPendingDelete) return;
+    Animated.parallel([
+      Animated.timing(translateX, {
+        toValue: DELETE_EXIT_TRANSLATE_X,
+        duration: DELETE_EXIT_DURATION_MS,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: DELETE_EXIT_DURATION_MS,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) onExitDoneRef.current(memory.id);
+    });
+  }, [isPendingDelete, memory.id, opacity, translateX]);
+
+  // PanResponder is created once on mount. All mutable state it needs
+  // is held in refs (isOpenRef, lastValueRef, crossedThresholdRef) so
+  // the closures see live values without forcing a recreate that
+  // would cancel an in-flight gesture.
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) => {
@@ -154,35 +255,122 @@ function SwipeableMemoryRow({
         if (!Number.isFinite(gesture.dx) || !Number.isFinite(gesture.dy)) {
           return false;
         }
+        // Bias slightly toward horizontal so the FlatList still wins
+        // diagonal-ish drags.
         return (
-          Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+          Math.abs(gesture.dx) > SWIPE_RESPONDER_THRESHOLD &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
         );
       },
+      onPanResponderGrant: () => {
+        // Anchor future deltas to the row's current on-screen
+        // position. With setOffset, dx during the move is interpreted
+        // relative to the start, so an already-open row swiped
+        // further left rubber-bands cleanly without snapping to
+        // wherever dx happens to land first.
+        const startX = isOpenRef.current ? -DELETE_BUTTON_WIDTH : 0;
+        translateX.setOffset(startX);
+        translateX.setValue(0);
+        lastValueRef.current = startX;
+        crossedThresholdRef.current = isOpenRef.current;
+      },
       onPanResponderMove: (_, gesture) => {
-        if (!Number.isFinite(gesture.dx) || gesture.dx >= 0) return;
-        translateX.setValue(Math.max(gesture.dx, -DELETE_BUTTON_WIDTH));
+        if (!Number.isFinite(gesture.dx)) return;
+        const startX = isOpenRef.current ? -DELETE_BUTTON_WIDTH : 0;
+        let delta = gesture.dx;
+        const absoluteX = startX + delta;
+
+        // Rubber-band past the natural range in either direction:
+        // - Past -DELETE_BUTTON_WIDTH (further left than fully open)
+        // - Past 0 (further right than fully closed; can happen when
+        //   the user swipes right on an open row past the rest pos
+        //   before releasing).
+        if (absoluteX < -DELETE_BUTTON_WIDTH) {
+          const overshoot = absoluteX - -DELETE_BUTTON_WIDTH;
+          delta = delta - overshoot * (1 - SWIPE_OVERSCROLL_DAMPENING);
+        } else if (absoluteX > 0) {
+          const overshoot = absoluteX;
+          delta = delta - overshoot * (1 - SWIPE_OVERSCROLL_DAMPENING);
+        }
+
+        translateX.setValue(delta);
+        const newAbs = startX + delta;
+        lastValueRef.current = newAbs;
+
+        // One haptic tick per threshold crossing in either direction.
+        const nowCrossed = newAbs < SWIPE_HAPTIC_THRESHOLD;
+        if (nowCrossed !== crossedThresholdRef.current) {
+          crossedThresholdRef.current = nowCrossed;
+          void hapticLight();
+        }
       },
       onPanResponderRelease: (_, gesture) => {
-        const dx = Number.isFinite(gesture.dx) ? gesture.dx : 0;
-        const willOpen = dx < SWIPE_DELETE_THRESHOLD;
+        translateX.flattenOffset();
+        // PanResponder reports vx in points/ms; SWIPE_VELOCITY_THRESHOLD
+        // is in the same unit. Animated.spring's `velocity` option,
+        // however, is in points/SECOND, so we scale by 1000 when
+        // handing it to the spring to keep the release flick visually
+        // continuous instead of being dominated by the spring's own
+        // initial impulse.
+        const vxPerMs = Number.isFinite(gesture.vx) ? gesture.vx : 0;
+        const finalX = lastValueRef.current;
+
+        // Velocity wins: a quick flick commits the direction even
+        // when finger position hasn't crossed the position
+        // threshold yet (matches iOS Mail). Otherwise fall back to
+        // position-based snap.
+        let willOpen: boolean;
+        if (vxPerMs < -SWIPE_VELOCITY_THRESHOLD) {
+          willOpen = true;
+        } else if (vxPerMs > SWIPE_VELOCITY_THRESHOLD) {
+          willOpen = false;
+        } else {
+          willOpen = finalX < SWIPE_OPEN_POSITION_THRESHOLD;
+        }
+
         Animated.spring(translateX, {
           toValue: willOpen ? -DELETE_BUTTON_WIDTH : 0,
+          velocity: vxPerMs * 1000,
           useNativeDriver: true,
-          tension: 40,
-          friction: 7,
+          tension: SWIPE_SPRING_TENSION,
+          friction: SWIPE_SPRING_FRICTION,
         }).start();
+        isOpenRef.current = willOpen;
+        lastValueRef.current = willOpen ? -DELETE_BUTTON_WIDTH : 0;
+        // Sync local edge-detect to the committed position so the
+        // next gesture starts from the right haptic state.
+        crossedThresholdRef.current = willOpen;
         onOpenChange(willOpen ? memory.id : null);
+      },
+      onPanResponderTerminate: () => {
+        // Another responder (e.g. the parent FlatList scroll) won
+        // mid-gesture. Settle the offset back into the value and
+        // snap to the prior committed state without firing the open
+        // change, so we don't leave the row half-swiped.
+        translateX.flattenOffset();
+        const target = isOpenRef.current ? -DELETE_BUTTON_WIDTH : 0;
+        Animated.spring(translateX, {
+          toValue: target,
+          useNativeDriver: true,
+          tension: SWIPE_SPRING_TENSION,
+          friction: SWIPE_SPRING_FRICTION,
+        }).start();
+        lastValueRef.current = target;
+        crossedThresholdRef.current = isOpenRef.current;
       },
     }),
   ).current;
 
+  // Trash-button tap. We DO NOT animate the row away here — that
+  // would slide the card off-screen before the user has confirmed
+  // and leave them staring at empty space (or worse, at a dangling
+  // trash button) while the confirmation Alert is up. Instead just
+  // notify the parent of the intent; the row holds its open
+  // position. The parent shows the Alert and, on confirm, flips
+  // ``isPendingDelete`` to drive the exit animation.
   const handleDelete = useCallback(() => {
-    Animated.timing(translateX, {
-      toValue: -400,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => onDelete(memory.id));
-  }, [memory.id, onDelete, translateX]);
+    onDelete(memory.id);
+  }, [memory.id, onDelete]);
 
   const dateStr = new Date(memory.created_at).toLocaleDateString(undefined, {
     month: "short",
@@ -190,17 +378,23 @@ function SwipeableMemoryRow({
     year: "numeric",
   });
 
-  // The wrapper stays a plain View so the row's PanResponder owns the
-  // gesture cleanly — wrapping it in a Pressable claims the responder
-  // on touch start before PanResponder.onMoveShouldSet has a chance,
-  // which silently breaks every swipe. Tap-outside-close is handled
-  // at MemoryList level via:
+  // The wrapper is an Animated.View (for the exit fade), but it is
+  // NOT wrapped in a Pressable. Pressable claims the responder on
+  // touch start before PanResponder.onMoveShouldSet has a chance,
+  // which silently breaks every swipe (see the regression in PRs
+  // #144 / #145). Tap-outside-close is handled at MemoryList level
+  // via:
   //   - ListFooterComponent Pressable when a row is open
   //   - onScrollBeginDrag
   //   - handleTabChange (always resets, even on the active chip)
   //   - other-row swipe (parent state swap closes this one)
   return (
-    <View style={rowStyles.wrapper}>
+    // Wrapper is an Animated.View only so the exit fade applies to
+    // the trash button AND the card together — keeping it as a plain
+    // View would leave the trash button solid while the card faded.
+    // The PanResponder still lives on the inner card, so the wrapper
+    // change does not interfere with the gesture.
+    <Animated.View style={[rowStyles.wrapper, { opacity }]}>
       <View style={rowStyles.deleteContainer}>
         <Pressable
           onPress={handleDelete}
@@ -230,7 +424,7 @@ function SwipeableMemoryRow({
           <Text style={rowStyles.date}>{dateStr}</Text>
         </View>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -512,6 +706,14 @@ export function MemoryList() {
   // tapping any other row, the subtabs chips, the empty list area, or
   // swiping a different row closes the previously-open one.
   const [openMemoryId, setOpenMemoryId] = useState<string | null>(null);
+  // Row whose Delete the user just confirmed in the Alert. Drives the
+  // exit animation in SwipeableMemoryRow; when the animation ends the
+  // row calls back via onExitAnimationComplete and we mutate `memories`
+  // (with restore-on-failure for the API call). Splitting the state
+  // from `openMemoryId` keeps "trash button revealed" and "row is
+  // sweeping out" independent — a Cancel from the Alert returns to the
+  // open state without touching the exit machinery.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   // Monotonic request counter + activeTab ref. A fetch that resolves
   // after a later fetch, or after the tab was switched, is discarded
@@ -647,8 +849,23 @@ export function MemoryList() {
   );
 
   // -------------------------------------------------------------------------
-  // Delete memory — unchanged behavior: Alert.alert confirm, optimistic
-  // removal, restore-on-failure.
+  // Delete memory — two-phase to avoid the visual glitch where the row
+  // animated away BEFORE the user had confirmed. Now:
+  //
+  //   1. Trash tap (in row) → row notifies parent via `onDelete(id)` →
+  //      this opens the Alert. The row stays in its swiped-open
+  //      position, trash button still visible. Cancel from the Alert
+  //      simply closes the row (existing tap-outside affordances).
+  //
+  //   2. Delete from the Alert → setPendingDeleteId(id). The matching
+  //      row sees `isPendingDelete` flip to true and plays its exit
+  //      animation (slide off left + fade).
+  //
+  //   3. Row's exit animation completes → row calls
+  //      `handleExitAnimationComplete(id)` → we mutate `memories` and
+  //      fire the DELETE network call. Restore-on-failure pops the
+  //      row back into the list (no animation — the failure path is
+  //      rare enough that polish there is not worth the complexity).
   // -------------------------------------------------------------------------
   const memoriesRef = useRef(memories);
   memoriesRef.current = memories;
@@ -658,32 +875,47 @@ export function MemoryList() {
       "Delete Memory",
       "Are you sure you want to delete this memory? Ada will no longer remember this.",
       [
+        // Cancel: close the swipe row but leave the memory in place.
+        // The row springs back to its rest position via the existing
+        // controlled-isOpen effect.
         { text: "Cancel", style: "cancel", onPress: () => setOpenMemoryId(null) },
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            setOpenMemoryId(null);
-            const deletedItem = memoriesRef.current.find((m) => m.id === memoryId);
-            setMemories((prev) => prev.filter((m) => m.id !== memoryId));
-            try {
-              await deleteMemory(memoryId);
-            } catch {
-              if (deletedItem) {
-                setMemories((prev) =>
-                  [...prev, deletedItem].sort(
-                    (a, b) =>
-                      new Date(b.created_at).getTime() -
-                      new Date(a.created_at).getTime(),
-                  ),
-                );
-              }
-              showToast({ kind: "error", message: "Couldn't delete that memory. Try again." });
-            }
+          onPress: () => {
+            // Hand off to the row's exit animation. Removal +
+            // network call happen in handleExitAnimationComplete
+            // once the sweep finishes. Note we leave openMemoryId
+            // untouched on purpose — flipping it to null mid-exit
+            // would race with the row's pendingDelete effect and
+            // make the row spring back to closed before fading out.
+            setPendingDeleteId(memoryId);
           },
         },
       ],
     );
+  }, []);
+
+  const handleExitAnimationComplete = useCallback(async (memoryId: string) => {
+    // Reset the swipe + exit state in one batch so the row's mount
+    // state is consistent for any future row reusing this slot.
+    setPendingDeleteId(null);
+    setOpenMemoryId((prev) => (prev === memoryId ? null : prev));
+    const deletedItem = memoriesRef.current.find((m) => m.id === memoryId);
+    setMemories((prev) => prev.filter((m) => m.id !== memoryId));
+    try {
+      await deleteMemory(memoryId);
+    } catch {
+      if (deletedItem) {
+        setMemories((prev) =>
+          [...prev, deletedItem].sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+          ),
+        );
+      }
+      showToast({ kind: "error", message: "Couldn't delete that memory. Try again." });
+    }
   }, []);
 
   // -------------------------------------------------------------------------
@@ -698,9 +930,11 @@ export function MemoryList() {
         onDelete={handleDelete}
         isOpen={openMemoryId === item.id}
         onOpenChange={setOpenMemoryId}
+        isPendingDelete={pendingDeleteId === item.id}
+        onExitAnimationComplete={handleExitAnimationComplete}
       />
     ),
-    [handleDelete, openMemoryId],
+    [handleDelete, handleExitAnimationComplete, openMemoryId, pendingDeleteId],
   );
 
   const copy = TAB_COPY[activeTab];
