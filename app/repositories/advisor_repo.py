@@ -88,18 +88,29 @@ class AdvisorRepository:
         fetch_limit: int,
         cursor: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch a page of non-summarized messages (oldest first).
+        """Fetch a page of non-summarized messages.
 
-        Cursor format: ``{created_at}|{id}`` composite to avoid skipping
-        records that share the same timestamp.
+        Reverse-chronological pagination — initial call (cursor=None)
+        returns the NEWEST messages; subsequent calls with a cursor
+        return messages OLDER than the cursor. Matches standard chat
+        UX: the client sees the latest conversation on first open and
+        scrolls up (onStartReached) to load older history.
+
+        Rows are re-sorted to ascending (oldest → newest) before
+        returning so callers can append them to a chat view without
+        re-sorting.
+
+        Cursor format: ``{created_at}|{id}`` composite, matching the
+        nudges pagination cursor. The composite prevents skipping rows
+        that share a timestamp.
         """
         query = (
             self._sb.table("advisor_messages")
             .select("id, role, content, created_at")
             .eq("conversation_id", conversation_id)
             .is_("summarized_at", "null")
-            .order("created_at", desc=False)
-            .order("id", desc=False)
+            .order("created_at", desc=True)
+            .order("id", desc=True)
             .limit(fetch_limit)
         )
         if cursor:
@@ -117,11 +128,17 @@ class AdvisorRepository:
                 raise ValueError(
                     f"Malformed cursor: illegal character in cursor components: '{cursor}'"
                 )
+            # Rows OLDER than the cursor (paging back in time):
+            #   created_at < cursor, OR same created_at with id < cursor_id
             query = query.or_(
-                f"created_at.gt.{cursor_created_at},"
-                f"and(created_at.eq.{cursor_created_at},id.gt.{cursor_id})"
+                f"created_at.lt.{cursor_created_at},"
+                f"and(created_at.eq.{cursor_created_at},id.lt.{cursor_id})"
             )
-        return query.execute().data or []
+        rows = query.execute().data or []
+        # DB returns newest-first; flip to ascending so callers render
+        # oldest-at-top / newest-at-bottom without re-sorting.
+        rows.reverse()
+        return rows
 
     def insert_message(
         self, conversation_id: str, role: str, content: str
