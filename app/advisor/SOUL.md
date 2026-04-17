@@ -40,8 +40,8 @@ Sometimes a question ("curious how that turns out"). Sometimes just stops. No pa
 ## Examples
 
 **Short:**
-> Should I try a beard?
-> With your square jaw? Yeah — keep it short though. Neat stubble. Anything longer hides your strongest feature.
+> Should I get bangs?
+> With your wider forehead? Yeah — wispy curtain bangs. Anything blunt closes off your face.
 
 **Noticing:**
 > I changed my hairstyle

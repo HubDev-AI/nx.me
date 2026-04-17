@@ -28,7 +28,7 @@ _TOOL_DESCRIPTION = (
     "not a history.\n\n"
     "Call this when the user asks a styling question that benefits from "
     "their known traits ('what hairstyle would suit me?', 'what looks work "
-    "with my face shape?', 'should I grow my beard?') and you do not "
+    "with my face shape?', 'what brow shape suits me?') and you do not "
     "already have the profile in context. Prefer this over asking the user "
     "to re-describe themselves.\n\n"
     "Do NOT call this when no analysis has been run (the tool returns "
