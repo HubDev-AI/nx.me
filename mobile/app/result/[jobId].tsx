@@ -46,6 +46,7 @@ import {
   HeaderBackButton,
   HeaderBackButtonSpacer,
 } from "../../components/ui/HeaderBackButton";
+import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import {
   getJobStatus,
   saveJob,
@@ -101,6 +102,8 @@ export default function ResultScreen() {
   const { theme } = useTheme();
 
   const [saveState, setSaveState] = useState<SaveState>("pending");
+  // Zoom viewer — which image, if any, is currently presented full-screen.
+  const [zoomTarget, setZoomTarget] = useState<"before" | "after" | null>(null);
   const { username } = useAuth();
 
   // Share composite hook — ShareCompositeView must be in the tree
@@ -263,6 +266,15 @@ export default function ResultScreen() {
     }
     router.replace("/(tabs)/profile");
   }, [router]);
+
+  // Tap-to-zoom handlers — gated on URLs so a pre-load tap is a no-op.
+  const handleZoomBefore = useCallback(() => {
+    if (result?.before_image_url) setZoomTarget("before");
+  }, [result?.before_image_url]);
+  const handleZoomAfter = useCallback(() => {
+    if (result?.after_image_url) setZoomTarget("after");
+  }, [result?.after_image_url]);
+  const handleCloseZoom = useCallback(() => setZoomTarget(null), []);
 
   // ---------------------------------------------------------------------------
   // Derived state
@@ -459,6 +471,8 @@ export default function ResultScreen() {
                   beforeUrl={result.before_image_url!}
                   afterUrl={result.after_image_url!}
                   rightLabel="Glow Up"
+                  onPressBeforeImage={handleZoomBefore}
+                  onPressAfterImage={handleZoomAfter}
                 />
 
                 <Animated.View entering={FadeIn.duration(300).delay(400)}>
@@ -489,6 +503,22 @@ export default function ResultScreen() {
           </>
         ) : null}
       </QueryStateView>
+
+      {/* Zoom viewer — mounted outside QueryStateView so it can open over
+          any branch. Gated on a non-null target; when target flips the
+          modal opens with the matching URL. */}
+      <ZoomableImageModal
+        visible={zoomTarget !== null}
+        sourceUri={
+          zoomTarget === "before"
+            ? result?.before_image_url ?? null
+            : zoomTarget === "after"
+              ? result?.after_image_url ?? null
+              : null
+        }
+        altText={zoomTarget === "before" ? "Before photo" : "Glow-up photo"}
+        onClose={handleCloseZoom}
+      />
     </View>
   );
 }

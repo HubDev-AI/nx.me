@@ -63,13 +63,7 @@ const HANDLE_HIT_PADDING = 24;
  */
 const DIRECTION_THRESHOLD_PX = 10;
 
-/** Spring config for entrance + tap-to-jump animations. */
-const TOUCH_SPRING = {
-  damping: 18,
-  stiffness: 240,
-  mass: 1,
-} as const;
-
+/** Spring config for entrance + accessibility-toggle animations. */
 const ENTRANCE_SPRING = {
   damping: 15,
   stiffness: 150,
@@ -89,7 +83,21 @@ interface BeforeAfterSliderProps {
   initialSplit?: number;
   /** Called by VoiceOver accessibility action (toggles between 0.25 and 0.75). */
   onAccessibilityToggle?: () => void;
+  /**
+   * Pure-tap callback — fires when the user taps the before side of
+   * the image (to the right of the current divider) without dragging.
+   * Parent typically opens a zoomable full-screen view.
+   */
+  onPressBeforeImage?: () => void;
+  /**
+   * Pure-tap callback — fires when the user taps the glow-up side of
+   * the image (to the left of the current divider) without dragging.
+   */
+  onPressAfterImage?: () => void;
 }
+
+/** Max combined travel (px) a release can show and still count as a tap. */
+const TAP_MAX_TRAVEL_PX = 8;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -101,6 +109,8 @@ export default function BeforeAfterSlider({
   rightLabel,
   initialSplit = 1.0,
   onAccessibilityToggle,
+  onPressBeforeImage,
+  onPressAfterImage,
 }: BeforeAfterSliderProps) {
   const { theme } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
@@ -109,6 +119,9 @@ export default function BeforeAfterSlider({
 
   const splitPosition = useSharedValue(0);
   const gestureStartSplit = useRef(0);
+  // Track gesture origin so release can distinguish tap (no travel) from
+  // drag. Set in onPanResponderGrant; read in onPanResponderRelease.
+  const gestureStartX = useRef(0);
 
   // Kick off entrance animation once after mount. Reanimated shared-value
   // writes during render are not safe under concurrent rendering.
@@ -116,15 +129,6 @@ export default function BeforeAfterSlider({
     splitPosition.value = withSpring(initialSplit, ENTRANCE_SPRING);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /**
-   * Dead-zone half-width, in normalized slider units (0–1). When the user
-   * taps within this radius of the current divider position, treat it as a
-   * drag grab (no spring jump). Taps outside the dead-zone spring the
-   * divider to the tap position — "tap-to-jump".
-   */
-  const DEAD_ZONE_RATIO =
-    (HANDLE_SIZE + HANDLE_HIT_PADDING) / 2 / sliderWidth;
 
   const handleAccessibilityToggle = useCallback(() => {
     const current = splitPosition.value;
@@ -135,12 +139,15 @@ export default function BeforeAfterSlider({
     onAccessibilityToggle?.();
   }, [splitPosition, onAccessibilityToggle]);
 
-  // PanResponder on the whole container: tap-to-jump + drag.
-  // `onMoveShouldSetPanResponder` only claims the gesture when it reads
-  // as horizontal (|dx| dominates |dy|). Vertical drags pass through to
-  // the parent ScrollView so the page still scrolls over the slider.
-  // `onPanResponderTerminationRequest` returns true so ScrollView can
-  // reclaim mid-gesture if the user flips direction.
+  // PanResponder on the whole container.
+  // - `onMoveShouldSetPanResponder` only claims the gesture when it reads
+  //   as horizontal (|dx| dominates |dy|) so vertical drags pass through
+  //   to the parent ScrollView.
+  // - A near-zero-travel release counts as a tap and fires the
+  //   side-appropriate onPress callback (zoom viewer). Drag releases
+  //   leave the divider at its current position.
+  // - `onPanResponderTerminationRequest` returns true so ScrollView can
+  //   reclaim mid-gesture if the user flips direction.
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -149,19 +156,8 @@ export default function BeforeAfterSlider({
           Math.abs(gs.dx) > Math.abs(gs.dy) + DIRECTION_THRESHOLD_PX,
         onPanResponderTerminationRequest: () => true,
         onPanResponderGrant: (evt) => {
-          const tapX = evt.nativeEvent.locationX;
-          const tapRatio = clamp(tapX / sliderWidth, 0, 1);
-          const current = splitPosition.value;
-          const withinHandle =
-            Math.abs(tapRatio - current) <= DEAD_ZONE_RATIO;
-          if (withinHandle) {
-            // Touch near the handle — treat as drag grab (no jump).
-            gestureStartSplit.current = current;
-          } else {
-            // Tap away from the handle — jump to the tap position.
-            gestureStartSplit.current = tapRatio;
-            splitPosition.value = withSpring(tapRatio, TOUCH_SPRING);
-          }
+          gestureStartSplit.current = splitPosition.value;
+          gestureStartX.current = evt.nativeEvent.locationX;
           hapticLight();
         },
         onPanResponderMove: (_evt, gestureState) => {
@@ -172,11 +168,25 @@ export default function BeforeAfterSlider({
             1,
           );
         },
-        onPanResponderRelease: () => {
-          // No snap — leave at current position.
+        onPanResponderRelease: (_evt, gestureState) => {
+          const travel =
+            Math.abs(gestureState.dx) + Math.abs(gestureState.dy);
+          if (travel > TAP_MAX_TRAVEL_PX) return;
+          // Tap — decide which side the tap landed on based on the
+          // divider at tap start.
+          const tapRatio = clamp(
+            gestureStartX.current / sliderWidth,
+            0,
+            1,
+          );
+          if (tapRatio <= splitPosition.value) {
+            onPressAfterImage?.();
+          } else {
+            onPressBeforeImage?.();
+          }
         },
       }),
-    [sliderWidth, splitPosition, DEAD_ZONE_RATIO],
+    [sliderWidth, splitPosition, onPressAfterImage, onPressBeforeImage],
   );
 
   const afterOverlayStyle = useAnimatedStyle(() => ({

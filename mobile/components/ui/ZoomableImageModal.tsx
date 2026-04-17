@@ -1,0 +1,271 @@
+/**
+ * ZoomableImageModal — full-screen image viewer with pinch-zoom,
+ * pan (when zoomed), double-tap reset, and swipe-down-to-dismiss.
+ *
+ * Built on React Native's `Modal` + `PanResponder` + Reanimated shared
+ * values — deliberately avoids `react-native-gesture-handler` so the
+ * project doesn't take on a native dep for a single viewer.
+ *
+ * Exports a handful of pure helpers used by the gesture math so they
+ * can be tested without mounting the component (jest-expo can't mount
+ * Reanimated reliably).
+ */
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  Modal,
+  PanResponder,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { THEME } from "../../constants/theme";
+import { FONTS } from "../../hooks/useFonts";
+import { HeaderBackButton } from "./HeaderBackButton";
+import {
+  clampScale,
+  shouldDismissOnSwipeDown,
+  twoFingerDistance,
+} from "./zoomable-image-math";
+
+// ---------------------------------------------------------------------------
+// Constants — local (math constants live in zoomable-image-math.ts)
+// ---------------------------------------------------------------------------
+
+/** Max gap (ms) between two taps for them to count as a double-tap. */
+const DOUBLE_TAP_MS = 280;
+
+const RESET_SPRING = { damping: 22, stiffness: 240, mass: 1 } as const;
+const DISMISS_TIMING = { duration: 180 } as const;
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+interface ZoomableImageModalProps {
+  visible: boolean;
+  sourceUri: string | null;
+  altText: string;
+  onClose: () => void;
+}
+
+export function ZoomableImageModal({
+  visible,
+  sourceUri,
+  altText,
+  onClose,
+}: ZoomableImageModalProps) {
+  const { width: winW, height: winH } = useWindowDimensions();
+
+  const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
+  const pinchStartDistance = useRef<number>(0);
+  const pinchStartScale = useRef<number>(1);
+  const panStartX = useRef<number>(0);
+  const panStartY = useRef<number>(0);
+  const lastTapAt = useRef<number>(0);
+
+  // Reset shared values whenever the modal re-opens so successive opens
+  // start from a clean zoom state.
+  useEffect(() => {
+    if (visible) {
+      scale.value = 1;
+      translateX.value = 0;
+      translateY.value = 0;
+      pinchStartDistance.current = 0;
+      pinchStartScale.current = 1;
+      lastTapAt.current = 0;
+    }
+  }, [visible, scale, translateX, translateY]);
+
+  const reset = useCallback(() => {
+    scale.value = withSpring(1, RESET_SPRING);
+    translateX.value = withSpring(0, RESET_SPRING);
+    translateY.value = withSpring(0, RESET_SPRING);
+  }, [scale, translateX, translateY]);
+
+  const dismiss = useCallback(() => {
+    // Slide the image down a touch while fading via the parent Modal's
+    // built-in fade; onClose triggers the Modal unmount.
+    translateY.value = withTiming(winH, DISMISS_TIMING, () => {});
+    onClose();
+  }, [onClose, translateY, winH]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          const now = Date.now();
+          const touches = evt.nativeEvent.touches;
+          pinchStartDistance.current = twoFingerDistance(touches);
+          pinchStartScale.current = scale.value;
+          panStartX.current = translateX.value;
+          panStartY.current = translateY.value;
+
+          // Double-tap detection — second tap within window resets.
+          if (touches.length === 1) {
+            if (now - lastTapAt.current < DOUBLE_TAP_MS) {
+              reset();
+              lastTapAt.current = 0;
+              return;
+            }
+            lastTapAt.current = now;
+          } else {
+            // Multi-touch cancels any pending double-tap window.
+            lastTapAt.current = 0;
+          }
+        },
+        onPanResponderMove: (evt, gs) => {
+          const touches = evt.nativeEvent.touches;
+
+          if (touches.length >= 2) {
+            // Re-seed on 1→2 transition so the pinch starts from the
+            // current finger spread rather than jumping.
+            if (pinchStartDistance.current === 0) {
+              pinchStartDistance.current = twoFingerDistance(touches);
+              pinchStartScale.current = scale.value;
+            }
+            const d = twoFingerDistance(touches);
+            if (pinchStartDistance.current > 0 && d > 0) {
+              const next = clampScale(
+                pinchStartScale.current * (d / pinchStartDistance.current),
+              );
+              scale.value = next;
+            }
+            return;
+          }
+
+          // Single-finger — either pan (when zoomed) or track the
+          // drag for swipe-down dismiss.
+          translateX.value = panStartX.current + gs.dx;
+          translateY.value = panStartY.current + gs.dy;
+        },
+        onPanResponderRelease: (_evt, gs) => {
+          // Reset the pinch seeds so the next pinch starts fresh.
+          pinchStartDistance.current = 0;
+
+          // Swipe-down dismiss only when the image is at rest (scale 1).
+          if (scale.value <= 1) {
+            if (shouldDismissOnSwipeDown(translateY.value, gs.vy)) {
+              dismiss();
+              return;
+            }
+            // Not dismissing — settle back.
+            translateX.value = withSpring(0, RESET_SPRING);
+            translateY.value = withSpring(0, RESET_SPRING);
+          }
+        },
+        onPanResponderTerminationRequest: () => false,
+      }),
+    [dismiss, reset, scale, translateX, translateY],
+  );
+
+  const imageStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  if (!sourceUri) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      onRequestClose={onClose}
+      animationType="fade"
+      presentationStyle="overFullScreen"
+      transparent
+      statusBarTranslucent
+    >
+      <StatusBar style="light" />
+      <View style={styles.backdrop}>
+        <SafeAreaView style={styles.headerSafe} edges={["top"]}>
+          <View style={styles.headerRow}>
+            <HeaderBackButton
+              onPress={onClose}
+              tintColor={THEME.colors.white}
+              accessibilityLabel="Close image viewer"
+            />
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {altText}
+            </Text>
+            <View style={styles.headerSpacer} />
+          </View>
+        </SafeAreaView>
+        <View
+          style={styles.imageArea}
+          accessibilityLabel={`${altText}, enlarged view`}
+          accessibilityRole="image"
+          {...panResponder.panHandlers}
+        >
+          <Animated.Image
+            source={{ uri: sourceUri }}
+            style={[
+              styles.image,
+              { width: winW, height: winH * 0.8 },
+              imageStyle,
+            ]}
+            resizeMode="contain"
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const HEADER_BTN_SIZE = 44;
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  headerSafe: {
+    backgroundColor: "transparent",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: THEME.spacing.md,
+    minHeight: HEADER_BTN_SIZE,
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 15,
+    color: THEME.colors.white,
+  },
+  headerSpacer: {
+    width: HEADER_BTN_SIZE,
+    height: HEADER_BTN_SIZE,
+  },
+  imageArea: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  image: {
+    alignSelf: "center",
+  },
+});
