@@ -212,17 +212,17 @@ export default function ResultScreen() {
   // screen + a profile pending cell observe the same job.
   useRefundToast(result);
 
-  // Save mutation — copy matches the "Keep on profile" button label.
+  // Save mutation — copy matches the "Save on profile" button label.
   const saveMutation = useAppMutation<{ saved_at: string }, void>({
     mutationKey: ["job.save", jobId],
     mutationFn: () => saveJob(jobId as string),
     onSuccess: () => {
       setSaveState("saved");
-      showToast({ kind: "success", message: "Kept on your profile." });
+      showToast({ kind: "success", message: "Saved on your profile." });
     },
     onError: () => {
       setSaveState("pending");
-      showToast({ kind: "error", message: "Couldn't keep on profile. Try again." });
+      showToast({ kind: "error", message: "Couldn't save on profile. Try again." });
     },
   });
 
