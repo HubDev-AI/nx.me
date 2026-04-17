@@ -27,7 +27,6 @@ import {
   Platform,
   StyleSheet,
   PanResponder,
-  Keyboard,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,14 +46,6 @@ import { Caption } from "../ui/Text";
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
-/**
- * Horizontal gap between the card's right edge and the trash button when
- * swiped open. Without it the rounded card corner sits flush against the
- * straight left edge of the trash button and the seam reads as a sharp
- * notch. With the gap the trash button reads as its own pill, the card
- * keeps its full pill shape.
- */
-const DELETE_BUTTON_GAP = 6;
 
 /** Extract a display string from a memory content object. */
 function memoryContentText(content: Record<string, unknown>): string {
@@ -199,8 +190,20 @@ function SwipeableMemoryRow({
     year: "numeric",
   });
 
+  // Outer wrapper is a Pressable so a tap (no movement) on the row's
+  // card area closes any currently-open swipe row. The row's
+  // PanResponder lives on the inner Animated.View — when the user
+  // moves past the swipe threshold, PanResponder.onMoveShouldSet
+  // returns true and claims the responder, which cancels Pressable's
+  // press without firing onPress. Tapping the trash Pressable wins
+  // its own touch (closer in the tree), so this onPress only fires
+  // for taps on the visible card body.
+  const handleWrapperPress = useCallback(() => {
+    onOpenChange(null);
+  }, [onOpenChange]);
+
   return (
-    <View style={rowStyles.wrapper}>
+    <Pressable style={rowStyles.wrapper} onPress={handleWrapperPress}>
       <View style={rowStyles.deleteContainer}>
         <Pressable
           onPress={handleDelete}
@@ -230,18 +233,21 @@ function SwipeableMemoryRow({
           <Text style={rowStyles.date}>{dateStr}</Text>
         </View>
       </Animated.View>
-    </View>
+    </Pressable>
   );
 }
 
 const rowStyles = StyleSheet.create({
   wrapper: {
-    // No `overflow: hidden` here — we want the card AND the trash button
-    // to render their own rounded shapes independently. Clipping the
-    // wrapper makes the trash button's left edge get cut to a sharp
-    // vertical line at the wrapper bound, undoing the all-corners radius
-    // we add on the button below.
+    // overflow:hidden + borderRadius:lg clips the card+button composite
+    // to a single rounded shape. The card's right corners and the
+    // trash button's left corners are intentionally SQUARE (see styles
+    // below) so the seam between them at the swiped position is a
+    // clean vertical line — the card and the button read as one
+    // continuous control split in two, not as two separate pills.
     position: "relative",
+    overflow: "hidden",
+    borderRadius: THEME.radius.lg,
   },
   deleteContainer: {
     // Anchor to the right edge with a fixed width and stretch the
@@ -254,21 +260,23 @@ const rowStyles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: DELETE_BUTTON_WIDTH,
-    paddingLeft: DELETE_BUTTON_GAP,
     alignItems: "stretch",
     justifyContent: "center",
   },
   deleteButton: {
+    // Square left corners so the button merges flush with the card's
+    // square right corners. The wrapper's overflow:hidden clips the
+    // outer right edge to match the wrapper's borderRadius.
     flex: 1,
     backgroundColor: THEME.colors.destructive,
-    borderRadius: THEME.radius.lg,
     alignItems: "center",
     justifyContent: "center",
   },
   card: {
+    // Square right corners for the same merge. The outer left corners
+    // get rounded by the wrapper's clip.
     flexDirection: "row",
     backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.lg,
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
     padding: THEME.spacing.lg,
@@ -591,14 +599,13 @@ export function MemoryList() {
   // -------------------------------------------------------------------------
   const handleTabChange = useCallback(
     (tab: Tab) => {
+      // Always close any open swipe row on a chip tap — even when the
+      // tap is on the already-active chip — so the chip row works as
+      // an extra dismiss surface for the open trash button.
+      setOpenMemoryId(null);
       if (tab === activeTab) return;
       setActiveTab(tab);
       activeTabRef.current = tab;
-      // Close any open swipe row before switching — otherwise the
-      // open id from the previous tab would either flash on a row in
-      // the new tab that happens to share the id (impossible today,
-      // but cheap insurance) or hold a stale id forever.
-      setOpenMemoryId(null);
       void loadTab(tab);
     },
     [activeTab, loadTab],
@@ -758,54 +765,49 @@ export function MemoryList() {
       keyboardVerticalOffset={keyboardVerticalOffset}
       enabled={Platform.OS !== "web"}
     >
-      {/* contentArea wraps subtabs + listArea so the empty/error overlays
-          (siblings, absoluteFill) cover the SAME vertical region the chat
-          tab's listArea covers (full tab content minus composer). Without
-          this wrapper the overlay would absoluteFill the shorter listArea
-          (full minus subtabs minus composer) and the hero would float
-          higher than the chat / nudges heroes. The subtabs row stays
-          interactive — overlays use pointerEvents="box-none".
+      {subTabs}
 
-          The Pressable wrapper closes any open swipe row on a stray tap
-          (on the card body, on the empty space below the last row, on
-          the subtabs row's gaps). Pressable.onPress fires only on
-          completed taps — scrolling the list and swiping a row both
-          claim the gesture earlier and don't trigger it. Chip taps and
-          trash-button taps also don't bubble (their own Pressables
-          claim first). The keyboard dismiss is opportunistic for the
-          composer's focus state. */}
-      <Pressable
-        style={styles.contentArea}
-        onPress={() => {
-          if (openMemoryId !== null) setOpenMemoryId(null);
-          Keyboard.dismiss();
-        }}
-      >
-        {subTabs}
+      {/* listArea hosts the FlatList AND the empty/error overlays as
+          siblings — overlays absoluteFill listArea (NOT the subtabs+
+          listArea region). Centering inside listArea (which excludes
+          the subtabs above and the composer below) pulls the hero
+          DOWN by ~subtabs/2 vs. centering inside the full content
+          area; that compensates for the visual weight of the subtabs
+          chips above and lands the hero at the same OPTICAL position
+          as the Chat / Nudges heroes.
 
-        {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
-            it. A future polish pass could call AccessibilityInfo.announce
-            ForAccessibility on tab change to cover iOS. */}
-        <View style={styles.listArea} accessibilityLiveRegion="polite">
-          <FlatList
-            data={memories}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
-            ItemSeparatorComponent={MemorySeparator}
-            onScrollBeginDrag={() => {
-              if (openMemoryId !== null) setOpenMemoryId(null);
-            }}
-          />
+          accessibilityLiveRegion is Android-only; iOS VoiceOver
+          ignores it. A future polish pass could call
+          AccessibilityInfo.announceForAccessibility on tab change. */}
+      <View style={styles.listArea} accessibilityLiveRegion="polite">
+        <FlatList
+          data={memories}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={MemorySeparator}
+          ListFooterComponent={
+            openMemoryId !== null ? (
+              <Pressable
+                style={styles.dismissFooter}
+                onPress={() => setOpenMemoryId(null)}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              />
+            ) : null
+          }
+          onScrollBeginDrag={() => {
+            if (openMemoryId !== null) setOpenMemoryId(null);
+          }}
+        />
 
-          {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
-          {refetching && (
-            <View style={styles.refetchIndicator} pointerEvents="none">
-              <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
-            </View>
-          )}
-        </View>
+        {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
+        {refetching && (
+          <View style={styles.refetchIndicator} pointerEvents="none">
+            <ActivityIndicator size="small" color={THEME.colors.textSecondary} />
+          </View>
+        )}
 
         {/* Error overlay — scoped to the active tab; subtabs above stay
             interactive so the user can switch away from a failed tab.
@@ -831,7 +833,7 @@ export function MemoryList() {
             description={copy.emptyDescription}
           />
         )}
-      </Pressable>
+      </View>
 
       {composer}
     </KeyboardAvoidingView>
@@ -844,9 +846,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
   },
-  contentArea: {
-    flex: 1,
-  },
   listArea: {
     flex: 1,
   },
@@ -855,6 +854,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.lg,
     paddingTop: THEME.spacing.md,
     paddingBottom: THEME.spacing.lg,
+  },
+  /**
+   * Tappable footer rendered only when a swipe row is open. flex:1
+   * stretches it to fill the empty space below the last row, so a tap
+   * anywhere in the list-but-not-on-a-row closes the open row. Min
+   * height keeps it tappable when the rows already fill the viewport.
+   */
+  dismissFooter: {
+    flex: 1,
+    minHeight: 80,
   },
   separator: {
     height: THEME.spacing.md - 2,
