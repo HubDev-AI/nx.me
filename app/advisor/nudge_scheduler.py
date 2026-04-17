@@ -35,6 +35,7 @@ import redis.asyncio as aioredis
 from arq import ArqRedis
 from supabase import Client
 
+from app.advisor._hashing import hash_user_id
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_glowup import (
     _handle_get_latest_glowup,
@@ -135,13 +136,16 @@ async def generate_nudge(
                  other triggers.
     """
     if not settings.ADVISOR_ENABLED:
-        logger.debug("Advisor disabled — skipping nudge for user %s", user_id)
+        logger.debug(
+            "Advisor disabled — skipping nudge for user=%s", hash_user_id(user_id)
+        )
         return
 
     supabase: Client = ctx["supabase"]
     redis: aioredis.Redis = ctx["redis"]
     uid = UUID(user_id)
     advisor_repo = AdvisorRepository(supabase)
+    user_id_hash = hash_user_id(user_id)
 
     # Entitlement check (spec Section 7.3, A-5)
     from app.entitlement.service import EntitlementService
@@ -150,13 +154,13 @@ async def generate_nudge(
     try:
         result = await ent_svc.check(uid, "advisor_nudge")
     except Exception as exc:
-        logger.warning("Entitlement check failed for user %s: %s", user_id, exc)
+        logger.warning("Entitlement check failed for user=%s: %s", user_id_hash, exc)
         return
 
     if not result.allowed:
         logger.info(
-            "Nudge skipped — entitlement denied for user %s (trigger=%s, code=%s)",
-            user_id,
+            "Nudge skipped — entitlement denied for user=%s (trigger=%s, code=%s)",
+            user_id_hash,
             trigger,
             result.error_code,
         )
@@ -188,6 +192,7 @@ async def _generate_generic_nudge(
 
     Unchanged from the pre-Unit-8 generic-trigger flow.
     """
+    user_id_hash = hash_user_id(user_id)
     user_content = (
         "Write a brief check-in nudge in your voice. "
         "One or two sentences, no greeting.\n\n" + get_prompt(trigger)
@@ -203,14 +208,17 @@ async def _generate_generic_nudge(
         nudge_content = response.content.strip()
     except Exception as exc:
         logger.error(
-            "LLM call failed for nudge (user=%s, trigger=%s): %s", user_id, trigger, exc
+            "LLM call failed for nudge (user=%s, trigger=%s): %s",
+            user_id_hash,
+            trigger,
+            exc,
         )
         return
 
     if not nudge_content:
         logger.warning(
             "Empty nudge content from LLM — skipping (user=%s, trigger=%s)",
-            user_id,
+            user_id_hash,
             trigger,
         )
         return
@@ -224,10 +232,10 @@ async def _generate_generic_nudge(
             }
         )
     except Exception as exc:
-        logger.error("Failed to save nudge for user %s: %s", user_id, exc)
+        logger.error("Failed to save nudge for user=%s: %s", user_id_hash, exc)
         return
 
-    logger.info("Nudge saved: user=%s trigger=%s", user_id, trigger)
+    logger.info("Nudge saved: user=%s trigger=%s", user_id_hash, trigger)
 
 
 async def _generate_vision_nudge(
@@ -255,14 +263,15 @@ async def _generate_vision_nudge(
     5. Parse strict JSON ``{"body", "observation_tag"}``. Drop on
        parse failure.
     """
+    user_id_hash = hash_user_id(user_id)
     profile_row = await run_sync(advisor_repo.get_style_profile, user_id)
     profile_content = (profile_row or {}).get("content") or None
     if not profile_content:
         logger.info(
-            "Vision nudge skipped — no style_profile for user %s (trigger=%s)",
-            user_id,
+            "Vision nudge skipped — no style_profile for user=%s (trigger=%s)",
+            user_id_hash,
             trigger,
-            extra={"metric": METRIC_NUDGE_NO_PROFILE, "user_id": user_id},
+            extra={"metric": METRIC_NUDGE_NO_PROFILE, "user_id_hash": user_id_hash},
         )
         return
 
@@ -284,8 +293,8 @@ async def _generate_vision_nudge(
                     # nudge; the model still has its own dedup via
                     # recent_nudges context.
                     logger.warning(
-                        "Rapid-retry SETNX failed for user %s: %s — continuing",
-                        user_id,
+                        "Rapid-retry SETNX failed for user=%s: %s — continuing",
+                        user_id_hash,
                         exc,
                     )
                     accepted = True
@@ -293,11 +302,11 @@ async def _generate_vision_nudge(
                     logger.info(
                         "Vision nudge skipped — rapid_retry_dedup "
                         "(user=%s, upload_id=%s)",
-                        user_id,
+                        user_id_hash,
                         upload_id,
                         extra={
                             "metric": METRIC_NUDGE_RAPID_RETRY_DEDUP,
-                            "user_id": user_id,
+                            "user_id_hash": user_id_hash,
                             "upload_id": upload_id,
                         },
                     )
@@ -324,7 +333,7 @@ async def _generate_vision_nudge(
     if not image_blocks:
         logger.info(
             "Vision nudge skipped — no image blocks available (user=%s, trigger=%s)",
-            user_id,
+            user_id_hash,
             trigger,
         )
         return
@@ -355,7 +364,7 @@ async def _generate_vision_nudge(
     except Exception as exc:
         logger.error(
             "LLM call failed for vision nudge (user=%s, trigger=%s): %s",
-            user_id,
+            user_id_hash,
             trigger,
             exc,
         )
@@ -365,11 +374,11 @@ async def _generate_vision_nudge(
     if parsed is None:
         logger.warning(
             "Vision nudge dropped — malformed JSON (user=%s, trigger=%s)",
-            user_id,
+            user_id_hash,
             trigger,
             extra={
                 "metric": METRIC_NUDGE_INVALID_JSON,
-                "user_id": user_id,
+                "user_id_hash": user_id_hash,
                 "trigger": trigger,
             },
         )
@@ -387,12 +396,12 @@ async def _generate_vision_nudge(
             }
         )
     except Exception as exc:
-        logger.error("Failed to save vision nudge for user %s: %s", user_id, exc)
+        logger.error("Failed to save vision nudge for user=%s: %s", user_id_hash, exc)
         return
 
     logger.info(
         "Vision nudge saved: user=%s trigger=%s observation_tag=%s",
-        user_id,
+        user_id_hash,
         trigger,
         observation_tag,
     )
@@ -541,15 +550,19 @@ async def write_analysis_insight_job(
     if not settings.ADVISOR_ENABLED:
         return
 
+    user_id_hash = hash_user_id(user_id)
     mm = None
     try:
         mm = await _build_memory_manager(ctx)
     except Exception:
         logger.warning(
-            "Failed to build memory manager for user %s — skipping both writes",
-            user_id,
+            "Failed to build memory manager for user=%s — skipping both writes",
+            user_id_hash,
             exc_info=True,
-            extra={"metric": "advisor.analysis_insight_failure", "user_id": user_id},
+            extra={
+                "metric": "advisor.analysis_insight_failure",
+                "user_id_hash": user_id_hash,
+            },
         )
         return
 
@@ -561,13 +574,16 @@ async def write_analysis_insight_job(
             recommendations=recommendations,
             upload_id=upload_id,
         )
-        logger.info("Analysis insight written for user %s", user_id)
+        logger.info("Analysis insight written for user=%s", user_id_hash)
     except Exception:
         logger.warning(
-            "Failed to write analysis insight for user %s",
-            user_id,
+            "Failed to write analysis insight for user=%s",
+            user_id_hash,
             exc_info=True,
-            extra={"metric": "advisor.analysis_insight_failure", "user_id": user_id},
+            extra={
+                "metric": "advisor.analysis_insight_failure",
+                "user_id_hash": user_id_hash,
+            },
         )
 
     # Independent try/except: profile upsert must not inherit or be
@@ -580,13 +596,16 @@ async def write_analysis_insight_job(
             symmetry_score=symmetry_score,
             recommendations=recommendations,
         )
-        logger.info("Style profile upserted for user %s", user_id)
+        logger.info("Style profile upserted for user=%s", user_id_hash)
     except Exception:
         logger.warning(
-            "Failed to upsert style profile for user %s",
-            user_id,
+            "Failed to upsert style profile for user=%s",
+            user_id_hash,
             exc_info=True,
-            extra={"metric": "advisor.style_profile_failure", "user_id": user_id},
+            extra={
+                "metric": "advisor.style_profile_failure",
+                "user_id_hash": user_id_hash,
+            },
         )
 
 
@@ -632,17 +651,19 @@ async def schedule_post_analysis_nudge(
     # image via the MCP handlers.
     del face_shape, symmetry_score, recommendations
 
+    user_id_hash = hash_user_id(user_id)
     arq_pool: ArqRedis = ctx.get("arq_pool")
     if arq_pool is None:
         # Fallback: run inline if no pool is available in context (e.g. tests)
         logger.debug(
-            "No arq_pool in ctx — running generate_nudge inline for user %s", user_id
+            "No arq_pool in ctx — running generate_nudge inline for user=%s",
+            user_id_hash,
         )
         await generate_nudge(ctx, user_id, TRIGGER_POST_ANALYSIS)
         return
 
     await arq_pool.enqueue_job("generate_nudge", user_id, TRIGGER_POST_ANALYSIS)
-    logger.debug("Enqueued post-analysis nudge for user %s", user_id)
+    logger.debug("Enqueued post-analysis nudge for user=%s", user_id_hash)
 
 
 # ---------------------------------------------------------------------------

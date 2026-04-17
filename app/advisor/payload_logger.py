@@ -20,12 +20,12 @@ each invocation builds its record, serializes it, and emits it.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from typing import Any
 from urllib.parse import urlsplit, parse_qs
 
+from app.advisor._hashing import USER_ID_HASH_LENGTH, hash_user_id
 from app.advisor.context_builder import _count_tokens
 from app.config import settings
 
@@ -37,10 +37,6 @@ from app.config import settings
 # (``logging.getLogger("app.advisor.payload").setLevel(logging.DEBUG)``)
 # without turning on debug globally.
 PAYLOAD_LOGGER_NAME = "app.advisor.payload"
-
-# SHA-256 hex truncation for user_id. 12 chars ≈ 48 bits → enough to grep a
-# session across logs without being cheaply reversible.
-USER_ID_HASH_LENGTH = 12
 
 # Stable metric key — log aggregators can index on this without parsing the
 # human message.
@@ -56,15 +52,27 @@ JSON_SERIALIZATION_FAILURE_MARKER = "<unserializable:repr>"
 # the raw token.
 SIGNED_URL_EXPIRY_PARAM = "token"
 
+# Re-export USER_ID_HASH_LENGTH so existing callers that imported it from
+# this module keep working.
+__all__ = [
+    "PAYLOAD_LOGGER_NAME",
+    "USER_ID_HASH_LENGTH",
+    "METRIC_KEY_INFO",
+    "METRIC_KEY_DEBUG",
+    "JSON_SERIALIZATION_FAILURE_MARKER",
+    "SIGNED_URL_EXPIRY_PARAM",
+    "log_llm_call",
+]
+
 
 def _hash_user_id(user_id: Any) -> str:
-    """Return SHA-256 hex of ``user_id`` truncated to ``USER_ID_HASH_LENGTH``.
+    """Legacy alias — routes to :func:`app.advisor._hashing.hash_user_id`.
 
-    ``user_id`` may be a UUID, str, or any object with a meaningful ``str()``.
-    The hash is deterministic across a session so operators can correlate
-    records, but is not reversible (one-way SHA-256 truncated).
+    Kept so test modules that monkey-patch ``payload_logger._hash_user_id``
+    still work. New callers should import ``hash_user_id`` from
+    ``app.advisor._hashing`` directly.
     """
-    return hashlib.sha256(str(user_id).encode()).hexdigest()[:USER_ID_HASH_LENGTH]
+    return hash_user_id(user_id)
 
 
 def _safe_serialize(value: Any) -> Any:
