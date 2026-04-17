@@ -15,8 +15,8 @@ import {
   Pressable,
   StyleSheet,
   TextInput,
+  View,
 } from "react-native";
-import { KeyboardStickyView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -80,13 +80,7 @@ export function AdvisorComposer({
   const iconSize = submitIcon === "add" ? ADD_ICON_SIZE : SEND_ICON_SIZE;
 
   return (
-    // KeyboardStickyView translates the composer by the native keyboard
-    // height (via KeyboardProvider's frame callbacks) so the input sits
-    // flush above the keyboard on every device. Immune to chrome above
-    // the composer (nav header, sub-tab rows) — no `keyboardVerticalOffset`
-    // to guess at. See docs/notes/keyboard-composer-investigation.md.
-    <KeyboardStickyView
-      offset={{ closed: 0, opened: 0 }}
+    <View
       style={[
         styles.bar,
         separator && styles.barSeparator,
@@ -148,7 +142,7 @@ export function AdvisorComposer({
           />
         )}
       </Pressable>
-    </KeyboardStickyView>
+    </View>
   );
 }
 
