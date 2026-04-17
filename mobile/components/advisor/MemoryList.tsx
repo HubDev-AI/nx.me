@@ -142,6 +142,19 @@ function SwipeableMemoryRow({
   const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
+  // Tie the delete button's alpha to how far the card has slid. The
+  // card's `glass` background is semi-transparent, so with a fully
+  // visible red destructive button behind it at translateX=0 the red
+  // bleeds through and the note text reads as sitting on top of the
+  // delete button. Fading the delete button from 0 (closed) to 1 (at
+  // -DELETE_BUTTON_WIDTH) keeps the reveal feel while eliminating the
+  // bleed in the rest state. useNativeDriver matches translateX so
+  // the two animations stay perfectly in lockstep on the UI thread.
+  const deleteOpacity = translateX.interpolate({
+    inputRange: [-DELETE_BUTTON_WIDTH, 0],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
 
   // Mirror the controlled ``isOpen`` prop in a ref so the
   // PanResponder closures (created once on mount) always see the
@@ -425,7 +438,9 @@ function SwipeableMemoryRow({
   const previewText = memoryContentText(memory.content);
   return (
     <Animated.View style={[rowStyles.wrapper, { opacity }]}>
-      <View style={rowStyles.deleteContainer}>
+      <Animated.View
+        style={[rowStyles.deleteContainer, { opacity: deleteOpacity }]}
+      >
         <Pressable
           onPress={handleDelete}
           style={rowStyles.deleteButton}
@@ -434,7 +449,7 @@ function SwipeableMemoryRow({
         >
           <Ionicons name="trash-outline" size={22} color={THEME.colors.white} />
         </Pressable>
-      </View>
+      </Animated.View>
 
       <Animated.View
         style={[rowStyles.card, { transform: [{ translateX }] }]}
