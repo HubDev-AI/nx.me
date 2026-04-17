@@ -276,6 +276,32 @@ class AdvisorRepository:
         )
         return result.data or []
 
+    def get_recent_nudges_for_context(
+        self, user_id: str, limit: int, since_iso: str
+    ) -> list[dict[str, Any]]:
+        """Return the user's newest ``limit`` nudges created at/after ``since_iso``.
+
+        Read-only helper used by the chat context builder (Plan
+        2026-04-17-003 Unit 4). Does NOT mutate ``read_at`` — the chat
+        surface must not change read state as a side effect of the model
+        seeing a nudge. Returned rows carry ``content`` (the nudge body),
+        ``trigger`` (lowercase identifier used as prefix in the system
+        block), and ``created_at`` (ISO timestamp).
+
+        Ordered newest-first so callers can emit them in recency order
+        without re-sorting.
+        """
+        result = (
+            self._sb.table("advisor_nudges")
+            .select("content, trigger, created_at")
+            .eq("user_id", user_id)
+            .gte("created_at", since_iso)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+
     def get_user_ids_with_nudge_since(
         self, since: str, trigger: str | None = None
     ) -> set[str]:

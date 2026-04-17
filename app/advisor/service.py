@@ -150,6 +150,10 @@ class AdvisorService:
         # Step 5: Build user data block from latest analysis
         user_data_block = await run_sync(self._build_user_data, user_id)
 
+        # Step 5b: Fetch recent nudges for the 4th system block (Plan Unit 4).
+        # Read-only; never mutates read_at. Empty list → no nudge block.
+        nudges = await run_sync(self._fetch_context_nudges, user_id)
+
         # Step 6: Check for visual context triggers
         vision_content: list[dict[str, Any]] | None = None
         if has_visual_trigger(message):
@@ -167,6 +171,7 @@ class AdvisorService:
             conversation=history,
             message=message,
             rng=_rng,
+            nudges=nudges,
         )
 
         messages, dropped = trim_to_budget(
@@ -183,6 +188,11 @@ class AdvisorService:
         recent_advisor_messages = [
             m["content"] for m in history if m.get("role") == "advisor"
         ]
+        # Canonical counts for the payload logger (Plan Unit 4). The
+        # service layer is authoritative — trim may have dropped history
+        # turns but never touches the pinned memory / nudge blocks.
+        memory_count = len(memories) if memories else 0
+        nudge_count = len(nudges) if nudges else 0
         advisor_response = await self._call_llm_with_check(
             user_id=user_id,
             conversation_id=conversation_id,
@@ -190,6 +200,8 @@ class AdvisorService:
             vision_content=vision_content,
             recent_responses=recent_advisor_messages,
             dropped=dropped,
+            memory_count=memory_count,
+            nudge_count=nudge_count,
         )
 
         # Step 9: Persist messages
@@ -236,8 +248,15 @@ class AdvisorService:
         vision_content: list[dict[str, Any]] | None,
         recent_responses: list[str],
         dropped: int,
+        memory_count: int | None = None,
+        nudge_count: int | None = None,
     ) -> str:
-        """Call LLM, apply post-generation check, retry once if needed (spec Section 11)."""
+        """Call LLM, apply post-generation check, retry once if needed (spec Section 11).
+
+        ``memory_count`` / ``nudge_count`` (Plan Unit 4) are forwarded to
+        the payload logger so the INFO line reports the authoritative
+        counts rather than positional inference.
+        """
         # Determine model based on daily usage guard (spec Section 10)
         model = await self._select_model(str(user_id))
 
@@ -255,6 +274,8 @@ class AdvisorService:
                 vision_content=vision_content,
                 trimmed=dropped > 0,
                 dropped=dropped,
+                memory_count=memory_count,
+                nudge_count=nudge_count,
             )
             response: LLMResponse = await self._llm.create_message(
                 model=model,
@@ -559,6 +580,30 @@ class AdvisorService:
             recommendations=recommendations,
             summary=summary,
         )
+
+    def _fetch_context_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
+        """Fetch the newest nudges within the config window for chat context.
+
+        Plan 2026-04-17-003 Unit 4. Read-only helper: the repo query
+        never touches ``read_at`` — nudges reach Ada without changing
+        the user's unread state. Failures fall through to an empty
+        list so a nudge-table hiccup cannot brick chat.
+        """
+        try:
+            since_iso = (
+                datetime.now(tz=timezone.utc)
+                - timedelta(days=settings.ADVISOR_CONTEXT_NUDGE_AGE_DAYS)
+            ).isoformat()
+            return self._repo.get_recent_nudges_for_context(
+                user_id=str(user_id),
+                limit=settings.ADVISOR_CONTEXT_NUDGE_LIMIT,
+                since_iso=since_iso,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch context nudges for user %s: %s", user_id, exc
+            )
+            return []
 
     def _fetch_vision_content(self, user_id: UUID) -> list[dict[str, Any]] | None:
         """Fetch recent signed image URLs for visual context (spec Section 6.4).

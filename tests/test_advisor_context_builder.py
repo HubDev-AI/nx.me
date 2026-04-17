@@ -3,11 +3,21 @@
 Unit 1 of the advisor context-aware plan: the user_data system block must
 surface face_shape, symmetry, analysis count, top recommendations, and
 summary — all in the label-free, comma-joined voice required by SOUL.md §6.2.
+
+Unit 4 extension: ``build_context`` accepts a ``nudges`` list and emits a
+4th system block (provenance-explicit) when non-empty. Existing callers
+that don't pass ``nudges`` keep the 3-block shape.
 """
 
 from __future__ import annotations
 
-from app.advisor.context_builder import build_user_data_block
+import random
+
+from app.advisor.context_builder import (
+    build_context,
+    build_user_data_block,
+    format_nudges_block,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -190,3 +200,133 @@ def test_recommendations_present_without_summary():
         recommendations=["try bangs", "clean up brows"],
     )
     assert block == ("oval face, symmetry 0.87, 4 analyses\ntry bangs, clean up brows")
+
+
+# ---------------------------------------------------------------------------
+# Unit 4 — ``build_context`` emits a 4th system block when nudges are present.
+# ---------------------------------------------------------------------------
+
+
+def _nudge(content: str, trigger: str = "post_analysis") -> dict:
+    """Minimal nudge row shape returned by ``get_recent_nudges_for_context``."""
+    return {
+        "content": content,
+        "trigger": trigger,
+        "created_at": "2026-04-17T00:00:00Z",
+    }
+
+
+# ``build_context`` uses ``maybe_add_trajectory`` which consults ``random`` —
+# pass a seeded rng so nudge-block tests don't flake when the 15% trajectory
+# chance fires.
+_STABLE_RNG = random.Random(0)
+
+
+def test_build_context_includes_nudge_block():
+    """3 recent nudges → 4th system block, 3 lines, newest-first order preserved."""
+    nudges = [
+        _nudge("oval face shapes are versatile — try bangs", trigger="post_analysis"),
+        _nudge("loving how the new fringe lands", trigger="post_glowup"),
+        _nudge("weekly check-in: what's been landing?", trigger="weekly_checkin"),
+    ]
+    messages = build_context(
+        soul_md="SOUL.md",
+        user_data="oval face, symmetry 0.87",
+        memories=[],
+        conversation=[],
+        message="What hairstyle would suit me?",
+        rng=_STABLE_RNG,
+        nudges=nudges,
+    )
+
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    # soul, user_data, nudges — memories absent since memories=[]. The
+    # nudge block is the last system message regardless of memories
+    # presence per build_context layering.
+    nudge_block = system_msgs[-1]["content"]
+    lines = nudge_block.split("\n")
+    assert len(lines) == 3
+    assert lines[0] == (
+        "nudge (post_analysis): oval face shapes are versatile — try bangs"
+    )
+    assert lines[1] == "nudge (post_glowup): loving how the new fringe lands"
+    assert lines[2] == "nudge (weekly_checkin): weekly check-in: what's been landing?"
+
+
+def test_build_context_no_nudges_preserves_three_block_shape():
+    """0 nudges → no 4th block. Pre-Unit-4 shape intact."""
+    messages_none = build_context(
+        soul_md="SOUL.md",
+        user_data="oval face",
+        memories=[{"type": "user_note", "content": {"text": "loves bangs"}}],
+        conversation=[],
+        message="hi",
+        rng=_STABLE_RNG,
+        nudges=None,
+    )
+    messages_empty = build_context(
+        soul_md="SOUL.md",
+        user_data="oval face",
+        memories=[{"type": "user_note", "content": {"text": "loves bangs"}}],
+        conversation=[],
+        message="hi",
+        rng=_STABLE_RNG,
+        nudges=[],
+    )
+
+    # soul + user_data + memories = 3 system messages.
+    for messages in (messages_none, messages_empty):
+        system_msgs = [m for m in messages if m.get("role") == "system"]
+        assert len(system_msgs) == 3
+        # No nudge-shaped content leaked into memories block.
+        assert "nudge (" not in system_msgs[-1]["content"]
+
+
+def test_build_context_caller_enforces_nudge_cap():
+    """Cap is caller-enforced at the repo layer; builder renders what it is given.
+
+    The repo (``get_recent_nudges_for_context``) applies ``ADVISOR_CONTEXT_NUDGE_LIMIT``
+    before this function is called — we verify that the builder itself does not
+    drop additional rows, so the top-N rule is honored exactly once and where
+    it is configurable.
+    """
+    top_five = [_nudge(f"nudge #{i}") for i in range(5)]
+    messages = build_context(
+        soul_md="SOUL.md",
+        user_data="oval face",
+        memories=[],
+        conversation=[],
+        message="hi",
+        rng=_STABLE_RNG,
+        nudges=top_five,
+    )
+    block = [m for m in messages if m.get("role") == "system"][-1]["content"]
+    assert len(block.split("\n")) == 5
+
+
+def test_format_nudges_block_replaces_newlines_in_body_with_spaces():
+    """Newlines inside a nudge body must be flattened so block rows stay one-per-line."""
+    block = format_nudges_block(
+        [
+            {
+                "content": "first line\nsecond line\r\nthird line",
+                "trigger": "post_analysis",
+            }
+        ]
+    )
+    # One line in output, no literal \n / \r\n inside the rendered body.
+    assert "\n" not in block
+    assert "\r" not in block
+    assert block == "nudge (post_analysis): first line second line third line"
+
+
+def test_format_nudges_block_skips_empty_bodies():
+    """Empty / whitespace-only nudge bodies are skipped silently."""
+    assert format_nudges_block([{"content": "", "trigger": "post_analysis"}]) == ""
+    assert format_nudges_block([{"content": "   ", "trigger": "post_analysis"}]) == ""
+
+
+def test_format_nudges_block_trigger_fallback_when_missing():
+    """Missing trigger → ``nudge: <body>`` without empty parens."""
+    block = format_nudges_block([{"content": "solo body"}])
+    assert block == "nudge: solo body"

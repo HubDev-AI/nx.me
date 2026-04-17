@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     # DO NOT enable in production.
     ADVISOR_DEBUG_LOG_PROMPT: bool = False
 
+    # Advisor chat nudge context (Plan 2026-04-17-003 Unit 4).
+    # Ada's chat context gains a dedicated 4th system block listing the
+    # user's most recent nudges (read and unread). Cap the block at the
+    # newest ``ADVISOR_CONTEXT_NUDGE_LIMIT`` nudges created within the
+    # trailing ``ADVISOR_CONTEXT_NUDGE_AGE_DAYS`` window. Block budget is
+    # ~150-300 tokens, absorbed by the existing 5 000-token cap.
+    ADVISOR_CONTEXT_NUDGE_LIMIT: int = 5
+    ADVISOR_CONTEXT_NUDGE_AGE_DAYS: int = 14
+
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
     IDENTITY_SIMILARITY_THRESHOLD: float = 0.80

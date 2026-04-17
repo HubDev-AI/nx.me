@@ -236,6 +236,8 @@ def log_llm_call(
     vision_content: list[dict[str, Any]] | None,
     trimmed: bool,
     dropped: int,
+    memory_count: int | None = None,
+    nudge_count: int | None = None,
 ) -> None:
     """Emit one INFO log record for an Ada LLM call.
 
@@ -246,6 +248,13 @@ def log_llm_call(
     ``logger`` may be ``None``; when it is, a module-scoped logger
     ``app.advisor.payload`` is used. Passing an explicit logger makes the
     function testable without monkey-patching ``logging.getLogger``.
+
+    ``memory_count`` / ``nudge_count`` (Plan Unit 4): callers that know
+    the canonical counts pass them explicitly — the caller's counts are
+    authoritative. When either is ``None`` the logger falls back to
+    positional inference over the system-role messages (SOUL.md,
+    user_data, memories, nudges), which works when blocks arrive in
+    that order but is fragile when an earlier block is absent.
 
     This function catches every serialization failure (``_safe_serialize``)
     and never raises — the request path must not break because a log field
@@ -263,8 +272,16 @@ def log_llm_call(
     memories_block = system_role_msgs[2] if len(system_role_msgs) >= 3 else None
     nudges_block = system_role_msgs[3] if len(system_role_msgs) >= 4 else None
 
-    memory_count = _count_block_lines(memories_block)
-    nudge_count = _count_block_lines(nudges_block)
+    resolved_memory_count = (
+        int(memory_count)
+        if memory_count is not None
+        else _count_block_lines(memories_block)
+    )
+    resolved_nudge_count = (
+        int(nudge_count)
+        if nudge_count is not None
+        else _count_block_lines(nudges_block)
+    )
 
     vision_blocks = vision_content or []
     vision_block_count = len(vision_blocks)
@@ -278,8 +295,8 @@ def log_llm_call(
         "message_count": len(messages),
         "role_breakdown": _safe_serialize(_role_breakdown(messages)),
         "system_block_count": system_block_count,
-        "memory_count": memory_count,
-        "nudge_count": nudge_count,
+        "memory_count": resolved_memory_count,
+        "nudge_count": resolved_nudge_count,
         "vision_block_count": vision_block_count,
         "user_message_length": _last_user_message_length(messages),
         "total_input_tokens_est": _total_input_tokens(system, messages),
