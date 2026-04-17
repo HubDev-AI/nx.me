@@ -92,48 +92,60 @@ export function GlowUpGrid({
     );
   }, [isLoadingMore, theme.accent]);
 
-  const renderEmpty = useCallback(() => {
-    if (items.length > 0) return null;
-    return (
-      <EmptyState
-        icon="sparkles-outline"
-        title="Your glow-ups will appear here"
-        description="Create your first transformation to get started"
-        center={false}
-        style={styles.emptyWrapper}
-      />
-    );
-  }, [items.length]);
-
   return (
-    <FlatList
-      data={items}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      numColumns={PROFILE_CONFIG.GRID_COLUMNS}
-      columnWrapperStyle={[
-        styles.row,
-        { paddingHorizontal: containerPadding },
-      ]}
-      contentContainerStyle={styles.gridContent}
-      onEndReached={handleEndReached}
-      onEndReachedThreshold={0.5}
-      ListHeaderComponent={ListHeaderComponent}
-      ListFooterComponent={renderFooter}
-      ListEmptyComponent={renderEmpty}
-      showsVerticalScrollIndicator={false}
-      scrollEnabled={true}
-      refreshControl={
-        onRefresh !== undefined ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.accent}
-            colors={[theme.accent]}
-          />
-        ) : undefined
-      }
-    />
+    <View style={styles.container}>
+      <FlatList
+        data={items}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        numColumns={PROFILE_CONFIG.GRID_COLUMNS}
+        columnWrapperStyle={[
+          styles.row,
+          { paddingHorizontal: containerPadding },
+        ]}
+        contentContainerStyle={styles.gridContent}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
+        ListHeaderComponent={ListHeaderComponent}
+        ListFooterComponent={renderFooter}
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={true}
+        refreshControl={
+          onRefresh !== undefined ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.accent}
+              colors={[theme.accent]}
+            />
+          ) : undefined
+        }
+      />
+      {/*
+       * Empty state — rendered as an absolute-positioned overlay instead
+       * of `ListEmptyComponent` so it floats centered in the available
+       * space below the ProfileHeader (matches the AdvisorEmptyOverlay
+       * pattern used across the advisor surfaces). `pointerEvents="none"`
+       * forwards every tap to the FlatList underneath so pull-to-refresh
+       * and ProfileHeader's expand-chevron stay live while the overlay
+       * is visible.
+       */}
+      {items.length === 0 && (
+        <View
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        >
+          <View style={styles.emptyOverlay}>
+            <EmptyState
+              icon="sparkles-outline"
+              title="Your glow-ups will appear here"
+              description="Create your first transformation to get started"
+              center={false}
+            />
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -231,11 +243,18 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.lg,
     alignItems: "center",
   },
-  emptyWrapper: {
-    // Match the top-offset convention used elsewhere (see
-    // blocked-users.tsx styles.emptyContainer) so the title doesn't
-    // sit visually glued to the profile header.
-    paddingTop: THEME.spacing.xxxl * 2 + THEME.spacing.lg,
-    paddingBottom: THEME.spacing.xxxl,
+  container: {
+    flex: 1,
+  },
+  emptyOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: THEME.spacing.xxxl,
+    // Biased toward the visual center of the viewport rather than the
+    // geometric center of the overlay; compensates for the ProfileHeader
+    // that sits above and the floating tab bar that sits below, which
+    // would otherwise pull the content off-center.
+    paddingBottom: THEME.spacing.xxxl * 2,
   },
 });
