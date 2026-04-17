@@ -56,13 +56,14 @@ const GLOW_RING_WIDTH = 2;
 /** Extra touch area around the handle so the divider is easy to grab. */
 const HANDLE_HIT_PADDING = 24;
 
-/** Spring config for entrance + tap-to-jump animations. */
-const TOUCH_SPRING = {
-  damping: 18,
-  stiffness: 240,
-  mass: 1,
-} as const;
+/**
+ * Minimum horizontal-dominance (in px) a move must clear before the
+ * slider claims the gesture. Below this, the parent ScrollView keeps
+ * the drag — so vertical scrolls pass through cleanly.
+ */
+const DIRECTION_THRESHOLD_PX = 10;
 
+/** Spring config for entrance + accessibility-toggle animations. */
 const ENTRANCE_SPRING = {
   damping: 15,
   stiffness: 150,
@@ -78,11 +79,25 @@ interface BeforeAfterSliderProps {
   afterUrl: string;
   /** e.g. "Glow Up" for this feature, "Clean Girl · Dewy" for Makeup. */
   rightLabel: string;
-  /** Default split position (0–1). Default 0.5. */
+  /** Default split position (0–1). Default 1.0 — glow-up visible, user drags left to reveal before. */
   initialSplit?: number;
   /** Called by VoiceOver accessibility action (toggles between 0.25 and 0.75). */
   onAccessibilityToggle?: () => void;
+  /**
+   * Pure-tap callback — fires when the user taps the before side of
+   * the image (to the right of the current divider) without dragging.
+   * Parent typically opens a zoomable full-screen view.
+   */
+  onPressBeforeImage?: () => void;
+  /**
+   * Pure-tap callback — fires when the user taps the glow-up side of
+   * the image (to the left of the current divider) without dragging.
+   */
+  onPressAfterImage?: () => void;
 }
+
+/** Max combined travel (px) a release can show and still count as a tap. */
+const TAP_MAX_TRAVEL_PX = 8;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -92,8 +107,10 @@ export default function BeforeAfterSlider({
   beforeUrl,
   afterUrl,
   rightLabel,
-  initialSplit = 0.5,
+  initialSplit = 1.0,
   onAccessibilityToggle,
+  onPressBeforeImage,
+  onPressAfterImage,
 }: BeforeAfterSliderProps) {
   const { theme } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
@@ -102,6 +119,9 @@ export default function BeforeAfterSlider({
 
   const splitPosition = useSharedValue(0);
   const gestureStartSplit = useRef(0);
+  // Track gesture origin so release can distinguish tap (no travel) from
+  // drag. Set in onPanResponderGrant; read in onPanResponderRelease.
+  const gestureStartX = useRef(0);
 
   // Kick off entrance animation once after mount. Reanimated shared-value
   // writes during render are not safe under concurrent rendering.
@@ -109,15 +129,6 @@ export default function BeforeAfterSlider({
     splitPosition.value = withSpring(initialSplit, ENTRANCE_SPRING);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /**
-   * Dead-zone half-width, in normalized slider units (0–1). When the user
-   * taps within this radius of the current divider position, treat it as a
-   * drag grab (no spring jump). Taps outside the dead-zone spring the
-   * divider to the tap position — "tap-to-jump".
-   */
-  const DEAD_ZONE_RATIO =
-    (HANDLE_SIZE + HANDLE_HIT_PADDING) / 2 / sliderWidth;
 
   const handleAccessibilityToggle = useCallback(() => {
     const current = splitPosition.value;
@@ -128,26 +139,25 @@ export default function BeforeAfterSlider({
     onAccessibilityToggle?.();
   }, [splitPosition, onAccessibilityToggle]);
 
-  // PanResponder on the whole container: tap-to-jump + drag.
+  // PanResponder on the whole container.
+  // - `onMoveShouldSetPanResponder` only claims the gesture when it reads
+  //   as horizontal (|dx| dominates |dy|) so vertical drags pass through
+  //   to the parent ScrollView.
+  // - A near-zero-travel release counts as a tap and fires the
+  //   side-appropriate onPress callback (zoom viewer). Drag releases
+  //   leave the divider at its current position.
+  // - `onPanResponderTerminationRequest` returns true so ScrollView can
+  //   reclaim mid-gesture if the user flips direction.
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_evt, gs) =>
+          Math.abs(gs.dx) > Math.abs(gs.dy) + DIRECTION_THRESHOLD_PX,
+        onPanResponderTerminationRequest: () => true,
         onPanResponderGrant: (evt) => {
-          const tapX = evt.nativeEvent.locationX;
-          const tapRatio = clamp(tapX / sliderWidth, 0, 1);
-          const current = splitPosition.value;
-          const withinHandle =
-            Math.abs(tapRatio - current) <= DEAD_ZONE_RATIO;
-          if (withinHandle) {
-            // Touch near the handle — treat as drag grab (no jump).
-            gestureStartSplit.current = current;
-          } else {
-            // Tap away from the handle — jump to the tap position.
-            gestureStartSplit.current = tapRatio;
-            splitPosition.value = withSpring(tapRatio, TOUCH_SPRING);
-          }
+          gestureStartSplit.current = splitPosition.value;
+          gestureStartX.current = evt.nativeEvent.locationX;
           hapticLight();
         },
         onPanResponderMove: (_evt, gestureState) => {
@@ -158,11 +168,25 @@ export default function BeforeAfterSlider({
             1,
           );
         },
-        onPanResponderRelease: () => {
-          // No snap — leave at current position.
+        onPanResponderRelease: (_evt, gestureState) => {
+          const travel =
+            Math.abs(gestureState.dx) + Math.abs(gestureState.dy);
+          if (travel > TAP_MAX_TRAVEL_PX) return;
+          // Tap — decide which side the tap landed on based on the
+          // divider at tap start.
+          const tapRatio = clamp(
+            gestureStartX.current / sliderWidth,
+            0,
+            1,
+          );
+          if (tapRatio <= splitPosition.value) {
+            onPressAfterImage?.();
+          } else {
+            onPressBeforeImage?.();
+          }
         },
       }),
-    [sliderWidth, splitPosition, DEAD_ZONE_RATIO],
+    [sliderWidth, splitPosition, onPressAfterImage, onPressBeforeImage],
   );
 
   const afterOverlayStyle = useAnimatedStyle(() => ({
@@ -173,6 +197,18 @@ export default function BeforeAfterSlider({
     transform: [
       { translateX: splitPosition.value * sliderWidth - DIVIDER_WIDTH / 2 },
     ],
+  }));
+
+  // Label pills sit as siblings of the clip (not children of it) so each
+  // label's position is anchored to full sliderWidth. Visibility is a
+  // monotonic fade of splitPosition — BEFORE hides as the glow-up fills
+  // the frame, GLOW UP appears as the glow-up reveals. This prevents
+  // both pills rendering on the same visible half of the image.
+  const beforeLabelStyle = useAnimatedStyle(() => ({
+    opacity: 1 - splitPosition.value,
+  }));
+  const afterLabelStyle = useAnimatedStyle(() => ({
+    opacity: splitPosition.value,
   }));
 
   return (
@@ -209,15 +245,6 @@ export default function BeforeAfterSlider({
           resizeMode="cover"
           accessibilityLabel={`${rightLabel} result photo`}
         />
-        <View
-          style={[
-            styles.labelBadge,
-            styles.labelBadgeRight,
-            { backgroundColor: theme.accent + "CC" },
-          ]}
-        >
-          <Label color={THEME.colors.white}>{rightLabel.toUpperCase()}</Label>
-        </View>
       </Animated.View>
 
       <Animated.View
@@ -248,9 +275,25 @@ export default function BeforeAfterSlider({
         </View>
       </Animated.View>
 
-      <View style={[styles.labelBadge, styles.labelBadgeLeft]}>
+      {/* Labels live outside the clip so their horizontal position is
+          stable; opacity reflects which side of the image is visible. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.labelBadge, styles.labelBadgeLeft, beforeLabelStyle]}
+      >
         <Label color="primary">BEFORE</Label>
-      </View>
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.labelBadge,
+          styles.labelBadgeRight,
+          { backgroundColor: theme.accent + "CC" },
+          afterLabelStyle,
+        ]}
+      >
+        <Label color={THEME.colors.white}>{rightLabel.toUpperCase()}</Label>
+      </Animated.View>
     </View>
   );
 }

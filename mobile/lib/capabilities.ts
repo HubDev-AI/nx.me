@@ -49,6 +49,13 @@ export interface Capabilities {
   canUseAdvisor: boolean;
   /** Share glowup card flow available. */
   canShareGlowup: boolean;
+  /**
+   * Share-profile button visible (ProfileHeader). The public card-web
+   * page only exists meaningfully when the social surface is on, so
+   * this is keyed to `social_enabled` — distinct from `canShareGlowup`
+   * which gates result-card sharing (tied to `share_enabled`).
+   */
+  canShareProfile: boolean;
   /** Onboarding flow runs after login. */
   canSeeOnboarding: boolean;
   /** Subscription screen reachable — stub true until premium tiering ships. */
@@ -86,6 +93,7 @@ export function useCapabilities(): Capabilities {
       canSeeFeed: features.social_enabled,
       canUseAdvisor: features.advisor_enabled,
       canShareGlowup: features.share_enabled,
+      canShareProfile: features.social_enabled,
       canSeeOnboarding: features.onboarding_enabled,
       canSubscribe: true,
       canReact: features.social_enabled,

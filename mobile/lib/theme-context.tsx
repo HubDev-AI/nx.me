@@ -1,13 +1,12 @@
 /**
  * ThemeContext — provides the dynamic session theme to all screens.
- * On first mount, loads the persisted accent from storage so the accent
- * stays consistent across JS reloads within the same session.
+ * Every JS reload (cold start, Fast Refresh, shake-menu reload) picks a
+ * fresh random accent. No cross-reload persistence — `refreshTheme()`
+ * rotates the accent in-memory only.
  */
-import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useState, useCallback, type ReactNode } from "react";
 import {
   buildSessionTheme,
-  loadOrCreateSessionTheme,
-  persistAccentIndex,
   DEFAULT_THEME,
   hexToRgba,
   type DynamicTheme,
@@ -33,20 +32,13 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  // Synchronous initial value so there is no flash on first render
+  // Synchronous initial value — fresh random accent on every mount.
   const [theme, setTheme] = useState<DynamicTheme>(() => buildSessionTheme());
-
-  // On mount: replace with the persisted session accent (async)
-  useEffect(() => {
-    loadOrCreateSessionTheme().then(setTheme).catch(() => {
-      // If loading fails, keep the synchronous initial value
-    });
-  }, []);
 
   const refreshTheme = useCallback(() => {
     const index = Math.floor(Math.random() * ACCENTS.length);
     const accent = ACCENTS[index] as string;
-    const newTheme: DynamicTheme = {
+    setTheme({
       accent,
       accentMuted: hexToRgba(accent, 0.12),
       glowColors: [
@@ -55,9 +47,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         hexToRgba(accent, 0.06),
       ],
       glowShadow: hexToRgba(accent, 0.5),
-    };
-    setTheme(newTheme);
-    persistAccentIndex(index).catch(() => {});
+    });
   }, []);
 
   const value = useMemo(() => ({ theme, refreshTheme }), [theme, refreshTheme]);

@@ -189,6 +189,7 @@ export default function PhotoPicker({
         allowsEditing: true,
         aspect: IMAGE_PICKER.ASPECT,
         quality: IMAGE_PICKER.QUALITY,
+        cameraType: ImagePicker.CameraType.front,
       });
       handleAsset(result);
     } finally {

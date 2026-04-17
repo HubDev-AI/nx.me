@@ -37,6 +37,12 @@ interface ProfileHeaderProps {
   profile: UserProfile;
   onEditProfile: () => void;
   showStats: boolean;
+  /**
+   * Share-profile button visible. Keyed to `canShareProfile` in
+   * capabilities — the public card-web surface only matters when
+   * social is on.
+   */
+  showShareProfile: boolean;
 }
 
 /**
@@ -53,6 +59,7 @@ export function ProfileHeader({
   profile,
   onEditProfile,
   showStats,
+  showShareProfile,
 }: ProfileHeaderProps) {
   const { theme } = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -229,25 +236,27 @@ export function ProfileHeader({
               </Pressable>
             </Animated.View>
 
-            <Animated.View style={sharePressStyle}>
-              <Pressable
-                onPress={handleShare}
-                onPressIn={() => { shareScale.value = withSpring(0.97, THEME.animation.press); }}
-                onPressOut={() => { shareScale.value = withSpring(1, THEME.animation.press); }}
-                style={[
-                  styles.shareButton,
-                  { borderColor: theme.accent + "4D" },
-                ]}
-                accessibilityLabel="Share profile"
-                accessibilityRole="button"
-              >
-                <Ionicons
-                  name="share-outline"
-                  size={18}
-                  color={theme.accent}
-                />
-              </Pressable>
-            </Animated.View>
+            {showShareProfile ? (
+              <Animated.View style={sharePressStyle}>
+                <Pressable
+                  onPress={handleShare}
+                  onPressIn={() => { shareScale.value = withSpring(0.97, THEME.animation.press); }}
+                  onPressOut={() => { shareScale.value = withSpring(1, THEME.animation.press); }}
+                  style={[
+                    styles.shareButton,
+                    { borderColor: theme.accent + "4D" },
+                  ]}
+                  accessibilityLabel="Share profile"
+                  accessibilityRole="button"
+                >
+                  <Ionicons
+                    name="share-outline"
+                    size={18}
+                    color={theme.accent}
+                  />
+                </Pressable>
+              </Animated.View>
+            ) : null}
           </View>
         </View>
       </Animated.View>

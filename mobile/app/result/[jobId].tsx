@@ -43,6 +43,11 @@ import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
 import { ResultActions, type SaveState } from "../../components/result/ResultActions";
 import { useShareComposite } from "../../components/result/ShareComposite";
 import {
+  HeaderBackButton,
+  HeaderBackButtonSpacer,
+} from "../../components/ui/HeaderBackButton";
+import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
+import {
   getJobStatus,
   saveJob,
   type JobResult,
@@ -97,6 +102,8 @@ export default function ResultScreen() {
   const { theme } = useTheme();
 
   const [saveState, setSaveState] = useState<SaveState>("pending");
+  // Zoom viewer — which image, if any, is currently presented full-screen.
+  const [zoomTarget, setZoomTarget] = useState<"before" | "after" | null>(null);
   const { username } = useAuth();
 
   // Share composite hook — ShareCompositeView must be in the tree
@@ -248,6 +255,27 @@ export default function ResultScreen() {
     router.replace("/(tabs)/profile");
   }, [router]);
 
+  // Back chevron: prefer native back when possible. Falls through to
+  // profile when the route was opened directly (dev-feature focus,
+  // deep link) — matches the feedback rule that close/back stays
+  // clickable whenever an action is available.
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(tabs)/profile");
+  }, [router]);
+
+  // Tap-to-zoom handlers — gated on URLs so a pre-load tap is a no-op.
+  const handleZoomBefore = useCallback(() => {
+    if (result?.before_image_url) setZoomTarget("before");
+  }, [result?.before_image_url]);
+  const handleZoomAfter = useCallback(() => {
+    if (result?.after_image_url) setZoomTarget("after");
+  }, [result?.after_image_url]);
+  const handleCloseZoom = useCallback(() => setZoomTarget(null), []);
+
   // ---------------------------------------------------------------------------
   // Derived state
   // ---------------------------------------------------------------------------
@@ -352,19 +380,23 @@ export default function ResultScreen() {
   // Render
   // ---------------------------------------------------------------------------
 
+  const headerTitle = isSuccess ? "Your Glow-Up" : "Result";
+
   return (
-    <>
-      {/* Header with native back button — stays visible across every
-          branch (loading, error, waiting, failed, success) so the user
-          is never stranded on a screen with no way back. */}
-      <Stack.Screen
-        options={{
-          title: isSuccess ? "Your Glow-Up" : "Result",
-          headerStyle: { backgroundColor: THEME.colors.bg },
-          headerTintColor: THEME.colors.textPrimary,
-          headerShadowVisible: false,
-        }}
-      />
+    <View style={styles.screen}>
+      {/* Root layout is <Slot/>, not <Stack/>, so this Stack.Screen is
+          an inert defensive marker — matches post/[postId].tsx:273.
+          The visible header is the SafeAreaView + custom row below. */}
+      <Stack.Screen options={{ headerShown: false }} />
+      <SafeAreaView style={styles.headerSafeArea} edges={["top"]}>
+        <View style={styles.headerRow}>
+          <HeaderBackButton onPress={handleBack} />
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {headerTitle}
+          </Text>
+          <HeaderBackButtonSpacer />
+        </View>
+      </SafeAreaView>
       <QueryStateView
         isLoading={false}
         error={queryStateError}
@@ -439,6 +471,8 @@ export default function ResultScreen() {
                   beforeUrl={result.before_image_url!}
                   afterUrl={result.after_image_url!}
                   rightLabel="Glow Up"
+                  onPressBeforeImage={handleZoomBefore}
+                  onPressAfterImage={handleZoomAfter}
                 />
 
                 <Animated.View entering={FadeIn.duration(300).delay(400)}>
@@ -469,7 +503,23 @@ export default function ResultScreen() {
           </>
         ) : null}
       </QueryStateView>
-    </>
+
+      {/* Zoom viewer — mounted outside QueryStateView so it can open over
+          any branch. Gated on a non-null target; when target flips the
+          modal opens with the matching URL. */}
+      <ZoomableImageModal
+        visible={zoomTarget !== null}
+        sourceUri={
+          zoomTarget === "before"
+            ? result?.before_image_url ?? null
+            : zoomTarget === "after"
+              ? result?.after_image_url ?? null
+              : null
+        }
+        altText={zoomTarget === "before" ? "Before photo" : "Glow-up photo"}
+        onClose={handleCloseZoom}
+      />
+    </View>
   );
 }
 
@@ -478,6 +528,28 @@ export default function ResultScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  // Root frame — vertical stack: header row on top, content below.
+  screen: {
+    flex: 1,
+    backgroundColor: THEME.colors.bg,
+  },
+  headerSafeArea: {
+    backgroundColor: THEME.colors.bg,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: THEME.spacing.md,
+    minHeight: 44,
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: "center",
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 17,
+    color: THEME.colors.textPrimary,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: THEME.colors.bg,
