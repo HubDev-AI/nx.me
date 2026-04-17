@@ -22,6 +22,7 @@ import { useTheme } from "../../lib/theme-context";
 import { showToast } from "../../lib/toast";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { NudgeCard } from "./NudgeCard";
+import { NudgeDetailSheet } from "./NudgeDetailSheet";
 
 /** Skeleton for loading state */
 function NudgeSkeleton() {
@@ -82,6 +83,9 @@ export function NudgeFeed() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Selected nudge drives the detail sheet. Card bodies truncate at
+  // three lines; tapping opens the full copy in a sheet.
+  const [selectedNudge, setSelectedNudge] = useState<Nudge | null>(null);
 
 
   const retryCountRef = useRef(0);
@@ -175,23 +179,28 @@ export function NudgeFeed() {
   }, [hasMore, isLoadingMore, nudges]);
 
   // -------------------------------------------------------------------------
-  // Mark nudge as read
+  // Card tap → open detail sheet + mark unread nudges as read.
   // -------------------------------------------------------------------------
-  const handleMarkRead = useCallback(async (nudgeId: string) => {
-    // Optimistic update — set read_at to current time
+  const handleCardPress = useCallback(async (nudge: Nudge) => {
+    setSelectedNudge(nudge);
+
+    if (nudge.read_at !== null) return;
+
+    // Optimistic mark-read; revert on failure so the unread dot comes back.
     const now = new Date().toISOString();
     setNudges((prev) =>
-      prev.map((n) => (n.id === nudgeId ? { ...n, read_at: now } : n)),
+      prev.map((n) => (n.id === nudge.id ? { ...n, read_at: now } : n)),
     );
     try {
-      await markNudgeRead(nudgeId);
+      await markNudgeRead(nudge.id);
     } catch {
-      // Revert on failure
       setNudges((prev) =>
-        prev.map((n) => (n.id === nudgeId ? { ...n, read_at: null } : n)),
+        prev.map((n) => (n.id === nudge.id ? { ...n, read_at: null } : n)),
       );
     }
   }, []);
+
+  const handleCloseSheet = useCallback(() => setSelectedNudge(null), []);
 
   // -------------------------------------------------------------------------
   // Render helpers
@@ -200,9 +209,9 @@ export function NudgeFeed() {
 
   const renderItem = useCallback(
     ({ item }: { item: Nudge }) => (
-      <NudgeCard nudge={item} onMarkRead={handleMarkRead} />
+      <NudgeCard nudge={item} onPress={handleCardPress} />
     ),
-    [handleMarkRead],
+    [handleCardPress],
   );
 
   const renderFooter = useCallback(() => {
@@ -270,6 +279,8 @@ export function NudgeFeed() {
           description="Ada will send you tips and check-ins as she gets to know you"
         />
       )}
+
+      <NudgeDetailSheet nudge={selectedNudge} onClose={handleCloseSheet} />
     </View>
   );
 }

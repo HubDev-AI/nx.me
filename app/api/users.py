@@ -308,6 +308,7 @@ async def get_user_history(
     upload_repo: UploadRepository = Depends(get_upload_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     glowup_analysis_repo: GlowupAnalysisRepository = Depends(get_glowup_analysis_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
 ) -> HistoryResponse:
     """Return the authenticated user's glow-up history in reverse chronological order.
 
@@ -376,10 +377,15 @@ async def get_user_history(
             if sid not in jobs_by_analysis and job.get("after_image_url"):
                 jobs_by_analysis[sid] = job["after_image_url"]
 
-    # 3. Assemble entries — no image signing needed; uploads.image_url and
-    #    jobs.after_image_url are stable CDN paths stored directly.
+    # 3. Assemble entries. The `uploads.image_url` and `jobs.after_image_url`
+    #    columns store storage keys (not public URLs) — the jobs endpoint
+    #    signs them on demand (see app/api/jobs.py::get_job), and so must
+    #    we here. Handing raw storage keys to the mobile client produced a
+    #    ghost glass card on the profile grid because the <Image> source
+    #    URI "6000a5a0-.../xxx.jpg" is not a fetchable URL.
+    #
     #    Only include uploads whose analysis has at least one completed job
-    #    with a non-empty after_image_url. Entries without a completed job
+    #    with a non-empty after_image_url; entries without a completed job
     #    would surface on the profile grid as an empty glass card and read
     #    as broken to the user. This matches the endpoint's documented
     #    contract ("at least one completed job") which was previously a
@@ -392,13 +398,31 @@ async def get_user_history(
             continue
 
         analysis_id: str = analysis["id"]
-        after_url: str | None = jobs_by_analysis.get(analysis_id)
-        if not after_url:
+        after_key: str | None = jobs_by_analysis.get(analysis_id)
+        if not after_key:
             continue
 
         face_shape: str | None = analysis.get("face_shape")
         symmetry_score: float | None = analysis.get("symmetry_score")
         raw_recs: list[dict] = analysis.get("recommendations") or []
+
+        before_key = row.get("image_url")
+        before_url: str | None = (
+            await run_sync(
+                image_repo.create_signed_url,
+                "raw-selfies",
+                before_key,
+                settings.SIGNED_URL_EXPIRY_SECONDS,
+            )
+            if before_key
+            else None
+        )
+        after_url: str = await run_sync(
+            image_repo.create_signed_url,
+            "generated-images",
+            after_key,
+            settings.SIGNED_URL_EXPIRY_SECONDS,
+        )
 
         entries.append(
             HistoryEntry(
@@ -414,7 +438,7 @@ async def get_user_history(
                     )
                     for r in raw_recs
                 ],
-                before_image_url=row.get("image_url"),
+                before_image_url=before_url,
                 after_image_url=after_url,
                 created_at=row["created_at"],
             )

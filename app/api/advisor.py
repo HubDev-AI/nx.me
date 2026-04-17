@@ -36,7 +36,6 @@ from app.advisor.models import (
 )
 from app.advisor.service import AdvisorService
 from app.api.deps import (
-    get_current_user,
     get_redis,
     get_supabase,
     get_user_or_guest,
@@ -272,7 +271,11 @@ class NudgeUpdateRequest(BaseModel):
 async def update_nudge(
     nudge_id: UUID,
     body: NudgeUpdateRequest,
-    claims: UserClaims = Depends(get_current_user),
+    # Guests own post-analysis nudges that fire for their own analyses, so
+    # the mark-as-read path must accept guest tokens. The repo's
+    # mark_nudge_read already scopes by (user_id, nudge_id) so there is
+    # no cross-user exposure.
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Update a nudge. Currently supports marking as read (idempotent)."""
@@ -294,7 +297,7 @@ async def update_nudge(
 )
 async def mark_nudge_read(
     nudge_id: UUID,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Deprecated alias — use PATCH /advisor/nudges/{nudge_id} instead."""

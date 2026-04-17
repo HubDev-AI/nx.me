@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     ADVISOR_MILESTONE_DEDUP_HOURS: int = (
         48  # Hours before a duplicate milestone nudge is allowed
     )
+    # Cooldown between post-analysis nudges for the same user. Four
+    # sequential analyses inside the old window produced four near-
+    # duplicate Sonnet-grounded nudges ("Oval face shapes are
+    # versatile..." ×4) because every successful analysis enqueued a
+    # fresh generation with no dedup. 60 min matches the "one per
+    # session" cadence a user would expect from an advisor.
+    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 60
     ADVISOR_MEMORY_CAP: int = 500  # Max memories per user (spec §10).
     ADVISOR_CONTEXT_TOKEN_BUDGET: int = 5000  # Max input tokens to the LLM (spec §10).
 

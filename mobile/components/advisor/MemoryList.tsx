@@ -400,7 +400,10 @@ interface TabCopy {
 
 const TAB_COPY: Record<Tab, TabCopy> = {
   goal: {
-    placeholder: "e.g. Grow out my hair to shoulder length",
+    // Kept pithy — the old copy wrapped to two lines inside the
+    // composer input on the standard iPhone width, which reads as
+    // a broken multi-line field.
+    placeholder: "e.g. Grow my hair out",
     composerA11yLabel: "Goal content",
     emptyTitle: "No goals yet",
     emptyDescription: "Tell Ada what you're working toward.",

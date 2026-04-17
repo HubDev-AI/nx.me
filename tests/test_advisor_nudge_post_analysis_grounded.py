@@ -49,13 +49,24 @@ def _patch_entitlement(monkeypatch, *, allowed: bool = True):
     )
 
 
-def _patch_repo(monkeypatch, *, latest_insight: dict | None = None):
-    """Patch AdvisorRepository so generate_nudge sees the given insight row."""
+def _patch_repo(
+    monkeypatch,
+    *,
+    latest_insight: dict | None = None,
+    recent_nudges: list[dict] | None = None,
+):
+    """Patch AdvisorRepository so generate_nudge sees the given insight row.
+
+    `recent_nudges` defaults to `[]` so the post-analysis cooldown does
+    not fire. Tests that want to exercise the cooldown pass a non-empty
+    list here.
+    """
     from app.advisor import nudge_scheduler
 
     fake_repo = MagicMock()
     fake_repo.insert_nudge = MagicMock(return_value={"id": str(uuid4())})
     fake_repo.get_latest_analysis_insight = MagicMock(return_value=latest_insight)
+    fake_repo.find_recent_nudges = MagicMock(return_value=recent_nudges or [])
     monkeypatch.setattr(
         nudge_scheduler, "AdvisorRepository", MagicMock(return_value=fake_repo)
     )
@@ -153,6 +164,43 @@ async def test_post_analysis_nudge_falls_back_to_repo_when_insight_missing(monke
     user_content = captured["messages"][0]["content"]
     assert "heart" in user_content
     assert "Softer fringe" in user_content
+
+
+@pytest.mark.asyncio
+async def test_post_analysis_nudge_skips_when_cooldown_active(monkeypatch):
+    """Recent post_analysis nudge within the cooldown window → skip.
+
+    Rapid re-analyses (4 in ~30 min as observed in prod logs) would
+    otherwise spawn 4 near-duplicate Sonnet-generated nudges. The
+    cooldown is the single guard; its absence is what produced the
+    "Oval face shape is versatile..." spam.
+    """
+    from app.advisor import nudge_scheduler
+
+    fake_llm, captured = _fake_llm_capture()
+    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(
+        monkeypatch,
+        recent_nudges=[{"id": str(uuid4())}],  # something recent → cooldown active
+    )
+
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        str(uuid4()),
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+        {
+            "face_shape": "oval",
+            "symmetry_score": 0.9,
+            "recommendations": ["Try layers"],
+        },
+    )
+
+    assert not captured, "LLM must not be called when cooldown is active"
+    fake_repo.insert_nudge.assert_not_called()
+    # Cooldown check fires before the insight fallback load; the
+    # repo.get_latest_analysis_insight should never be reached either.
+    fake_repo.get_latest_analysis_insight.assert_not_called()
 
 
 @pytest.mark.asyncio
