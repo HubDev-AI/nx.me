@@ -108,8 +108,12 @@ async def test_post_analysis_nudge_injects_real_result_into_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_post_analysis_nudge_uses_sonnet_model(monkeypatch):
-    """Haiku was producing ungrounded nudges; pin Sonnet for this path."""
+async def test_post_analysis_nudge_uses_haiku_model(monkeypatch):
+    """Haiku → Sonnet swap was reverted 2026-04-17 — Sonnet read clinical.
+
+    Pin Haiku so a future swap requires updating both this test and the
+    rationale comment in nudge_scheduler.py (the comment carries the why).
+    """
     from app.advisor import nudge_scheduler
     from app.config import settings
 
@@ -129,8 +133,8 @@ async def test_post_analysis_nudge_uses_sonnet_model(monkeypatch):
         },
     )
 
-    assert captured["model"] == settings.ADVISOR_MODEL_SONNET
-    assert captured["model"] != settings.ADVISOR_MODEL_HAIKU
+    assert captured["model"] == settings.ADVISOR_MODEL_HAIKU
+    assert captured["model"] != settings.ADVISOR_MODEL_SONNET
 
 
 @pytest.mark.asyncio

@@ -157,13 +157,14 @@ async def generate_nudge(
             "One or two sentences, no greeting.\n\n" + get_prompt(trigger)
         )
 
-    # Generate via Sonnet — same SOUL.md persona as chat (spec §1, §12).
-    # Haiku produced ungrounded, generic nudges; Sonnet is better at
-    # following the "reference a concrete element" instruction.
+    # Generate via Haiku — same SOUL.md persona as chat (spec §1, §12).
+    # Haiku → Sonnet switch was reverted 2026-04-17: Sonnet's post-analysis
+    # output read as clinical ("Oval face shapes are versatile..."). Re-evaluate
+    # if grounded-output complaints rise — the prompt itself was unchanged.
     llm = _get_llm_adapter()
     try:
         response = await llm.create_message(
-            model=settings.ADVISOR_MODEL_SONNET,
+            model=settings.ADVISOR_MODEL_HAIKU,
             system=SOUL_MD,
             messages=[{"role": "user", "content": user_content}],
             max_tokens=MAX_TOKENS_NUDGE,
