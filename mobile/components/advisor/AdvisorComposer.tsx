@@ -107,7 +107,7 @@ export function AdvisorComposer({
         accessibilityLabel={accessibilityLabel}
       />
       <Pressable
-        onPress={onSubmit}
+        onPress={() => onSubmit()}
         disabled={!canSubmit}
         style={({ pressed }) => [
           styles.button,
