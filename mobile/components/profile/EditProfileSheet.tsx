@@ -144,16 +144,22 @@ export function EditProfileSheet({
   //      format/length check. If it fails, surface the error.
   //   3. Only if the format check passes do we hit the server.
   //
-  // Net: partial values never land on the wire (matches the backend's
-  // min_length=3 rule in app/api/users.py) and the red error only
-  // appears once the user has clearly stopped typing a too-short name.
+  // Alignment with the backend:
+  //   - Backend stores usernames case-sensitively but enforces
+  //     uniqueness via `ILIKE` (case-insensitive). The public
+  //     `/users/check-username` endpoint has no auth, so it does NOT
+  //     exclude the caller's own row — a case variant of the user's
+  //     existing name would come back as "taken". We compare
+  //     case-insensitively before hitting the server so typing
+  //     "VladTrifonov" when the stored value is "vladtrifonov" is
+  //     treated as a no-op (the PATCH endpoint DOES exclude self and
+  //     will apply the case change on save).
+  //   - Partial values never reach the server because we only fire
+  //     /check-username after format + length pass locally (backend
+  //     Query min_length=3 would 422 otherwise).
   useEffect(() => {
-    // Users who've never picked a username have profile.username === null.
-    // Normalize both sides so the unchanged-no-op branch catches the
-    // initial render (newUsername initialized to "") and avoids flashing
-    // the format error on mount before any typing.
     const currentUsername = profile.username ?? "";
-    if (newUsername === currentUsername) {
+    if (newUsername.toLowerCase() === currentUsername.toLowerCase()) {
       setUsernameAvailable(null);
       setUsernameError(null);
       setUsernameChecking(false);
@@ -214,8 +220,11 @@ export function EditProfileSheet({
     };
   }, [newUsername, profile.username]);
 
-  // Computed change tracking
-  const hasUsernameChange = newUsername !== (profile.username ?? "");
+  // Computed change tracking — `hasUsernameChange` stays a strict
+  // comparison so a case-only change ("vlad" → "Vlad") still submits
+  // the PATCH; only the uniqueness branches below normalize case.
+  const currentUsername = profile.username ?? "";
+  const hasUsernameChange = newUsername !== currentUsername;
   const hasDisplayNameChange = displayName !== (profile.display_name ?? "");
   const hasAvatarChange = avatarPickedUri !== null;
   const hasChanges =
@@ -228,9 +237,16 @@ export function EditProfileSheet({
   // `usernameAvailable !== false`, which treated `null` (not yet checked)
   // as valid — so Save lit up during the 300 ms debounce window and the
   // user could race-tap it into a 409 on a taken name. Require an explicit
-  // `true` for the changed-name branch; same-name still short-circuits.
+  // `true` for the changed-name branch.
+  //
+  // Case handling: the same-name short-circuit is case-insensitive so a
+  // user editing only the letter case of their own username keeps Save
+  // enabled (the backend PATCH handler does exclude self when checking
+  // availability). The /check-username endpoint cannot do that exclusion
+  // — it's unauthenticated — which is why we match locally instead of
+  // relying on a round-trip.
   const isUsernameValid =
-    newUsername === profile.username ||
+    newUsername.toLowerCase() === currentUsername.toLowerCase() ||
     (newUsername.length >= AUTH_VALIDATION.USERNAME_MIN_LENGTH &&
       newUsername.length <= AUTH_VALIDATION.USERNAME_MAX_LENGTH &&
       AUTH_VALIDATION.USERNAME_PATTERN.test(newUsername) &&
@@ -490,8 +506,10 @@ export function EditProfileSheet({
                 editable={!isCooldownActive}
                 accessibilityLabel="Username"
               />
-              {/* Availability indicator */}
-              {newUsername !== profile.username && (
+              {/* Availability indicator — hidden when the value only
+                  differs by case, since the effect short-circuits that
+                  branch (no server call, no verdict to show). */}
+              {newUsername.toLowerCase() !== currentUsername.toLowerCase() && (
                 <View style={styles.usernameStatus}>
                   {usernameChecking ? (
                     <ActivityIndicator
