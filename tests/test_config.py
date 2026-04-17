@@ -85,11 +85,27 @@ class TestSettings:
         assert not hasattr(settings, "MIN_AGE_YEARS")
 
     def test_adapter_defaults_are_mock(self):
-        """Adapters that hit external paid APIs default to mock in dev/test."""
-        # NSFW, LLM, and payment always mock (external paid APIs)
-        assert settings.ADAPTER__NSFW_ADAPTER == "mock"
-        assert settings.ADAPTER__LLM_ADAPTER == "mock"
-        assert settings.ADAPTER__PAYMENT_ADAPTER == "mock"
-        # Face analysis uses local MediaPipe (no external call); image gen uses fal.ai in dev
-        assert settings.ADAPTER__FACE_ANALYSIS_ADAPTER in ("mock", "mediapipe")
-        assert settings.ADAPTER__IMAGE_GENERATION_ADAPTER in ("mock", "falai")
+        """Source-code defaults for adapters are safe (mock) so a fresh
+        clone without an app/.env file cannot accidentally call a paid
+        external API. Per-environment `.env` files are free to opt into
+        real adapters (`anthropic`, `falai`, `mediapipe`, `stripe`) —
+        this test pins the fallback, not the runtime value."""
+        # Inspect the class-level field defaults directly so developer
+        # env overrides in app/.env don't mask regressions where someone
+        # flipped the default to a real adapter.
+        defaults = {
+            name: field.default
+            for name, field in Settings.model_fields.items()
+            if name.startswith("ADAPTER__")
+        }
+
+        # Adapters that would hit external / paid APIs — must default to mock.
+        assert defaults["ADAPTER__NSFW_ADAPTER"] == "mock"
+        assert defaults["ADAPTER__LLM_ADAPTER"] == "mock"
+        assert defaults["ADAPTER__PAYMENT_ADAPTER"] == "mock"
+        assert defaults["ADAPTER__IMAGE_GENERATION_ADAPTER"] == "mock"
+        assert defaults["ADAPTER__FACE_ANALYSIS_ADAPTER"] == "mock"
+        assert defaults["ADAPTER__EMBEDDING_ADAPTER"] == "mock"
+
+        # Storage default is infra, not a paid API; stays on supabase.
+        assert defaults["ADAPTER__STORAGE_ADAPTER"] == "supabase"
