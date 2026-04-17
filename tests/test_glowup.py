@@ -297,7 +297,8 @@ class TestAnalyzeGlowupHandler:
         # The nudge enqueue passes the analysis result through so the
         # worker can ground the prompt without racing the insight write.
         assert any(
-            c.args == (
+            c.args
+            == (
                 "schedule_post_analysis_nudge",
                 user_id,
                 "oval",
@@ -467,7 +468,8 @@ class TestGenerateGlowupHandler:
         # the endpoint must mark it FAILED/ENQUEUE_FAILED so mobile pollers
         # get a terminal state instead of spinning on QUEUED forever.
         update_calls = [
-            c for c in job_repo.update.call_args_list
+            c
+            for c in job_repo.update.call_args_list
             if len(c.args) >= 2 and isinstance(c.args[1], dict)
         ]
         assert update_calls, "orphan job row was never updated after enqueue failure"

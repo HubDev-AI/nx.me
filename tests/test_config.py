@@ -61,9 +61,7 @@ class TestSettings:
         upper bound (2x PRO) keeps the guard from going permissively
         high.
         """
-        assert (
-            settings.IMAGE_GEN_COST_CEILING_USD > settings.FAL_COST_NANO_BANANA_2
-        ), (
+        assert settings.IMAGE_GEN_COST_CEILING_USD > settings.FAL_COST_NANO_BANANA_2, (
             f"Ceiling {settings.IMAGE_GEN_COST_CEILING_USD} must be > "
             f"default model cost {settings.FAL_COST_NANO_BANANA_2}"
         )
@@ -73,12 +71,10 @@ class TestSettings:
 
     def test_credit_cost_alert_below_ceiling(self):
         """Alert must trip before the hard gate so creep is visible first."""
-        assert (
-            settings.CREDIT_COST_ALERT_USD < settings.IMAGE_GEN_COST_CEILING_USD
+        assert settings.CREDIT_COST_ALERT_USD < settings.IMAGE_GEN_COST_CEILING_USD
+        assert settings.CREDIT_COST_ALERT_USD >= settings.FAL_COST_NANO_BANANA_2, (
+            "Alert below normal per-gen cost would fire constantly"
         )
-        assert (
-            settings.CREDIT_COST_ALERT_USD >= settings.FAL_COST_NANO_BANANA_2
-        ), "Alert below normal per-gen cost would fire constantly"
 
     def test_min_age_constant_not_in_settings(self):
         """Age gate is a code constant, not a settings value (intentional)."""

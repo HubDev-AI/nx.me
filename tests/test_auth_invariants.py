@@ -135,9 +135,7 @@ class TestProdAuthSettingsInvariant:
         with pytest.raises(Exception) as exc_info:
             Settings(
                 _env_file=None,
-                **_settings_kwargs(
-                    APP_ENV="production", FEATURE_AUTH_REQUIRED=False
-                ),
+                **_settings_kwargs(APP_ENV="production", FEATURE_AUTH_REQUIRED=False),
             )
         # Pydantic wraps the ValueError in a ValidationError; both name the
         # offending flag in the message.
@@ -161,9 +159,7 @@ class TestProdAuthSettingsInvariant:
             with pytest.raises(Exception, match="FEATURE_AUTH_REQUIRED"):
                 Settings(
                     _env_file=None,
-                    **_settings_kwargs(
-                        APP_ENV=variant, FEATURE_AUTH_REQUIRED=False
-                    ),
+                    **_settings_kwargs(APP_ENV=variant, FEATURE_AUTH_REQUIRED=False),
                 )
 
 
@@ -260,14 +256,10 @@ class TestRoutesRejectGuestTokenWhenAuthRequired:
     request reached body validation, which means the auth dep didn't fire.
     """
 
-    def test_at_least_one_route_was_probed(
-        self, app_under_test: FastAPI
-    ) -> None:
+    def test_at_least_one_route_was_probed(self, app_under_test: FastAPI) -> None:
         # Defensive: catch the case where the test discovers zero routes
         # (e.g., import failure silently swallows them).
-        protected = [
-            r for r in _api_routes(app_under_test) if not _is_public(r.path)
-        ]
+        protected = [r for r in _api_routes(app_under_test) if not _is_public(r.path)]
         assert len(protected) >= 10, (
             f"expected to find ≥10 protected routes, found {len(protected)} "
             "— allowlist may be too broad or app failed to import"
@@ -287,9 +279,7 @@ class TestRoutesRejectGuestTokenWhenAuthRequired:
             url = _instantiate_path(route.path)
             # Probe each method the route actually accepts (skip HEAD and
             # OPTIONS — they're CORS/health and don't run the auth dep).
-            methods = sorted(
-                (route.methods or set()) - {"HEAD", "OPTIONS"}
-            )
+            methods = sorted((route.methods or set()) - {"HEAD", "OPTIONS"})
             for method in methods:
                 response = auth_required_client.request(
                     method, url, headers={"X-Guest-Token": _FAKE_GUEST_TOKEN}
@@ -307,8 +297,7 @@ class TestRoutesRejectGuestTokenWhenAuthRequired:
             "Routes leaked guest tokens past the auth gate. Each route "
             "either needs an auth dep (get_current_user / get_user_or_guest "
             "/ require_admin), or must inline-check FEATURE_AUTH_REQUIRED, "
-            "or must be added to PUBLIC_ROUTE_ALLOWLIST:\n  "
-            + "\n  ".join(failures)
+            "or must be added to PUBLIC_ROUTE_ALLOWLIST:\n  " + "\n  ".join(failures)
         )
 
 
@@ -362,7 +351,6 @@ class TestRoutesUseApprovedAuthDep:
                     "it's public."
                 )
 
-        assert not failures, (
-            "Routes missing an approved auth dep:\n  "
-            + "\n  ".join(failures)
+        assert not failures, "Routes missing an approved auth dep:\n  " + "\n  ".join(
+            failures
         )

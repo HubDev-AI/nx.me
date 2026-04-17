@@ -277,9 +277,7 @@ async def analyze_glowup(
     # Failures are swallowed — missing advisor state must never turn a
     # successful analysis into a 5xx (spec §4.5, §16).
     if settings.ADVISOR_ENABLED:
-        recommendations_text = [
-            r["suggestion_text"] for r in result.recommendations
-        ]
+        recommendations_text = [r["suggestion_text"] for r in result.recommendations]
 
         try:
             await request.app.state.arq_pool.enqueue_job(

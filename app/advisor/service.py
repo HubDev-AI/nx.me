@@ -31,11 +31,12 @@ from app.advisor import content_filter
 from app.advisor.context_builder import (
     build_context,
     build_user_data_block,
-    has_visual_trigger,
     trim_to_budget,
 )
-from app.advisor.memory_manager import MemoryManager
+from app.advisor.mcp import McpContext, ToolRegistry
+from app.advisor.memory_manager import MemoryManager, summarize_memory_content
 from app.advisor.models import LLMResponse, MemoryType
+from app.advisor.payload_logger import log_llm_call
 from app.advisor.persona import SOUL_MD as _SOUL_MD
 from app.config import settings
 from app.db.async_helpers import run_sync
@@ -149,10 +150,17 @@ class AdvisorService:
         # Step 5: Build user data block from latest analysis
         user_data_block = await run_sync(self._build_user_data, user_id)
 
-        # Step 6: Check for visual context triggers
+        # Step 5b: Fetch recent nudges for the 4th system block (Plan Unit 4).
+        # Read-only; never mutates read_at. Empty list → no nudge block.
+        nudges = await run_sync(self._fetch_context_nudges, user_id)
+
+        # Step 6 (retired in Plan Unit 2): the eager ``_fetch_vision_content``
+        # path is gone. Vision arrives ONLY when the model explicitly calls
+        # ``get_latest_glowup`` / ``get_latest_photo`` / ``get_latest_generation``
+        # via the tool registry below. When ``ADVISOR_TOOLS_ENABLED`` is
+        # False, the turn runs text-only — the kill switch is a rollback
+        # knob, not a parity guarantee.
         vision_content: list[dict[str, Any]] | None = None
-        if has_visual_trigger(message):
-            vision_content = await run_sync(self._fetch_vision_content, user_id)
 
         # Step 7: Build LLM context
         # Deterministic RNG for context assembly (hashlib, not hash() — cross-process safe)
@@ -166,6 +174,7 @@ class AdvisorService:
             conversation=history,
             message=message,
             rng=_rng,
+            nudges=nudges,
         )
 
         messages, dropped = trim_to_budget(
@@ -178,15 +187,43 @@ class AdvisorService:
                 extra={"metric": "advisor.context_trimmed", "dropped": dropped},
             )
 
+        # Step 7b: Build per-turn tool registry (Plan Unit 9).
+        # The registry carries a frozen ``McpContext`` scoped to this user
+        # and is dropped when the turn ends. ``ADVISOR_TOOLS_ENABLED`` is
+        # the kill switch — when False, tools are not advertised to the
+        # model and the eager-vision path above remains authoritative.
+        tool_registry: ToolRegistry | None = None
+        tool_schemas: list[dict[str, Any]] | None = None
+        if settings.ADVISOR_TOOLS_ENABLED:
+            mcp_ctx = McpContext(
+                user_id=user_id,
+                supabase=getattr(self._repo, "_sb", None),
+                advisor_repo=self._repo,
+                logger=logger,
+            )
+            tool_registry = ToolRegistry(ctx=mcp_ctx)
+            tool_schemas = tool_registry.schemas()
+
         # Step 8: Call LLM (with post-generation check + one retry)
         recent_advisor_messages = [
             m["content"] for m in history if m.get("role") == "advisor"
         ]
+        # Canonical counts for the payload logger (Plan Unit 4). The
+        # service layer is authoritative — trim may have dropped history
+        # turns but never touches the pinned memory / nudge blocks.
+        memory_count = len(memories) if memories else 0
+        nudge_count = len(nudges) if nudges else 0
         advisor_response = await self._call_llm_with_check(
             user_id=user_id,
+            conversation_id=conversation_id,
             messages=messages,
             vision_content=vision_content,
             recent_responses=recent_advisor_messages,
+            dropped=dropped,
+            memory_count=memory_count,
+            nudge_count=nudge_count,
+            tool_schemas=tool_schemas,
+            tool_registry=tool_registry,
         )
 
         # Step 9: Persist messages
@@ -228,21 +265,61 @@ class AdvisorService:
     async def _call_llm_with_check(
         self,
         user_id: UUID,
+        conversation_id: str,
         messages: list[dict[str, Any]],
         vision_content: list[dict[str, Any]] | None,
         recent_responses: list[str],
+        dropped: int,
+        memory_count: int | None = None,
+        nudge_count: int | None = None,
+        tool_schemas: list[dict[str, Any]] | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> str:
-        """Call LLM, apply post-generation check, retry once if needed (spec Section 11)."""
+        """Call LLM, apply post-generation check, retry once if needed (spec Section 11).
+
+        ``memory_count`` / ``nudge_count`` (Plan Unit 4) are forwarded to
+        the payload logger so the INFO line reports the authoritative
+        counts rather than positional inference.
+
+        ``tool_schemas`` + ``tool_registry`` (Plan Unit 9) enable the
+        inline tool-use loop inside the adapter. When both are supplied,
+        the adapter's internal loop dispatches the tools the model
+        requests and returns only the final text. The service layer never
+        sees tool_use blocks directly.
+        """
         # Determine model based on daily usage guard (spec Section 10)
         model = await self._select_model(str(user_id))
 
+        tool_names = (
+            [str(s.get("name", "")) for s in tool_schemas] if tool_schemas else None
+        )
+
         for attempt in range(2):
+            # Plan 2026-04-17-003 Unit 5 — log every LLM call. Both the
+            # first attempt and the retry get their own record so a
+            # reproduced failure shows both payloads.
+            log_llm_call(
+                None,
+                model=model,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                system=_SOUL_MD,
+                messages=messages,
+                vision_content=vision_content,
+                trimmed=dropped > 0,
+                dropped=dropped,
+                memory_count=memory_count,
+                nudge_count=nudge_count,
+                tool_names=tool_names,
+            )
             response: LLMResponse = await self._llm.create_message(
                 model=model,
                 system=_SOUL_MD,
                 messages=[m for m in messages if m.get("role") != "system"],
                 max_tokens=_MAX_TOKENS_CHAT,
                 vision_content=vision_content,
+                tools=tool_schemas,
+                tool_registry=tool_registry,
             )
             text = response.content.strip()
 
@@ -521,58 +598,78 @@ class AdvisorService:
         return self._repo.insert_message(conversation_id, role, content)
 
     def _build_user_data(self, user_id: UUID) -> str:
-        """Build user data block from latest analysis insight."""
+        """Build user data block, preferring the stable style_profile.
+
+        Plan 2026-04-17-003 Unit 7. Read order:
+        1. ``style_profile`` (stable per-user row, written by
+           ``upsert_style_profile``).
+        2. ``analysis_insight`` (the most recent event row) — back-compat
+           path for users whose profile has not been written yet, or
+           when the profile upsert failed but the insight write
+           succeeded.
+
+        ``analysis_count`` still comes from the count of
+        ``analysis_insight`` rows regardless of source; the profile is
+        a single row and does not carry history.
+        """
+        analysis_count = self._repo.count_analysis_insights(str(user_id))
+
+        profile = self._repo.get_style_profile(str(user_id))
+        if profile:
+            content = profile.get("content") or {}
+            face_shape = content.get("face_shape")
+            symmetry_score = content.get("symmetry_score")
+            recommendations = content.get("recommendations")
+            # The profile carries `last_updated_at` instead of a
+            # per-event `summary`. Regenerate the human-readable
+            # fragment from the stored facts so the user_data block's
+            # third line remains the same terse shape it had when the
+            # source was an analysis_insight.
+            summary = _summarize_profile_content(content)
+            return build_user_data_block(
+                face_shape=face_shape,
+                symmetry_score=symmetry_score,
+                analysis_count=analysis_count,
+                recommendations=recommendations,
+                summary=summary,
+            )
+
         latest = self._repo.get_latest_analysis_insight(str(user_id))
         if not latest:
             return ""
 
         content = latest.get("content", {})
-        face_shape = content.get("face_shape")
-        symmetry_score = content.get("symmetry_score")
-        analysis_count = self._repo.count_analysis_insights(str(user_id))
-
         return build_user_data_block(
-            face_shape=face_shape,
-            symmetry_score=symmetry_score,
+            face_shape=content.get("face_shape"),
+            symmetry_score=content.get("symmetry_score"),
             analysis_count=analysis_count,
+            recommendations=content.get("recommendations"),
+            summary=content.get("summary"),
         )
 
-    def _fetch_vision_content(self, user_id: UUID) -> list[dict[str, Any]] | None:
-        """Fetch recent signed image URLs for visual context (spec Section 6.4).
+    def _fetch_context_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
+        """Fetch the newest nudges within the config window for chat context.
 
-        Returns Anthropic vision content blocks, or None if no images.
+        Plan 2026-04-17-003 Unit 4. Read-only helper: the repo query
+        never touches ``read_at`` — nudges reach Ada without changing
+        the user's unread state. Failures fall through to an empty
+        list so a nudge-table hiccup cannot brick chat.
         """
         try:
-            rows = self._repo.get_cleared_images(str(user_id), limit=2)
-            if not rows:
-                return None
-
-            blocks: list[dict[str, Any]] = []
-            for row in rows:
-                try:
-                    signed = self._repo.create_signed_url(
-                        row["storage_path"],
-                        settings.SIGNED_URL_EXPIRY_SECONDS,
-                    )
-                    url = signed.get("signedURL") or signed.get("signedUrl", "")
-                    if url:
-                        blocks.append(
-                            {
-                                "type": "image",
-                                "source": {"type": "url", "url": url},
-                            }
-                        )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to create signed URL for image %s: %s", row["id"], exc
-                    )
-
-            return blocks if blocks else None
+            since_iso = (
+                datetime.now(tz=timezone.utc)
+                - timedelta(days=settings.ADVISOR_CONTEXT_NUDGE_AGE_DAYS)
+            ).isoformat()
+            return self._repo.get_recent_nudges_for_context(
+                user_id=str(user_id),
+                limit=settings.ADVISOR_CONTEXT_NUDGE_LIMIT,
+                since_iso=since_iso,
+            )
         except Exception as exc:
             logger.warning(
-                "Failed to fetch vision content for user %s: %s", user_id, exc
+                "Failed to fetch context nudges for user %s: %s", user_id, exc
             )
-            return None
+            return []
 
     async def _summarize_conversation(
         self,
@@ -625,6 +722,26 @@ def _first_sentence(text: str) -> str:
     parts = re.split(r"[.!?]", text.strip())
     first = parts[0].strip().lower() if parts else ""
     return first
+
+
+def _summarize_profile_content(content: dict[str, Any]) -> str:
+    """Render a style_profile content dict into the terse summary line.
+
+    Plan 2026-04-17-003 Unit 7. The profile does not carry a per-event
+    ``summary`` the way ``analysis_insight`` does, so the
+    ``build_user_data_block`` summary line is regenerated from the
+    facts already in ``content``. Uses the same summarizer as
+    ``memory_manager.write_analysis_insight`` so the user_data block
+    line matches regardless of source.
+
+    Returns an empty string when there is nothing to summarize so the
+    caller passes ``None``-equivalent to ``build_user_data_block`` and
+    the summary line is simply omitted.
+    """
+    if not content:
+        return ""
+    summary = summarize_memory_content(content)
+    return summary or ""
 
 
 def _post_check(response: str, recent_messages: list[str]) -> str | None:

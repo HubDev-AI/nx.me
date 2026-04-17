@@ -718,6 +718,14 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
             options,
         )
 
+        # Plan 2026-04-17-003 Unit 8: enqueue a vision-grounded
+        # post_glowup nudge. Fire-and-forget — a nudge enqueue
+        # failure must not turn a successful glow-up into a 5xx or
+        # leave the job in a weird state. Mirrors the ``_fail_job``
+        # fire-and-forget shape for terminal transitions.
+        if settings.ADVISOR_ENABLED:
+            await _enqueue_post_glowup_nudge(ctx, job_id, user_id)
+
         # Record success for circuit breaker
         await cost_tracker.record_success()
 
@@ -761,6 +769,47 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     finally:
         if user_id_for_concurrent:
             await _release_concurrent_counter(redis, user_id_for_concurrent)
+
+
+async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> None:
+    """Fire-and-forget enqueue of the post_glowup vision nudge.
+
+    Plan 2026-04-17-003 Unit 8. Runs after ``_finalize_job`` transitions
+    the job to ``completed`` with both image URLs populated. ARQ's
+    ``enqueue_job`` returns a job handle on success; any failure (Redis
+    hiccup, serialization bug) is logged and swallowed — the user's
+    glow-up is already complete and durable, a missing nudge is the
+    lesser failure.
+
+    The pattern mirrors ``_fail_job``'s fire-and-forget credit release /
+    usage_event update for terminal state transitions: the primary
+    happy path must never be blocked by optional advisor work.
+    """
+    arq_pool = ctx.get("arq_pool")
+    if arq_pool is None:
+        logger.debug(
+            "No arq_pool in ctx — skipping post_glowup nudge enqueue for job %s",
+            job_id,
+        )
+        return
+    try:
+        from app.advisor.nudge_policy import TRIGGER_POST_GLOWUP
+
+        await arq_pool.enqueue_job(
+            "generate_nudge",
+            user_id,
+            TRIGGER_POST_GLOWUP,
+            None,
+            job_id,
+        )
+        logger.debug("Enqueued post_glowup nudge for user %s (job %s)", user_id, job_id)
+    except Exception:
+        logger.warning(
+            "Failed to enqueue post_glowup nudge for user %s (job %s)",
+            user_id,
+            job_id,
+            exc_info=True,
+        )
 
 
 async def _fail_job(

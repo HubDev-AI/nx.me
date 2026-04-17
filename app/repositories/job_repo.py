@@ -193,9 +193,7 @@ class JobRepository:
         """
         result = (
             self._sb.table("jobs")
-            .select(
-                "id, status, source_id, after_image_url, created_at, saved_at"
-            )
+            .select("id, status, source_id, after_image_url, created_at, saved_at")
             .eq("source_type", source_type)
             .in_("source_id", source_ids)
             .in_("status", statuses)

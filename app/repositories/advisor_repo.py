@@ -17,6 +17,14 @@ from supabase import Client
 
 logger = logging.getLogger(__name__)
 
+# Kept as a module-local constant to avoid importing the enum from
+# ``app.advisor.models`` here — the repository sits below the advisor
+# module in the dependency DAG and should not reach upward. The literal
+# value matches ``MemoryType.STYLE_PROFILE.value``; a single-point
+# cross-reference is enforced by
+# ``tests/test_advisor_style_profile.py::test_repo_type_constant_matches_enum``.
+STYLE_PROFILE_TYPE = "style_profile"
+
 
 class AdvisorRepository:
     """Encapsulates all DB queries for the advisor module."""
@@ -185,6 +193,41 @@ class AdvisorRepository:
         )
         return result.data or []
 
+    def get_recent_nudge_context(
+        self, user_id: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Return the newest N nudge bodies + observation_tags for a user.
+
+        Plan 2026-04-17-003 Unit 8. Feeds the "do not repeat" block of
+        the vision-grounded nudge prompt. Returns
+        ``[{"body": str, "observation_tag": str | None, "created_at": str}]``
+        newest-first.
+
+        ``body`` is an alias for the ``content`` column the table uses —
+        the prompt reads more naturally with ``body`` and the column
+        rename would be pure churn. ``observation_tag`` may be ``None``
+        on rows written before migration 0041; the prompt renderer
+        treats ``None`` as "no tag" for graceful forward-compat. Does
+        NOT touch ``read_at`` — this is a pure read path.
+        """
+        result = (
+            self._sb.table("advisor_nudges")
+            .select("content, observation_tag, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data or []
+        return [
+            {
+                "body": row.get("content"),
+                "observation_tag": row.get("observation_tag"),
+                "created_at": row.get("created_at"),
+            }
+            for row in rows
+        ]
+
     def get_nudges_page(
         self,
         user_id: str,
@@ -242,7 +285,13 @@ class AdvisorRepository:
         ).eq("id", nudge_id).execute()
 
     def insert_nudge(self, nudge_data: dict[str, Any]) -> None:
-        """Persist a new nudge row."""
+        """Persist a new nudge row.
+
+        Accepts any columns the ``advisor_nudges`` table defines; callers
+        are responsible for the shape. Plan 2026-04-17-003 Unit 8 added
+        the ``observation_tag`` column (migration 0041) — it is optional
+        and flows through this passthrough when the caller provides it.
+        """
         self._sb.table("advisor_nudges").insert(nudge_data).execute()
 
     def find_last_nudge(self, user_id: str, trigger: str) -> dict[str, Any] | None:
@@ -272,6 +321,32 @@ class AdvisorRepository:
             .eq("trigger", trigger)
             .gt("created_at", since)
             .limit(1)
+            .execute()
+        )
+        return result.data or []
+
+    def get_recent_nudges_for_context(
+        self, user_id: str, limit: int, since_iso: str
+    ) -> list[dict[str, Any]]:
+        """Return the user's newest ``limit`` nudges created at/after ``since_iso``.
+
+        Read-only helper used by the chat context builder (Plan
+        2026-04-17-003 Unit 4). Does NOT mutate ``read_at`` — the chat
+        surface must not change read state as a side effect of the model
+        seeing a nudge. Returned rows carry ``content`` (the nudge body),
+        ``trigger`` (lowercase identifier used as prefix in the system
+        block), and ``created_at`` (ISO timestamp).
+
+        Ordered newest-first so callers can emit them in recency order
+        without re-sorting.
+        """
+        result = (
+            self._sb.table("advisor_nudges")
+            .select("content, trigger, created_at")
+            .eq("user_id", user_id)
+            .gte("created_at", since_iso)
+            .order("created_at", desc=True)
+            .limit(limit)
             .execute()
         )
         return result.data or []
@@ -530,9 +605,162 @@ class AdvisorRepository:
         rows = result.data or []
         return rows[0] if rows else None
 
+    def get_style_profile(self, user_id: str) -> dict[str, Any] | None:
+        """Return the user's stable style_profile row (at most one), or None.
+
+        Plan 2026-04-17-003 Unit 7. The partial unique index defined in
+        migration 0040 guarantees that at most one row exists per user.
+        Returns the ``content`` and ``created_at`` columns only — callers
+        that need other columns should query directly.
+        """
+        result = (
+            self._sb.table("user_memories")
+            .select("content, created_at")
+            .eq("user_id", user_id)
+            .eq("type", STYLE_PROFILE_TYPE)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def upsert_style_profile(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Insert or update the user's style_profile row.
+
+        Plan 2026-04-17-003 Unit 7. The partial unique index on
+        ``user_memories(user_id) WHERE type='style_profile'`` cannot be
+        referenced through PostgREST's ``on_conflict`` parameter because the
+        parameter does not accept a WHERE clause. We use an explicit
+        read-then-update-or-insert flow; the index still prevents race
+        duplicates at the database level.
+
+        ``row`` is expected to contain the same keys as ``insert_memory``
+        (``user_id``, ``type``, ``content``, ``embedding``). Returns the
+        persisted row.
+        """
+        user_id = row["user_id"]
+        existing = (
+            self._sb.table("user_memories")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("type", STYLE_PROFILE_TYPE)
+            .limit(1)
+            .execute()
+        )
+        existing_rows = existing.data or []
+        if existing_rows:
+            row_id = existing_rows[0]["id"]
+            updated = (
+                self._sb.table("user_memories")
+                .update(
+                    {
+                        "content": row["content"],
+                        "embedding": row["embedding"],
+                    }
+                )
+                .eq("id", row_id)
+                .execute()
+            )
+            return (updated.data or [{}])[0]
+        return self.insert_memory(row)
+
     # ------------------------------------------------------------------
     # Images / storage (vision context)
     # ------------------------------------------------------------------
+
+    def get_latest_completed_job_with_images(
+        self, user_id: str
+    ) -> dict[str, Any] | None:
+        """Return the user's most recent completed job that has BOTH URLs.
+
+        Plan 2026-04-17-003 Unit 9. Used by the cross-feature
+        ``get_latest_generation`` tool (polymorphic ``source_type``,
+        treated uniformly by the advisor surface). Rows where either
+        ``before_image_url`` or ``after_image_url`` is NULL are excluded —
+        the advisor tool needs both to render the pair. Selects the
+        polymorphic ``source_type`` alongside so the handler can surface
+        ``feature="glowup" / "makeup"`` metadata without cross-table joins.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select(
+                "id, status, source_type, created_at, completed_at, "
+                "before_image_url, after_image_url"
+            )
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .not_.is_("before_image_url", "null")
+            .not_.is_("after_image_url", "null")
+            .order("completed_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def get_latest_completed_glowup_with_images(
+        self, user_id: str
+    ) -> dict[str, Any] | None:
+        """Return the user's most recent completed glow-up job with BOTH URLs.
+
+        Plan 2026-04-17-003 Unit 2. Feature-specific sibling of
+        ``get_latest_completed_job_with_images``: restricts
+        ``source_type`` to ``glowup_analysis`` so the
+        ``get_latest_glowup`` tool returns only glow-ups (not make-up
+        sessions or any other polymorphic row that may land in ``jobs``
+        later). Rows where either URL is NULL are excluded — the tool
+        needs both images to render the pair.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select(
+                "id, status, source_type, created_at, completed_at, "
+                "before_image_url, after_image_url"
+            )
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .eq("source_type", "glowup_analysis")
+            .not_.is_("before_image_url", "null")
+            .not_.is_("after_image_url", "null")
+            .order("completed_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def get_latest_job_for_user(self, user_id: str) -> dict[str, Any] | None:
+        """Return the user's most recent job regardless of status.
+
+        Plan 2026-04-17-003 Unit 9 — backs the ``get_latest_job_status``
+        tool. Returns status + timestamps + feature so the advisor can
+        tell the user "your glow-up is still running" without exposing
+        URLs.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, source_type, created_at, completed_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def fetch_image_bytes(self, bucket: str, path: str) -> bytes:
+        """Download raw bytes from a Supabase storage bucket.
+
+        Plan 2026-04-17-003 Unit 9. Used by the vision-tool handlers to
+        fetch the before/after images inline; the bytes are base64
+        encoded into an Anthropic ``image`` content block by the caller.
+        Signed URLs are NEVER generated on this path — the whole point of
+        the Unit 9 rework is that no ephemeral URL enters the LLM
+        payload or log stream.
+        """
+        return self._sb.storage.from_(bucket).download(path)
 
     def get_cleared_images(self, user_id: str, limit: int = 2) -> list[dict[str, Any]]:
         """Fetch the most recent cleared images for a user."""

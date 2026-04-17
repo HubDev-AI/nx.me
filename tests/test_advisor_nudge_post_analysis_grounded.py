@@ -1,23 +1,26 @@
-"""Post-analysis nudge grounding — Ada must reference the user's actual
-face-analysis result, not hallucinate plausible-sounding details.
+"""Post-analysis nudge grounding — Unit 8 vision-grounded path.
 
-The prior prompt said "based on their latest result" but never included
-the actual face_shape / symmetry_score / recommendations, so the LLM
-invented topics (e.g. "your face shape") the user never saw. This
-suite pins the contract:
+Plan 2026-04-17-003 Unit 8. The face-shape-parroting prompt (and the
+briefly-considered deterministic focus-topic rotation) have been
+replaced by a vision-grounded builder: the model looks at the actual
+source photo (and the glow-up after when one exists), reads the stable
+``style_profile``, and the last N nudge bodies + ``observation_tag``s,
+then decides what to say. This suite pins the new contract:
 
-- When the analysis endpoint passes the insight through, the LLM
-  prompt contains the real result fields.
-- When the insight arg is absent (cron retry, manual dispatch) the
-  scheduler falls back to the most recent analysis_insight memory.
-- When no insight exists at all, the nudge is skipped rather than
-  emitted with hallucinated content.
-- The model is Sonnet (Haiku produced generic, ungrounded nudges).
-- The generic get_prompt path explicitly does NOT serve post_analysis.
+- The prompt is vision-grounded and carries the stable profile block
+  + recent-nudges "don't repeat" block.
+- Output is strict JSON ``{"body", "observation_tag"}``; parse
+  failure drops the nudge with no persistence.
+- Users without a ``style_profile`` are skipped with a structured log.
+- The generic ``get_prompt`` path still refuses ``post_analysis`` /
+  ``post_glowup``.
+- Model is Haiku (vision-capable) — pinned against regression to
+  Sonnet (reverted 2026-04-17) and to any swap that would lose vision.
 """
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -25,7 +28,12 @@ from uuid import uuid4
 import pytest
 
 
-def _fake_llm_capture():
+_TEST_USER_ID = str(uuid4())
+
+
+def _fake_llm_capture(
+    response_text: str = '{"body": "short grounded nudge", "observation_tag": "cleaner brows"}',
+):
     """Return (fake_llm, captured) where captured is populated on call."""
     captured: dict = {}
 
@@ -33,7 +41,7 @@ def _fake_llm_capture():
         from app.advisor.models import LLMResponse
 
         captured.update(kwargs)
-        return LLMResponse(content="short grounded nudge", input_tokens=1, output_tokens=1)
+        return LLMResponse(content=response_text, input_tokens=1, output_tokens=1)
 
     return SimpleNamespace(create_message=_capturing_create), captured
 
@@ -52,290 +60,316 @@ def _patch_entitlement(monkeypatch, *, allowed: bool = True):
 def _patch_repo(
     monkeypatch,
     *,
-    latest_insight: dict | None = None,
-    recent_nudges: list[dict] | None = None,
+    style_profile: dict | None = None,
+    recent_nudge_context: list[dict] | None = None,
 ):
-    """Patch AdvisorRepository so generate_nudge sees the given insight row.
+    """Patch AdvisorRepository so generate_nudge sees stubbed profile + context.
 
-    `recent_nudges` defaults to `[]` so the post-analysis cooldown does
-    not fire. Tests that want to exercise the cooldown pass a non-empty
-    list here.
+    ``style_profile`` is the row returned by ``get_style_profile`` (carries
+    ``content`` + ``created_at``). Pass ``None`` to exercise the "no
+    profile → skip" path.
     """
     from app.advisor import nudge_scheduler
 
     fake_repo = MagicMock()
     fake_repo.insert_nudge = MagicMock(return_value={"id": str(uuid4())})
-    fake_repo.get_latest_analysis_insight = MagicMock(return_value=latest_insight)
-    fake_repo.find_recent_nudges = MagicMock(return_value=recent_nudges or [])
+    fake_repo.get_style_profile = MagicMock(return_value=style_profile)
+    fake_repo.get_recent_nudge_context = MagicMock(
+        return_value=recent_nudge_context or []
+    )
     monkeypatch.setattr(
         nudge_scheduler, "AdvisorRepository", MagicMock(return_value=fake_repo)
     )
     return fake_repo
 
 
+def _patch_image_fetch(monkeypatch, image_blocks: list[dict] | None = None):
+    """Patch the two MCP vision handlers so the scheduler sees deterministic output.
+
+    Defaults to returning an envelope with ``is_error=True`` for
+    ``_handle_get_latest_glowup`` (no glow-up yet) and a single image
+    block for ``_handle_get_latest_photo`` — the degenerate
+    post_analysis shape. Handler shape is
+    ``{"content": [...], "is_error": bool}`` (Plan 2026-04-17 review fix).
+    """
+    from app.advisor import nudge_scheduler
+
+    if image_blocks is None:
+        image_blocks = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": "AAAA",
+                },
+            }
+        ]
+
+    async def _fake_glowup(_ctx):
+        # No glow-up → envelope is_error=True, text block with no inner flag.
+        return {
+            "content": [{"type": "text", "text": "no completed glow-up"}],
+            "is_error": True,
+        }
+
+    async def _fake_photo(_ctx):
+        return {"content": list(image_blocks), "is_error": False}
+
+    monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _fake_glowup)
+    monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_photo", _fake_photo)
+
+
+# ---------------------------------------------------------------------------
+# Prompt shape + JSON output
+# ---------------------------------------------------------------------------
+
+
 @pytest.mark.asyncio
-async def test_post_analysis_nudge_injects_real_result_into_prompt(monkeypatch):
-    """Insight arg passed through → LLM sees the real face_shape / symmetry / recs."""
+async def test_post_analysis_nudge_prompt_is_vision_grounded(monkeypatch):
+    """Prompt carries profile block + recent-nudges block + JSON contract."""
     from app.advisor import nudge_scheduler
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
     _patch_entitlement(monkeypatch)
-    fake_repo = _patch_repo(monkeypatch)
-
-    insight = {
-        "face_shape": "oval",
-        "symmetry_score": 0.87,
-        "recommendations": ["Trim sideburns", "Thicker brows", "Cooler tones"],
-    }
+    _patch_repo(
+        monkeypatch,
+        style_profile={
+            "content": {
+                "face_shape": "oval",
+                "symmetry_score": 0.87,
+                "recommendations": ["Trim sideburns", "Thicker brows"],
+            },
+            "created_at": "2026-04-17T00:00:00Z",
+        },
+        recent_nudge_context=[
+            {
+                "body": "prior nudge body",
+                "observation_tag": "softer jaw",
+                "created_at": "2026-04-16T00:00:00Z",
+            }
+        ],
+    )
+    _patch_image_fetch(monkeypatch)
 
     await nudge_scheduler.generate_nudge(
         {"supabase": object(), "redis": object()},
-        str(uuid4()),
+        _TEST_USER_ID,
         nudge_scheduler.TRIGGER_POST_ANALYSIS,
-        insight,
     )
 
     assert captured, "LLM adapter was not called"
     user_content = captured["messages"][0]["content"]
-    assert "oval" in user_content, "face_shape must appear in prompt"
-    assert "0.9" in user_content or "0.87" in user_content, (
-        "symmetry_score must appear in prompt"
+    # Vision-grounded path: content is a list [text, image, ...]
+    assert isinstance(user_content, list), (
+        "vision prompt must be a list of content blocks"
     )
-    assert "Trim sideburns" in user_content, "recommendations must appear in prompt"
-    # Caller-provided insight is authoritative — the repo fallback MUST NOT fire.
-    fake_repo.get_latest_analysis_insight.assert_not_called()
+    text_block = next(b for b in user_content if b.get("type") == "text")
+    image_blocks = [b for b in user_content if b.get("type") == "image"]
+    assert image_blocks, "must attach at least one image block"
+
+    prompt = text_block["text"]
+    assert "oval face" in prompt, "profile block should render face shape"
+    assert "Trim sideburns" in prompt, "profile block should render recommendations"
+    assert "softer jaw" in prompt, "recent-nudges block should render observation_tag"
+    assert "prior nudge body" in prompt, "recent-nudges block should render body"
+    assert "body" in prompt and "observation_tag" in prompt, (
+        "prompt must state the JSON output contract explicitly"
+    )
 
 
 @pytest.mark.asyncio
-async def test_post_analysis_nudge_uses_haiku_model(monkeypatch):
-    """Haiku → Sonnet swap was reverted 2026-04-17 — Sonnet read clinical.
+async def test_vision_nudge_persists_body_and_observation_tag(monkeypatch):
+    """Parsed JSON's body goes into ``content``; observation_tag goes in its column."""
+    from app.advisor import nudge_scheduler
 
-    Pin Haiku so a future swap requires updating both this test and the
-    rationale comment in nudge_scheduler.py (the comment carries the why).
+    fake_llm, _captured = _fake_llm_capture(
+        response_text='{"body": "something warm about the new look",'
+        ' "observation_tag": "brighter eyes"}'
+    )
+    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(
+        monkeypatch,
+        style_profile={
+            "content": {"face_shape": "heart", "symmetry_score": 0.8},
+            "created_at": "2026-04-17T00:00:00Z",
+        },
+    )
+    _patch_image_fetch(monkeypatch)
+
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        _TEST_USER_ID,
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+    )
+
+    fake_repo.insert_nudge.assert_called_once()
+    persisted = fake_repo.insert_nudge.call_args[0][0]
+    assert persisted["content"] == "something warm about the new look"
+    assert persisted["observation_tag"] == "brighter eyes"
+    assert persisted["trigger"] == nudge_scheduler.TRIGGER_POST_ANALYSIS
+
+
+@pytest.mark.asyncio
+async def test_vision_nudge_drops_malformed_json(monkeypatch, caplog):
+    """Model returns non-JSON → nudge dropped, no partial row persisted."""
+    from app.advisor import nudge_scheduler
+
+    fake_llm, _captured = _fake_llm_capture(
+        response_text="This is plain text not JSON at all."
+    )
+    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(
+        monkeypatch,
+        style_profile={
+            "content": {"face_shape": "oval", "symmetry_score": 0.9},
+            "created_at": "2026-04-17T00:00:00Z",
+        },
+    )
+    _patch_image_fetch(monkeypatch)
+
+    caplog.set_level(logging.WARNING)
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        _TEST_USER_ID,
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+    )
+
+    fake_repo.insert_nudge.assert_not_called()
+    assert any("malformed JSON" in record.message for record in caplog.records), (
+        "must log a warning identifying the malformed JSON drop"
+    )
+
+
+@pytest.mark.asyncio
+async def test_vision_nudge_skips_when_no_style_profile(monkeypatch):
+    """No style_profile → skip entirely (no LLM, no DB write).
+
+    Was the pre-redesign behavior and still the safest default: the
+    prompt's "stable facts" block has nothing to render on.
     """
+    from app.advisor import nudge_scheduler
+
+    fake_llm, captured = _fake_llm_capture()
+    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
+    _patch_entitlement(monkeypatch)
+    fake_repo = _patch_repo(monkeypatch, style_profile=None)
+    _patch_image_fetch(monkeypatch)
+
+    await nudge_scheduler.generate_nudge(
+        {"supabase": object(), "redis": object()},
+        _TEST_USER_ID,
+        nudge_scheduler.TRIGGER_POST_ANALYSIS,
+    )
+
+    assert not captured, "LLM must not be called without a style_profile"
+    fake_repo.insert_nudge.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_vision_nudge_uses_haiku_model(monkeypatch):
+    """Pin Haiku (vision-capable). Sonnet revert + Haiku 4.5 both supported."""
     from app.advisor import nudge_scheduler
     from app.config import settings
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
     _patch_entitlement(monkeypatch)
-    _patch_repo(monkeypatch)
+    _patch_repo(
+        monkeypatch,
+        style_profile={
+            "content": {"face_shape": "round", "symmetry_score": 0.9},
+            "created_at": "2026-04-17T00:00:00Z",
+        },
+    )
+    _patch_image_fetch(monkeypatch)
 
     await nudge_scheduler.generate_nudge(
         {"supabase": object(), "redis": object()},
-        str(uuid4()),
+        _TEST_USER_ID,
         nudge_scheduler.TRIGGER_POST_ANALYSIS,
-        {
-            "face_shape": "round",
-            "symmetry_score": 0.9,
-            "recommendations": ["Add volume on top"],
-        },
     )
 
     assert captured["model"] == settings.ADVISOR_MODEL_HAIKU
-    assert captured["model"] != settings.ADVISOR_MODEL_SONNET
 
 
 @pytest.mark.asyncio
-async def test_post_analysis_nudge_falls_back_to_repo_when_insight_missing(monkeypatch):
-    """Cron retries / manual dispatch pass insight=None → load from memory."""
+async def test_vision_nudge_one_image_degenerate_case_still_grounds(monkeypatch):
+    """post_analysis with only a source photo must still invoke the model.
+
+    The prompt explicitly handles the "only one image attached" case —
+    we assert here that (a) exactly one image block reaches the model,
+    and (b) the generation proceeds without raising or silent-skipping.
+    """
     from app.advisor import nudge_scheduler
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
     _patch_entitlement(monkeypatch)
-    fake_repo = _patch_repo(
+    _patch_repo(
         monkeypatch,
-        latest_insight={
-            "content": {
-                "face_shape": "heart",
-                "symmetry_score": 0.72,
-                "recommendations": ["Softer fringe"],
-            },
-            "created_at": "2026-04-16T00:00:00Z",
+        style_profile={
+            "content": {"face_shape": "oval", "symmetry_score": 0.87},
+            "created_at": "2026-04-17T00:00:00Z",
         },
     )
+    _patch_image_fetch(monkeypatch)  # default → 1 source photo block
 
     await nudge_scheduler.generate_nudge(
         {"supabase": object(), "redis": object()},
-        str(uuid4()),
-        nudge_scheduler.TRIGGER_POST_ANALYSIS,
-        # insight arg omitted on purpose
-    )
-
-    fake_repo.get_latest_analysis_insight.assert_called_once()
-    user_content = captured["messages"][0]["content"]
-    assert "heart" in user_content
-    assert "Softer fringe" in user_content
-
-
-@pytest.mark.asyncio
-async def test_post_analysis_nudge_skips_when_cooldown_active(monkeypatch):
-    """Recent post_analysis nudge within the cooldown window → skip.
-
-    Rapid re-analyses (4 in ~30 min as observed in prod logs) would
-    otherwise spawn 4 near-duplicate Sonnet-generated nudges. The
-    cooldown is the single guard; its absence is what produced the
-    "Oval face shape is versatile..." spam.
-    """
-    from app.advisor import nudge_scheduler
-
-    fake_llm, captured = _fake_llm_capture()
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
-    fake_repo = _patch_repo(
-        monkeypatch,
-        recent_nudges=[{"id": str(uuid4())}],  # something recent → cooldown active
-    )
-
-    await nudge_scheduler.generate_nudge(
-        {"supabase": object(), "redis": object()},
-        str(uuid4()),
-        nudge_scheduler.TRIGGER_POST_ANALYSIS,
-        {
-            "face_shape": "oval",
-            "symmetry_score": 0.9,
-            "recommendations": ["Try layers"],
-        },
-    )
-
-    assert not captured, "LLM must not be called when cooldown is active"
-    fake_repo.insert_nudge.assert_not_called()
-    # Cooldown check fires before the insight fallback load; the
-    # repo.get_latest_analysis_insight should never be reached either.
-    fake_repo.get_latest_analysis_insight.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_post_analysis_nudge_skips_when_no_insight_anywhere(monkeypatch):
-    """No insight arg + empty memory → skip entirely (no LLM, no DB write).
-
-    The old code would call the LLM with a generic template and the
-    model would hallucinate. Skipping is the only safe default.
-    """
-    from app.advisor import nudge_scheduler
-
-    fake_llm, captured = _fake_llm_capture()
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
-    fake_repo = _patch_repo(monkeypatch, latest_insight=None)
-
-    await nudge_scheduler.generate_nudge(
-        {"supabase": object(), "redis": object()},
-        str(uuid4()),
+        _TEST_USER_ID,
         nudge_scheduler.TRIGGER_POST_ANALYSIS,
     )
 
-    assert not captured, "LLM must not be called when no insight exists"
-    fake_repo.insert_nudge.assert_not_called()
-    fake_repo.get_latest_analysis_insight.assert_called_once()
+    assert captured, "LLM must be invoked even with a single image"
+    content = captured["messages"][0]["content"]
+    image_count = sum(1 for b in content if b.get("type") == "image")
+    assert image_count == 1, "degenerate post_analysis should attach exactly 1 image"
 
 
-@pytest.mark.parametrize(
-    "row",
-    [
-        {"content": None, "created_at": "2026-04-16T00:00:00Z"},
-        {"content": {}, "created_at": "2026-04-16T00:00:00Z"},
-    ],
-    ids=["content-is-None", "content-is-empty-dict"],
-)
-@pytest.mark.asyncio
-async def test_post_analysis_nudge_skips_when_insight_row_has_empty_content(
-    monkeypatch, row
-):
-    """Partial / legacy insight rows must NOT slip through.
-
-    If the row exists but `content` is `None` or `{}`, the prompt would
-    render `face_shape: unknown` and Sonnet would happily ground the
-    nudge on `unknown` — the exact hallucination this module exists to
-    prevent. Treat an empty content payload as missing.
-    """
-    from app.advisor import nudge_scheduler
-
-    fake_llm, captured = _fake_llm_capture()
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
-    fake_repo = _patch_repo(monkeypatch, latest_insight=row)
-
-    await nudge_scheduler.generate_nudge(
-        {"supabase": object(), "redis": object()},
-        str(uuid4()),
-        nudge_scheduler.TRIGGER_POST_ANALYSIS,
-    )
-
-    assert not captured, "LLM must not be called for empty insight content"
-    fake_repo.insert_nudge.assert_not_called()
+# ---------------------------------------------------------------------------
+# Schedule wrapper behavior
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_post_analysis_nudge_does_not_persist_blank_llm_response(monkeypatch):
-    """If Sonnet ever returns whitespace-only content, do not save it.
-
-    Pinned because the persistence guard at line ~146 of nudge_scheduler
-    runs after the strip — without this test a future refactor that
-    moves the strip could silently insert empty nudges into the feed.
-    """
-    from app.advisor import nudge_scheduler
-    from app.advisor.models import LLMResponse
-
-    async def _blank_llm(**_kwargs):
-        return LLMResponse(content="   \n  ", input_tokens=1, output_tokens=1)
-
-    monkeypatch.setattr(
-        nudge_scheduler,
-        "_get_llm_adapter",
-        lambda: SimpleNamespace(create_message=_blank_llm),
-    )
-    _patch_entitlement(monkeypatch)
-    fake_repo = _patch_repo(monkeypatch)
-
-    await nudge_scheduler.generate_nudge(
-        {"supabase": object(), "redis": object()},
-        str(uuid4()),
-        nudge_scheduler.TRIGGER_POST_ANALYSIS,
-        {
-            "face_shape": "oval",
-            "symmetry_score": 0.9,
-            "recommendations": ["Some rec"],
-        },
-    )
-
-    fake_repo.insert_nudge.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_schedule_post_analysis_nudge_inline_passes_insight(monkeypatch):
-    """No arq_pool in ctx → schedule runs generate_nudge inline WITH insight."""
+async def test_schedule_post_analysis_nudge_inline_fires_trigger(monkeypatch):
+    """No arq_pool in ctx → schedule runs generate_nudge inline."""
     from app.advisor import nudge_scheduler
 
     captured: dict = {}
 
-    async def _fake_generate(ctx, user_id, trigger, insight=None):
+    async def _fake_generate(ctx, user_id, trigger, *args, **kwargs):
         captured["trigger"] = trigger
-        captured["insight"] = insight
+        captured["args"] = args
+        captured["kwargs"] = kwargs
 
     monkeypatch.setattr(nudge_scheduler, "generate_nudge", _fake_generate)
 
     await nudge_scheduler.schedule_post_analysis_nudge(
         {},  # no arq_pool → inline path
-        str(uuid4()),
+        _TEST_USER_ID,
         face_shape="square",
         symmetry_score=0.81,
-        recommendations=["Trim beard lower", "More contrast in jacket"],
+        recommendations=["Trim beard lower"],
     )
 
     assert captured["trigger"] == nudge_scheduler.TRIGGER_POST_ANALYSIS
-    assert captured["insight"] == {
-        "face_shape": "square",
-        "symmetry_score": 0.81,
-        "recommendations": ["Trim beard lower", "More contrast in jacket"],
-    }
 
 
 @pytest.mark.asyncio
-async def test_schedule_post_analysis_nudge_enqueues_with_insight(monkeypatch):
-    """arq_pool present → enqueue_job receives the insight dict as a job arg."""
+async def test_schedule_post_analysis_nudge_enqueues_without_insight_payload(
+    monkeypatch,
+):
+    """arq_pool present → enqueue_job fires without the legacy insight dict.
+
+    Unit 8 dropped the ``insight`` payload on the enqueue side — the
+    vision path reads stable facts from ``style_profile`` instead. The
+    wrapper's signature stays stable for API compat.
+    """
     from app.advisor import nudge_scheduler
 
     arq_pool = MagicMock()
@@ -353,58 +387,104 @@ async def test_schedule_post_analysis_nudge_enqueues_with_insight(monkeypatch):
         "generate_nudge",
         "user-123",
         nudge_scheduler.TRIGGER_POST_ANALYSIS,
-        {
-            "face_shape": "oval",
-            "symmetry_score": 0.9,
-            "recommendations": ["Rec A"],
-        },
     )
 
 
-def test_get_prompt_refuses_post_analysis():
-    """The generic template path must NOT silently serve post_analysis —
-    that trigger is grounded via build_post_analysis_prompt."""
-    from app.advisor.nudge_policy import TRIGGER_POST_ANALYSIS
+# ---------------------------------------------------------------------------
+# Template invariants
+# ---------------------------------------------------------------------------
+
+
+def test_get_prompt_refuses_vision_triggers():
+    """Generic template path must NOT serve post_analysis / post_glowup.
+
+    Both are vision-grounded via ``build_vision_nudge_prompt``.
+    """
+    from app.advisor.nudge_policy import TRIGGER_POST_ANALYSIS, TRIGGER_POST_GLOWUP
     from app.advisor.nudge_templates import get_prompt
 
     with pytest.raises(KeyError):
         get_prompt(TRIGGER_POST_ANALYSIS)
+    with pytest.raises(KeyError):
+        get_prompt(TRIGGER_POST_GLOWUP)
 
 
-def test_build_post_analysis_prompt_includes_all_result_fields():
-    """The grounded prompt must surface every fact the LLM is allowed to use."""
-    from app.advisor.nudge_templates import build_post_analysis_prompt
+def test_build_post_analysis_prompt_removed():
+    """The old grounded-facts builder is retired.
 
-    prompt = build_post_analysis_prompt(
-        face_shape="oval",
-        symmetry_score=0.873,
-        recommendations=[
-            "Rec-one-kept",
-            "Rec-two-kept",
-            "Rec-three-kept",
-            "Rec-four-dropped",
-            "Rec-five-dropped",
+    Unit 8 deletes ``build_post_analysis_prompt`` — its prompt shape
+    (face_shape + symmetry + top-3 recommendations as bullets with
+    instructions to reference at least one) was superseded by
+    ``build_vision_nudge_prompt``. Keep this guard so a resurrected
+    stub would fail loudly.
+    """
+    from app.advisor import nudge_templates
+
+    assert not hasattr(nudge_templates, "build_post_analysis_prompt"), (
+        "Unit 8 removed build_post_analysis_prompt — vision path "
+        "authored the replacement."
+    )
+
+
+def test_build_vision_nudge_prompt_renders_profile_and_recent():
+    """Vision prompt surfaces the profile shape + recent context verbatim."""
+    from app.advisor.nudge_templates import build_vision_nudge_prompt
+
+    prompt = build_vision_nudge_prompt(
+        profile={
+            "face_shape": "oval",
+            "symmetry_score": 0.873,
+            "recommendations": [
+                "Softer fringe",
+                "Warmer tones",
+                "Layered cut",
+                "Rec-four-dropped",
+            ],
+        },
+        recent_nudges=[
+            {"body": "Yesterday's nudge", "observation_tag": "brighter eyes"},
+            {"body": "Two days ago", "observation_tag": None},  # pre-migration row
         ],
     )
 
-    assert "oval" in prompt
-    assert "0.9" in prompt  # rounded to 1 dp per template
-    # Top 3 recs only, per _POST_ANALYSIS_RECS_LIMIT
-    assert "Rec-one-kept" in prompt
-    assert "Rec-two-kept" in prompt
-    assert "Rec-three-kept" in prompt
-    assert "Rec-four-dropped" not in prompt
-    assert "Rec-five-dropped" not in prompt
+    assert "oval face" in prompt
+    assert "symmetry 0.87" in prompt
+    assert "Softer fringe" in prompt
+    assert "Rec-four-dropped" not in prompt, "profile block caps at top 3 recs"
+    assert "Yesterday's nudge" in prompt
+    assert "brighter eyes" in prompt
+    assert "no tag" in prompt, "NULL observation_tag should render as 'no tag'"
+    # Output contract:
+    assert '"body"' in prompt and '"observation_tag"' in prompt
 
 
-def test_build_post_analysis_prompt_tolerates_missing_fields():
-    """If the analysis pipeline ever hands back partial data, build a prompt
-    that still reads cleanly rather than raising."""
-    from app.advisor.nudge_templates import build_post_analysis_prompt
+def test_build_vision_nudge_prompt_handles_missing_profile():
+    """Degenerate: missing profile still yields a readable prompt."""
+    from app.advisor.nudge_templates import build_vision_nudge_prompt
 
-    prompt = build_post_analysis_prompt(
-        face_shape=None, symmetry_score=None, recommendations=None
+    prompt = build_vision_nudge_prompt(profile=None, recent_nudges=None)
+
+    assert "no stable profile" in prompt
+    assert "(none)" in prompt, "empty recent-nudges block should render (none)"
+
+
+def test_trigger_post_glowup_constant_exists():
+    """Unit 8 adds TRIGGER_POST_GLOWUP — the worker fires it on completion."""
+    from app.advisor.nudge_policy import TRIGGER_POST_GLOWUP
+
+    assert TRIGGER_POST_GLOWUP == "post_glowup"
+
+
+def test_focus_topics_tuple_absent():
+    """The earlier deterministic rotation was wrong — prove it never returned.
+
+    A ``FOCUS_TOPICS = (hair, beard, brows, skin, fit, accessories)``
+    tuple on ``nudge_policy`` would reintroduce a server-authored
+    taxonomy — incorrect on a women-primary audience. This guard fails
+    loudly if a refactor ever resurrects it.
+    """
+    from app.advisor import nudge_policy
+
+    assert not hasattr(nudge_policy, "FOCUS_TOPICS"), (
+        "FOCUS_TOPICS was an earlier mistake; Unit 8 removed it."
     )
-
-    assert "unknown" in prompt  # face_shape fallback
-    assert "(none recorded)" in prompt  # recommendations fallback

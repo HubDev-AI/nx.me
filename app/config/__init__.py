@@ -74,15 +74,62 @@ class Settings(BaseSettings):
     ADVISOR_MILESTONE_DEDUP_HOURS: int = (
         48  # Hours before a duplicate milestone nudge is allowed
     )
-    # Cooldown between post-analysis nudges for the same user. Four
-    # sequential analyses inside the old window produced four near-
-    # duplicate Sonnet-grounded nudges ("Oval face shapes are
-    # versatile..." ×4) because every successful analysis enqueued a
-    # fresh generation with no dedup. 60 min matches the "one per
-    # session" cadence a user would expect from an advisor.
-    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 60
+    # DEPRECATED — Plan 2026-04-17-003 Unit 8. The vision-grounded
+    # nudge redesign dropped the fixed 60-min cooldown entirely: dedup
+    # now emerges from the model's own access to prior nudge bodies +
+    # model-authored ``observation_tag``s in the prompt's "do not
+    # repeat" block. Kept at 0 as a rollback knob — set to a positive
+    # value to temporarily gate post_analysis / post_glowup on a time
+    # window if the vision path ever misbehaves. A rapid-retry dedup
+    # (same upload_id within 5 min) still fires at the scheduler level.
+    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 0
+
+    # Plan 2026-04-17-003 Unit 8. How many prior nudges (body +
+    # observation_tag) are included in the vision-nudge prompt's
+    # "do not repeat" block. The cap keeps the prompt compact — the
+    # model only needs enough context to steer away from recent
+    # observations, not the full history.
+    ADVISOR_NUDGE_RECENT_CONTEXT_LIMIT: int = 5
+
+    # Plan 2026-04-17-003 Unit 8. Rapid-retry dedup window for
+    # ``post_glowup`` nudges. If a second post_glowup fires within this
+    # many minutes of the previous one for the same user AND the prior
+    # job was for the same source upload (same ``upload_id``), skip the
+    # second generation. Narrow guard against the "user tapped Analyze,
+    # got a failure, tapped again" scenario producing back-to-back
+    # near-duplicate images.
+    ADVISOR_POST_GLOWUP_RAPID_RETRY_MINUTES: int = 5
     ADVISOR_MEMORY_CAP: int = 500  # Max memories per user (spec §10).
     ADVISOR_CONTEXT_TOKEN_BUDGET: int = 5000  # Max input tokens to the LLM (spec §10).
+
+    # Advisor payload logging (Plan 2026-04-17-003 Unit 5).
+    # When True, every Ada LLM call ALSO emits a DEBUG record carrying the
+    # full system + messages payload. INFO records (always on) are safe —
+    # hashed user_id, only host + expiry-presence for signed URLs, no raw
+    # user content. DEBUG records include full content and signed URLs —
+    # DO NOT enable in production.
+    ADVISOR_DEBUG_LOG_PROMPT: bool = False
+
+    # Advisor chat nudge context (Plan 2026-04-17-003 Unit 4).
+    # Ada's chat context gains a dedicated 4th system block listing the
+    # user's most recent nudges (read and unread). Cap the block at the
+    # newest ``ADVISOR_CONTEXT_NUDGE_LIMIT`` nudges created within the
+    # trailing ``ADVISOR_CONTEXT_NUDGE_AGE_DAYS`` window. Block budget is
+    # ~150-300 tokens, absorbed by the existing 5 000-token cap.
+    ADVISOR_CONTEXT_NUDGE_LIMIT: int = 5
+    ADVISOR_CONTEXT_NUDGE_AGE_DAYS: int = 14
+
+    # Advisor tool surface (Plan 2026-04-17-003 Unit 9).
+    # Ada chat operates via a tool surface the model invokes on demand.
+    # ``ADVISOR_MAX_TOOL_ROUNDS`` caps the number of tool-use rounds the
+    # model can request per user turn — on exhaustion, remaining tool_use
+    # blocks receive a synthetic "tool round cap exceeded" tool_result so
+    # the model can still finalize its text rather than loop indefinitely.
+    # ``ADVISOR_TOOLS_ENABLED`` is the kill switch: when False, tools are
+    # not advertised to the model and the legacy eager-vision path remains
+    # authoritative.
+    ADVISOR_MAX_TOOL_ROUNDS: int = 3
+    ADVISOR_TOOLS_ENABLED: bool = True
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2

@@ -140,7 +140,7 @@ def test_drift_detection_missing_gate_in_fake_source():
     """A router body lacking the dep should fail _gates_in_router lookup."""
     fake = (
         '    prefix="/posts",\n'
-        "    tags=[\"posts\"],\n"
+        '    tags=["posts"],\n'
         "    dependencies=[Depends(get_current_user)],\n"
     )
     gates = _gates_in_router(fake)
@@ -151,7 +151,7 @@ def test_drift_detection_wrong_flag_in_fake_source():
     """A router body gated on the wrong flag name should be detected."""
     fake = (
         '    prefix="/posts",\n'
-        "    tags=[\"posts\"],\n"
+        '    tags=["posts"],\n'
         '    dependencies=[Depends(require_app_feature("sozial_enabled"))],\n'
     )
     gates = _gates_in_router(fake)

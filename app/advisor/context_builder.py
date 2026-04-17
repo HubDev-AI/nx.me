@@ -14,21 +14,15 @@ from app.advisor.memory_manager import summarize_memory_content
 
 logger = logging.getLogger(__name__)
 
-# A-14: Visual context trigger keywords extracted as module-level constant (spec Section 6.4)
-VISUAL_TRIGGER_KEYWORDS: tuple[str, ...] = (
-    "look at",
-    "see my",
-    "compare",
-    "photo",
-    "this picture",
-    "my image",
-)
-
 # Trajectory hint chance (spec Section 6.3)
 _TRAJECTORY_CHANCE = 0.15
 
 # Heuristic fallback used when tiktoken is unavailable: ~4 chars per token.
 _CHARS_PER_TOKEN = 4
+
+# Cap on number of recommendations rendered into the user_data block.
+# Matches the top-3 convention used in summarize_memory_content (memory_manager).
+_USER_DATA_MAX_RECOMMENDATIONS = 3
 
 
 def _count_tokens(text: str) -> int:
@@ -104,15 +98,23 @@ def build_context(
     conversation: list[dict[str, str]],
     message: str,
     rng: random.Random | None = None,
+    nudges: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build the messages array for the LLM call.
 
-    Structure (spec Section 6.1):
+    Structure (spec Section 6.1, Plan 2026-04-17-003 Unit 4):
         [system] SOUL.md
         [system] user_data
         [system] memories (if any)
+        [system] nudges (if any — Unit 4 NEW)
         [conversation history]
         [user message]
+
+    The nudges block is provenance-explicit on purpose: each line is
+    ``"nudge (<trigger>): <body>"`` so a reviewer can see at a glance
+    why Ada referenced a given nudge. Default ``nudges=None`` keeps the
+    function signature back-compat for the existing callers/tests that
+    do not pass it.
     """
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": soul_md},
@@ -125,6 +127,10 @@ def build_context(
         memory_text = "\n".join(format_memory(m) for m in enhanced_memories)
         messages.append({"role": "system", "content": memory_text})
 
+    nudge_block = format_nudges_block(nudges) if nudges else ""
+    if nudge_block:
+        messages.append({"role": "system", "content": nudge_block})
+
     messages.extend(conversation)
     messages.append({"role": "user", "content": message})
 
@@ -136,27 +142,89 @@ def format_memory(memory: dict[str, Any]) -> str:
     return summarize_memory_content(memory.get("content", {}))
 
 
+def format_nudges_block(nudges: list[dict[str, Any]] | None) -> str:
+    """Render a nudges list as the 4th system block text (Plan Unit 4).
+
+    Each nudge becomes one line:
+        ``nudge (<trigger>): <body>``
+
+    Newlines inside ``body`` are replaced with spaces so a single block
+    stays a single logical line per nudge — preserves the overall block
+    structure when the LLM parses it as role=system text. Empty / missing
+    fields cause the nudge to be skipped rather than rendered with gaps.
+
+    Returns ``""`` when no renderable nudges remain.
+    """
+    if not nudges:
+        return ""
+
+    lines: list[str] = []
+    for nudge in nudges:
+        if not isinstance(nudge, dict):
+            continue
+        body = nudge.get("content") or nudge.get("body") or ""
+        if not isinstance(body, str):
+            body = str(body)
+        body = body.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
+        if not body:
+            continue
+        trigger = str(nudge.get("trigger", "")).strip().lower()
+        if trigger:
+            lines.append(f"nudge ({trigger}): {body}")
+        else:
+            lines.append(f"nudge: {body}")
+    return "\n".join(lines)
+
+
 def build_user_data_block(
     face_shape: str | None,
     symmetry_score: float | None,
     analysis_count: int,
+    recommendations: list[str] | None = None,
+    summary: str | None = None,
 ) -> str:
     """Build the user_data system message block (spec Section 6.1).
 
-    Example output: "oval face, symmetry 0.87, 4 analyses"
+    Basics-only output is a single comma-joined fragment:
+        "oval face, symmetry 0.87, 4 analyses"
+
+    When recommendations or summary are present, output is a label-free
+    multi-line fragment (basics first, then recs, then summary):
+        "oval face, symmetry 0.87, 4 analyses\n"
+        "try bangs, clean up brows, hydrate skin\n"
+        "narrow forehead, strong jaw"
+
+    Matches the comma-joined, no-label style of
+    ``summarize_memory_content`` / ``format_memory`` per SOUL.md §6.2.
     """
-    parts: list[str] = []
+    basics: list[str] = []
 
     if face_shape:
-        parts.append(f"{face_shape} face")
+        basics.append(f"{face_shape} face")
     if symmetry_score is not None:
-        parts.append(f"symmetry {symmetry_score:.2f}")
+        basics.append(f"symmetry {symmetry_score:.2f}")
     if analysis_count > 0:
-        parts.append(
+        basics.append(
             f"{analysis_count} {'analysis' if analysis_count == 1 else 'analyses'}"
         )
 
-    return ", ".join(parts) if parts else ""
+    lines: list[str] = []
+    if basics:
+        lines.append(", ".join(basics))
+
+    rec_line = ""
+    if recommendations:
+        rec_items = [str(r).strip() for r in recommendations if str(r).strip()]
+        if rec_items:
+            rec_line = ", ".join(rec_items[:_USER_DATA_MAX_RECOMMENDATIONS])
+    if rec_line:
+        lines.append(rec_line)
+
+    summary_line = summary.strip() if summary else ""
+    if summary_line:
+        lines.append(summary_line)
+
+    return "\n".join(lines)
 
 
 def maybe_add_trajectory(
@@ -205,9 +273,3 @@ def _detect_area(texts: list[str]) -> str | None:
         return "getting into a skincare routine"
 
     return None
-
-
-def has_visual_trigger(message: str) -> bool:
-    """Return True if the message suggests the user wants visual context."""
-    lower = message.lower()
-    return any(trigger in lower for trigger in VISUAL_TRIGGER_KEYWORDS)

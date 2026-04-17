@@ -50,7 +50,15 @@ class TestOrphanedStorageKeyRepository:
         sb = MagicMock()
         chain = sb.table.return_value.select.return_value
         chain.lt.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"id": "row-1", "bucket": "b", "storage_key": "k", "reason": "r", "attempts": 0}]
+            data=[
+                {
+                    "id": "row-1",
+                    "bucket": "b",
+                    "storage_key": "k",
+                    "reason": "r",
+                    "attempts": 0,
+                }
+            ]
         )
         rows = OrphanedStorageKeyRepository(sb).list_pending(max_attempts=5, limit=100)
         assert len(rows) == 1

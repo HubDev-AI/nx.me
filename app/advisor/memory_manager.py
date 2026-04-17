@@ -213,7 +213,9 @@ class MemoryManager:
         2. Fetch _CANDIDATE_LIMIT candidates via pgvector RPC
         3. Re-rank with hybrid score (similarity + recency + importance)
         4. Deduplicate by content
-        5. Return top ``limit`` results
+        5. Pin the user's latest ``analysis_insight`` at position 0 when
+           the hybrid-scored dedup pass did not already include it.
+        6. Return top ``limit`` results
         """
         if limit is None:
             limit = settings.ADVISOR_CONTEXT_MEMORY_LIMIT
@@ -246,12 +248,29 @@ class MemoryManager:
         results: list[dict[str, Any]] = []
         for _, row in scored:
             # M-4: Use SHA-256 instead of MD5 for content dedup fingerprint
-            key = hashlib.sha256(str(row.get("content", "")).encode()).hexdigest()
+            key = _content_fingerprint(row.get("content", ""))
             if key not in seen:
                 seen.add(key)
                 results.append(row)
             if len(results) >= limit:
                 break
+
+        # Always pin the latest analysis_insight — the 0.60 similarity floor
+        # can silently drop it for one-noun style queries like "hairstyle",
+        # but it is the single most load-bearing memory for style advice.
+        latest_insight = self._repo.get_latest_analysis_insight(str(user_id))
+        if latest_insight is not None:
+            insight_key = _content_fingerprint(latest_insight.get("content", ""))
+            if insight_key not in seen:
+                pinned = {
+                    "type": MemoryType.ANALYSIS_INSIGHT.value,
+                    **latest_insight,
+                }
+                results.insert(0, pinned)
+                # Enforce the limit by dropping the last scored item so the
+                # pinned row takes its slot.
+                if len(results) > limit:
+                    results = results[:limit]
 
         return results
 
@@ -380,10 +399,63 @@ class MemoryManager:
         content["summary"] = summarize_memory_content(content)
         await self.write_memory(user_id, MemoryType.ANALYSIS_INSIGHT, content)
 
+    async def upsert_style_profile(
+        self,
+        user_id: UUID,
+        face_shape: str | None,
+        symmetry_score: float | None,
+        recommendations: list[str] | None,
+    ) -> dict[str, Any]:
+        """Upsert the user's stable style_profile row.
+
+        Plan 2026-04-17-003 Unit 7. The profile is the current state
+        (one row per user, enforced by the partial unique index in
+        migration 0040); ``analysis_insight`` rows remain the immutable
+        per-event record.
+
+        Merge semantics: on re-analysis, new fields overwrite existing
+        ones and absent fields are preserved. ``last_updated_at`` is
+        always refreshed from ``datetime.now(tz=timezone.utc)``. Prevents
+        regression if a later analysis returns a thinner payload (e.g.
+        the model omits ``recommendations``).
+
+        Cap enforcement does NOT apply — the profile is a single row
+        per user and must not be evictable; the cap only governs the
+        unbounded extraction types.
+        """
+        existing = self._repo.get_style_profile(str(user_id))
+        merged: dict[str, Any] = dict(existing.get("content", {})) if existing else {}
+
+        if face_shape is not None:
+            merged["face_shape"] = face_shape
+        if symmetry_score is not None:
+            merged["symmetry_score"] = symmetry_score
+        if recommendations is not None:
+            merged["recommendations"] = recommendations
+        merged["last_updated_at"] = datetime.now(tz=timezone.utc).isoformat()
+
+        text = summarize_memory_content(merged)
+        embedding = await self._embedding_adapter.compute_embedding(text)
+
+        row = {
+            "user_id": str(user_id),
+            "type": MemoryType.STYLE_PROFILE.value,
+            "content": merged,
+            "embedding": embedding,
+        }
+        result = self._repo.upsert_style_profile(row)
+        logger.info("Style profile upserted: user=%s", user_id)
+        return result
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _content_fingerprint(content: Any) -> str:
+    """SHA-256 fingerprint of memory content for dedup + pin matching."""
+    return hashlib.sha256(str(content).encode()).hexdigest()
 
 
 def _is_duplicate(text: str, recent_texts: list[str]) -> bool:
