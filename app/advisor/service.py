@@ -310,7 +310,16 @@ class AdvisorService:
         limit: int = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """Return a paginated page of conversation messages."""
+        """Return a paginated page of conversation messages.
+
+        Reverse-chronological pagination: the initial call returns the
+        newest ``limit`` messages; a subsequent call with ``next_cursor``
+        returns the next page of OLDER messages. The repository layer
+        flips the newest-first DB result to ascending order, so
+        ``messages`` is always oldest → newest per page — callers
+        prepend older pages above the current list to keep a single
+        ascending timeline.
+        """
         conversation = await run_sync(self._get_or_create_conversation, user_id)
         fetch_limit = limit + 1
         rows = await run_sync(
@@ -321,12 +330,20 @@ class AdvisorService:
         )
         has_more = len(rows) > limit
         if has_more:
-            rows = rows[:limit]
+            # rows are ASC (oldest → newest). The extra row is the
+            # OLDEST one — dropping it keeps the page as the newest
+            # ``limit`` rows within this request, and the cursor below
+            # anchors the next request to messages older than this
+            # page's first (oldest) row.
+            rows = rows[1:]
         # L-8: Cursor format: {created_at}|{id}
         # Assumes (created_at, id) is unique. The id tiebreaker prevents skipped records
         # when multiple messages share the same created_at timestamp.
+        # For reverse-chronological pagination the cursor points at the
+        # OLDEST row in the current page so the next call returns rows
+        # older than that.
         next_cursor = (
-            f"{rows[-1]['created_at']}|{rows[-1]['id']}" if has_more and rows else None
+            f"{rows[0]['created_at']}|{rows[0]['id']}" if has_more and rows else None
         )
         return {
             "conversation_id": conversation["id"],
