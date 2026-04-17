@@ -74,13 +74,31 @@ class Settings(BaseSettings):
     ADVISOR_MILESTONE_DEDUP_HOURS: int = (
         48  # Hours before a duplicate milestone nudge is allowed
     )
-    # Cooldown between post-analysis nudges for the same user. Four
-    # sequential analyses inside the old window produced four near-
-    # duplicate Sonnet-grounded nudges ("Oval face shapes are
-    # versatile..." ×4) because every successful analysis enqueued a
-    # fresh generation with no dedup. 60 min matches the "one per
-    # session" cadence a user would expect from an advisor.
-    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 60
+    # DEPRECATED — Plan 2026-04-17-003 Unit 8. The vision-grounded
+    # nudge redesign dropped the fixed 60-min cooldown entirely: dedup
+    # now emerges from the model's own access to prior nudge bodies +
+    # model-authored ``observation_tag``s in the prompt's "do not
+    # repeat" block. Kept at 0 as a rollback knob — set to a positive
+    # value to temporarily gate post_analysis / post_glowup on a time
+    # window if the vision path ever misbehaves. A rapid-retry dedup
+    # (same upload_id within 5 min) still fires at the scheduler level.
+    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 0
+
+    # Plan 2026-04-17-003 Unit 8. How many prior nudges (body +
+    # observation_tag) are included in the vision-nudge prompt's
+    # "do not repeat" block. The cap keeps the prompt compact — the
+    # model only needs enough context to steer away from recent
+    # observations, not the full history.
+    ADVISOR_NUDGE_RECENT_CONTEXT_LIMIT: int = 5
+
+    # Plan 2026-04-17-003 Unit 8. Rapid-retry dedup window for
+    # ``post_glowup`` nudges. If a second post_glowup fires within this
+    # many minutes of the previous one for the same user AND the prior
+    # job was for the same source upload (same ``upload_id``), skip the
+    # second generation. Narrow guard against the "user tapped Analyze,
+    # got a failure, tapped again" scenario producing back-to-back
+    # near-duplicate images.
+    ADVISOR_POST_GLOWUP_RAPID_RETRY_MINUTES: int = 5
     ADVISOR_MEMORY_CAP: int = 500  # Max memories per user (spec §10).
     ADVISOR_CONTEXT_TOKEN_BUDGET: int = 5000  # Max input tokens to the LLM (spec §10).
 

@@ -193,6 +193,41 @@ class AdvisorRepository:
         )
         return result.data or []
 
+    def get_recent_nudge_context(
+        self, user_id: str, limit: int = 5
+    ) -> list[dict[str, Any]]:
+        """Return the newest N nudge bodies + observation_tags for a user.
+
+        Plan 2026-04-17-003 Unit 8. Feeds the "do not repeat" block of
+        the vision-grounded nudge prompt. Returns
+        ``[{"body": str, "observation_tag": str | None, "created_at": str}]``
+        newest-first.
+
+        ``body`` is an alias for the ``content`` column the table uses —
+        the prompt reads more naturally with ``body`` and the column
+        rename would be pure churn. ``observation_tag`` may be ``None``
+        on rows written before migration 0041; the prompt renderer
+        treats ``None`` as "no tag" for graceful forward-compat. Does
+        NOT touch ``read_at`` — this is a pure read path.
+        """
+        result = (
+            self._sb.table("advisor_nudges")
+            .select("content, observation_tag, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data or []
+        return [
+            {
+                "body": row.get("content"),
+                "observation_tag": row.get("observation_tag"),
+                "created_at": row.get("created_at"),
+            }
+            for row in rows
+        ]
+
     def get_nudges_page(
         self,
         user_id: str,
@@ -250,7 +285,13 @@ class AdvisorRepository:
         ).eq("id", nudge_id).execute()
 
     def insert_nudge(self, nudge_data: dict[str, Any]) -> None:
-        """Persist a new nudge row."""
+        """Persist a new nudge row.
+
+        Accepts any columns the ``advisor_nudges`` table defines; callers
+        are responsible for the shape. Plan 2026-04-17-003 Unit 8 added
+        the ``observation_tag`` column (migration 0041) — it is optional
+        and flows through this passthrough when the caller provides it.
+        """
         self._sb.table("advisor_nudges").insert(nudge_data).execute()
 
     def find_last_nudge(self, user_id: str, trigger: str) -> dict[str, Any] | None:
