@@ -29,6 +29,18 @@ interface AdvisorEmptyOverlayProps {
   title: string;
   description?: string;
   action?: EmptyStateAction;
+  /**
+   * paddingBottom applied to the centering container so the hero sits
+   * above geometric center. The default `EMPTY_STATE_OPTICAL_LIFT`
+   * (96pt) is tuned for tall, single-chrome containers — Chat (composer
+   * below only) and Nudges (no chrome at all). Pass 0 inside containers
+   * that already have chrome stealing space on BOTH ends so the hero
+   * stays at true geometric center of the remaining gap. The Memories
+   * tab does this — its rowsArea sits between the SubTabs chips and
+   * the composer, so the default lift overshoots and visibly biases
+   * the hero up against the chips.
+   */
+  opticalLift?: number;
 }
 
 export function AdvisorEmptyOverlay({
@@ -36,10 +48,14 @@ export function AdvisorEmptyOverlay({
   title,
   description,
   action,
+  opticalLift = EMPTY_STATE_OPTICAL_LIFT,
 }: AdvisorEmptyOverlayProps) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      <View style={styles.center} pointerEvents="box-none">
+      <View
+        style={[styles.center, { paddingBottom: opticalLift }]}
+        pointerEvents="box-none"
+      >
         <EmptyState
           icon={icon}
           title={title}
@@ -57,6 +73,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingBottom: EMPTY_STATE_OPTICAL_LIFT,
   },
 });
