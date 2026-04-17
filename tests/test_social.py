@@ -242,6 +242,13 @@ class TestReconcileReactionLock:
     """Redis mutex behaviour in reconcile_reaction_counts — guards against
     racing the 03:30 UTC retention cron when reconcile hangs past its slot."""
 
+    @pytest.fixture(autouse=True)
+    def _enable_social(self, monkeypatch):
+        """Social is off by default — mutex tests assume the work path runs."""
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "FEATURE_SOCIAL_ENABLED", True)
+
     def _patch_feed_repo(self, monkeypatch, updated_rows=None):
         """Replace FeedRepository + get_supabase_service with stand-ins so
         reconcile_reaction_counts never touches the real DB."""
@@ -335,6 +342,26 @@ class TestReconcileReactionLock:
 
         # Finally ran → lock released.
         redis_mock.delete.assert_any_call(RECONCILE_LOCK_KEY)
+
+    def test_short_circuits_when_social_disabled(self, monkeypatch):
+        """FEATURE_SOCIAL_ENABLED=False → skip without touching Redis or DB."""
+        from app.api.social import reconcile_reaction_counts
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "FEATURE_SOCIAL_ENABLED", False)
+
+        run_sync_mock = AsyncMock()
+        monkeypatch.setattr("app.api.social.run_sync", run_sync_mock)
+
+        redis_mock = AsyncMock()
+
+        asyncio.get_event_loop().run_until_complete(
+            reconcile_reaction_counts({"redis": redis_mock})
+        )
+
+        run_sync_mock.assert_not_awaited()
+        redis_mock.set.assert_not_called()
+        redis_mock.delete.assert_not_called()
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="StrEnum requires 3.11+")

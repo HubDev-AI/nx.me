@@ -486,6 +486,10 @@ async def reconcile_reaction_counts(ctx: dict) -> None:
     (the lock TTL also bounds the worst case at
     ``RECONCILE_LOCK_TTL_SECONDS``).
     """
+    if not settings.FEATURE_SOCIAL_ENABLED:
+        logger.debug("Social disabled — skipping reaction count reconciliation")
+        return
+
     from app.db.client import get_supabase_service
     from app.repositories.feed_repo import FeedRepository
 
