@@ -820,15 +820,21 @@ export function MemoryList() {
               onPress: () => void loadTab(activeTab),
               accessibilityLabel: "Retry loading memories",
             }}
+            opticalLift={0}
           />
         )}
 
-        {/* Empty overlay — per-tab copy. */}
+        {/* Empty overlay — per-tab copy. opticalLift=0 because the
+            Memories rowsArea has chrome on BOTH ends (subtabs above,
+            composer below) — the default 96pt lift overshoots and
+            biases the hero up against the chips. With lift=0 the
+            hero sits at the true geometric center of the gap. */}
         {!activeState.error && !refetching && memories.length === 0 && (
           <AdvisorEmptyOverlay
             icon={memoryTypeIcon(activeTab)}
             title={copy.emptyTitle}
             description={copy.emptyDescription}
+            opticalLift={0}
           />
         )}
       </View>
