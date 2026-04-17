@@ -762,45 +762,43 @@ export function MemoryList() {
       keyboardVerticalOffset={keyboardVerticalOffset}
       enabled={Platform.OS !== "web"}
     >
-      {/* listArea spans FROM subtabs-top TO composer-top — the same
-          vertical region the Chat tab's listArea covers. The overlay
-          children use StyleSheet.absoluteFill, so they're centered in
-          THIS box. If the overlay sat one level deeper (sibling of the
-          FlatList only, BELOW the subtabs row), the centering box
-          would be ~64pt shorter at the top and the hero would float
-          ~32pt above where Chat's hero sits — visually crammed against
-          the subtabs chips. Wrapping subtabs + the row scroll area in
-          one listArea pins the hero to the same screen-Y as Chat.
+      {subTabs}
+
+      {/* rowsArea is THE empty region of the Memories tab — the gap
+          between the SubTabs chips above and the composer below. The
+          empty/error overlays absoluteFill rowsArea, NOT a wider
+          container that includes the subtabs. Centering inside rowsArea
+          gives the hero equal space above (chip row → icon) and below
+          (description → composer), matching how the Chat and Nudges
+          empty heroes look. Including the subtabs in the centering
+          region would bias the hero up against the chips because the
+          subtabs eat the top of the centering box.
 
           accessibilityLiveRegion is Android-only; iOS VoiceOver
           ignores it. A future polish pass could call
           AccessibilityInfo.announceForAccessibility on tab change. */}
-      <View style={styles.listArea} accessibilityLiveRegion="polite">
-        {subTabs}
-
-        <View style={styles.rowsArea}>
-          <FlatList
-            data={memories}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
-            ItemSeparatorComponent={MemorySeparator}
-            ListFooterComponent={
-              openMemoryId !== null ? (
-                <Pressable
-                  style={styles.dismissFooter}
-                  onPress={() => setOpenMemoryId(null)}
-                  accessibilityElementsHidden
-                  importantForAccessibility="no"
-                />
-              ) : null
-            }
-            onScrollBeginDrag={() => {
-              if (openMemoryId !== null) setOpenMemoryId(null);
-            }}
-          />
-        </View>
+      <View style={styles.rowsArea} accessibilityLiveRegion="polite">
+        <FlatList
+          data={memories}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={MemorySeparator}
+          ListFooterComponent={
+            openMemoryId !== null ? (
+              <Pressable
+                style={styles.dismissFooter}
+                onPress={() => setOpenMemoryId(null)}
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              />
+            ) : null
+          }
+          onScrollBeginDrag={() => {
+            if (openMemoryId !== null) setOpenMemoryId(null);
+          }}
+        />
 
         {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
         {refetching && (
@@ -810,9 +808,8 @@ export function MemoryList() {
         )}
 
         {/* Error overlay — scoped to the active tab; subtabs above stay
-            interactive so the user can switch away from a failed tab
-            (overlays use pointerEvents="box-none"). Retry reuses
-            loadTab so the stale-response guard applies. */}
+            interactive (overlays use pointerEvents="box-none"). Retry
+            reuses loadTab so the stale-response guard applies. */}
         {activeState.error && memories.length === 0 && (
           <AdvisorEmptyOverlay
             icon="alert-circle-outline"
@@ -847,14 +844,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
   },
-  listArea: {
-    flex: 1,
-  },
   /**
-   * Hosts the FlatList only — sits BELOW subtabs inside listArea.
-   * flex:1 lets the rows fill the space below subtabs while the empty/
-   * error overlays absoluteFill listArea (the wider region) so they
-   * land at the same screen-Y as the Chat tab's empty hero.
+   * The actual empty region of the Memories tab — sits BELOW the
+   * SubTabs chip row and ABOVE the composer. The FlatList fills it
+   * when there are rows; when the list is empty the AdvisorEmptyOverlay
+   * absoluteFills THIS box so the centering math gives the hero equal
+   * space above the icon and below the description.
    */
   rowsArea: {
     flex: 1,
