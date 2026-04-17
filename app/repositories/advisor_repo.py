@@ -402,10 +402,15 @@ class AdvisorRepository:
         Cursor format: ``{created_at}|{id}`` composite. ``authored_by``
         filters to a single provenance tier (the UI path passes
         ``'user'`` to hide model-written and analysis-written rows).
+
+        ``authored_by`` is always in the projection even when not
+        filtered on — the MCP tool renderer uses it to stamp user-
+        authored rows with a ``(user)`` marker so Ada can weight
+        declared intent over her own inferences.
         """
         query = (
             self._sb.table("user_memories")
-            .select("id, type, content, created_at")
+            .select("id, type, content, created_at, authored_by")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .order("id", desc=True)
