@@ -232,6 +232,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyWrapper: {
-    paddingVertical: THEME.spacing.xxxl + THEME.spacing.lg,
+    // Match the top-offset convention used elsewhere (see
+    // blocked-users.tsx styles.emptyContainer) so the title doesn't
+    // sit visually glued to the profile header.
+    paddingTop: THEME.spacing.xxxl * 2 + THEME.spacing.lg,
+    paddingBottom: THEME.spacing.xxxl,
   },
 });
