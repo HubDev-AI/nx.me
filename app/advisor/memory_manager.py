@@ -213,7 +213,9 @@ class MemoryManager:
         2. Fetch _CANDIDATE_LIMIT candidates via pgvector RPC
         3. Re-rank with hybrid score (similarity + recency + importance)
         4. Deduplicate by content
-        5. Return top ``limit`` results
+        5. Pin the user's latest ``analysis_insight`` at position 0 when
+           the hybrid-scored dedup pass did not already include it.
+        6. Return top ``limit`` results
         """
         if limit is None:
             limit = settings.ADVISOR_CONTEXT_MEMORY_LIMIT
@@ -246,12 +248,29 @@ class MemoryManager:
         results: list[dict[str, Any]] = []
         for _, row in scored:
             # M-4: Use SHA-256 instead of MD5 for content dedup fingerprint
-            key = hashlib.sha256(str(row.get("content", "")).encode()).hexdigest()
+            key = _content_fingerprint(row.get("content", ""))
             if key not in seen:
                 seen.add(key)
                 results.append(row)
             if len(results) >= limit:
                 break
+
+        # Always pin the latest analysis_insight — the 0.60 similarity floor
+        # can silently drop it for one-noun style queries like "hairstyle",
+        # but it is the single most load-bearing memory for style advice.
+        latest_insight = self._repo.get_latest_analysis_insight(str(user_id))
+        if latest_insight is not None:
+            insight_key = _content_fingerprint(latest_insight.get("content", ""))
+            if insight_key not in seen:
+                pinned = {
+                    "type": MemoryType.ANALYSIS_INSIGHT.value,
+                    **latest_insight,
+                }
+                results.insert(0, pinned)
+                # Enforce the limit by dropping the last scored item so the
+                # pinned row takes its slot.
+                if len(results) > limit:
+                    results = results[:limit]
 
         return results
 
@@ -384,6 +403,11 @@ class MemoryManager:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _content_fingerprint(content: Any) -> str:
+    """SHA-256 fingerprint of memory content for dedup + pin matching."""
+    return hashlib.sha256(str(content).encode()).hexdigest()
 
 
 def _is_duplicate(text: str, recent_texts: list[str]) -> bool:
