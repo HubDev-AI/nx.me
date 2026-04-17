@@ -46,6 +46,14 @@ import { Caption } from "../ui/Text";
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
+/**
+ * Horizontal gap between the card's right edge and the trash button when
+ * swiped open. Without it the rounded card corner sits flush against the
+ * straight left edge of the trash button and the seam reads as a sharp
+ * notch. With the gap the trash button reads as its own pill, the card
+ * keeps its full pill shape.
+ */
+const DELETE_BUTTON_GAP = 6;
 
 /** Extract a display string from a memory content object. */
 function memoryContentText(content: Record<string, unknown>): string {
@@ -182,9 +190,12 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
 
 const rowStyles = StyleSheet.create({
   wrapper: {
+    // No `overflow: hidden` here — we want the card AND the trash button
+    // to render their own rounded shapes independently. Clipping the
+    // wrapper makes the trash button's left edge get cut to a sharp
+    // vertical line at the wrapper bound, undoing the all-corners radius
+    // we add on the button below.
     position: "relative",
-    overflow: "hidden",
-    borderRadius: THEME.radius.lg,
   },
   deleteContainer: {
     // Anchor to the right edge with a fixed width and stretch the
@@ -197,14 +208,14 @@ const rowStyles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: DELETE_BUTTON_WIDTH,
+    paddingLeft: DELETE_BUTTON_GAP,
     alignItems: "stretch",
     justifyContent: "center",
   },
   deleteButton: {
     flex: 1,
     backgroundColor: THEME.colors.destructive,
-    borderTopRightRadius: THEME.radius.lg,
-    borderBottomRightRadius: THEME.radius.lg,
+    borderRadius: THEME.radius.lg,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -763,6 +774,7 @@ const styles = StyleSheet.create({
   listContent: {
     flexGrow: 1,
     paddingHorizontal: THEME.spacing.lg,
+    paddingTop: THEME.spacing.md,
     paddingBottom: THEME.spacing.lg,
   },
   separator: {
