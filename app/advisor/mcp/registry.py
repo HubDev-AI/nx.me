@@ -52,11 +52,17 @@ logger = logging.getLogger(__name__)
 # treated as a tool module and required to export the documented surface.
 TOOL_MODULE_PREFIX = "tools_"
 
-# Exported-symbol names every tool module must provide. Missing either is a
-# registration error — raised at construction time so a broken deploy fails
-# fast instead of at first model call.
+# Exported-symbol names every tool module must provide. A module can
+# export EITHER the singular pair (``TOOL_SCHEMA`` + ``handle``) — the
+# original single-tool convention — OR the plural pair (``TOOL_SCHEMAS``
+# + ``HANDLERS``) when a feature wants to ship several related tools
+# from one file. Mixing the two in the same module, or exporting
+# neither pair, is a registration error — raised at construction time
+# so a broken deploy fails fast instead of at first model call.
 TOOL_SCHEMA_ATTR = "TOOL_SCHEMA"
 TOOL_HANDLER_ATTR = "handle"
+TOOL_SCHEMAS_ATTR = "TOOL_SCHEMAS"
+TOOL_HANDLERS_ATTR = "HANDLERS"
 
 # Result-block markers used when the dispatcher must fabricate a result on
 # behalf of a failed handler (unknown name, exception, round-cap breach).
@@ -316,35 +322,102 @@ class ToolRegistry:
                 continue
             fq_name = f"{package_name}.{short_name}"
             module = importlib.import_module(fq_name)
-            schema = getattr(module, TOOL_SCHEMA_ATTR, None)
-            handler = getattr(module, TOOL_HANDLER_ATTR, None)
-            if schema is None or handler is None:
-                raise RuntimeError(
-                    f"Tool module {fq_name!r} must export both "
-                    f"{TOOL_SCHEMA_ATTR} and {TOOL_HANDLER_ATTR}."
-                )
+            for schema, handler in _module_tool_pairs(module, fq_name):
+                self._register(schema, handler, fq_name=fq_name, seen_names=seen_names)
+
+    def _register(
+        self,
+        schema: dict[str, Any],
+        handler: Callable[..., Awaitable[Any]],
+        *,
+        fq_name: str,
+        seen_names: set[str],
+    ) -> None:
+        """Validate + register a single (schema, handler) pair."""
+        if not isinstance(schema, dict) or "name" not in schema:
+            raise RuntimeError(
+                f"Tool module {fq_name!r}: TOOL_SCHEMA must be a dict "
+                "with a 'name' key."
+            )
+        if not asyncio.iscoroutinefunction(handler):
+            raise RuntimeError(f"Tool module {fq_name!r}: handle() must be async.")
+        tool_name = str(schema["name"])
+        if tool_name in seen_names:
+            raise RuntimeError(
+                f"Duplicate tool name {tool_name!r} while loading {fq_name!r}."
+            )
+        forbidden = _schema_contains_forbidden_key(schema)
+        if forbidden is not None:
+            raise RuntimeError(
+                f"Tool module {fq_name!r}: TOOL_SCHEMA declares a "
+                f"forbidden input key {forbidden!r}. Tools must never "
+                "accept user_id / uid / account from the LLM."
+            )
+        seen_names.add(tool_name)
+        self._tools[tool_name] = schema
+        self._handlers[tool_name] = handler
+
+
+def _module_tool_pairs(
+    module: Any, fq_name: str
+) -> list[tuple[dict[str, Any], Callable[..., Awaitable[Any]]]]:
+    """Extract ``(schema, handler)`` pairs from a ``tools_*`` module.
+
+    A module may export the singular pair (``TOOL_SCHEMA`` + ``handle``)
+    or the plural pair (``TOOL_SCHEMAS`` + ``HANDLERS``). Mixing both
+    forms, or exporting neither, is a registration error — the
+    singular/plural choice is per-file, not per-tool.
+    """
+    singular_schema = getattr(module, TOOL_SCHEMA_ATTR, None)
+    singular_handler = getattr(module, TOOL_HANDLER_ATTR, None)
+    plural_schemas = getattr(module, TOOL_SCHEMAS_ATTR, None)
+    plural_handlers = getattr(module, TOOL_HANDLERS_ATTR, None)
+
+    has_singular = singular_schema is not None or singular_handler is not None
+    has_plural = plural_schemas is not None or plural_handlers is not None
+
+    if has_singular and has_plural:
+        raise RuntimeError(
+            f"Tool module {fq_name!r} exports both the singular "
+            f"({TOOL_SCHEMA_ATTR}/{TOOL_HANDLER_ATTR}) and plural "
+            f"({TOOL_SCHEMAS_ATTR}/{TOOL_HANDLERS_ATTR}) surfaces. "
+            "Pick one."
+        )
+
+    if has_plural:
+        if not isinstance(plural_schemas, list) or not plural_schemas:
+            raise RuntimeError(
+                f"Tool module {fq_name!r}: {TOOL_SCHEMAS_ATTR} must be a "
+                "non-empty list of schema dicts."
+            )
+        if not isinstance(plural_handlers, dict) or not plural_handlers:
+            raise RuntimeError(
+                f"Tool module {fq_name!r}: {TOOL_HANDLERS_ATTR} must be a "
+                "non-empty dict mapping tool_name → async handler."
+            )
+        pairs: list[tuple[dict[str, Any], Callable[..., Awaitable[Any]]]] = []
+        for schema in plural_schemas:
             if not isinstance(schema, dict) or "name" not in schema:
                 raise RuntimeError(
-                    f"Tool module {fq_name!r}: TOOL_SCHEMA must be a dict "
-                    "with a 'name' key."
+                    f"Tool module {fq_name!r}: every entry in "
+                    f"{TOOL_SCHEMAS_ATTR} must be a dict with a 'name' key."
                 )
-            if not asyncio.iscoroutinefunction(handler):
-                raise RuntimeError(f"Tool module {fq_name!r}: handle() must be async.")
             tool_name = str(schema["name"])
-            if tool_name in seen_names:
+            handler = plural_handlers.get(tool_name)
+            if handler is None:
                 raise RuntimeError(
-                    f"Duplicate tool name {tool_name!r} while loading {fq_name!r}."
+                    f"Tool module {fq_name!r}: {TOOL_HANDLERS_ATTR} is "
+                    f"missing a handler for tool {tool_name!r}."
                 )
-            forbidden = _schema_contains_forbidden_key(schema)
-            if forbidden is not None:
-                raise RuntimeError(
-                    f"Tool module {fq_name!r}: TOOL_SCHEMA declares a "
-                    f"forbidden input key {forbidden!r}. Tools must never "
-                    "accept user_id / uid / account from the LLM."
-                )
-            seen_names.add(tool_name)
-            self._tools[tool_name] = schema
-            self._handlers[tool_name] = handler
+            pairs.append((schema, handler))
+        return pairs
+
+    if singular_schema is None or singular_handler is None:
+        raise RuntimeError(
+            f"Tool module {fq_name!r} must export both "
+            f"{TOOL_SCHEMA_ATTR} and {TOOL_HANDLER_ATTR}."
+        )
+    return [(singular_schema, singular_handler)]
 
 
 def _hash_for_log(user_id: Any) -> str:

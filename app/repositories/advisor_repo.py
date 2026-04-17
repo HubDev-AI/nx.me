@@ -658,6 +658,38 @@ class AdvisorRepository:
         rows = result.data or []
         return rows[0] if rows else None
 
+    def get_latest_completed_glowup_with_images(
+        self, user_id: str
+    ) -> dict[str, Any] | None:
+        """Return the user's most recent completed glow-up job with BOTH URLs.
+
+        Plan 2026-04-17-003 Unit 2. Feature-specific sibling of
+        ``get_latest_completed_job_with_images``: restricts
+        ``source_type`` to ``glowup_analysis`` so the
+        ``get_latest_glowup`` tool returns only glow-ups (not make-up
+        sessions or any other polymorphic row that may land in ``jobs``
+        later). Rows where either URL is NULL are excluded — the tool
+        needs both images to render the pair.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select(
+                "id, status, source_type, created_at, completed_at, "
+                "before_image_url, after_image_url"
+            )
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .eq("source_type", "glowup_analysis")
+            .not_.is_("before_image_url", "null")
+            .not_.is_("after_image_url", "null")
+            .order("completed_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
     def get_latest_job_for_user(self, user_id: str) -> dict[str, Any] | None:
         """Return the user's most recent job regardless of status.
 

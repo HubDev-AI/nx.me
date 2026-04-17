@@ -31,7 +31,6 @@ from app.advisor import content_filter
 from app.advisor.context_builder import (
     build_context,
     build_user_data_block,
-    has_visual_trigger,
     trim_to_budget,
 )
 from app.advisor.mcp import McpContext, ToolRegistry
@@ -155,10 +154,13 @@ class AdvisorService:
         # Read-only; never mutates read_at. Empty list → no nudge block.
         nudges = await run_sync(self._fetch_context_nudges, user_id)
 
-        # Step 6: Check for visual context triggers
+        # Step 6 (retired in Plan Unit 2): the eager ``_fetch_vision_content``
+        # path is gone. Vision arrives ONLY when the model explicitly calls
+        # ``get_latest_glowup`` / ``get_latest_photo`` / ``get_latest_generation``
+        # via the tool registry below. When ``ADVISOR_TOOLS_ENABLED`` is
+        # False, the turn runs text-only — the kill switch is a rollback
+        # knob, not a parity guarantee.
         vision_content: list[dict[str, Any]] | None = None
-        if has_visual_trigger(message):
-            vision_content = await run_sync(self._fetch_vision_content, user_id)
 
         # Step 7: Build LLM context
         # Deterministic RNG for context assembly (hashlib, not hash() — cross-process safe)
@@ -668,43 +670,6 @@ class AdvisorService:
                 "Failed to fetch context nudges for user %s: %s", user_id, exc
             )
             return []
-
-    def _fetch_vision_content(self, user_id: UUID) -> list[dict[str, Any]] | None:
-        """Fetch recent signed image URLs for visual context (spec Section 6.4).
-
-        Returns Anthropic vision content blocks, or None if no images.
-        """
-        try:
-            rows = self._repo.get_cleared_images(str(user_id), limit=2)
-            if not rows:
-                return None
-
-            blocks: list[dict[str, Any]] = []
-            for row in rows:
-                try:
-                    signed = self._repo.create_signed_url(
-                        row["storage_path"],
-                        settings.SIGNED_URL_EXPIRY_SECONDS,
-                    )
-                    url = signed.get("signedURL") or signed.get("signedUrl", "")
-                    if url:
-                        blocks.append(
-                            {
-                                "type": "image",
-                                "source": {"type": "url", "url": url},
-                            }
-                        )
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to create signed URL for image %s: %s", row["id"], exc
-                    )
-
-            return blocks if blocks else None
-        except Exception as exc:
-            logger.warning(
-                "Failed to fetch vision content for user %s: %s", user_id, exc
-            )
-            return None
 
     async def _summarize_conversation(
         self,
