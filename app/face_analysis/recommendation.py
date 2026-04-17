@@ -44,8 +44,8 @@ _RECOMMENDATIONS: dict[FaceShape, list[Suggestion]] = {
         Suggestion(
             rank=5,
             category="grooming",
-            suggestion_text="Keep facial hair well-defined to maintain your balanced face shape.",
-            rationale="Your jaw-to-forehead ratio is well-balanced, so clean lines reinforce that structure.",
+            suggestion_text="Lengthening mascara and a defined lip line keep your features crisp without competing with your balanced proportions.",
+            rationale="Balanced proportions stay sharp with subtle definition rather than dramatic contrast.",
         ),
     ],
     FaceShape.ROUND: [
@@ -79,8 +79,8 @@ _RECOMMENDATIONS: dict[FaceShape, list[Suggestion]] = {
         Suggestion(
             rank=5,
             category="grooming",
-            suggestion_text="Angular facial hair styles like a goatee can add length to your round face shape.",
-            rationale="Pointed or angular styles create a visual lengthening effect.",
+            suggestion_text="Lengthening mascara and a slim, vertical lip line draw the eye upward to elongate your round face.",
+            rationale="Vertical visual cues create the lengthening effect your round proportions benefit from.",
         ),
     ],
     FaceShape.SQUARE: [
@@ -111,8 +111,8 @@ _RECOMMENDATIONS: dict[FaceShape, list[Suggestion]] = {
         Suggestion(
             rank=5,
             category="grooming",
-            suggestion_text="Rounded facial hair styles soften the angular jawline of your square face.",
-            rationale="Your prominent jaw angle means softer grooming shapes create pleasing contrast.",
+            suggestion_text="Softly smudged liner and a rounded lip shape ease the contrast of your strong jawline.",
+            rationale="Curves and softness in features ease the contrast of an angular jaw.",
         ),
     ],
     FaceShape.HEART: [
@@ -149,8 +149,8 @@ _RECOMMENDATIONS: dict[FaceShape, list[Suggestion]] = {
         Suggestion(
             rank=5,
             category="grooming",
-            suggestion_text="Wider beard styles add volume at the jaw to complement your narrower chin.",
-            rationale="Your pointed chin and wider forehead benefit from added jaw-level fullness.",
+            suggestion_text="A bolder lip and warm blush low on the cheeks pull focus toward the jaw to balance your wider forehead.",
+            rationale="Visual weight at the lips and lower cheeks redistributes focus toward the narrower chin.",
         ),
     ],
     FaceShape.OBLONG: [
@@ -184,8 +184,8 @@ _RECOMMENDATIONS: dict[FaceShape, list[Suggestion]] = {
         Suggestion(
             rank=5,
             category="grooming",
-            suggestion_text="Keep facial hair shorter to avoid adding extra length to your already elongated face.",
-            rationale="Longer facial hair extends the visual length of your oblong face shape.",
+            suggestion_text="Horizontal blush across the cheeks and a fuller lip line break up the vertical length of your oblong face.",
+            rationale="Horizontal cues counteract the vertical emphasis of an elongated face.",
         ),
     ],
 }

@@ -124,7 +124,7 @@ _GLOWUP_TOOL_DESCRIPTION = (
     "Call this when the user asks about their glow-up, compares their "
     "current look to the generated one, asks what changed, or asks a "
     "styling question ('what hairstyle would suit me?', 'does this "
-    "beard work?') where seeing both images would ground the answer. "
+    "hair color work?') where seeing both images would ground the answer. "
     "Prefer this over get_latest_photo whenever a glow-up is available "
     "— the after image shows what the user is actually thinking about.\n\n"
     "Do NOT call this when the user has not run a glow-up — the tool "
