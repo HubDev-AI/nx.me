@@ -204,6 +204,7 @@ export function GlowUpGrid({
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         ListHeaderComponent={ListHeaderComponent}
+        ListHeaderComponentStyle={styles.headerGap}
         ListFooterComponent={renderFooter}
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
@@ -293,12 +294,18 @@ const styles = StyleSheet.create({
     // region — matches the advisor tabs via the shared EmptyState
     // primitive instead of a per-screen padding hack.
     flexGrow: 1,
-    // `lg` matches the horizontal padding the grid uses so the air
-    // gap between ProfileHeader and the first row reads as one rhythm
-    // unit, not a tight stack. `sm` was visually cramped on iPhone 15
-    // Pro — see plan U5 (decision 2).
+    // Gap between the tab nav header and ProfileHeader — the screen
+    // body no longer adds its own safe-area padding (that lives on
+    // the nav header), so this padding is the sole breathing room
+    // above the collapsed card.
     paddingTop: THEME.spacing.lg,
     paddingBottom: TAB_BAR_HEIGHT,
+  },
+  // Breathing room BELOW the ProfileHeader (ListHeaderComponent) and
+  // ABOVE the first grid row. Without this the card visually touches
+  // the photo grid and the two surfaces read as a single block.
+  headerGap: {
+    paddingBottom: THEME.spacing.md,
   },
   row: {
     gap: PROFILE_CONFIG.GRID_GAP,
