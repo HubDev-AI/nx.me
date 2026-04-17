@@ -46,6 +46,7 @@ import { THEME } from "../../constants/theme";
 import { SHIMMER_DURATION_MS } from "../feed/FeedSkeleton";
 import { getJobStatus, type JobResult } from "../../lib/analysis";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
+import { useRefundToast } from "../../lib/hooks/use-refund-toast";
 import { parseApiError, shouldRetry } from "../../lib/errors";
 import type { GlowUpItem } from "./types";
 
@@ -161,6 +162,12 @@ export const PendingGlowUpCell = React.memo(function PendingGlowUpCell({
     if (!jobId || !jobQuery.data) return;
     onJobResolved(jobId, jobQuery.data);
   }, [jobId, jobQuery.data, onJobResolved]);
+
+  // Pending-cell observer for the refund toast. Module-level dedup
+  // ensures the user sees the banner once per device — the result
+  // screen has the same hook so observing the same job from both
+  // surfaces fires exactly one toast.
+  useRefundToast(jobQuery.data);
 
   const accessibilityLabel = isErrored
     ? `${item.status === "cancelled" ? "Cancelled" : "Failed"} glow-up from ${new Date(item.created_at).toLocaleDateString()} — tap to view details`

@@ -64,6 +64,7 @@ import {
 } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
 import { useAppMutation } from "../../lib/hooks/use-app-mutation";
+import { useRefundToast } from "../../lib/hooks/use-refund-toast";
 import { showToast } from "../../lib/toast";
 import { useAuth } from "../../lib/auth-context";
 import { parseApiError, shouldRetry } from "../../lib/errors";
@@ -180,6 +181,12 @@ export default function ResultScreen() {
 
   const result = jobQuery.data;
   const error = jobQuery.appError;
+
+  // Surface the one-time refund toast when the worker auto-refunds a
+  // failed/cancelled job. Module-level dedup ensures the user sees
+  // the banner exactly once per device per job, even if the result
+  // screen + a profile pending cell observe the same job.
+  useRefundToast(result);
 
   // Save mutation
   const saveMutation = useAppMutation<{ saved_at: string }, void>({

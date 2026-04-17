@@ -389,6 +389,23 @@ export const PROFILE_PENDING_CELL_POLL_INTERVAL_MS = 2_000;
  */
 export const PROFILE_PENDING_CELL_MAX_VISIBLE = 3;
 
+/**
+ * Refund-toast dedup. The store remembers which job_ids have already
+ * fired their toast so the user sees one banner per refunded job
+ * across the device's lifetime — even after kill+relaunch.
+ *
+ * The cap bounds the persisted entry count; oldest entries fall off
+ * first. 200 covers months of normal-cadence use given how rare
+ * refunds are in steady state.
+ */
+export const REFUND_TOAST_SEEN_STORAGE_KEY = "@nxme:refund_toasts_seen";
+export const REFUND_TOAST_SEEN_MAX_ENTRIES = 200;
+
+/** Refund-toast copy. Unified noun ("credit") across status branches. */
+export const REFUND_TOAST_FAILED =
+  "That one's on us — your credit's back. Try a new photo?";
+export const REFUND_TOAST_CANCELLED = "Cancelled — your credit's back.";
+
 /** Errored-cell dismiss action sheet copy. */
 export const DISMISS_ERRORED_JOB_TITLE = "Remove from profile?";
 export const DISMISS_ERRORED_JOB_BODY =
