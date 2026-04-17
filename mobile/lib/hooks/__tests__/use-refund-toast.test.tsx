@@ -130,4 +130,27 @@ describe("useRefundToast", () => {
     renderHook(() => useRefundToast(job));
     expect(mockShowToast).not.toHaveBeenCalled();
   });
+
+  it("does not re-fire on cold start when AsyncStorage already has the jobId seen", async () => {
+    // Simulate a prior launch having seen this jobId — persist the
+    // marker, then start a fresh in-memory cache so the hook has to
+    // hydrate before deciding.
+    await AsyncStorage.setItem(
+      "@nxme:refund_toasts_seen",
+      JSON.stringify(["job-1"]),
+    );
+    __resetRefundToastSeenForTests();
+
+    const job = makeJob({ job_id: "job-1" });
+    const { rerender } = renderHook((props: JobResult) => useRefundToast(props), {
+      initialProps: job,
+    });
+    // Wait for hydration — without the hydrated gate, the toast
+    // would have already fired by now.
+    await waitFor(() => {
+      expect(hasSeenRefundToastSync("job-1")).toBe(true);
+    });
+    rerender(job);
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
 });

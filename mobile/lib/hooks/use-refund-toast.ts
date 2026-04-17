@@ -17,7 +17,7 @@
  *    the banner.
  */
 import { usePathname } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import {
   REFUND_TOAST_CANCELLED,
@@ -27,6 +27,7 @@ import type { JobResult } from "../analysis";
 import { showToast } from "../toast";
 import {
   hasSeenRefundToastSync,
+  isRefundToastStoreHydrated,
   loadRefundToastSeen,
   markRefundToastSeen,
 } from "../refund-toast-store";
@@ -47,15 +48,28 @@ function copyForStatus(status: string): string {
  */
 export function useRefundToast(result: JobResult | undefined): void {
   const pathname = usePathname();
+  // Track hydration so we don't fire a toast against an empty cache
+  // during the cold-start window. `hasSeenRefundToastSync` returns
+  // false before the persisted set has been read in — without this
+  // gate, a poll that resolves before AsyncStorage finishes would
+  // re-fire a toast for a job already seen on a prior launch.
+  const [hydrated, setHydrated] = useState<boolean>(
+    isRefundToastStoreHydrated(),
+  );
 
-  // Hydrate the persisted set once on mount so the very first
-  // refunded-job poll can see it. Without this, the first poll
-  // after launch would always fire the toast.
   useEffect(() => {
-    void loadRefundToastSeen();
-  }, []);
+    if (hydrated) return;
+    let cancelled = false;
+    void loadRefundToastSeen().then(() => {
+      if (!cancelled) setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated]);
 
   useEffect(() => {
+    if (!hydrated) return;
     if (!result) return;
     if (result.credit_refunded !== true) return;
     if (hasSeenRefundToastSync(result.job_id)) return;
@@ -74,5 +88,5 @@ export function useRefundToast(result: JobResult | undefined): void {
       kind: "success",
       message: copyForStatus(result.status),
     });
-  }, [result, pathname]);
+  }, [hydrated, result, pathname]);
 }

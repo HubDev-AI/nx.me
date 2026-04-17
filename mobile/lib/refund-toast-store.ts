@@ -70,6 +70,17 @@ export function hasSeenRefundToastSync(jobId: string): boolean {
 }
 
 /**
+ * Whether the persisted seen-set has been read into memory. Callers
+ * that need to make a "show or skip the toast" decision must defer
+ * until this returns true — otherwise a cold-start poll that resolves
+ * before AsyncStorage finishes can re-fire a toast for a job already
+ * seen on a previous launch.
+ */
+export function isRefundToastStoreHydrated(): boolean {
+  return cache !== null;
+}
+
+/**
  * Record that a job's refund toast has fired. Updates the in-memory
  * cache synchronously so a follow-up poll in the same session can't
  * double-fire, then fire-and-forget the AsyncStorage write.

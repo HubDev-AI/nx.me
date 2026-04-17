@@ -339,15 +339,19 @@ export const GUEST_ME_TIMEOUT_MS = 5_000;
  * Result-screen latency tolerance.
  *
  * - HARD_TIMEOUT_MS bounds the entire waiting period after Analyze. Must
- *   stay above the server-side `GENERATION_TIMEOUT_SECONDS + 30`
- *   watchdog (180 + 30 = 210s) so the client never gives up while a
- *   legitimate worker run is still in progress. 240_000 = 4 min buffer.
+ *   stay above the server-side `GENERATION_TIMEOUT_SECONDS + 30s
+ *   watchdog grace + watchdog cron cadence`. The watchdog runs on a
+ *   `cron(second=0)` schedule (~once per minute), so the worst-case
+ *   server-side reconcile window is 180 + 30 + 60 = 270s. 300_000
+ *   gives the client a 30s buffer above that ceiling so a
+ *   legitimately-still-running job never trips the client cap before
+ *   the server flips it to failed.
  * - IMAGE_URL_TIMEOUT_MS gives a status=completed-with-null-URLs row a
  *   chance to land its `after_image_url` before falling to the
  *   terminal-failure branch. 60s matches the observed worker write
  *   envelope; data bug if exceeded.
  */
-export const RESULT_SCREEN_HARD_TIMEOUT_MS = 240_000;
+export const RESULT_SCREEN_HARD_TIMEOUT_MS = 300_000;
 export const RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS = 60_000;
 
 /**
