@@ -51,10 +51,34 @@ class TestSettings:
     def test_generation_timeout(self):
         assert settings.GENERATION_TIMEOUT_SECONDS == 180
 
-    def test_image_gen_cost_ceiling(self):
+    def test_image_gen_cost_ceiling_above_default_model_cost(self):
+        """Ceiling must sit ABOVE the per-gen model cost.
+
+        If it sits below, the rolling 24h average crosses it on the
+        first generation and every subsequent free-tier request is
+        503'd — which is the bug that triggered this threshold bump.
+        Uses NANO_BANANA_2 (the current default) as the floor; the
+        upper bound (2x PRO) keeps the guard from going permissively
+        high.
+        """
         assert (
-            settings.IMAGE_GEN_COST_CEILING_USD <= 0.10
-        )  # Must stay under cost ceiling
+            settings.IMAGE_GEN_COST_CEILING_USD > settings.FAL_COST_NANO_BANANA_2
+        ), (
+            f"Ceiling {settings.IMAGE_GEN_COST_CEILING_USD} must be > "
+            f"default model cost {settings.FAL_COST_NANO_BANANA_2}"
+        )
+        assert (
+            settings.IMAGE_GEN_COST_CEILING_USD <= 2 * settings.FAL_COST_NANO_BANANA_PRO
+        ), "Ceiling should remain a meaningful runaway guard, not effectively disabled"
+
+    def test_credit_cost_alert_below_ceiling(self):
+        """Alert must trip before the hard gate so creep is visible first."""
+        assert (
+            settings.CREDIT_COST_ALERT_USD < settings.IMAGE_GEN_COST_CEILING_USD
+        )
+        assert (
+            settings.CREDIT_COST_ALERT_USD >= settings.FAL_COST_NANO_BANANA_2
+        ), "Alert below normal per-gen cost would fire constantly"
 
     def test_min_age_constant_not_in_settings(self):
         """Age gate is a code constant, not a settings value (intentional)."""

@@ -139,9 +139,17 @@ class Settings(BaseSettings):
     SIGNED_URL_EXPIRY_SECONDS: int = 3600
 
     # Generation / cost
-    IMAGE_GEN_COST_CEILING_USD: float = 0.06
+    # Ceiling must sit ABOVE the current per-generation model cost,
+    # otherwise every free-tier generation trips it as soon as the
+    # rolling 24h average catches up (observed: fal NANO_BANANA_2 at
+    # $0.080/gen against a $0.060 ceiling — 503'd on the first gen).
+    # $0.20 covers NANO_BANANA_PRO ($0.150) with headroom for provider
+    # price bumps; the guard still fires on a genuine 2-3x runaway.
+    # Alert trips at $0.12 — 50 % above NANO_BANANA_2 — so cost creep
+    # is visible in logs before the hard gate.
+    IMAGE_GEN_COST_CEILING_USD: float = 0.20
     GENERATION_TIMEOUT_SECONDS: int = 180
-    CREDIT_COST_ALERT_USD: float = 0.05
+    CREDIT_COST_ALERT_USD: float = 0.12
     IDENTITY_MAX_RETRIES: int = 1
     MAX_PROMPT_KEYWORDS: int = 6
     FACE_CROP_THRESHOLD: float = 0.25
