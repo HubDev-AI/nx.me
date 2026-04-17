@@ -21,7 +21,12 @@ import { useSession } from "./auth-context";
 export interface Capabilities {
   /** Can view their own profile screen (full view with glowups + menu). */
   canViewOwnProfile: boolean;
-  /** Can edit profile (requires real user identity — guests cannot). */
+  /**
+   * Can edit profile (display name, username, avatar). Real users always
+   * can; guests can while `auth_required` is false — in that mode the
+   * guest row on the server is the real identity, and the owner-match
+   * check on PATCH /v1/users/{username} accepts X-Guest-Token.
+   */
   canEditProfile: boolean;
   /**
    * Can view real account details (email, plan, etc.) — only meaningful for
@@ -85,7 +90,8 @@ export function useCapabilities(): Capabilities {
     () => ({
       canViewOwnProfile:
         session.isUser || (session.isGuest && !features.auth_required),
-      canEditProfile: session.isUser,
+      canEditProfile:
+        session.isUser || (session.isGuest && !features.auth_required),
       canViewAccountDetails: session.isUser,
       canDeleteAccount: session.isUser,
       canSignOut: features.auth_required && session.isUser,

@@ -17,6 +17,45 @@ import type {
 } from "./types";
 
 /**
+ * React Native FormData file descriptor. RN's `FormData.append` accepts
+ * `{ uri, name, type }` where the DOM typings only allow `Blob | string`;
+ * cast at the single append site per the official RN pattern.
+ *
+ * Mirrors the shape `lib/analysis.ts` uses for selfie uploads so both
+ * multipart flows share the same reference point.
+ */
+interface RNFileDescriptor {
+  uri: string;
+  name: string;
+  type: string;
+}
+
+/**
+ * Infer the file extension + MIME type from an ImagePicker URI.
+ *
+ * Backend accepts image/jpeg, image/png, and image/webp for avatars
+ * (see app/api/users.py _AVATAR_MIME_TO_EXT). Anything else defaults to
+ * jpeg — the request will fail cleanly server-side with a 400 rather
+ * than silently producing an un-typed upload.
+ */
+function fileDescriptorFromUri(uri: string): RNFileDescriptor {
+  const lower = uri.toLowerCase();
+  let ext = "jpg";
+  let type = "image/jpeg";
+  if (lower.endsWith(".png")) {
+    ext = "png";
+    type = "image/png";
+  } else if (lower.endsWith(".webp")) {
+    ext = "webp";
+    type = "image/webp";
+  } else if (lower.endsWith(".jpeg")) {
+    ext = "jpeg";
+    type = "image/jpeg";
+  }
+  return { uri, name: `avatar.${ext}`, type };
+}
+
+/**
  * Filter out items the user has explicitly dismissed via long-press →
  * "Remove from profile". Server still returns the row (audit trail);
  * this is the client-side suppression layer.
@@ -48,6 +87,12 @@ interface UseProfileReturn {
     username: string,
     payload: UpdateProfilePayload,
   ) => Promise<boolean>;
+  /**
+   * Upload a new avatar image (multipart) and merge the server's refreshed
+   * profile row into local state. Caller passes the local file URI from
+   * expo-image-picker; the hook handles FormData + the POST.
+   */
+  uploadAvatar: (username: string, uri: string) => Promise<boolean>;
   /**
    * Remove an errored cell from the local grid + persist the dismissal
    * to AsyncStorage. The next /history refetch will skip the row.
@@ -238,6 +283,27 @@ export function useProfile(): UseProfileReturn {
     [],
   );
 
+  // Shared merge of UpdateProfileResponse into the local profile snapshot.
+  // Both PATCH and the avatar POST return the same shape, so they both
+  // collapse the whole response into the hook's cached profile row.
+  const mergeUpdateResponse = useCallback(
+    (updated: UpdateProfileResponse) => {
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              username: updated.username,
+              display_name: updated.display_name,
+              avatar_url: updated.avatar_url,
+              username_change_cooldown_remaining_seconds:
+                updated.username_change_cooldown_remaining_seconds ?? null,
+            }
+          : prev,
+      );
+    },
+    [],
+  );
+
   const updateProfile = useCallback(
     async (
       username: string,
@@ -254,19 +320,7 @@ export function useProfile(): UseProfileReturn {
             body: JSON.stringify(payload),
           },
         );
-        // Merge the updated fields back into the current profile snapshot
-        setProfile((prev) =>
-          prev
-            ? {
-                ...prev,
-                username: updated.username,
-                display_name: updated.display_name,
-                avatar_url: updated.avatar_url,
-                username_change_cooldown_remaining_seconds:
-                  updated.username_change_cooldown_remaining_seconds ?? null,
-              }
-            : prev,
-        );
+        mergeUpdateResponse(updated);
         return true;
       } catch (err) {
         setUpdateError(
@@ -277,7 +331,39 @@ export function useProfile(): UseProfileReturn {
         setIsUpdating(false);
       }
     },
-    [],
+    [mergeUpdateResponse],
+  );
+
+  const uploadAvatar = useCallback(
+    async (username: string, uri: string): Promise<boolean> => {
+      setIsUpdating(true);
+      setUpdateError(null);
+
+      try {
+        const file = fileDescriptorFromUri(uri);
+        const formData = new FormData();
+        // RN's FormData.append signature omits the file-descriptor shape,
+        // but it's the officially sanctioned RN pattern — cast at the one
+        // append site that needs it. See
+        // https://reactnative.dev/docs/network#uploading-files.
+        formData.append("file", file as unknown as Blob);
+
+        const updated = await apiFetch<UpdateProfileResponse>(
+          PROFILE_ENDPOINTS.AVATAR(username),
+          { method: "POST", body: formData },
+        );
+        mergeUpdateResponse(updated);
+        return true;
+      } catch (err) {
+        setUpdateError(
+          err instanceof Error ? err.message : "We couldn't upload that photo.",
+        );
+        return false;
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [mergeUpdateResponse],
   );
 
   return {
@@ -294,6 +380,7 @@ export function useProfile(): UseProfileReturn {
     refresh,
     loadMoreGlowUps,
     updateProfile,
+    uploadAvatar,
     dismissErroredItem,
     reconcileWithJob,
   };

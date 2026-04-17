@@ -10,7 +10,7 @@ route registration which can fail on FastAPI 0.104 / Python 3.10.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -189,6 +189,56 @@ class TestUserModels:
         req = UpdateProfileRequest()
         assert req.display_name is None
         assert req.avatar_storage_key is None
+
+    def test_update_profile_request_trims_display_name(self):
+        from app.api.users import UpdateProfileRequest
+
+        req = UpdateProfileRequest(display_name="  Padded Name   ")
+        assert req.display_name == "Padded Name"
+
+    def test_update_profile_request_rejects_whitespace_only_display_name(self):
+        """`"   "` strips to `""` and fails min_length=1."""
+        from pydantic import ValidationError
+
+        from app.api.users import UpdateProfileRequest
+
+        with pytest.raises(ValidationError):
+            UpdateProfileRequest(display_name="   ")
+
+    def test_update_profile_request_rejects_long_display_name(self):
+        from pydantic import ValidationError
+
+        from app.api.users import UpdateProfileRequest, _DISPLAY_NAME_MAX_LENGTH
+
+        too_long = "x" * (_DISPLAY_NAME_MAX_LENGTH + 1)
+        with pytest.raises(ValidationError):
+            UpdateProfileRequest(display_name=too_long)
+
+    def test_update_profile_request_trims_new_username(self):
+        from app.api.users import UpdateProfileRequest
+
+        req = UpdateProfileRequest(new_username="  alice  ")
+        assert req.new_username == "alice"
+
+    @pytest.mark.parametrize(
+        "bad_username",
+        [
+            "1abc",  # starts with digit
+            "_abc",  # starts with underscore
+            "my-name",  # hyphen disallowed
+            "my name",  # space in middle
+            "my!name",  # special char
+        ],
+    )
+    def test_update_profile_request_rejects_invalid_username_pattern(
+        self, bad_username: str
+    ):
+        from pydantic import ValidationError
+
+        from app.api.users import UpdateProfileRequest
+
+        with pytest.raises(ValidationError):
+            UpdateProfileRequest(new_username=bad_username)
 
 
 # ===========================================================================
@@ -901,3 +951,313 @@ class TestGetUserHistoryHandler:
         processing = [e for e in resp.entries if e.status == "processing"]
         assert len(completed) == 3
         assert len(processing) == _MAX_PENDING_ROWS_PER_PAGE
+
+
+# ===========================================================================
+# PATCH /users/{username} — guest-token acceptance regression
+# ===========================================================================
+
+
+@requires_routers
+class TestUpdateUserProfileHandler:
+    """Handler-level tests for PATCH /users/{username}.
+
+    Covers the dep-swap regression: the handler was previously wired to
+    `get_current_user` (JWT only). Guest sessions sending X-Guest-Token hit
+    the dep's 401 before reaching the handler, so display-name / username
+    edits died for anyone in guest mode. The swap to `get_user_or_guest`
+    means the guest's resolved claims reach this handler and the existing
+    owner-match (`claims["sub"] == user.id`) still gates cross-user access.
+    """
+
+    @staticmethod
+    def _make_claims(user_id: str):
+        from app.api.middleware.auth import UserClaims
+
+        return UserClaims(sub=user_id, role="authenticated", exp=9999999999)
+
+    @staticmethod
+    def _make_image_repo(avatar_url: str | None = None) -> MagicMock:
+        repo = MagicMock()
+        repo.build_avatar_signed_url = MagicMock(return_value=avatar_url)
+        return repo
+
+    @pytest.mark.asyncio
+    async def test_accepts_guest_owner_claims_and_updates_display_name(self):
+        from app.api.users import UpdateProfileRequest, update_user_profile
+
+        user_id = str(uuid4())
+        user_row = {
+            "id": user_id,
+            "username": "guest-abc123def456",
+            "display_name": "Guest",
+            "avatar_storage_key": None,
+            "username_changed_at": None,
+        }
+        user_repo = MagicMock(spec=UserRepository)
+        user_repo.get_by_username = MagicMock(return_value=user_row)
+        user_repo.update_profile = MagicMock()
+        user_repo.get_profile_by_id = MagicMock(
+            return_value={**user_row, "display_name": "Guest Renamed"}
+        )
+
+        resp = await update_user_profile(
+            username="guest-abc123def456",
+            body=UpdateProfileRequest(display_name="Guest Renamed"),
+            claims=self._make_claims(user_id),
+            user_repo=user_repo,
+            image_repo=self._make_image_repo(),
+        )
+
+        assert resp.display_name == "Guest Renamed"
+        user_repo.update_profile.assert_called_once()
+        update_args = user_repo.update_profile.call_args[0]
+        assert update_args[0] == user_id
+        assert update_args[1]["display_name"] == "Guest Renamed"
+        assert "updated_at" in update_args[1]
+
+    @pytest.mark.asyncio
+    async def test_cross_user_returns_404_even_with_valid_auth(self):
+        from app.api.users import UpdateProfileRequest, update_user_profile
+
+        owner_id = str(uuid4())
+        attacker_id = str(uuid4())
+        user_repo = MagicMock(spec=UserRepository)
+        user_repo.get_by_username = MagicMock(
+            return_value={
+                "id": owner_id,
+                "username": "alice",
+                "display_name": "Alice",
+                "avatar_storage_key": None,
+            }
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await update_user_profile(
+                username="alice",
+                body=UpdateProfileRequest(display_name="Hacked"),
+                claims=self._make_claims(attacker_id),
+                user_repo=user_repo,
+                image_repo=self._make_image_repo(),
+            )
+        assert exc.value.status_code == 404
+        user_repo.update_profile.assert_not_called()
+
+
+# ===========================================================================
+# POST /users/{username}/avatar
+# ===========================================================================
+
+
+@requires_routers
+class TestUploadUserAvatarHandler:
+    """Handler-level tests for POST /users/{username}/avatar.
+
+    Validates the new multipart avatar endpoint — content-type gating,
+    size cap, empty-payload rejection, owner-only access, and the
+    upload-then-swap-then-prune happy path.
+    """
+
+    @staticmethod
+    def _make_claims(user_id: str):
+        from app.api.middleware.auth import UserClaims
+
+        return UserClaims(sub=user_id, role="authenticated", exp=9999999999)
+
+    @staticmethod
+    def _make_user_repo(
+        user_id: str,
+        username: str,
+        *,
+        previous_key: str | None = None,
+        refreshed_key: str | None = None,
+    ) -> MagicMock:
+        repo = MagicMock(spec=UserRepository)
+        repo.get_by_username = MagicMock(
+            return_value={
+                "id": user_id,
+                "username": username,
+                "display_name": "Alice",
+                "avatar_storage_key": previous_key,
+            }
+        )
+        repo.update_profile = MagicMock()
+        repo.get_profile_by_id = MagicMock(
+            return_value={
+                "id": user_id,
+                "username": username,
+                "display_name": "Alice",
+                "avatar_storage_key": refreshed_key,
+                "username_changed_at": None,
+            }
+        )
+        return repo
+
+    @staticmethod
+    def _make_upload_file(content: bytes, content_type: str) -> MagicMock:
+        f = MagicMock()
+        f.read = AsyncMock(return_value=content)
+        f.content_type = content_type
+        return f
+
+    @pytest.mark.asyncio
+    async def test_rejects_unsupported_mime(self):
+        from app.api.users import upload_user_avatar
+
+        user_id = str(uuid4())
+        user_repo = self._make_user_repo(user_id, "alice")
+        image_repo = MagicMock()
+        mock_file = self._make_upload_file(b"\xff" * 64, "image/gif")
+
+        with pytest.raises(HTTPException) as exc:
+            await upload_user_avatar(
+                username="alice",
+                file=mock_file,
+                claims=self._make_claims(user_id),
+                user_repo=user_repo,
+                image_repo=image_repo,
+            )
+        assert exc.value.status_code == 400
+        image_repo.upload.assert_not_called()
+        user_repo.update_profile.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rejects_empty_file(self):
+        from app.api.users import upload_user_avatar
+
+        user_id = str(uuid4())
+        user_repo = self._make_user_repo(user_id, "alice")
+        image_repo = MagicMock()
+        mock_file = self._make_upload_file(b"", "image/jpeg")
+
+        with pytest.raises(HTTPException) as exc:
+            await upload_user_avatar(
+                username="alice",
+                file=mock_file,
+                claims=self._make_claims(user_id),
+                user_repo=user_repo,
+                image_repo=image_repo,
+            )
+        assert exc.value.status_code == 400
+        image_repo.upload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_file(self):
+        from app.api.users import _AVATAR_MAX_BYTES, upload_user_avatar
+
+        user_id = str(uuid4())
+        user_repo = self._make_user_repo(user_id, "alice")
+        image_repo = MagicMock()
+        mock_file = self._make_upload_file(
+            b"\x00" * (_AVATAR_MAX_BYTES + 1), "image/jpeg"
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await upload_user_avatar(
+                username="alice",
+                file=mock_file,
+                claims=self._make_claims(user_id),
+                user_repo=user_repo,
+                image_repo=image_repo,
+            )
+        assert exc.value.status_code == 413
+        image_repo.upload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cross_user_returns_404_without_touching_storage(self):
+        from app.api.users import upload_user_avatar
+
+        owner_id = str(uuid4())
+        attacker_id = str(uuid4())
+        user_repo = self._make_user_repo(owner_id, "alice")
+        image_repo = MagicMock()
+        mock_file = self._make_upload_file(b"\xff" * 128, "image/jpeg")
+
+        with pytest.raises(HTTPException) as exc:
+            await upload_user_avatar(
+                username="alice",
+                file=mock_file,
+                claims=self._make_claims(attacker_id),
+                user_repo=user_repo,
+                image_repo=image_repo,
+            )
+        assert exc.value.status_code == 404
+        image_repo.upload.assert_not_called()
+        user_repo.update_profile.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_happy_path_uploads_swaps_and_prunes_previous(self):
+        from app.api.users import upload_user_avatar
+
+        user_id = str(uuid4())
+        previous_key = f"avatars/{user_id}/oldfile.jpg"
+        user_repo = self._make_user_repo(
+            user_id,
+            "alice",
+            previous_key=previous_key,
+            refreshed_key=f"avatars/{user_id}/refreshed.png",
+        )
+        image_repo = MagicMock()
+        image_repo.upload = MagicMock()
+        image_repo.remove = MagicMock()
+        image_repo.build_avatar_signed_url = MagicMock(
+            return_value="https://signed.example.com/new.png"
+        )
+        mock_file = self._make_upload_file(b"\xff" * 1024, "image/png")
+
+        resp = await upload_user_avatar(
+            username="alice",
+            file=mock_file,
+            claims=self._make_claims(user_id),
+            user_repo=user_repo,
+            image_repo=image_repo,
+        )
+
+        # Upload called before the DB swap — new key under avatars/{user_id}/.
+        image_repo.upload.assert_called_once()
+        bucket, new_key, body, content_type = image_repo.upload.call_args[0]
+        assert bucket == "avatars"
+        assert new_key.startswith(f"avatars/{user_id}/")
+        assert new_key.endswith(".png")
+        assert body == b"\xff" * 1024
+        assert content_type == "image/png"
+
+        # DB row points at the freshly-uploaded key.
+        user_repo.update_profile.assert_called_once()
+        update_args = user_repo.update_profile.call_args[0]
+        assert update_args[0] == user_id
+        assert update_args[1]["avatar_storage_key"] == new_key
+
+        # Previous object removed best-effort after the DB pointer moved.
+        image_repo.remove.assert_called_once_with("avatars", [previous_key])
+
+        assert resp.avatar_url == "https://signed.example.com/new.png"
+
+    @pytest.mark.asyncio
+    async def test_first_avatar_does_not_call_remove(self):
+        """No previous avatar → skip the best-effort storage prune."""
+        from app.api.users import upload_user_avatar
+
+        user_id = str(uuid4())
+        user_repo = self._make_user_repo(
+            user_id,
+            "alice",
+            previous_key=None,
+            refreshed_key=f"avatars/{user_id}/first.jpg",
+        )
+        image_repo = MagicMock()
+        image_repo.upload = MagicMock()
+        image_repo.remove = MagicMock()
+        image_repo.build_avatar_signed_url = MagicMock(return_value="https://signed")
+        mock_file = self._make_upload_file(b"\xff" * 64, "image/jpeg")
+
+        await upload_user_avatar(
+            username="alice",
+            file=mock_file,
+            claims=self._make_claims(user_id),
+            user_repo=user_repo,
+            image_repo=image_repo,
+        )
+
+        image_repo.upload.assert_called_once()
+        image_repo.remove.assert_not_called()

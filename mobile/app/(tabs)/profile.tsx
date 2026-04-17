@@ -65,6 +65,7 @@ export default function ProfileScreen() {
     refresh,
     loadMoreGlowUps,
     updateProfile,
+    uploadAvatar,
     dismissErroredItem,
     reconcileWithJob,
   } = useProfile();
@@ -121,6 +122,14 @@ export default function ProfileScreen() {
       return success;
     },
     [profile, updateProfile, setAuthUsername],
+  );
+
+  const handleUploadAvatar = useCallback(
+    async (uri: string): Promise<boolean> => {
+      if (!profile) return false;
+      return uploadAvatar(profile.username, uri);
+    },
+    [profile, uploadAvatar],
   );
 
   const handleSignIn = useCallback(() => {
@@ -322,6 +331,7 @@ export default function ProfileScreen() {
         isUpdating={isUpdating}
         updateError={updateError}
         onSave={handleSaveProfile}
+        onUploadAvatar={handleUploadAvatar}
         onClose={handleCloseEditSheet}
       />
     </View>

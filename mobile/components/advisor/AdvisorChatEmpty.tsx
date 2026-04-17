@@ -42,17 +42,19 @@ export function AdvisorChatEmpty({
 }: AdvisorChatEmptyProps) {
   return (
     <View style={styles.container}>
-      <Heading
-        size="md"
-        display={false}
-        color="primary"
-        style={styles.title}
-      >
-        {ADVISOR_CHAT_EMPTY_TITLE}
-      </Heading>
-      <Body color="secondary" style={styles.body}>
-        {ADVISOR_CHAT_EMPTY_BODY}
-      </Body>
+      <View style={styles.textBlock}>
+        <Heading
+          size="md"
+          display={false}
+          color="primary"
+          style={styles.title}
+        >
+          {ADVISOR_CHAT_EMPTY_TITLE}
+        </Heading>
+        <Body color="secondary" style={styles.body}>
+          {ADVISOR_CHAT_EMPTY_BODY}
+        </Body>
+      </View>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -75,8 +77,19 @@ export function AdvisorChatEmpty({
 }
 
 const styles = StyleSheet.create({
+  /* flex:1 + center so the hero sits mid-viewport of the listArea
+     instead of pinned to the top. Horizontal padding stays off the
+     container so the chip ScrollView can extend edge-to-edge — the
+     last chip was being clipped by container padding when it spilled
+     past the viewport. */
   container: {
-    paddingTop: THEME.spacing.xxxl,
+    flex: 1,
+    justifyContent: "center",
+    gap: THEME.spacing.md,
+  },
+  /* Title + body get their own horizontal padding; the ScrollView
+     sibling below keeps full width for overflow scrolling. */
+  textBlock: {
     paddingHorizontal: THEME.spacing.xxl,
     gap: THEME.spacing.md,
   },
@@ -88,7 +101,7 @@ const styles = StyleSheet.create({
   },
   chipsRow: {
     paddingTop: THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.sm,
+    paddingHorizontal: THEME.spacing.xxl,
     gap: THEME.spacing.sm,
   },
 });
