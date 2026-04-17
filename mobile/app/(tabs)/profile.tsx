@@ -158,23 +158,20 @@ export default function ProfileScreen() {
     return (
       <View style={styles.emptyStateScreen}>
         <PageBackground overlayOpacity={0.85} />
-        <View style={styles.emptyStateContent}>
-          <EmptyState
-            icon="person-circle-outline"
-            title={title}
-            description={subtitle}
-            action={
-              caps.canSignIn
-                ? {
-                    label: "Sign In",
-                    onPress: handleSignIn,
-                    accessibilityLabel: "Sign in",
-                  }
-                : undefined
-            }
-            center={false}
-          />
-        </View>
+        <EmptyState
+          icon="person-circle-outline"
+          title={title}
+          description={subtitle}
+          action={
+            caps.canSignIn
+              ? {
+                  label: "Sign In",
+                  onPress: handleSignIn,
+                  accessibilityLabel: "Sign in",
+                }
+              : undefined
+          }
+        />
       </View>
     );
   }
@@ -184,7 +181,7 @@ export default function ProfileScreen() {
   // design (same primary-button shape as "Try Again" on error states).
   if (!authUsername) {
     return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
+      <View style={styles.emptyStateScreen}>
         <EmptyState
           icon="person-circle-outline"
           title="Complete your profile"
@@ -198,7 +195,6 @@ export default function ProfileScreen() {
                 }
               : undefined
           }
-          center={false}
         />
       </View>
     );
@@ -207,7 +203,7 @@ export default function ProfileScreen() {
   // Loading profile
   if (isLoading && !profile) {
     return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
+      <View style={styles.emptyStateLoading}>
         <ActivityIndicator size="large" color={theme.accent} />
         <Caption color="secondary" style={styles.loadingText}>
           Loading profile...
@@ -234,13 +230,12 @@ export default function ProfileScreen() {
           }
         : undefined;
     return (
-      <View style={[styles.centered, { paddingTop: insets.top }]}>
+      <View style={styles.emptyStateScreen}>
         <EmptyState
           icon="alert-circle-outline"
           title="Something went wrong"
           description={error}
           action={errorAction}
-          center={false}
         />
       </View>
     );
@@ -289,26 +284,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.bg,
   },
-  centered: {
-    flex: 1,
-    backgroundColor: THEME.colors.bg,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: THEME.spacing.xxl,
-    paddingBottom: TAB_BAR_HEIGHT,
-  },
-  /* Guest/anon empty-state — tab header owns top safe area; we just reserve
-     room for the floating tab bar and center content in what's left. */
+  /* Shared wrapper for every non-populated Profile state (signed-out,
+     username-missing, error). EmptyState (center={true}) does the
+     centering; the wrapper just bounds the empty region to the screen
+     minus the floating tab bar, matching the Feed / Advisor rhythm. */
   emptyStateScreen: {
     flex: 1,
     backgroundColor: THEME.colors.bg,
+    paddingBottom: TAB_BAR_HEIGHT,
   },
-  emptyStateContent: {
+  /* Loading variant renders an ActivityIndicator + caption pair instead
+     of EmptyState, so it does its own centering here. */
+  emptyStateLoading: {
     flex: 1,
+    backgroundColor: THEME.colors.bg,
     alignItems: "center",
     justifyContent: "center",
     paddingBottom: TAB_BAR_HEIGHT,
-    gap: THEME.spacing.md,
   },
   loadingText: {
     marginTop: THEME.spacing.md,

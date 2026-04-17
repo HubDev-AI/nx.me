@@ -18,6 +18,7 @@ import Animated, {
 import { THEME } from "../../constants/theme";
 import { PROFILE_CONFIG } from "../../constants/config";
 import { useTheme } from "../../lib/theme-context";
+import { TAB_BAR_HEIGHT } from "../../app/(tabs)/_layout";
 import { EmptyState } from "../ui/EmptyState";
 import type { GlowUpItem } from "./types";
 
@@ -92,6 +93,23 @@ export function GlowUpGrid({
     );
   }, [isLoadingMore, theme.accent]);
 
+  // Empty-state goes through ListEmptyComponent with contentContainerStyle
+  // flexGrow:1 so the EmptyState primitive (flex:1 centering when
+  // `center`) stretches across the region BELOW the ProfileHeader
+  // (ListHeaderComponent). This matches the Feed tab's pattern and
+  // keeps the title at the same vertical rhythm as the advisor tabs
+  // without needing any per-screen padding bias.
+  const renderEmpty = useCallback(
+    () => (
+      <EmptyState
+        icon="sparkles-outline"
+        title="Your glow-ups will appear here"
+        description="Create your first transformation to get started"
+      />
+    ),
+    [],
+  );
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -108,6 +126,7 @@ export function GlowUpGrid({
         onEndReachedThreshold={0.5}
         ListHeaderComponent={ListHeaderComponent}
         ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
         scrollEnabled={true}
         refreshControl={
@@ -121,30 +140,6 @@ export function GlowUpGrid({
           ) : undefined
         }
       />
-      {/*
-       * Empty state — rendered as an absolute-positioned overlay instead
-       * of `ListEmptyComponent` so it floats centered in the available
-       * space below the ProfileHeader (matches the AdvisorEmptyOverlay
-       * pattern used across the advisor surfaces). `pointerEvents="none"`
-       * forwards every tap to the FlatList underneath so pull-to-refresh
-       * and ProfileHeader's expand-chevron stay live while the overlay
-       * is visible.
-       */}
-      {items.length === 0 && (
-        <View
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        >
-          <View style={styles.emptyOverlay}>
-            <EmptyState
-              icon="sparkles-outline"
-              title="Your glow-ups will appear here"
-              description="Create your first transformation to get started"
-              center={false}
-            />
-          </View>
-        </View>
-      )}
     </View>
   );
 }
@@ -206,8 +201,14 @@ const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowU
 
 const styles = StyleSheet.create({
   gridContent: {
+    // flexGrow:1 lets ListEmptyComponent (EmptyState with default
+    // center={true}) stretch across the space BELOW ProfileHeader
+    // so the empty-state title lands at the vertical centre of that
+    // region — matches the advisor tabs via the shared EmptyState
+    // primitive instead of a per-screen padding hack.
+    flexGrow: 1,
     paddingTop: THEME.spacing.sm,
-    paddingBottom: 90,
+    paddingBottom: TAB_BAR_HEIGHT,
   },
   row: {
     gap: PROFILE_CONFIG.GRID_GAP,
@@ -245,16 +246,5 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-  },
-  emptyOverlay: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: THEME.spacing.xxxl,
-    // Biased toward the visual center of the viewport rather than the
-    // geometric center of the overlay; compensates for the ProfileHeader
-    // that sits above and the floating tab bar that sits below, which
-    // would otherwise pull the content off-center.
-    paddingBottom: THEME.spacing.xxxl * 2,
   },
 });
