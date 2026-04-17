@@ -133,32 +133,63 @@ export function EditProfileSheet({
     [slideAnim, scrimAnim],
   );
 
-  // Debounced username availability check
+  // Debounced username validation + availability check.
+  //
+  // Validation is deferred — the old flow marked the field invalid
+  // synchronously on every keystroke, so backspacing an existing name
+  // to 2 chars flashed red before the user could finish editing. Now:
+  //   1. Any change → enter "checking" state, clear error + availability.
+  //      Spinner in `usernameStatus` shows while the user types.
+  //   2. After AVAILABILITY_CHECK_DEBOUNCE_MS of quiet, run the local
+  //      format/length check. If it fails, surface the error.
+  //   3. Only if the format check passes do we hit the server.
+  //
+  // Net: partial values never land on the wire (matches the backend's
+  // min_length=3 rule in app/api/users.py) and the red error only
+  // appears once the user has clearly stopped typing a too-short name.
   useEffect(() => {
-    if (newUsername === profile.username) {
+    // Users who've never picked a username have profile.username === null.
+    // Normalize both sides so the unchanged-no-op branch catches the
+    // initial render (newUsername initialized to "") and avoids flashing
+    // the format error on mount before any typing.
+    const currentUsername = profile.username ?? "";
+    if (newUsername === currentUsername) {
       setUsernameAvailable(null);
       setUsernameError(null);
-      return;
-    }
-
-    if (
-      newUsername.length < AUTH_VALIDATION.USERNAME_MIN_LENGTH ||
-      newUsername.length > AUTH_VALIDATION.USERNAME_MAX_LENGTH ||
-      !AUTH_VALIDATION.USERNAME_PATTERN.test(newUsername)
-    ) {
-      setUsernameAvailable(false);
-      setUsernameError(
-        "3-30 chars, starts with letter, letters/numbers/underscores only",
-      );
+      setUsernameChecking(false);
       return;
     }
 
     setUsernameChecking(true);
+    setUsernameAvailable(null);
+    setUsernameError(null);
+
+    // Abort controller so a rapid-keystroke sequence cannot let an
+    // in-flight stale response overwrite state that has since moved on
+    // to the newer input. Aborting the fetch ALSO skips the setters via
+    // the AbortError branch below.
+    const controller = new AbortController();
     const timeout = setTimeout(async () => {
+      if (controller.signal.aborted) return;
+      if (
+        newUsername.length < AUTH_VALIDATION.USERNAME_MIN_LENGTH ||
+        newUsername.length > AUTH_VALIDATION.USERNAME_MAX_LENGTH ||
+        !AUTH_VALIDATION.USERNAME_PATTERN.test(newUsername)
+      ) {
+        setUsernameAvailable(false);
+        setUsernameError(
+          `${AUTH_VALIDATION.USERNAME_MIN_LENGTH}-${AUTH_VALIDATION.USERNAME_MAX_LENGTH} chars, starts with letter, letters/numbers/underscores only`,
+        );
+        setUsernameChecking(false);
+        return;
+      }
+
       try {
         const resp = await apiFetch<{ available: boolean; reason?: string }>(
           `/v1/users/check-username?username=${encodeURIComponent(newUsername)}`,
+          { signal: controller.signal },
         );
+        if (controller.signal.aborted) return;
         setUsernameAvailable(resp.available);
         setUsernameError(
           resp.available
@@ -167,15 +198,20 @@ export function EditProfileSheet({
               ? "Username is reserved"
               : "Username is taken",
         );
-      } catch {
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof Error && err.name === "AbortError") return;
         setUsernameError(null);
         setUsernameAvailable(null);
       } finally {
-        setUsernameChecking(false);
+        if (!controller.signal.aborted) setUsernameChecking(false);
       }
     }, AVAILABILITY_CHECK_DEBOUNCE_MS);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
   }, [newUsername, profile.username]);
 
   // Computed change tracking

@@ -180,11 +180,18 @@ export function ResultActions({
     onShare();
   }, [onShare]);
 
+  // "Keep on profile" framing — the endpoint persists the result to the
+  // user's profile (indefinite retention). The old "Save" label read
+  // as "save to phone gallery"; Share handles that path separately.
   const saveLabel =
-    saveState === "saved" ? "Saved" : saveState === "saving" ? "Saving…" : "Save";
+    saveState === "saved"
+      ? "Kept on profile"
+      : saveState === "saving"
+        ? "Keeping…"
+        : "Keep on profile";
 
   const saveIcon: React.ComponentProps<typeof Ionicons>["name"] =
-    saveState === "saved" ? "checkmark-circle" : "download-outline";
+    saveState === "saved" ? "checkmark-circle" : "bookmark-outline";
 
   return (
     <View style={styles.container}>
