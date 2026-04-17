@@ -7,7 +7,6 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRouter } from "expo-router";
 
 import { THEME } from "../../constants/theme";
@@ -43,7 +42,6 @@ const ERRORED_STATUSES = new Set<string>(["failed", "cancelled"]);
  * and edit profile sheet.
  */
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
   const toggleMenuRef = useRef<() => void>(() => {});
@@ -295,11 +293,12 @@ export default function ProfileScreen() {
       profile={profile}
       onEditProfile={handleEditProfile}
       showStats={caps.canSeeFeed}
+      showShareProfile={caps.canShareProfile}
     />
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <PageBackground overlayOpacity={0.85} />
       {/* Radial menu — button is in headerRight, menu renders here */}
       {/* Single FlatList: profile header + glow-up grid -- no nested ScrollView */}

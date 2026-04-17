@@ -143,7 +143,25 @@ describe("useCapabilities", () => {
       expect(caps.canReact).toBe(social);
       expect(caps.canUseAdvisor).toBe(advisor);
       expect(caps.canShareGlowup).toBe(share);
+      expect(caps.canShareProfile).toBe(social);
       expect(caps.canSeeOnboarding).toBe(onboarding);
+    },
+  );
+
+  // ---------- Share profile: keyed to social_enabled only ----------
+
+  it.each([
+    { mode: "user" as const, social: true, expected: true },
+    { mode: "user" as const, social: false, expected: false },
+    { mode: "guest" as const, social: true, expected: true },
+    { mode: "guest" as const, social: false, expected: false },
+    { mode: "anon" as const, social: true, expected: true },
+    { mode: "anon" as const, social: false, expected: false },
+  ])(
+    "canShareProfile tracks social_enabled regardless of session (mode=$mode, social=$social)",
+    ({ mode, social, expected }) => {
+      setInputs(mode, { social_enabled: social });
+      expect(render().canShareProfile).toBe(expected);
     },
   );
 
