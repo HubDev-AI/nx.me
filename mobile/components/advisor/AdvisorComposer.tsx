@@ -50,13 +50,6 @@ export interface AdvisorComposerProps {
    * the floating tab bar; memories passes nothing.
    */
   bottomPadding?: number;
-  /**
-   * When true, the bar renders with a top hairline border and glass
-   * backdrop so scrolled content fades behind it. Chat wants this
-   * (messages scroll under it); memories doesn't (form sits above the
-   * list with no scrolling content above the composer).
-   */
-  separator?: boolean;
 }
 
 export function AdvisorComposer({
@@ -70,7 +63,6 @@ export function AdvisorComposer({
   accessibilityLabel,
   submitAccessibilityLabel,
   bottomPadding,
-  separator = false,
 }: AdvisorComposerProps) {
   const { theme } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
@@ -83,7 +75,6 @@ export function AdvisorComposer({
     <View
       style={[
         styles.bar,
-        separator && styles.barSeparator,
         bottomPadding !== undefined && { paddingBottom: bottomPadding },
       ]}
     >
@@ -154,11 +145,6 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.sm,
     gap: THEME.spacing.sm,
     backgroundColor: "transparent",
-  },
-  barSeparator: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: THEME.colors.glassBorder,
-    backgroundColor: THEME.colors.glass,
   },
   input: {
     flex: 1,

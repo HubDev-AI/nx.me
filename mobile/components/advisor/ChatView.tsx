@@ -396,7 +396,6 @@ export function ChatView() {
         accessibilityLabel="Message input"
         submitAccessibilityLabel="Send message"
         bottomPadding={inputBottomPadding}
-        separator
       />
 
       {/* Paywall modal — shown on 402 */}
