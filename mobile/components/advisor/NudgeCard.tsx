@@ -16,7 +16,13 @@ import type { Nudge } from "../../lib/advisor";
 
 interface NudgeCardProps {
   nudge: Nudge;
-  onMarkRead: (id: string) => void;
+  /**
+   * Called on every tap. The parent owns side-effects: marking the
+   * nudge as read, opening a detail modal, navigating, etc. Kept as
+   * a single callback so the card stays presentational — it never
+   * decides whether a tap is meaningful or not.
+   */
+  onPress: (nudge: Nudge) => void;
 }
 
 function nudgeLabel(trigger: string): string {
@@ -44,14 +50,10 @@ function nudgeIcon(trigger: string): React.ComponentProps<typeof Ionicons>["name
   }
 }
 
-function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
+function NudgeCardInner({ nudge, onPress }: NudgeCardProps) {
   const { theme } = useTheme();
   const isRead = nudge.read_at !== null;
-  const handlePress = useCallback(() => {
-    if (!isRead) {
-      onMarkRead(nudge.id);
-    }
-  }, [nudge.id, isRead, onMarkRead]);
+  const handlePress = useCallback(() => onPress(nudge), [nudge, onPress]);
 
   return (
     <Pressable
@@ -63,7 +65,7 @@ function NudgeCardInner({ nudge, onMarkRead }: NudgeCardProps) {
       ]}
       accessibilityLabel={`${isRead ? "" : "Unread "}nudge: ${nudgeLabel(nudge.trigger)}`}
       accessibilityRole="button"
-      accessibilityHint={isRead ? undefined : "Tap to mark as read"}
+      accessibilityHint="Tap to open the full nudge"
     >
       {/* Icon */}
       <View style={[styles.iconContainer, { backgroundColor: theme.accentMuted }]}>

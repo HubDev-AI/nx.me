@@ -20,6 +20,7 @@ extracted concerns.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -33,6 +34,7 @@ from app.advisor.nudge_eligibility import (
     find_weekly_checkin_eligible,
 )
 from app.advisor.persona import SOUL_MD
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 from app.advisor.nudge_policy import (
     MAX_TOKENS_NUDGE,
@@ -114,6 +116,29 @@ async def generate_nudge(
     # invents plausible-sounding details (e.g. "your face shape") the
     # user never actually saw.
     if trigger == TRIGGER_POST_ANALYSIS:
+        # Cooldown — four analyses in 30 min produced four near-
+        # duplicate Sonnet nudges ("Oval face shapes are versatile..."
+        # ×4). Skip generation if this user already received a
+        # post_analysis nudge inside the cooldown window. The last
+        # nudge's insight is almost certainly still relevant.
+        cooldown = settings.ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES
+        cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(minutes=cooldown)
+        ).isoformat()
+        recent = await run_sync(
+            advisor_repo.find_recent_nudges,
+            user_id,
+            TRIGGER_POST_ANALYSIS,
+            cutoff,
+        )
+        if recent:
+            logger.info(
+                "Post-analysis nudge skipped — %d-min cooldown active for user %s",
+                cooldown,
+                user_id,
+            )
+            return
+
         insight_data = insight or _load_latest_insight_content(advisor_repo, user_id)
         if insight_data is None:
             logger.info(
