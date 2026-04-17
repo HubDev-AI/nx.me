@@ -56,6 +56,13 @@ const GLOW_RING_WIDTH = 2;
 /** Extra touch area around the handle so the divider is easy to grab. */
 const HANDLE_HIT_PADDING = 24;
 
+/**
+ * Minimum horizontal-dominance (in px) a move must clear before the
+ * slider claims the gesture. Below this, the parent ScrollView keeps
+ * the drag — so vertical scrolls pass through cleanly.
+ */
+const DIRECTION_THRESHOLD_PX = 10;
+
 /** Spring config for entrance + tap-to-jump animations. */
 const TOUCH_SPRING = {
   damping: 18,
@@ -78,7 +85,7 @@ interface BeforeAfterSliderProps {
   afterUrl: string;
   /** e.g. "Glow Up" for this feature, "Clean Girl · Dewy" for Makeup. */
   rightLabel: string;
-  /** Default split position (0–1). Default 0.5. */
+  /** Default split position (0–1). Default 1.0 — glow-up visible, user drags left to reveal before. */
   initialSplit?: number;
   /** Called by VoiceOver accessibility action (toggles between 0.25 and 0.75). */
   onAccessibilityToggle?: () => void;
@@ -92,7 +99,7 @@ export default function BeforeAfterSlider({
   beforeUrl,
   afterUrl,
   rightLabel,
-  initialSplit = 0.5,
+  initialSplit = 1.0,
   onAccessibilityToggle,
 }: BeforeAfterSliderProps) {
   const { theme } = useTheme();
@@ -129,11 +136,18 @@ export default function BeforeAfterSlider({
   }, [splitPosition, onAccessibilityToggle]);
 
   // PanResponder on the whole container: tap-to-jump + drag.
+  // `onMoveShouldSetPanResponder` only claims the gesture when it reads
+  // as horizontal (|dx| dominates |dy|). Vertical drags pass through to
+  // the parent ScrollView so the page still scrolls over the slider.
+  // `onPanResponderTerminationRequest` returns true so ScrollView can
+  // reclaim mid-gesture if the user flips direction.
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_evt, gs) =>
+          Math.abs(gs.dx) > Math.abs(gs.dy) + DIRECTION_THRESHOLD_PX,
+        onPanResponderTerminationRequest: () => true,
         onPanResponderGrant: (evt) => {
           const tapX = evt.nativeEvent.locationX;
           const tapRatio = clamp(tapX / sliderWidth, 0, 1);
@@ -175,6 +189,18 @@ export default function BeforeAfterSlider({
     ],
   }));
 
+  // Label pills sit as siblings of the clip (not children of it) so each
+  // label's position is anchored to full sliderWidth. Visibility is a
+  // monotonic fade of splitPosition — BEFORE hides as the glow-up fills
+  // the frame, GLOW UP appears as the glow-up reveals. This prevents
+  // both pills rendering on the same visible half of the image.
+  const beforeLabelStyle = useAnimatedStyle(() => ({
+    opacity: 1 - splitPosition.value,
+  }));
+  const afterLabelStyle = useAnimatedStyle(() => ({
+    opacity: splitPosition.value,
+  }));
+
   return (
     <View
       style={[styles.container, { width: sliderWidth, height: sliderHeight }]}
@@ -209,15 +235,6 @@ export default function BeforeAfterSlider({
           resizeMode="cover"
           accessibilityLabel={`${rightLabel} result photo`}
         />
-        <View
-          style={[
-            styles.labelBadge,
-            styles.labelBadgeRight,
-            { backgroundColor: theme.accent + "CC" },
-          ]}
-        >
-          <Label color={THEME.colors.white}>{rightLabel.toUpperCase()}</Label>
-        </View>
       </Animated.View>
 
       <Animated.View
@@ -248,9 +265,25 @@ export default function BeforeAfterSlider({
         </View>
       </Animated.View>
 
-      <View style={[styles.labelBadge, styles.labelBadgeLeft]}>
+      {/* Labels live outside the clip so their horizontal position is
+          stable; opacity reflects which side of the image is visible. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.labelBadge, styles.labelBadgeLeft, beforeLabelStyle]}
+      >
         <Label color="primary">BEFORE</Label>
-      </View>
+      </Animated.View>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.labelBadge,
+          styles.labelBadgeRight,
+          { backgroundColor: theme.accent + "CC" },
+          afterLabelStyle,
+        ]}
+      >
+        <Label color={THEME.colors.white}>{rightLabel.toUpperCase()}</Label>
+      </Animated.View>
     </View>
   );
 }
