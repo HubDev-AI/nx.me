@@ -27,6 +27,7 @@ import {
   Platform,
   StyleSheet,
   PanResponder,
+  Keyboard,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
@@ -98,6 +99,16 @@ function memoryTypeIcon(
 interface SwipeableRowProps {
   memory: UserMemory;
   onDelete: (id: string) => void;
+  /**
+   * Whether THIS row is the currently-open one (trash button revealed).
+   * MemoryList tracks the single open id; flipping this to false
+   * triggers the row to spring back to the resting position so taps on
+   * other rows / chrome / a sibling row's swipe close the open row
+   * automatically.
+   */
+  isOpen: boolean;
+  /** Notify parent that this row opened (id) or closed (null). */
+  onOpenChange: (id: string | null) => void;
 }
 
 /**
@@ -105,11 +116,44 @@ interface SwipeableRowProps {
  * the only visual cue for the row's type — the textual label was
  * dropped because each tab's content is uniform, so the label was
  * redundant chrome.
+ *
+ * Open state is lifted to ``MemoryList`` so only one row can be open
+ * at a time and taps anywhere else (sibling row, subtabs, list
+ * background) close it.
  */
-function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
+function SwipeableMemoryRow({
+  memory,
+  onDelete,
+  isOpen,
+  onOpenChange,
+}: SwipeableRowProps) {
   const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
 
+  // When the parent flips isOpen to false (another row opened, or a
+  // tap-outside fired), spring the trash button back behind the card.
+  // Skipping the initial mount keeps the animation from firing on the
+  // very first render of every row.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (!isOpen) {
+      Animated.spring(translateX, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: 40,
+        friction: 7,
+      }).start();
+    }
+  }, [isOpen, translateX]);
+
+  // PanResponder is recreated when ``onOpenChange`` identity changes
+  // (it never does for setState's setter, but the closure is captured
+  // here so the latest value is always used). The release handler
+  // notifies the parent so the open id state updates atomically.
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) => {
@@ -129,12 +173,14 @@ function SwipeableMemoryRow({ memory, onDelete }: SwipeableRowProps) {
       },
       onPanResponderRelease: (_, gesture) => {
         const dx = Number.isFinite(gesture.dx) ? gesture.dx : 0;
+        const willOpen = dx < SWIPE_DELETE_THRESHOLD;
         Animated.spring(translateX, {
-          toValue: dx < SWIPE_DELETE_THRESHOLD ? -DELETE_BUTTON_WIDTH : 0,
+          toValue: willOpen ? -DELETE_BUTTON_WIDTH : 0,
           useNativeDriver: true,
           tension: 40,
           friction: 7,
         }).start();
+        onOpenChange(willOpen ? memory.id : null);
       },
     }),
   ).current;
@@ -457,6 +503,10 @@ export function MemoryList() {
   });
   const [initialLoading, setInitialLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
+  // Single open swipe row at a time. Lifted from SwipeableMemoryRow so
+  // tapping any other row, the subtabs chips, the empty list area, or
+  // swiping a different row closes the previously-open one.
+  const [openMemoryId, setOpenMemoryId] = useState<string | null>(null);
 
   // Monotonic request counter + activeTab ref. A fetch that resolves
   // after a later fetch, or after the tab was switched, is discarded
@@ -544,6 +594,11 @@ export function MemoryList() {
       if (tab === activeTab) return;
       setActiveTab(tab);
       activeTabRef.current = tab;
+      // Close any open swipe row before switching — otherwise the
+      // open id from the previous tab would either flash on a row in
+      // the new tab that happens to share the id (impossible today,
+      // but cheap insurance) or hold a stale id forever.
+      setOpenMemoryId(null);
       void loadTab(tab);
     },
     [activeTab, loadTab],
@@ -599,11 +654,12 @@ export function MemoryList() {
       "Delete Memory",
       "Are you sure you want to delete this memory? Ada will no longer remember this.",
       [
-        { text: "Cancel", style: "cancel" },
+        { text: "Cancel", style: "cancel", onPress: () => setOpenMemoryId(null) },
         {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
+            setOpenMemoryId(null);
             const deletedItem = memoriesRef.current.find((m) => m.id === memoryId);
             setMemories((prev) => prev.filter((m) => m.id !== memoryId));
             try {
@@ -633,9 +689,14 @@ export function MemoryList() {
 
   const renderItem = useCallback(
     ({ item }: { item: UserMemory }) => (
-      <SwipeableMemoryRow memory={item} onDelete={handleDelete} />
+      <SwipeableMemoryRow
+        memory={item}
+        onDelete={handleDelete}
+        isOpen={openMemoryId === item.id}
+        onOpenChange={setOpenMemoryId}
+      />
     ),
-    [handleDelete],
+    [handleDelete, openMemoryId],
   );
 
   const copy = TAB_COPY[activeTab];
@@ -703,8 +764,23 @@ export function MemoryList() {
           this wrapper the overlay would absoluteFill the shorter listArea
           (full minus subtabs minus composer) and the hero would float
           higher than the chat / nudges heroes. The subtabs row stays
-          interactive — overlays use pointerEvents="box-none". */}
-      <View style={styles.contentArea}>
+          interactive — overlays use pointerEvents="box-none".
+
+          The Pressable wrapper closes any open swipe row on a stray tap
+          (on the card body, on the empty space below the last row, on
+          the subtabs row's gaps). Pressable.onPress fires only on
+          completed taps — scrolling the list and swiping a row both
+          claim the gesture earlier and don't trigger it. Chip taps and
+          trash-button taps also don't bubble (their own Pressables
+          claim first). The keyboard dismiss is opportunistic for the
+          composer's focus state. */}
+      <Pressable
+        style={styles.contentArea}
+        onPress={() => {
+          if (openMemoryId !== null) setOpenMemoryId(null);
+          Keyboard.dismiss();
+        }}
+      >
         {subTabs}
 
         {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
@@ -718,6 +794,9 @@ export function MemoryList() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
             ItemSeparatorComponent={MemorySeparator}
+            onScrollBeginDrag={() => {
+              if (openMemoryId !== null) setOpenMemoryId(null);
+            }}
           />
 
           {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
@@ -752,7 +831,7 @@ export function MemoryList() {
             description={copy.emptyDescription}
           />
         )}
-      </View>
+      </Pressable>
 
       {composer}
     </KeyboardAvoidingView>
