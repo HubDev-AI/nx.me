@@ -230,6 +230,33 @@ export const ADVISOR_ENDPOINTS = {
   MEMORY_DELETE: (id: string) => `/v1/memories/${id}`,
 } as const;
 
+/**
+ * Advisor Chat scoped seed-state copy. Replaces the generic
+ * "Start a conversation / Ask Ada for style advice" overlay shown on
+ * the Chat tab so first-time users see what Ada actually does. Other
+ * advisor tabs (Nudges, Memories) still use AdvisorEmptyOverlay.
+ *
+ * The body's italic trailing clause is non-negotiable: the chip list
+ * shouldn't read as exhaustive (Ada handles anything). If SOUL.md
+ * persona lanes change, update this text and the chips below in lockstep
+ * — see ADVISOR_PERSONA_NAME and app/advisor/SOUL.md.
+ */
+export const ADVISOR_CHAT_EMPTY_TITLE = "Hi, I'm Ada.";
+export const ADVISOR_CHAT_EMPTY_BODY =
+  "I can help with hair, beard, fit, skincare, or grooming — or ask me anything else you're thinking about.";
+
+/**
+ * Starter chips for the Chat empty state. Tap → handleSend(chipText)
+ * fires the LLM call immediately (no extra Send tap). Keep these
+ * short, conversational, and aligned with SOUL.md's lanes.
+ */
+export const ADVISOR_CHAT_STARTER_CHIPS: readonly string[] = [
+  "What hairstyle would suit me?",
+  "Should I try a beard?",
+  "How do I fix the fit of my clothes?",
+  "What should I focus on next?",
+] as const;
+
 /** Advisor configuration */
 export const ADVISOR_CONFIG = {
   /** Number of nudges per page */
