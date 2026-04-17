@@ -121,7 +121,7 @@ def _schema_contains_forbidden_key(schema: dict[str, Any]) -> str | None:
 
 
 def _filter_inputs(
-    schema: dict[str, Any], raw_inputs: dict[str, Any] | None
+    schema: dict[str, Any], raw_inputs: Any
 ) -> tuple[dict[str, Any], list[str]]:
     """Return ``(accepted_inputs, stripped_keys)`` for a tool's raw LLM args.
 
@@ -130,8 +130,12 @@ def _filter_inputs(
     record. This is layer 2 of the cross-user lockdown — it runs BEFORE
     the handler even sees the input dict, so an LLM-hallucinated
     ``user_id`` is physically incapable of reaching any repository call.
+
+    Non-dict inputs (``None``, a list, a bare string the model sometimes
+    emits instead of an object) are treated as empty — the registry
+    MUST never pass garbage through to a handler's ``**kwargs`` splat.
     """
-    if raw_inputs is None:
+    if not isinstance(raw_inputs, dict):
         return {}, []
     allowed_keys = set(_schema_properties(schema).keys())
     accepted: dict[str, Any] = {}

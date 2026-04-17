@@ -277,6 +277,19 @@ class AnthropicAdapter:
                 b for b in assistant_content if b.get("type") == "tool_use"
             ]
 
+            # If stop_reason said tool_use but no actual tool_use blocks
+            # survived (e.g. thinking-only content, or an SDK quirk),
+            # submitting an empty user content array is a hard Anthropic
+            # validation error. Treat this round as final and return the
+            # text we already have — the assistant turn is already
+            # recorded in ``messages`` for cache continuity.
+            if not tool_use_blocks:
+                return LLMResponse(
+                    content=_extract_text_from_response(response),
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                )
+
             tool_results: list[dict[str, Any]] = []
             if rounds + 1 >= max_rounds:
                 # Cap will be hit by the NEXT call's results; if this
@@ -314,7 +327,10 @@ class AnthropicAdapter:
             # Normal round: dispatch every tool_use and append results.
             for block in tool_use_blocks:
                 name = str(block.get("name") or "")
-                raw_inputs = block.get("input") or {}
+                raw_input_candidate = block.get("input")
+                raw_inputs = (
+                    raw_input_candidate if isinstance(raw_input_candidate, dict) else {}
+                )
                 tool_use_id = block.get("id", "")
                 result_content = await tool_registry.dispatch(name, raw_inputs)
                 tool_results.append(
