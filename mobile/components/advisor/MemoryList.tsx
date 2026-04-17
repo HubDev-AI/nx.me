@@ -2,7 +2,7 @@
  * MemoryList — user memories with add and swipe-to-delete.
  *
  * Mirrors ChatView's layout: list fills the tab, composer sits at the
- * bottom of the screen, AdvisorComposer's KeyboardStickyView lifts it with
+ * bottom of the screen, KeyboardAvoidingView lifts the composer with
  * the keyboard, and the floating tab-bar is cleared via bottomPadding.
  * The Goals / Notes subtabs sit at the top as a list filter — each tab
  * has its own draft, error, and isAdding state so submitting on one
@@ -24,9 +24,11 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
+  Platform,
   StyleSheet,
   PanResponder,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -426,7 +428,12 @@ interface TabState {
 const INITIAL_TAB_STATE: TabState = { draft: "", error: null, isAdding: false };
 
 export function MemoryList() {
-  const { inputBottomPadding } = useAdvisorComposerLayout();
+  const {
+    keyboardVerticalOffset,
+    inputBottomPadding,
+    screenAnchorRef,
+    onScreenAnchorLayout,
+  } = useAdvisorComposerLayout();
 
   // -------------------------------------------------------------------------
   // State — see plan §High-Level Technical Design
@@ -647,16 +654,39 @@ export function MemoryList() {
 
   if (initialLoading) {
     return (
-      <View style={styles.container}>
-        {subTabs}
-        <MemorySkeleton />
-        {composer}
+      <View
+        ref={screenAnchorRef}
+        onLayout={onScreenAnchorLayout}
+        style={styles.container}
+        collapsable={false}
+      >
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior="padding"
+          keyboardVerticalOffset={keyboardVerticalOffset}
+          enabled={Platform.OS !== "web"}
+        >
+          {subTabs}
+          <MemorySkeleton />
+          {composer}
+        </KeyboardAvoidingView>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      ref={screenAnchorRef}
+      onLayout={onScreenAnchorLayout}
+      style={styles.container}
+      collapsable={false}
+    >
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior="padding"
+      keyboardVerticalOffset={keyboardVerticalOffset}
+      enabled={Platform.OS !== "web"}
+    >
       {subTabs}
 
       {/* accessibilityLiveRegion is Android-only; iOS VoiceOver ignores
@@ -706,6 +736,7 @@ export function MemoryList() {
       </View>
 
       {composer}
+    </KeyboardAvoidingView>
     </View>
   );
 }
