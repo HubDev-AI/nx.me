@@ -11,12 +11,12 @@ import {
   FlatList,
   Pressable,
   Text,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   StyleSheet,
   Dimensions,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -305,8 +305,9 @@ export function ChatView() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"}
+      behavior="translate-with-padding"
       keyboardVerticalOffset={keyboardVerticalOffset}
+      enabled={Platform.OS !== "web"}
     >
       {/* List + empty-state region. Wrapping the FlatList in a flex:1 view
           bounds the AdvisorEmptyOverlay to the empty space ABOVE the

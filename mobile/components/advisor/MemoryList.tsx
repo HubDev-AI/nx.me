@@ -24,11 +24,11 @@ import {
   Alert,
   Animated,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   PanResponder,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
@@ -652,10 +652,9 @@ export function MemoryList() {
     return (
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={
-          Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"
-        }
+        behavior="translate-with-padding"
         keyboardVerticalOffset={keyboardVerticalOffset}
+        enabled={Platform.OS !== "web"}
       >
         {subTabs}
         <MemorySkeleton />
@@ -667,10 +666,9 @@ export function MemoryList() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={
-        Platform.OS === "ios" ? "padding" : Platform.OS === "web" ? undefined : "height"
-      }
+      behavior="translate-with-padding"
       keyboardVerticalOffset={keyboardVerticalOffset}
+      enabled={Platform.OS !== "web"}
     >
       {subTabs}
 

@@ -8,6 +8,7 @@ import { StripeProvider } from "../lib/stripe-web-shim";
 import { QueryClientProvider } from "@tanstack/react-query";
 import NetInfo from "@react-native-community/netinfo";
 import * as Sentry from "@sentry/react-native";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 
@@ -325,29 +326,31 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <ThemeProvider>
-          <FeaturesProvider>
-            <AuthProvider initialMode={initialMode}>
-              <ConsentProvider>
-                <RadialMenuProvider>
-                  {StripeProvider ? (
-                    <StripeProvider
-                      publishableKey={STRIPE_PUBLISHABLE_KEY}
-                      urlScheme="https"
-                      merchantIdentifier={APPLE_MERCHANT_ID}
-                    >
-                      {inner}
-                    </StripeProvider>
-                  ) : (
-                    inner
-                  )}
-                </RadialMenuProvider>
-              </ConsentProvider>
-            </AuthProvider>
-          </FeaturesProvider>
-        </ThemeProvider>
-      </QueryClientProvider>
+      <KeyboardProvider>
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <FeaturesProvider>
+              <AuthProvider initialMode={initialMode}>
+                <ConsentProvider>
+                  <RadialMenuProvider>
+                    {StripeProvider ? (
+                      <StripeProvider
+                        publishableKey={STRIPE_PUBLISHABLE_KEY}
+                        urlScheme="https"
+                        merchantIdentifier={APPLE_MERCHANT_ID}
+                      >
+                        {inner}
+                      </StripeProvider>
+                    ) : (
+                      inner
+                    )}
+                  </RadialMenuProvider>
+                </ConsentProvider>
+              </AuthProvider>
+            </FeaturesProvider>
+          </ThemeProvider>
+        </QueryClientProvider>
+      </KeyboardProvider>
     </ErrorBoundary>
   );
 }
