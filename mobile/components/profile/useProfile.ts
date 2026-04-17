@@ -1,7 +1,12 @@
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { PROFILE_ENDPOINTS, PROFILE_CONFIG } from "../../constants/config";
+import {
+  addDismissedJobId,
+  getDismissedJobIdsSync,
+  loadDismissedJobIds,
+} from "../../lib/dismissed-jobs-store";
 import type {
   UserProfile,
   GlowUpItem,
@@ -9,6 +14,21 @@ import type {
   UpdateProfilePayload,
   UpdateProfileResponse,
 } from "./types";
+
+/**
+ * Filter out items the user has explicitly dismissed via long-press →
+ * "Remove from profile". Server still returns the row (audit trail);
+ * this is the client-side suppression layer.
+ */
+function filterDismissed(
+  entries: GlowUpItem[],
+  dismissed: ReadonlySet<string>,
+): GlowUpItem[] {
+  if (dismissed.size === 0) return entries;
+  return entries.filter(
+    (entry) => entry.job_id === null || !dismissed.has(entry.job_id),
+  );
+}
 
 interface UseProfileReturn {
   profile: UserProfile | null;
@@ -27,6 +47,11 @@ interface UseProfileReturn {
     username: string,
     payload: UpdateProfilePayload,
   ) => Promise<boolean>;
+  /**
+   * Remove an errored cell from the local grid + persist the dismissal
+   * to AsyncStorage. The next /history refetch will skip the row.
+   */
+  dismissErroredItem: (jobId: string) => void;
 }
 
 /**
@@ -51,6 +76,13 @@ export function useProfile(): UseProfileReturn {
 
   const glowUpCursorRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
+
+  // Hydrate the dismissed-set on mount so the very first /history
+  // response is filtered correctly. The store keeps a singleton in-memory
+  // mirror — repeated mounts hit cache after the first call.
+  useEffect(() => {
+    void loadDismissedJobIds();
+  }, []);
 
   const fetchProfile = useCallback(async (username: string) => {
     return apiFetch<UserProfile>(PROFILE_ENDPOINTS.PROFILE(username));
@@ -84,8 +116,9 @@ export function useProfile(): UseProfileReturn {
           fetchGlowUps(username, null),
         ]);
 
+        const dismissed = await loadDismissedJobIds();
         setProfile(profileData);
-        setGlowUps(historyData.entries);
+        setGlowUps(filterDismissed(historyData.entries, dismissed));
         glowUpCursorRef.current = historyData.next_cursor;
         setHasMoreGlowUps(historyData.has_more);
       } catch (err) {
@@ -111,8 +144,9 @@ export function useProfile(): UseProfileReturn {
           fetchGlowUps(username, null),
         ]);
 
+        const dismissed = await loadDismissedJobIds();
         setProfile(profileData);
-        setGlowUps(historyData.entries);
+        setGlowUps(filterDismissed(historyData.entries, dismissed));
         glowUpCursorRef.current = historyData.next_cursor;
         setHasMoreGlowUps(historyData.has_more);
       } catch (err) {
@@ -138,7 +172,11 @@ export function useProfile(): UseProfileReturn {
           username,
           glowUpCursorRef.current,
         );
-        setGlowUps((prev) => [...prev, ...response.entries]);
+        const dismissed = getDismissedJobIdsSync();
+        setGlowUps((prev) => [
+          ...prev,
+          ...filterDismissed(response.entries, dismissed),
+        ]);
         glowUpCursorRef.current = response.next_cursor;
         setHasMoreGlowUps(response.has_more);
       } catch {
@@ -150,6 +188,13 @@ export function useProfile(): UseProfileReturn {
     },
     [fetchGlowUps, hasMoreGlowUps],
   );
+
+  const dismissErroredItem = useCallback((jobId: string) => {
+    // Update the in-memory cache + persist; render flips on the next
+    // setGlowUps tick.
+    void addDismissedJobId(jobId);
+    setGlowUps((prev) => prev.filter((entry) => entry.job_id !== jobId));
+  }, []);
 
   const updateProfile = useCallback(
     async (
@@ -207,5 +252,6 @@ export function useProfile(): UseProfileReturn {
     refresh,
     loadMoreGlowUps,
     updateProfile,
+    dismissErroredItem,
   };
 }

@@ -28,6 +28,11 @@ interface GlowUpGridProps {
   hasMore: boolean;
   onLoadMore: () => void;
   onItemPress?: (item: GlowUpItem) => void;
+  /**
+   * Long-press handler — only called for items that should be
+   * dismissable (the parent decides which ones based on status).
+   */
+  onItemLongPress?: (item: GlowUpItem) => void;
   ListHeaderComponent?: React.ComponentType | React.ReactElement | null;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -44,6 +49,7 @@ export function GlowUpGrid({
   hasMore,
   onLoadMore,
   onItemPress,
+  onItemLongPress,
   ListHeaderComponent,
   refreshing = false,
   onRefresh,
@@ -68,13 +74,20 @@ export function GlowUpGrid({
         item={item}
         size={itemSize}
         onPress={onItemPress ? () => onItemPress(item) : undefined}
+        onLongPress={
+          onItemLongPress ? () => onItemLongPress(item) : undefined
+        }
       />
     ),
-    [itemSize, onItemPress],
+    [itemSize, onItemPress, onItemLongPress],
   );
 
+  // Prefer job_id when available so the optimistic-pending-row insert
+  // (U6) and the server's /history rehydrate row collapse to a single
+  // FlatList item — React reconciles them in place rather than rendering
+  // both. Legacy rows without a job_id fall back to analysis_id.
   const keyExtractor = useCallback(
-    (item: GlowUpItem) => item.analysis_id,
+    (item: GlowUpItem) => item.job_id ?? item.analysis_id,
     [],
   );
 
@@ -148,9 +161,15 @@ interface GlowUpCellProps {
   item: GlowUpItem;
   size: number;
   onPress?: () => void;
+  onLongPress?: () => void;
 }
 
-const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowUpCellProps) {
+const GlowUpCell = React.memo(function GlowUpCell({
+  item,
+  size,
+  onPress,
+  onLongPress,
+}: GlowUpCellProps) {
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -167,6 +186,7 @@ const GlowUpCell = React.memo(function GlowUpCell({ item, size, onPress }: GlowU
     <Animated.View style={[{ width: size, height: size }, pressStyle]}>
       <Pressable
         onPress={onPress}
+        onLongPress={onLongPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         style={[styles.cell, { width: size, height: size }]}
@@ -207,7 +227,11 @@ const styles = StyleSheet.create({
     // region — matches the advisor tabs via the shared EmptyState
     // primitive instead of a per-screen padding hack.
     flexGrow: 1,
-    paddingTop: THEME.spacing.sm,
+    // `lg` matches the horizontal padding the grid uses so the air
+    // gap between ProfileHeader and the first row reads as one rhythm
+    // unit, not a tight stack. `sm` was visually cramped on iPhone 15
+    // Pro — see plan U5 (decision 2).
+    paddingTop: THEME.spacing.lg,
     paddingBottom: TAB_BAR_HEIGHT,
   },
   row: {

@@ -366,6 +366,20 @@ export const RESULT_WAITING_BODY =
 export const RESULT_HARD_TIMEOUT_COPY =
   "We couldn't reach the result in time. Try again or check your profile.";
 
+/**
+ * AsyncStorage keys (kept centralized so a typo can't silently leak data
+ * into the wrong namespace).
+ */
+export const PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY =
+  "@nxme:dismissed_errored_jobs";
+
+/** Errored-cell dismiss action sheet copy. */
+export const DISMISS_ERRORED_JOB_TITLE = "Remove from profile?";
+export const DISMISS_ERRORED_JOB_BODY =
+  "Hides this glow-up from your grid on this device. The credit refund still stands.";
+export const DISMISS_ERRORED_JOB_REMOVE_LABEL = "Remove from profile";
+export const DISMISS_ERRORED_JOB_CANCEL_LABEL = "Cancel";
+
 /** Profile grid configuration */
 export const PROFILE_CONFIG = {
   /** Number of columns in the glow-up grid */
