@@ -89,13 +89,22 @@ describe("apiFetch", () => {
     auth.getStoredJwt.mockResolvedValue(null);
     guestSession.getStoredGuestToken.mockResolvedValue("stale-token");
     guestSession.getOrCreateGuestToken.mockResolvedValue("new-token");
+    // The 401 response is cloned in __DEV__ for error-body logging
+    // (see lib/api.ts:198). The mock must satisfy the Response.clone()
+    // shape so the dev branch doesn't TypeError; returning the same
+    // object back is sufficient because the cloned body is consumed
+    // exactly once via .text().
+    const stale401 = {
+      ok: false,
+      status: 401,
+      text: async () => "",
+      headers: new Headers(),
+      clone: function () {
+        return this;
+      },
+    };
     (global.fetch as jest.Mock)
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        text: async () => "",
-        headers: new Headers(),
-      })
+      .mockResolvedValueOnce(stale401)
       .mockResolvedValueOnce({
         ok: true,
         status: 200,

@@ -27,6 +27,14 @@ mobile/.env.*
 .serena/
 .hippo/
 
+# Cross-tool AI assistant configs dropped by code-review-graph install.
+# Each contributor configures their own AI tooling — only commit configs
+# the team actually uses (.claude/, .cursor/).
+.kiro/
+.windsurfrules
+.opencode.json
+GEMINI.md
+
 # Node
 node_modules/
 

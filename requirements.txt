@@ -10,6 +10,14 @@ python-multipart==0.0.22
 # Config
 pydantic-settings==2.9.1
 
+# Required by `pydantic.EmailStr` (used in app/api/auth.py register/login
+# request models). Pydantic treats it as an optional extra; without it,
+# importing app.api.auth raises ImportError at test collection time and
+# every routes-importing test errors with "email-validator is not
+# installed". Local dev usually has it as a transitive dep so the gap
+# only surfaces on a clean CI install.
+email-validator==2.3.0
+
 # Supabase
 supabase==2.15.1
 
