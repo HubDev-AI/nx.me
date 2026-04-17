@@ -36,6 +36,7 @@ from app.advisor.context_builder import (
 )
 from app.advisor.memory_manager import MemoryManager
 from app.advisor.models import LLMResponse, MemoryType
+from app.advisor.payload_logger import log_llm_call
 from app.advisor.persona import SOUL_MD as _SOUL_MD
 from app.config import settings
 from app.db.async_helpers import run_sync
@@ -184,9 +185,11 @@ class AdvisorService:
         ]
         advisor_response = await self._call_llm_with_check(
             user_id=user_id,
+            conversation_id=conversation_id,
             messages=messages,
             vision_content=vision_content,
             recent_responses=recent_advisor_messages,
+            dropped=dropped,
         )
 
         # Step 9: Persist messages
@@ -228,15 +231,31 @@ class AdvisorService:
     async def _call_llm_with_check(
         self,
         user_id: UUID,
+        conversation_id: str,
         messages: list[dict[str, Any]],
         vision_content: list[dict[str, Any]] | None,
         recent_responses: list[str],
+        dropped: int,
     ) -> str:
         """Call LLM, apply post-generation check, retry once if needed (spec Section 11)."""
         # Determine model based on daily usage guard (spec Section 10)
         model = await self._select_model(str(user_id))
 
         for attempt in range(2):
+            # Plan 2026-04-17-003 Unit 5 — log every LLM call. Both the
+            # first attempt and the retry get their own record so a
+            # reproduced failure shows both payloads.
+            log_llm_call(
+                None,
+                model=model,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                system=_SOUL_MD,
+                messages=messages,
+                vision_content=vision_content,
+                trimmed=dropped > 0,
+                dropped=dropped,
+            )
             response: LLMResponse = await self._llm.create_message(
                 model=model,
                 system=_SOUL_MD,

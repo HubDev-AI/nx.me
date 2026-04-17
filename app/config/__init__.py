@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     ADVISOR_MEMORY_CAP: int = 500  # Max memories per user (spec §10).
     ADVISOR_CONTEXT_TOKEN_BUDGET: int = 5000  # Max input tokens to the LLM (spec §10).
 
+    # Advisor payload logging (Plan 2026-04-17-003 Unit 5).
+    # When True, every Ada LLM call ALSO emits a DEBUG record carrying the
+    # full system + messages payload. INFO records (always on) are safe —
+    # hashed user_id, only host + expiry-presence for signed URLs, no raw
+    # user content. DEBUG records include full content and signed URLs —
+    # DO NOT enable in production.
+    ADVISOR_DEBUG_LOG_PROMPT: bool = False
+
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
     IDENTITY_SIMILARITY_THRESHOLD: float = 0.80
