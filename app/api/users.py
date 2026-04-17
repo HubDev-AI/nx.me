@@ -4,6 +4,11 @@ Story 6-3:
   GET  /users/{username}/profile  — public, no auth required
   GET  /users/{username}/history  — private, owner only
   PATCH /users/{username}         — update display_name, avatar, and/or username, owner only
+  POST  /users/{username}/avatar   — multipart avatar upload, owner only
+
+Owner-only write paths accept both JWT users and guest tokens (via
+`get_user_or_guest`) so guest-mode sessions can edit their own row while
+FEATURE_AUTH_REQUIRED is false.
 """
 
 from __future__ import annotations
@@ -11,15 +16,23 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
 import redis.asyncio as aioredis
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.deps import (
     get_client_ip,
-    get_current_user,
     get_glowup_analysis_repo,
     get_image_repo,
     get_job_repo,
@@ -144,15 +157,41 @@ class HistoryResponse(BaseModel):
     has_more: bool
 
 
+_DISPLAY_NAME_MAX_LENGTH = 50
+
+
 class UpdateProfileRequest(BaseModel):
-    display_name: str | None = None
+    # Display name is trimmed before length check so whitespace-only payloads
+    # fail min_length=1. Pydantic's string constraint otherwise counts spaces
+    # as valid characters — `" "` is a length-1 string and would pass.
+    display_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=_DISPLAY_NAME_MAX_LENGTH,
+    )
     avatar_storage_key: str | None = None
+    # Pattern is enforced at the field level; we trim in the validator so
+    # stray leading/trailing spaces don't 422 payloads that are otherwise
+    # valid. Pattern runs AFTER the pre-validator normalises the string.
     new_username: str | None = Field(
         default=None,
         min_length=_USERNAME_MIN_LENGTH,
         max_length=_USERNAME_MAX_LENGTH,
         pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$",
     )
+
+    @field_validator("display_name", "new_username", mode="before")
+    @classmethod
+    def _strip_strings(cls, v: object) -> object:
+        """Trim surrounding whitespace before Field constraints run.
+
+        Keeps `None` passthroughs intact; leaves non-string inputs alone so
+        Pydantic's type coercion produces the canonical error message
+        instead of a surprise AttributeError.
+        """
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 class UpdateProfileResponse(BaseModel):
@@ -538,14 +577,16 @@ async def get_user_history(
 async def update_user_profile(
     username: str,
     body: UpdateProfileRequest,
-    claims: UserClaims = Depends(get_current_user),
+    claims: UserClaims = Depends(get_user_or_guest),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> UpdateProfileResponse:
     """Update the authenticated user's profile (display_name, avatar, username).
 
     Owner only — returns 404 if the token does not belong to the requested user.
-    Username changes are subject to a 24-hour cooldown enforced via username_changed_at.
+    Accepts JWT (real user) or X-Guest-Token (guest, when FEATURE_AUTH_REQUIRED
+    is false). Username changes are subject to a 24-hour cooldown enforced via
+    username_changed_at.
     """
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
@@ -652,6 +693,150 @@ async def update_user_profile(
         remaining_secs = int((end - datetime.now(tz=timezone.utc)).total_seconds())
         if remaining_secs > 0:
             cooldown_remaining = remaining_secs
+
+    return UpdateProfileResponse(
+        username=refreshed["username"],
+        display_name=refreshed["display_name"],
+        avatar_url=avatar_url,
+        username_change_cooldown_remaining_seconds=cooldown_remaining,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /users/{username}/avatar  (owner only)
+# ---------------------------------------------------------------------------
+
+
+# Supabase signed URL bandwidth is the real constraint here, not storage —
+# keep avatars modest so the `avatars` bucket doesn't balloon. Mobile
+# ImagePicker already compresses to QUALITY=0.8 so 5 MiB leaves headroom for
+# edge-case high-res picks without inviting arbitrary-size uploads.
+_AVATAR_MAX_BYTES = 5 * 1024 * 1024
+_AVATAR_MIME_TO_EXT: dict[str, str] = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+
+
+@router.post("/users/{username}/avatar", response_model=UpdateProfileResponse)
+async def upload_user_avatar(
+    username: str,
+    file: UploadFile,
+    claims: UserClaims = Depends(get_user_or_guest),
+    user_repo: UserRepository = Depends(get_user_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
+) -> UpdateProfileResponse:
+    """Upload a new avatar for the authenticated user.
+
+    Multipart form field `file` is written to Supabase bucket `avatars` at
+    `avatars/{user_id}/{uuid}.{ext}`. users.avatar_storage_key swings to the
+    new key, users.updated_at bumps, and the previous object (if any) is
+    removed best-effort. Accepts JWT (real user) or X-Guest-Token (guest,
+    when FEATURE_AUTH_REQUIRED is false).
+
+    Owner only — returns 404 if the token does not belong to the requested
+    user, mirroring the PATCH endpoint to avoid leaking ownership.
+    """
+    user = await run_sync(_lookup_user, user_repo, username)
+    user_id: str = user["id"]
+
+    if claims["sub"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        )
+
+    content_type = (file.content_type or "").lower()
+    ext = _AVATAR_MIME_TO_EXT.get(content_type)
+    if ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported avatar format. Use JPEG, PNG, or WebP.",
+        )
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty avatar file.",
+        )
+    if len(data) > _AVATAR_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Avatar exceeds {_AVATAR_MAX_BYTES // (1024 * 1024)} MiB limit.",
+        )
+
+    new_key = f"avatars/{user_id}/{uuid4().hex}.{ext}"
+    previous_key = user.get("avatar_storage_key")
+
+    # Upload BEFORE the DB swap — if storage fails we haven't orphaned a
+    # pointer. If the DB write then fails, roll the upload back so we don't
+    # leak an unreferenced blob. Old avatar is removed only after the DB
+    # pointer has successfully moved off it.
+    await run_sync(image_repo.upload, "avatars", new_key, data, content_type)
+
+    try:
+        await run_sync(
+            user_repo.update_profile,
+            user_id,
+            {
+                "avatar_storage_key": new_key,
+                "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+            },
+        )
+    except Exception:
+        try:
+            await run_sync(image_repo.remove, "avatars", [new_key])
+        except Exception:
+            logger.warning(
+                "Failed to clean up avatar %s after DB update error",
+                new_key,
+                exc_info=True,
+            )
+        raise
+
+    if previous_key and previous_key != new_key:
+        try:
+            await run_sync(image_repo.remove, "avatars", [previous_key])
+        except Exception:
+            logger.warning(
+                "Failed to remove old avatar %s — orphan in storage",
+                previous_key,
+                exc_info=True,
+            )
+
+    refreshed = await run_sync(user_repo.get_profile_by_id, user_id)
+    if not refreshed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    refreshed_avatar_key = refreshed.get("avatar_storage_key")
+    avatar_url = (
+        await run_sync(
+            image_repo.build_avatar_signed_url,
+            refreshed_avatar_key,
+            settings.SIGNED_URL_EXPIRY_SECONDS,
+        )
+        if refreshed_avatar_key
+        else None
+    )
+
+    cooldown_remaining: int | None = None
+    changed_at_str = refreshed.get("username_changed_at")
+    if changed_at_str:
+        last = datetime.fromisoformat(changed_at_str)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        end = last + timedelta(hours=_USERNAME_CHANGE_COOLDOWN_HOURS)
+        remaining_secs = int((end - datetime.now(tz=timezone.utc)).total_seconds())
+        if remaining_secs > 0:
+            cooldown_remaining = remaining_secs
+
+    logger.info("Avatar updated for user %s: key=%s", user_id, new_key)
 
     return UpdateProfileResponse(
         username=refreshed["username"],

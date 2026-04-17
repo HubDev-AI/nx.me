@@ -43,6 +43,12 @@ interface EditProfileSheetProps {
   isUpdating: boolean;
   updateError: string | null;
   onSave: (payload: UpdateProfilePayload) => Promise<boolean>;
+  /**
+   * Upload a freshly-picked avatar (ImagePicker URI) to the backend. Fires
+   * before onSave so the PATCH in onSave doesn't need to know about the
+   * storage-key round-trip.
+   */
+  onUploadAvatar: (uri: string) => Promise<boolean>;
   onClose: () => void;
 }
 
@@ -56,6 +62,7 @@ export function EditProfileSheet({
   isUpdating,
   updateError,
   onSave,
+  onUploadAvatar,
   onClose,
 }: EditProfileSheetProps) {
   const { theme } = useTheme();
@@ -64,6 +71,13 @@ export function EditProfileSheet({
     profile.display_name ?? "",
   );
   const [avatarUri, setAvatarUri] = useState(profile.avatar_url ?? "");
+  /**
+   * Local file URI from expo-image-picker when the user picks a new avatar.
+   * Null until the picker fires for this sheet session. Distinct from
+   * `avatarUri` (which also shows the remote signed URL) because only local
+   * picks should be uploaded — tapping Save without picking must not POST.
+   */
+  const [avatarPickedUri, setAvatarPickedUri] = useState<string | null>(null);
   const [newUsername, setNewUsername] = useState(profile.username ?? "");
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
@@ -78,6 +92,7 @@ export function EditProfileSheet({
     if (visible) {
       setDisplayName(profile.display_name ?? "");
       setAvatarUri(profile.avatar_url ?? "");
+      setAvatarPickedUri(null);
       setNewUsername(profile.username ?? "");
       setUsernameAvailable(null);
       setUsernameError(null);
@@ -166,18 +181,24 @@ export function EditProfileSheet({
   // Computed change tracking
   const hasUsernameChange = newUsername !== (profile.username ?? "");
   const hasDisplayNameChange = displayName !== (profile.display_name ?? "");
+  const hasAvatarChange = avatarPickedUri !== null;
   const hasChanges =
-    hasUsernameChange ||
-    hasDisplayNameChange ||
-    avatarUri !== (profile.avatar_url ?? "");
+    hasUsernameChange || hasDisplayNameChange || hasAvatarChange;
 
   // Username validation
+  //
+  // A changed username is only "valid" when the server has confirmed it's
+  // available (`usernameAvailable === true`). The old check used
+  // `usernameAvailable !== false`, which treated `null` (not yet checked)
+  // as valid — so Save lit up during the 300 ms debounce window and the
+  // user could race-tap it into a 409 on a taken name. Require an explicit
+  // `true` for the changed-name branch; same-name still short-circuits.
   const isUsernameValid =
     newUsername === profile.username ||
     (newUsername.length >= AUTH_VALIDATION.USERNAME_MIN_LENGTH &&
       newUsername.length <= AUTH_VALIDATION.USERNAME_MAX_LENGTH &&
       AUTH_VALIDATION.USERNAME_PATTERN.test(newUsername) &&
-      usernameAvailable !== false);
+      usernameAvailable === true);
 
   const isCooldownActive =
     (profile.username_change_cooldown_remaining_seconds ?? 0) > 0;
@@ -216,17 +237,30 @@ export function EditProfileSheet({
     if (!result.canceled && result.assets[0]) {
       const newUri = result.assets[0].uri;
       setAvatarUri(newUri);
+      setAvatarPickedUri(newUri);
     }
   }, []);
 
   const doSave = useCallback(
-    async (payload: UpdateProfilePayload) => {
-      const success = await onSave(payload);
-      if (success) {
-        animateClose(onClose);
+    async (
+      payload: UpdateProfilePayload,
+      uploadUri: string | null,
+    ) => {
+      // Upload the picked avatar FIRST so a later PATCH failure doesn't leave
+      // the photo unsaved. The avatar endpoint already returns the refreshed
+      // UpdateProfileResponse, so the hook merges it into profile state
+      // regardless of whether we then PATCH other fields.
+      if (uploadUri) {
+        const uploaded = await onUploadAvatar(uploadUri);
+        if (!uploaded) return;
       }
+      if (Object.keys(payload).length > 0) {
+        const saved = await onSave(payload);
+        if (!saved) return;
+      }
+      animateClose(onClose);
     },
-    [onSave, animateClose, onClose],
+    [onSave, onUploadAvatar, animateClose, onClose],
   );
 
   const handleSave = useCallback(async () => {
@@ -239,7 +273,9 @@ export function EditProfileSheet({
       payload.new_username = newUsername.trim();
     }
 
-    if (Object.keys(payload).length === 0) {
+    const uploadUri = hasAvatarChange ? avatarPickedUri : null;
+
+    if (Object.keys(payload).length === 0 && uploadUri === null) {
       animateClose(onClose);
       return;
     }
@@ -251,18 +287,20 @@ export function EditProfileSheet({
         "Changing your username will break any links you've shared with your current username.",
         [
           { text: "Cancel", style: "cancel" },
-          { text: "Change", onPress: () => doSave(payload) },
+          { text: "Change", onPress: () => doSave(payload, uploadUri) },
         ],
       );
       return;
     }
 
-    await doSave(payload);
+    await doSave(payload, uploadUri);
   }, [
     displayName,
     newUsername,
     hasDisplayNameChange,
     hasUsernameChange,
+    hasAvatarChange,
+    avatarPickedUri,
     doSave,
     animateClose,
     onClose,

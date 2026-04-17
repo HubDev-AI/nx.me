@@ -72,7 +72,10 @@ describe("useCapabilities", () => {
     const caps = render();
 
     expect(caps.canViewOwnProfile).toBe(true);
-    expect(caps.canEditProfile).toBe(false);
+    // In guest mode (auth_required=false) the guest user row IS the identity
+    // — backend PATCH /v1/users/{username} accepts X-Guest-Token, so the UI
+    // surfaces Edit Profile for guests too.
+    expect(caps.canEditProfile).toBe(true);
     // Guests have no account record — no account details to view or delete.
     expect(caps.canViewAccountDetails).toBe(false);
     expect(caps.canDeleteAccount).toBe(false);

@@ -14,8 +14,8 @@ import Animated, {
   withSpring,
   withTiming,
   interpolateColor,
-  interpolate,
   Easing,
+  FadeOutUp,
 } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -27,6 +27,7 @@ import {
 import { hapticLight } from "../../lib/haptics";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
+import { useEntering } from "../../lib/hooks/use-entering";
 import { formatCount } from "../../lib/format";
 import { showToast } from "../../lib/toast";
 import type { UserProfile } from "./types";
@@ -62,17 +63,15 @@ export function ProfileHeader({
   showShareProfile,
 }: ProfileHeaderProps) {
   const { theme } = useTheme();
+  const { fadeInDown, reduced } = useEntering();
   const [expanded, setExpanded] = useState(false);
   const displayName = profile.display_name ?? profile.username;
   const shareUrl = `${UNIVERSAL_LINK_ORIGIN}/${profile.username}`;
 
-  // Shared value for expand progress (0 = collapsed, 1 = expanded)
-  const expandProgress = useSharedValue(0);
-
-  // Separate shared value for chevron rotation (0 = collapsed, 180 = expanded)
+  // Chevron rotation: 0 = collapsed (▼), 180 = expanded (▲)
   const chevronRotation = useSharedValue(0);
 
-  // Shared value for border interpolation (0 = collapsed, 1 = expanded)
+  // Wrapper border: 0 = collapsed border, 1 = expanded border
   const borderProgress = useSharedValue(0);
 
   // Press scale animations
@@ -89,24 +88,16 @@ export function ProfileHeader({
     transform: [{ scale: shareScale.value }],
   }));
 
-  // Chevron rotation: 0deg collapsed -> 180deg expanded
   const chevronStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${chevronRotation.value}deg` }],
   }));
 
-  // Wrapper border: smoothly interpolates between default and expanded border
   const wrapperAnimatedStyle = useAnimatedStyle(() => ({
     borderColor: interpolateColor(
       borderProgress.value,
       [0, 1],
       [THEME.colors.border, THEME.colors.glassBorder],
     ),
-  }));
-
-  // Expanded content: animate opacity and maxHeight together
-  const expandedAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: expandProgress.value,
-    maxHeight: interpolate(expandProgress.value, [0, 1], [0, 250]),
   }));
 
   const toggle = useCallback(() => {
@@ -122,13 +113,9 @@ export function ProfileHeader({
         duration,
         easing: Easing.out(Easing.cubic),
       });
-      expandProgress.value = withTiming(next ? 1 : 0, {
-        duration,
-        easing: Easing.out(Easing.cubic),
-      });
       return next;
     });
-  }, [borderProgress, chevronRotation, expandProgress]);
+  }, [borderProgress, chevronRotation]);
 
   const handleShare = useCallback(async () => {
     try {
@@ -200,9 +187,18 @@ export function ProfileHeader({
       </Pressable>
       </Animated.View>
 
-      {/* ---- Expanded content -- opacity + maxHeight animation ---- */}
-      <Animated.View style={[styles.expandedWrapper, expandedAnimatedStyle]}>
-        <View style={styles.expandedInner}>
+      {/* ---- Expanded content ----
+          Conditionally mounted so the wrapper shrinks to the collapsed
+          row when closed. FadeInDown/FadeOutUp handle the transition,
+          so we no longer clip with overflow:hidden + maxHeight — that
+          hack was eating expandedInner's paddingBottom and making the
+          bottom of the Edit Profile button look sliced off. */}
+      {expanded ? (
+        <Animated.View
+          entering={fadeInDown(0, reduced ? 120 : 220)}
+          exiting={reduced ? undefined : FadeOutUp.duration(160)}
+          style={styles.expandedInner}
+        >
           {/* Separator between collapsed row and expanded content */}
           <View style={styles.expandSeparator} />
 
@@ -258,8 +254,8 @@ export function ProfileHeader({
               </Animated.View>
             ) : null}
           </View>
-        </View>
-      </Animated.View>
+        </Animated.View>
+      ) : null}
     </Animated.View>
   );
 }
@@ -359,10 +355,11 @@ const styles = StyleSheet.create({
     marginBottom: THEME.spacing.md,
   },
 
-  /* ---- Expanded content ---- */
-  expandedWrapper: {
-    overflow: "hidden",
-  },
+  /* ---- Expanded content ----
+     Conditionally mounted (see render). No overflow:hidden needed now
+     that FadeInDown/FadeOutUp drive the transition — the prior
+     maxHeight hack was clipping paddingBottom, trimming the bottom of
+     the Edit Profile button. */
   expandedInner: {
     paddingTop: THEME.spacing.xs,
     paddingBottom: THEME.spacing.lg,

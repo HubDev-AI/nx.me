@@ -240,16 +240,18 @@ export const ADVISOR_ENDPOINTS = {
  */
 export const ADVISOR_CHAT_EMPTY_TITLE = "Hi, I'm Ada.";
 export const ADVISOR_CHAT_EMPTY_BODY =
-  "I can help with hair, beard, fit, skincare, or grooming — or ask me anything else you're thinking about.";
+  "I can help with hair, skin, fit, grooming, or style — or ask me anything else you're thinking about.";
 
 /**
  * Starter chips for the Chat empty state. Tap → handleSend(chipText)
  * fires the LLM call immediately (no extra Send tap). Keep these
- * short, conversational, and aligned with SOUL.md's lanes.
+ * short, conversational, and aligned with SOUL.md's lanes. Must stay
+ * gender-agnostic — no prompts assuming facial hair, body type, or
+ * wardrobe category a user might not have.
  */
 export const ADVISOR_CHAT_STARTER_CHIPS: readonly string[] = [
   "What hairstyle would suit me?",
-  "Should I try a beard?",
+  "How's my overall style?",
   "How do I fix the fit of my clothes?",
   "What should I focus on next?",
 ] as const;
@@ -324,6 +326,12 @@ export const PROFILE_ENDPOINTS = {
   PROFILE: (username: string) => `/v1/users/${username}/profile`,
   HISTORY: (username: string) => `/v1/users/${username}/history`,
   UPDATE: (username: string) => `/v1/users/${username}`,
+  /**
+   * POST multipart avatar file → Supabase avatars bucket. Returns the
+   * same shape as UPDATE so the caller merges one response into profile
+   * state. Owner only; accepts JWT or X-Guest-Token.
+   */
+  AVATAR: (username: string) => `/v1/users/${username}/avatar`,
 } as const;
 
 /**
