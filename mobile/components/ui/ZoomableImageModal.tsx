@@ -211,7 +211,35 @@ export function ZoomableImageModal({
     >
       <StatusBar style="light" />
       <View style={styles.backdrop}>
-        <View style={[styles.headerRow, { paddingTop: insets.top }]}>
+        {/* Image area fills the FULL backdrop (not "backdrop minus
+            header") so the image is centered against the whole
+            viewport. Anchoring it to the flex column below the header
+            row pushed the image down by ~headerHeight/2 — the user
+            saw the photo sitting visibly below screen-center. The
+            header renders on top via absolute positioning instead. */}
+        <View
+          style={styles.imageArea}
+          accessibilityLabel={`${altText}, enlarged view`}
+          accessibilityRole="image"
+          {...panResponder.panHandlers}
+        >
+          <Animated.Image
+            source={{ uri: sourceUri }}
+            style={[
+              styles.image,
+              { width: winW, height: winH },
+              imageStyle,
+            ]}
+            resizeMode="contain"
+          />
+        </View>
+        {/* pointerEvents="box-none" so taps on the title text or
+            spacer fall through to the imageArea's panResponder. The
+            close-button Pressable still captures its own touches. */}
+        <View
+          style={[styles.headerRow, { paddingTop: insets.top }]}
+          pointerEvents="box-none"
+        >
           <HeaderBackButton
             onPress={onClose}
             tintColor={THEME.colors.white}
@@ -227,22 +255,6 @@ export function ZoomableImageModal({
             {altText}
           </Heading>
           <HeaderBackButtonSpacer />
-        </View>
-        <View
-          style={styles.imageArea}
-          accessibilityLabel={`${altText}, enlarged view`}
-          accessibilityRole="image"
-          {...panResponder.panHandlers}
-        >
-          <Animated.Image
-            source={{ uri: sourceUri }}
-            style={[
-              styles.image,
-              { width: winW, height: winH * 0.8 },
-              imageStyle,
-            ]}
-            resizeMode="contain"
-          />
         </View>
       </View>
     </Modal>
@@ -263,7 +275,14 @@ const styles = StyleSheet.create({
   // Mirrors the Upload / Result header row — Back button left, Heading
   // size="md" centered, spacer right. paddingTop is applied at the
   // call site so useSafeAreaInsets can survive a Modal remount.
+  // Absolute-positioned so it overlays the imageArea instead of
+  // pushing it down — the image must center against the full screen
+  // viewport, not against "screen minus header".
   headerRow: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -273,8 +292,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: HEADER_TITLE_FONT_SIZE,
   },
+  // absoluteFill so the image-centering box equals the full backdrop
+  // (the entire screen). With contain + width:winW + height:winH, the
+  // image's bounding box is the full viewport and resizeMode centers
+  // the picture inside it — landing the photo at exact screen-center.
   imageArea: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
   },
