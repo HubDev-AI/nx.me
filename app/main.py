@@ -45,6 +45,9 @@ from app.api.errors import (
 from app.api.middleware.security_headers import SecurityHeadersMiddleware
 from app.config import settings
 from app.db.client import get_supabase_service
+from app.logging_config import configure_logging
+
+configure_logging()
 
 logger = logging.getLogger(__name__)
 

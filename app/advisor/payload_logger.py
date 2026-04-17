@@ -42,6 +42,8 @@ PAYLOAD_LOGGER_NAME = "app.advisor.payload"
 # human message.
 METRIC_KEY_INFO = "advisor.llm_call"
 METRIC_KEY_DEBUG = "advisor.llm_call_payload"
+METRIC_KEY_RESPONSE_INFO = "advisor.llm_response"
+METRIC_KEY_RESPONSE_DEBUG = "advisor.llm_response_payload"
 
 # Fallback marker when a field cannot be JSON-serialized and we fall back to
 # ``repr()``. Kept as a named constant so operators can grep for it.
@@ -59,9 +61,12 @@ __all__ = [
     "USER_ID_HASH_LENGTH",
     "METRIC_KEY_INFO",
     "METRIC_KEY_DEBUG",
+    "METRIC_KEY_RESPONSE_INFO",
+    "METRIC_KEY_RESPONSE_DEBUG",
     "JSON_SERIALIZATION_FAILURE_MARKER",
     "SIGNED_URL_EXPIRY_PARAM",
     "log_llm_call",
+    "log_llm_response",
 ]
 
 
@@ -354,7 +359,7 @@ def log_llm_call(
         extra=info_extra,
     )
 
-    if not settings.ADVISOR_DEBUG_LOG_PROMPT:
+    if not settings.advisor_debug_payload_enabled:
         return
 
     # DEBUG path — full payload. Still hashed user_id, never raw.
@@ -387,5 +392,75 @@ def log_llm_call(
         debug_extra["model"],
         len(system) if isinstance(system, str) else 0,
         len(messages),
+        extra=debug_extra,
+    )
+
+
+def log_llm_response(
+    logger: logging.Logger | None,
+    *,
+    model: str,
+    user_id: Any,
+    conversation_id: str,
+    response: Any,
+    purpose: str = "chat",
+) -> None:
+    """Emit INFO + (when enabled) DEBUG records for an Anthropic response.
+
+    Mirror of :func:`log_llm_call`. INFO carries token counts and a
+    response length so a single tail can correlate request → response.
+    DEBUG carries the full ``response.content`` text — gated on
+    ``settings.advisor_debug_payload_enabled`` so production never leaks
+    raw LLM output.
+
+    ``response`` is duck-typed (``content``, ``input_tokens``,
+    ``output_tokens``) so this helper works for both ``LLMResponse`` and
+    any future shape that exposes those fields.
+    """
+    log = logger if logger is not None else logging.getLogger(PAYLOAD_LOGGER_NAME)
+
+    content = getattr(response, "content", "") or ""
+    input_tokens = int(getattr(response, "input_tokens", 0) or 0)
+    output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+    content_str = content if isinstance(content, str) else str(content)
+
+    info_extra: dict[str, Any] = {
+        "metric": METRIC_KEY_RESPONSE_INFO,
+        "model": _safe_serialize(model),
+        "user_id_hash": _hash_user_id(user_id),
+        "conversation_id": _safe_serialize(conversation_id),
+        "purpose": _safe_serialize(purpose),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "response_length": len(content_str),
+    }
+    log.info(
+        "advisor.llm_response model=%s purpose=%s in=%d out=%d len=%d",
+        info_extra["model"],
+        info_extra["purpose"],
+        input_tokens,
+        output_tokens,
+        info_extra["response_length"],
+        extra=info_extra,
+    )
+
+    if not settings.advisor_debug_payload_enabled:
+        return
+
+    debug_extra: dict[str, Any] = {
+        "metric": METRIC_KEY_RESPONSE_DEBUG,
+        "model": _safe_serialize(model),
+        "user_id_hash": _hash_user_id(user_id),
+        "conversation_id": _safe_serialize(conversation_id),
+        "purpose": _safe_serialize(purpose),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "content": _safe_serialize(content_str),
+    }
+    log.debug(
+        "advisor.llm_response_payload model=%s purpose=%s len=%d",
+        debug_extra["model"],
+        debug_extra["purpose"],
+        info_extra["response_length"],
         extra=debug_extra,
     )

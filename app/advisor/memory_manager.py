@@ -317,6 +317,16 @@ class MemoryManager:
                 messages=[{"role": "user", "content": extraction_prompt}],
                 max_tokens=300,
             )
+            from app.advisor.payload_logger import log_llm_response
+
+            log_llm_response(
+                None,
+                model=MODEL_HAIKU,
+                user_id=user_id,
+                conversation_id="-",
+                response=response,
+                purpose="memory_extract",
+            )
             extracted = json.loads(response.content)
         except Exception as exc:  # includes json.JSONDecodeError and LLM errors
             logger.warning("Memory extraction failed: %s", exc)
