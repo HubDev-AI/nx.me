@@ -90,6 +90,7 @@ export function NudgeFeed() {
 
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nextCursorRef = useRef<string | null>(null);
 
   // -------------------------------------------------------------------------
   // Load nudges
@@ -100,6 +101,7 @@ export function NudgeFeed() {
     try {
       const response = await fetchNudges();
       setNudges(response.nudges);
+      nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
       const message =
@@ -125,9 +127,17 @@ export function NudgeFeed() {
   // -------------------------------------------------------------------------
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    // Cancel any pending retry so a late retry cannot append a
+    // post-cursor page into the freshly-refreshed list.
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    retryCountRef.current = 0;
     try {
       const response = await fetchNudges();
       setNudges(response.nudges);
+      nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch {
       // Silently ignore refresh errors — existing data stays
@@ -140,12 +150,12 @@ export function NudgeFeed() {
   // Pagination
   // -------------------------------------------------------------------------
   const loadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore || nudges.length === 0) return;
+    if (!hasMore || isLoadingMore || !nextCursorRef.current) return;
     setIsLoadingMore(true);
     try {
-      const lastNudge = nudges[nudges.length - 1]!;
-      const response = await fetchNudges(lastNudge.id);
+      const response = await fetchNudges(nextCursorRef.current);
       setNudges((prev) => [...prev, ...response.nudges]);
+      nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
     } catch {
@@ -176,7 +186,7 @@ export function NudgeFeed() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [hasMore, isLoadingMore, nudges]);
+  }, [hasMore, isLoadingMore]);
 
   // -------------------------------------------------------------------------
   // Card tap → open detail sheet + mark unread nudges as read.
