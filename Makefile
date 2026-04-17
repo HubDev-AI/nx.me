@@ -36,8 +36,8 @@ nuke-keep:
 	.venv/bin/python scripts/nuke-data.py --keep-demo
 
 # ── Run DB migrations ─────────────────────────────────────────────────────────
-migrate:
-	.venv/bin/python -m app.migrations.run
+migrate: app/.env
+	@set -a && . ./app/.env && set +a && .venv/bin/python -m app.migrations.run
 
 # ── ARQ background worker (run in separate terminal) ──────────────────────────
 worker: app/.env
