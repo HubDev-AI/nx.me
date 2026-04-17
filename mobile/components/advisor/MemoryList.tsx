@@ -36,7 +36,11 @@ import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import { showToast } from "../../lib/toast";
 import { hapticLight } from "../../lib/haptics";
-import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
+import {
+  ADVISOR_CONFIG,
+  MIN_TOUCH_TARGET,
+  PAGINATION_CONFIG,
+} from "../../constants/config";
 import { useAdvisorComposerLayout } from "../../hooks/useAdvisorComposerLayout";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
 import type { UserMemory } from "../../lib/advisor";
@@ -765,6 +769,7 @@ export function MemoryList() {
   });
   const [initialLoading, setInitialLoading] = useState(true);
   const [refetching, setRefetching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   // Single open swipe row at a time. Lifted from SwipeableMemoryRow so
   // tapping any other row, the subtabs chips, the empty list area, or
   // swiping a different row closes the previously-open one.
@@ -793,11 +798,35 @@ export function MemoryList() {
   const activeTabRef = useRef<Tab>(DEFAULT_TAB);
   activeTabRef.current = activeTab;
 
-  // Abort controller for the current in-flight list fetch. A rapid
-  // tab tap cancels the prior request instead of firing a second
-  // network round-trip, and the effect cleanup aborts the initial
-  // load (relevant under React StrictMode's double-invoke in dev).
+  // Abort controller for the current in-flight first-page / refetch
+  // fetch. A rapid tab tap cancels the prior request instead of
+  // firing a second network round-trip, and the effect cleanup
+  // aborts the initial load (relevant under React StrictMode's
+  // double-invoke in dev).
   const abortRef = useRef<AbortController | null>(null);
+  // Separate abort controller for pagination fetches. Kept distinct
+  // from ``abortRef`` so a loadMoreTab that races with the initial
+  // loadTab cannot abort the first-page load out from under it.
+  // Tab-switch aborts BOTH (see loadTab).
+  const paginationAbortRef = useRef<AbortController | null>(null);
+
+  // Pagination state — single ref because tab switch calls loadTab
+  // which resets cursor/hasMore. Keeping memories as a flat array
+  // (not per-tab map) means there's no carry-over to preserve; a
+  // fresh tab always starts from cursor=null.
+  const pagingRef = useRef<{ cursor: string | null; hasMore: boolean }>({
+    cursor: null,
+    hasMore: false,
+  });
+  // Sync guard — FlatList's onEndReached can fire multiple times per
+  // scroll event; the React state flip in setIsLoadingMore is async,
+  // so two rapid calls can both pass the closure guard. The ref
+  // catches them synchronously.
+  const loadingMoreRef = useRef(false);
+  // Retry backoff for the loadMoreTab path — mirrors NudgeFeed so
+  // both infinite-scroll surfaces have the same cadence.
+  const retryCountRef = useRef(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateTab = useCallback(
     (tab: Tab, patch: Partial<TabState>) =>
@@ -814,14 +843,26 @@ export function MemoryList() {
   const loadTab = useCallback(
     async (tab: Tab, { showRefetchIndicator = true } = {}) => {
       // Cancel any prior in-flight fetch so fast tab tapping does
-      // not fire N parallel round-trips.
+      // not fire N parallel round-trips. Also cancels any in-flight
+      // pagination fetch from the previous tab so its response
+      // cannot append rows into the new tab's list.
       abortRef.current?.abort();
+      paginationAbortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
       const reqId = ++requestIdRef.current;
       if (showRefetchIndicator) setRefetching(true);
       updateTab(tab, { error: null });
+      // Reset pagination state for the new tab's first page. Also
+      // clears any pending retry from a prior tab's loadMore so a
+      // late retry cannot append rows into the new tab's list.
+      pagingRef.current = { cursor: null, hasMore: false };
+      retryCountRef.current = 0;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
       try {
         const response = await fetchMemories({
           type: tab,
@@ -829,6 +870,10 @@ export function MemoryList() {
         });
         if (reqId !== requestIdRef.current || activeTabRef.current !== tab) return;
         setMemories(response.memories);
+        pagingRef.current = {
+          cursor: response.next_cursor,
+          hasMore: response.has_more,
+        };
       } catch (err) {
         // Aborted fetches are expected when the user switches tabs
         // mid-request or the effect cleans up — swallow silently.
@@ -855,8 +900,85 @@ export function MemoryList() {
       await loadTab(DEFAULT_TAB, { showRefetchIndicator: false });
       setInitialLoading(false);
     })();
-    return () => abortRef.current?.abort();
+    return () => {
+      abortRef.current?.abort();
+      paginationAbortRef.current?.abort();
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
   }, [loadTab]);
+
+  // -------------------------------------------------------------------------
+  // Load next page — cursor pagination. The reqId/activeTab guard is
+  // identical to loadTab so a response that lands after a tab switch
+  // is dropped instead of appended to the wrong list. Retries follow
+  // PAGINATION_CONFIG so this feels the same as NudgeFeed.
+  // -------------------------------------------------------------------------
+  const loadMoreTab = useCallback(async () => {
+    if (
+      !pagingRef.current.hasMore ||
+      !pagingRef.current.cursor ||
+      loadingMoreRef.current
+    )
+      return;
+    // Separate controller from ``abortRef`` so we cannot cancel the
+    // initial loadTab that hasn't yet landed. Tab-switch aborts
+    // paginationAbortRef too (see loadTab).
+    paginationAbortRef.current?.abort();
+    const controller = new AbortController();
+    paginationAbortRef.current = controller;
+
+    const tab = activeTabRef.current;
+    const reqId = ++requestIdRef.current;
+    const cursor = pagingRef.current.cursor;
+    loadingMoreRef.current = true;
+    setIsLoadingMore(true);
+    try {
+      const response = await fetchMemories({
+        type: tab,
+        cursor,
+        signal: controller.signal,
+      });
+      if (reqId !== requestIdRef.current || activeTabRef.current !== tab)
+        return;
+      setMemories((prev) => [...prev, ...response.memories]);
+      pagingRef.current = {
+        cursor: response.next_cursor,
+        hasMore: response.has_more,
+      };
+      retryCountRef.current = 0;
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      retryCountRef.current += 1;
+      if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
+        const attemptIndex = Math.min(
+          retryCountRef.current - 1,
+          PAGINATION_CONFIG.RETRY_DELAYS_MS.length - 1,
+        );
+        const delay = PAGINATION_CONFIG.RETRY_DELAYS_MS[attemptIndex]!;
+        loadingMoreRef.current = false;
+        setIsLoadingMore(false);
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+        }
+        retryTimeoutRef.current = setTimeout(() => {
+          retryTimeoutRef.current = null;
+          void loadMoreTab();
+        }, delay);
+        return;
+      }
+      retryCountRef.current = 0;
+      showToast({
+        kind: "error",
+        message: "Couldn't load more memories. Pull to refresh.",
+      });
+    } finally {
+      loadingMoreRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, []);
 
   // -------------------------------------------------------------------------
   // Tab switching — refetch the new tab's rows via loadTab. We keep the
@@ -1090,8 +1212,17 @@ export function MemoryList() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={MemorySeparator}
+          onEndReached={loadMoreTab}
+          onEndReachedThreshold={0.5}
           ListFooterComponent={
-            openMemoryId !== null ? (
+            isLoadingMore ? (
+              <View style={styles.loadMoreFooter}>
+                <ActivityIndicator
+                  size="small"
+                  color={THEME.colors.textSecondary}
+                />
+              </View>
+            ) : openMemoryId !== null ? (
               <Pressable
                 style={styles.dismissFooter}
                 onPress={() => setOpenMemoryId(null)}
@@ -1185,6 +1316,10 @@ const styles = StyleSheet.create({
   dismissFooter: {
     flex: 1,
     minHeight: 80,
+  },
+  loadMoreFooter: {
+    paddingVertical: THEME.spacing.lg,
+    alignItems: "center",
   },
   separator: {
     height: THEME.spacing.md - 2,

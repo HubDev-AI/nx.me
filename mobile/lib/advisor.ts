@@ -34,6 +34,7 @@ export interface Nudge {
 
 export interface NudgesResponse {
   nudges: Nudge[];
+  next_cursor: string | null;
   has_more: boolean;
 }
 
