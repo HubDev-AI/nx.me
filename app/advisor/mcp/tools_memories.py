@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import Any
 
 from app.advisor.embedding_port import EmbeddingPort
-from app.advisor.llm_port import LLMPort
 from app.advisor.mcp.context import McpContext
 from app.advisor.memory_manager import MemoryManager, summarize_memory_content
 
@@ -87,13 +86,11 @@ def _get_manager(ctx: McpContext) -> MemoryManager:
     if manager is not None:
         return manager  # type: ignore[return-value]
 
-    from app.api.deps import get_embedding_adapter, get_llm_adapter
+    from app.api.deps import get_embedding_adapter
 
-    llm: LLMPort = get_llm_adapter()
     embedding: EmbeddingPort = get_embedding_adapter()
     return MemoryManager(
         advisor_repo=ctx.advisor_repo,
-        llm_adapter=llm,
         embedding_adapter=embedding,
     )
 

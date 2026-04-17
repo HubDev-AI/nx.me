@@ -113,18 +113,12 @@ def _build_service_with_captured_adapter(llm_response_text: str) -> tuple[Any, A
 
     embedding = MagicMock()
 
-    # Avoid triggering memory extraction side-effects in the test.
-    async def _no_extract(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
     svc = service_module.AdvisorService(
         advisor_repo=repo,
         redis_client=redis_client,
         llm_adapter=llm,
         embedding_adapter=embedding,
     )
-    svc._memory_manager.get_relevant_memories = AsyncMock(return_value=[])
-    svc._memory_manager.extract_memories_from_turn = _no_extract
 
     return svc, llm
 

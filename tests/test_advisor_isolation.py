@@ -60,9 +60,16 @@ class _IsolatingFakeRepo:
         return [m for m in self.memories if m["user_id"] == user_id]
 
     def get_memories_page(
-        self, user_id: str, fetch_limit: int, cursor=None, type_filter=None
+        self,
+        user_id: str,
+        fetch_limit: int,
+        cursor=None,
+        type_filter=None,
+        authored_by=None,
     ):
         rows = [m for m in self.memories if m["user_id"] == user_id]
+        if authored_by is not None:
+            rows = [m for m in rows if m.get("authored_by") == authored_by]
         return rows[:fetch_limit]
 
     def delete_memory(self, memory_id: str, user_id: str) -> list[dict]:
@@ -85,9 +92,7 @@ def _make_service(repo: _IsolatingFakeRepo) -> AdvisorService:
     from types import SimpleNamespace
 
     embed = SimpleNamespace(compute_embedding=AsyncMock(return_value=[0.0] * 8))
-    svc._memory_manager = MemoryManager(
-        advisor_repo=repo, llm_adapter=SimpleNamespace(), embedding_adapter=embed
-    )
+    svc._memory_manager = MemoryManager(advisor_repo=repo, embedding_adapter=embed)
     return svc
 
 
@@ -112,6 +117,7 @@ def _seed_users(repo: _IsolatingFakeRepo) -> tuple[str, str, str, str]:
             "type": "user_note",
             "content": {"text": "b's note"},
             "created_at": "2026-04-15T00:00:00+00:00",
+            "authored_by": "user",
         }
     )
     return a, b, nudge_b, memory_b
@@ -175,12 +181,13 @@ async def test_each_user_sees_only_own_rows():
             "type": "goal",
             "content": {"text": "a's goal"},
             "created_at": "2026-04-15T00:00:00+00:00",
+            "authored_by": "user",
         }
     )
     svc = _make_service(repo)
 
-    res_a = await svc.list_memories_page(UUID(a), limit=50)
-    res_b = await svc.list_memories_page(UUID(b), limit=50)
+    res_a = await svc.list_memories_page(UUID(a), limit=50, authored_by="user")
+    res_b = await svc.list_memories_page(UUID(b), limit=50, authored_by="user")
 
     a_user_ids = {m["user_id"] for m in res_a["memories"]}
     b_user_ids = {m["user_id"] for m in res_b["memories"]}

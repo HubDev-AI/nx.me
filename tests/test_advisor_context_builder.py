@@ -11,8 +11,6 @@ that don't pass ``nudges`` keep the 3-block shape.
 
 from __future__ import annotations
 
-import random
-
 from app.advisor.context_builder import (
     build_context,
     build_user_data_block,
@@ -216,14 +214,8 @@ def _nudge(content: str, trigger: str = "post_analysis") -> dict:
     }
 
 
-# ``build_context`` uses ``maybe_add_trajectory`` which consults ``random`` —
-# pass a seeded rng so nudge-block tests don't flake when the 15% trajectory
-# chance fires.
-_STABLE_RNG = random.Random(0)
-
-
 def test_build_context_includes_nudge_block():
-    """3 recent nudges → 4th system block, 3 lines, newest-first order preserved."""
+    """3 recent nudges → 3rd system block, 3 lines, order preserved."""
     nudges = [
         _nudge("oval face shapes are versatile — try bangs", trigger="post_analysis"),
         _nudge("loving how the new fringe lands", trigger="post_glowup"),
@@ -232,17 +224,14 @@ def test_build_context_includes_nudge_block():
     messages = build_context(
         soul_md="SOUL.md",
         user_data="oval face, symmetry 0.87",
-        memories=[],
         conversation=[],
         message="What hairstyle would suit me?",
-        rng=_STABLE_RNG,
         nudges=nudges,
     )
 
     system_msgs = [m for m in messages if m.get("role") == "system"]
-    # soul, user_data, nudges — memories absent since memories=[]. The
-    # nudge block is the last system message regardless of memories
-    # presence per build_context layering.
+    # soul + user_data + nudges = 3 system messages.
+    assert len(system_msgs) == 3
     nudge_block = system_msgs[-1]["content"]
     lines = nudge_block.split("\n")
     assert len(lines) == 3
@@ -253,51 +242,37 @@ def test_build_context_includes_nudge_block():
     assert lines[2] == "nudge (weekly_checkin): weekly check-in: what's been landing?"
 
 
-def test_build_context_no_nudges_preserves_three_block_shape():
-    """0 nudges → no 4th block. Pre-Unit-4 shape intact."""
+def test_build_context_no_nudges_preserves_two_block_shape():
+    """0 nudges → only soul + user_data system blocks (memories no longer auto-injected)."""
     messages_none = build_context(
         soul_md="SOUL.md",
         user_data="oval face",
-        memories=[{"type": "user_note", "content": {"text": "loves bangs"}}],
         conversation=[],
         message="hi",
-        rng=_STABLE_RNG,
         nudges=None,
     )
     messages_empty = build_context(
         soul_md="SOUL.md",
         user_data="oval face",
-        memories=[{"type": "user_note", "content": {"text": "loves bangs"}}],
         conversation=[],
         message="hi",
-        rng=_STABLE_RNG,
         nudges=[],
     )
 
-    # soul + user_data + memories = 3 system messages.
     for messages in (messages_none, messages_empty):
         system_msgs = [m for m in messages if m.get("role") == "system"]
-        assert len(system_msgs) == 3
-        # No nudge-shaped content leaked into memories block.
+        assert len(system_msgs) == 2
         assert "nudge (" not in system_msgs[-1]["content"]
 
 
 def test_build_context_caller_enforces_nudge_cap():
-    """Cap is caller-enforced at the repo layer; builder renders what it is given.
-
-    The repo (``get_recent_nudges_for_context``) applies ``ADVISOR_CONTEXT_NUDGE_LIMIT``
-    before this function is called — we verify that the builder itself does not
-    drop additional rows, so the top-N rule is honored exactly once and where
-    it is configurable.
-    """
+    """Builder renders what it is given — the repo applies the cap upstream."""
     top_five = [_nudge(f"nudge #{i}") for i in range(5)]
     messages = build_context(
         soul_md="SOUL.md",
         user_data="oval face",
-        memories=[],
         conversation=[],
         message="hi",
-        rng=_STABLE_RNG,
         nudges=top_five,
     )
     block = [m for m in messages if m.get("role") == "system"][-1]["content"]

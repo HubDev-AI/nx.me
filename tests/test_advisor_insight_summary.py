@@ -20,10 +20,18 @@ class _StubRepo:
     def __init__(self):
         self.inserted: list[dict] = []
 
+    def find_memory_by_content_hash(self, **_: object) -> None:
+        return None
+
+    def find_semantic_duplicate(self, **_: object) -> None:
+        return None
+
     def count_memories(self, user_id: str) -> int:
         return 0
 
-    def delete_oldest_memory_excluding_types(self, user_id: str, exclude_types):
+    def delete_oldest_memory_by_authored_by(
+        self, user_id: str, *, authored_by: str, exclude_types: tuple[str, ...]
+    ) -> list[dict]:
         return []
 
     def insert_memory(self, row: dict) -> dict:
@@ -34,8 +42,7 @@ class _StubRepo:
 def _make_manager() -> tuple[MemoryManager, _StubRepo]:
     repo = _StubRepo()
     embed = SimpleNamespace(compute_embedding=AsyncMock(return_value=[0.0] * 8))
-    llm = SimpleNamespace()
-    mm = MemoryManager(advisor_repo=repo, llm_adapter=llm, embedding_adapter=embed)
+    mm = MemoryManager(advisor_repo=repo, embedding_adapter=embed)
     return mm, repo
 
 
@@ -52,6 +59,7 @@ async def test_analysis_insight_stores_human_summary():
     )
 
     assert len(repo.inserted) == 1
+    assert repo.inserted[0]["authored_by"] == "analysis"
     content = repo.inserted[0]["content"]
 
     # Structured fields preserved for any downstream consumer.
