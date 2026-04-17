@@ -118,9 +118,21 @@ export const GLOWUP_ENDPOINTS = {
 /** HTTP status code for missing face-mod consent (Tier-3 analyze gate). */
 export const HTTP_FACE_MOD_CONSENT_REQUIRED = 428;
 
-/** Retention disclosure text — shown on upload screen. */
+/**
+ * Retention disclosure — shown on upload screen.
+ *
+ * Backed by the policy in app/workers/retention.py:
+ *   - Uploaded source photos: 30 days since last access. Clock resets
+ *     on every user read, so "you last open it" is literal.
+ *   - Unsaved results: 7 days after creation.
+ *   - Saved results (tapping "Keep on profile"): indefinite.
+ *
+ * Wording spells out subject ("your uploaded photo"), clock ("you
+ * last open it"), and outcome ("deleted"), then reassures the user
+ * that the Saved action is forever.
+ */
 export const RETENTION_DISCLOSURE =
-  "Photos auto-delete after 30 days of no activity.";
+  "Your uploaded photo is deleted 30 days after you last open it. Saved results stay on your profile.";
 
 /** Analysis polling configuration */
 export const ANALYSIS_POLLING = {

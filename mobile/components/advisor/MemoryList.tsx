@@ -39,9 +39,11 @@ import { hapticLight } from "../../lib/haptics";
 import { ADVISOR_CONFIG, MIN_TOUCH_TARGET } from "../../constants/config";
 import { useAdvisorComposerLayout } from "../../hooks/useAdvisorComposerLayout";
 import { fetchMemories, addMemory, deleteMemory } from "../../lib/advisor";
-import type { UserMemory, MemoryType } from "../../lib/advisor";
+import type { UserMemory } from "../../lib/advisor";
 import { AdvisorComposer } from "./AdvisorComposer";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
+import { MemoryDetailSheet } from "./MemoryDetailSheet";
+import { memoryContentText, memoryTypeIcon } from "./memory-helpers";
 import { PressableScale } from "../ui/PressableScale";
 import { Caption } from "../ui/Text";
 
@@ -74,42 +76,6 @@ const SWIPE_SPRING_FRICTION = 14;
 // from the list.
 const DELETE_EXIT_DURATION_MS = 220;
 const DELETE_EXIT_TRANSLATE_X = -400;
-
-/** Extract a display string from a memory content object. */
-function memoryContentText(content: Record<string, unknown>): string {
-  if (typeof content.text === "string") return content.text;
-  if (typeof content.summary === "string") return content.summary;
-  return JSON.stringify(content);
-}
-
-// ---------------------------------------------------------------------------
-// Memory type display helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Icon glyph for each memory type. Only `goal` and `user_note` ever
- * surface in the UI today (system-authored types are server-filtered),
- * but the helper keeps every branch covered so a future "What Ada knows"
- * surface can reuse it without touching the row component.
- */
-function memoryTypeIcon(
-  type: MemoryType,
-): React.ComponentProps<typeof Ionicons>["name"] {
-  switch (type) {
-    case "goal":
-      return "flag-outline";
-    case "user_note":
-      return "document-text-outline";
-    case "accepted_suggestion":
-      return "checkmark-circle-outline";
-    case "dismissed_suggestion":
-      return "close-circle-outline";
-    case "analysis_insight":
-      return "analytics-outline";
-    default:
-      return "bookmark-outline";
-  }
-}
 
 // ---------------------------------------------------------------------------
 // SwipeableMemoryRow
@@ -145,6 +111,13 @@ interface SwipeableRowProps {
    */
   isPendingDelete: boolean;
   onExitAnimationComplete: (id: string) => void;
+  /**
+   * Tap on a closed row opens the detail modal (full content, no
+   * truncation). Tap on an open row closes the swipe instead of
+   * opening detail — prevents a stray tap on the revealed trash
+   * button's card region from stacking modal + open row.
+   */
+  onOpenDetail: (memory: UserMemory) => void;
 }
 
 /**
@@ -164,6 +137,7 @@ function SwipeableMemoryRow({
   onOpenChange,
   isPendingDelete,
   onExitAnimationComplete,
+  onOpenDetail,
 }: SwipeableRowProps) {
   const { theme } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
@@ -214,12 +188,26 @@ function SwipeableMemoryRow({
     }
   }, [isOpen, translateX]);
 
+  // Refs mirror props that are read from inside PanResponder
+  // closures (created once on mount — the closures would otherwise
+  // see stale values on re-render). `memoryRef` is defensive; in
+  // practice FlatList's keyExtractor keeps identity per row, but
+  // reading through a ref makes the contract explicit.
+  const onExitDoneRef = useRef(onExitAnimationComplete);
+  onExitDoneRef.current = onExitAnimationComplete;
+  // Mirror memory + onOpenChange for the PanResponder closure. The
+  // snap path reads `memory.id` and calls `onOpenChange(...)` after a
+  // swipe settles; without refs the once-created closure would fire
+  // against stale props after any parent re-render.
+  const memoryRef = useRef(memory);
+  memoryRef.current = memory;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+
   // Confirmed-delete exit animation — slides the card off-screen
   // left while fading out. On completion the parent removes the
   // memory from the list. Kept as Animated.parallel so both
   // properties land at the same instant for a clean sweep.
-  const onExitDoneRef = useRef(onExitAnimationComplete);
-  onExitDoneRef.current = onExitAnimationComplete;
   useEffect(() => {
     if (!isPendingDelete) return;
     Animated.parallel([
@@ -242,22 +230,55 @@ function SwipeableMemoryRow({
   // is held in refs (isOpenRef, lastValueRef, crossedThresholdRef) so
   // the closures see live values without forcing a recreate that
   // would cancel an in-flight gesture.
+  //
+  // Coexistence with a tap Pressable wrapping the card:
+  //   - Tap (no movement) stays with the Pressable — PanResponder
+  //     never claims. `handleTap` opens the detail modal.
+  //   - Horizontal swipe — PanResponder steals the responder from
+  //     Pressable via the capture-phase move check. Pressable sees
+  //     its press cancelled, onPress doesn't fire, swipe proceeds.
+  //     This is the documented RN idiom for combining the two and
+  //     avoids the #144/#145 regression where Pressable winning at
+  //     touch-start killed the swipe (with capture-phase we win
+  //     back once movement is clearly horizontal).
+  //   - Vertical scroll — neither capture nor non-capture move
+  //     claims; FlatList scrolls normally.
+  //
+  // Issue #6 (vertical drift mid-swipe would terminate): handled by
+  // `onPanResponderTerminationRequest: () => false` and
+  // `onShouldBlockNativeResponder: () => true`. Both only take
+  // effect once PanResponder has already won via a horizontal move,
+  // so vertical scroll before claim stays unaffected.
+  const horizontalMoveClaim = (
+    _: unknown,
+    gesture: { dx: number; dy: number },
+  ) => {
+    // Defensive: a NaN dx slipping past the comparison would
+    // cascade into translateX.setValue(NaN) below and surface
+    // as a CoreGraphics "invalid numeric value" warning on iOS.
+    if (!Number.isFinite(gesture.dx) || !Number.isFinite(gesture.dy)) {
+      return false;
+    }
+    // Bias slightly toward horizontal so the FlatList still wins
+    // diagonal-ish drags.
+    return (
+      Math.abs(gesture.dx) > SWIPE_RESPONDER_THRESHOLD &&
+      Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
+    );
+  };
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => {
-        // Defensive: a NaN dx slipping past the comparison would
-        // cascade into translateX.setValue(NaN) below and surface
-        // as a CoreGraphics "invalid numeric value" warning on iOS.
-        if (!Number.isFinite(gesture.dx) || !Number.isFinite(gesture.dy)) {
-          return false;
-        }
-        // Bias slightly toward horizontal so the FlatList still wins
-        // diagonal-ish drags.
-        return (
-          Math.abs(gesture.dx) > SWIPE_RESPONDER_THRESHOLD &&
-          Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
-        );
-      },
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      // Capture-phase move claim — lets PanResponder steal the
+      // responder from a child Pressable on clear horizontal drags.
+      onMoveShouldSetPanResponderCapture: horizontalMoveClaim,
+      onMoveShouldSetPanResponder: horizontalMoveClaim,
+      // Once we hold the responder, don't give it back. Previously
+      // a mid-swipe vertical drift let FlatList's native scroll
+      // reclaim, firing onPanResponderTerminate → row auto-closed.
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
         // Anchor future deltas to the row's current on-screen
         // position. With setOffset, dx during the move is interpreted
@@ -331,7 +352,7 @@ function SwipeableMemoryRow({
         // Sync local edge-detect to the committed position so the
         // next gesture starts from the right haptic state.
         crossedThresholdRef.current = willOpen;
-        onOpenChange(willOpen ? memory.id : null);
+        onOpenChangeRef.current(willOpen ? memoryRef.current.id : null);
       },
       onPanResponderTerminate: () => {
         // Another responder (e.g. the parent FlatList scroll) won
@@ -363,34 +384,52 @@ function SwipeableMemoryRow({
     onDelete(memory.id);
   }, [memory.id, onDelete]);
 
+  // Tap handler — used by the Pressable wrapping the card. A tap on
+  // an open row closes the swipe (rather than opening detail), so
+  // users don't stack the detail modal over a revealed trash button.
+  // A tap on a closed row opens the detail sheet.
+  const handleTap = useCallback(() => {
+    if (isOpenRef.current) {
+      isOpenRef.current = false;
+      crossedThresholdRef.current = false;
+      lastValueRef.current = 0;
+      Animated.spring(translateX, {
+        toValue: 0,
+        useNativeDriver: true,
+        tension: SWIPE_SPRING_TENSION,
+        friction: SWIPE_SPRING_FRICTION,
+      }).start();
+      onOpenChange(null);
+      return;
+    }
+    onOpenDetail(memory);
+  }, [memory, onOpenChange, onOpenDetail, translateX]);
+
   const dateStr = new Date(memory.created_at).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
   });
 
-  // The wrapper is an Animated.View (for the exit fade), but it is
-  // NOT wrapped in a Pressable. Pressable claims the responder on
-  // touch start before PanResponder.onMoveShouldSet has a chance,
-  // which silently breaks every swipe (see the regression in PRs
-  // #144 / #145). Tap-outside-close is handled at MemoryList level
-  // via:
-  //   - ListFooterComponent Pressable when a row is open
-  //   - onScrollBeginDrag
-  //   - handleTabChange (always resets, even on the active chip)
-  //   - other-row swipe (parent state swap closes this one)
+  // Wrapping the inner card in a Pressable is safe now that
+  // PanResponder uses `onMoveShouldSetPanResponderCapture`: the
+  // Pressable wins at touch-start (so taps fire onPress), but as
+  // soon as the user drags horizontally past SWIPE_RESPONDER_THRESHOLD
+  // PanResponder captures the responder back and the swipe proceeds.
+  // Vertical drags never trigger the capture claim, so FlatList's
+  // native pan keeps scrolling the list.
+  //
+  // Exit-animation wrapper stays an Animated.View so the trash
+  // button AND card fade together. Tap-outside-close (open row closed
+  // by a tap elsewhere in the list) is still handled in MemoryList.
+  const previewText = memoryContentText(memory.content);
   return (
-    // Wrapper is an Animated.View only so the exit fade applies to
-    // the trash button AND the card together — keeping it as a plain
-    // View would leave the trash button solid while the card faded.
-    // The PanResponder still lives on the inner card, so the wrapper
-    // change does not interfere with the gesture.
     <Animated.View style={[rowStyles.wrapper, { opacity }]}>
       <View style={rowStyles.deleteContainer}>
         <Pressable
           onPress={handleDelete}
           style={rowStyles.deleteButton}
-          accessibilityLabel={`Delete memory: ${memoryContentText(memory.content)}`}
+          accessibilityLabel={`Delete memory: ${previewText}`}
           accessibilityRole="button"
         >
           <Ionicons name="trash-outline" size={22} color={THEME.colors.white} />
@@ -401,19 +440,27 @@ function SwipeableMemoryRow({
         style={[rowStyles.card, { transform: [{ translateX }] }]}
         {...panResponder.panHandlers}
       >
-        <View style={[rowStyles.iconContainer, { backgroundColor: theme.accentMuted }]}>
-          <Ionicons
-            name={memoryTypeIcon(memory.type)}
-            size={20}
-            color={theme.accent}
-          />
-        </View>
-        <View style={rowStyles.content}>
-          <Text style={rowStyles.body} numberOfLines={3}>
-            {memoryContentText(memory.content)}
-          </Text>
-          <Text style={rowStyles.date}>{dateStr}</Text>
-        </View>
+        <Pressable
+          onPress={handleTap}
+          style={rowStyles.cardPressable}
+          accessibilityLabel={`Open memory: ${previewText}`}
+          accessibilityRole="button"
+          accessibilityHint="Shows the full content of this memory"
+        >
+          <View style={[rowStyles.iconContainer, { backgroundColor: theme.accentMuted }]}>
+            <Ionicons
+              name={memoryTypeIcon(memory.type)}
+              size={20}
+              color={theme.accent}
+            />
+          </View>
+          <View style={rowStyles.content}>
+            <Text style={rowStyles.body} numberOfLines={3}>
+              {previewText}
+            </Text>
+            <Text style={rowStyles.date}>{dateStr}</Text>
+          </View>
+        </Pressable>
       </Animated.View>
     </Animated.View>
   );
@@ -453,6 +500,16 @@ const rowStyles = StyleSheet.create({
     backgroundColor: THEME.colors.destructive,
     alignItems: "center",
     justifyContent: "center",
+  },
+  // The Pressable inside the card holds the tap handler. It has to
+  // stretch to the card's full interior so taps on icon/body/date
+  // all register, and it reproduces the card's flex layout because
+  // the Animated.View outside now only provides the translate
+  // transform + PanResponder handlers.
+  cardPressable: {
+    flex: 1,
+    flexDirection: "row",
+    gap: THEME.spacing.md,
   },
   card: {
     // Square right corners for the same merge. The outer left corners
@@ -705,6 +762,11 @@ export function MemoryList() {
   // sweeping out" independent — a Cancel from the Alert returns to the
   // open state without touching the exit machinery.
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  // Currently-open detail modal, or null when no row is being read.
+  // Tap on a closed row (detected inside SwipeableMemoryRow's
+  // PanResponder) drives this; the Modal in MemoryDetailSheet shows
+  // the full content without truncation.
+  const [detailMemory, setDetailMemory] = useState<UserMemory | null>(null);
 
   // Monotonic request counter + activeTab ref. A fetch that resolves
   // after a later fetch, or after the tab was switched, is discarded
@@ -923,10 +985,13 @@ export function MemoryList() {
         onOpenChange={setOpenMemoryId}
         isPendingDelete={pendingDeleteId === item.id}
         onExitAnimationComplete={handleExitAnimationComplete}
+        onOpenDetail={setDetailMemory}
       />
     ),
     [handleDelete, handleExitAnimationComplete, openMemoryId, pendingDeleteId],
   );
+
+  const handleCloseDetail = useCallback(() => setDetailMemory(null), []);
 
   const copy = TAB_COPY[activeTab];
 
@@ -1066,6 +1131,11 @@ export function MemoryList() {
 
       {composer}
     </KeyboardAvoidingView>
+
+      {/* Detail modal — full content of a tapped row. Mounted outside
+          the KeyboardAvoidingView so the sheet measures against the
+          device viewport rather than the lifted chat region. */}
+      <MemoryDetailSheet memory={detailMemory} onClose={handleCloseDetail} />
     </View>
   );
 }

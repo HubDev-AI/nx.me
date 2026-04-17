@@ -50,6 +50,7 @@ import {
 } from "../../components/ui/HeaderBackButton";
 import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import {
+  getJobFailureMessage,
   getJobStatus,
   saveJob,
   type JobResult,
@@ -211,17 +212,17 @@ export default function ResultScreen() {
   // screen + a profile pending cell observe the same job.
   useRefundToast(result);
 
-  // Save mutation
+  // Save mutation — copy matches the "Keep on profile" button label.
   const saveMutation = useAppMutation<{ saved_at: string }, void>({
     mutationKey: ["job.save", jobId],
     mutationFn: () => saveJob(jobId as string),
     onSuccess: () => {
       setSaveState("saved");
-      showToast({ kind: "success", message: "Result saved." });
+      showToast({ kind: "success", message: "Kept on your profile." });
     },
     onError: () => {
       setSaveState("pending");
-      showToast({ kind: "error", message: "Save failed. Try again." });
+      showToast({ kind: "error", message: "Couldn't keep on profile. Try again." });
     },
   });
 
@@ -354,8 +355,9 @@ export default function ResultScreen() {
   const failureCopy = useMemo(() => {
     if (!terminalFailure) return null;
     if (result?.status === "cancelled") return "Generation was cancelled.";
-    if (result?.status === "failed")
-      return result.failure_reason ?? "Generation failed.";
+    if (result?.status === "failed") {
+      return getJobFailureMessage(result.failure_reason, result.user_guidance);
+    }
     if (hardTimedOut) return RESULT_HARD_TIMEOUT_COPY;
     return "Images didn't come through for this run.";
   }, [terminalFailure, result, hardTimedOut]);

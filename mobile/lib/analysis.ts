@@ -178,6 +178,55 @@ export function getFaceErrorGuidance(code: FaceErrorCode): string {
 }
 
 // ---------------------------------------------------------------------------
+// Job failure user-facing messages
+// ---------------------------------------------------------------------------
+
+// Mirror of app/generation/models.py FAILURE_* constants. When the backend
+// starts emitting a new failure_reason, add it here so the client stops
+// leaking the ALL_CAPS code to end users.
+export type JobFailureCode =
+  | "IDENTITY_PRESERVATION_FAILED"
+  | "NSFW_CONTENT_DETECTED"
+  | "GENERATION_TIMEOUT"
+  | "PROVIDER_ERROR"
+  | "CANCELLED";
+
+const JOB_FAILURE_GUIDANCE: Record<JobFailureCode, string> = {
+  IDENTITY_PRESERVATION_FAILED:
+    "We couldn't keep your likeness steady in this run. Try a clearer, front-facing photo.",
+  NSFW_CONTENT_DETECTED:
+    "This photo was flagged by our safety filter. Please try a different photo.",
+  GENERATION_TIMEOUT:
+    "This one took too long on our end. Your credit is safe — please try again.",
+  PROVIDER_ERROR:
+    "Something went wrong during generation. Your credit is safe — please try again.",
+  CANCELLED: "Generation was cancelled.",
+};
+
+const GENERIC_FAILURE_COPY = "Generation failed. Please try again.";
+
+/**
+ * Turn a backend job failure into a user-readable sentence.
+ *
+ * Priority:
+ *   1. Server-provided `user_guidance` — already localized for this job
+ *      (e.g. IDENTITY_PRESERVATION_FAILED gets a specific hint in
+ *      app/api/jobs.py). Wins because it may encode job-specific context.
+ *   2. Known `failure_reason` code from JOB_FAILURE_GUIDANCE.
+ *   3. Generic fallback — guarantees we never render the raw code.
+ */
+export function getJobFailureMessage(
+  code: string | null | undefined,
+  serverGuidance: string | null | undefined,
+): string {
+  if (serverGuidance && serverGuidance.trim().length > 0) return serverGuidance;
+  if (code && code in JOB_FAILURE_GUIDANCE) {
+    return JOB_FAILURE_GUIDANCE[code as JobFailureCode];
+  }
+  return GENERIC_FAILURE_COPY;
+}
+
+// ---------------------------------------------------------------------------
 // Tier-3 API calls
 // ---------------------------------------------------------------------------
 
