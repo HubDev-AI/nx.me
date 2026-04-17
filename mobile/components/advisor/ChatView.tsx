@@ -115,8 +115,8 @@ export function ChatView() {
     setError(null);
     try {
       const response = await fetchMessages();
-      // API returns newest first; we display oldest first, so reverse
-      setMessages(response.messages.slice().reverse());
+      // API returns oldest first; FlatList renders top-to-bottom for standard chat order.
+      setMessages(response.messages);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
@@ -146,7 +146,7 @@ export function ChatView() {
     setIsLoadingMore(true);
     try {
       const response = await fetchMessages(nextCursorRef.current);
-      const older = response.messages.slice().reverse();
+      const older = response.messages;
       setMessages((prev) => [...older, ...prev]);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
