@@ -23,6 +23,11 @@ import pytest
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_memories import (
     HANDLERS,
+    METRIC_LIST_RECENT_CALLED,
+    METRIC_MEMORY_SAVE_REJECTED,
+    METRIC_MEMORY_SAVE_SKIPPED,
+    METRIC_MEMORY_SAVED,
+    METRIC_SEARCH_CALLED,
     TOOL_NAME_LIST_RECENT,
     TOOL_NAME_SAVE,
     TOOL_NAME_SEARCH,
@@ -30,6 +35,15 @@ from app.advisor.mcp.tools_memories import (
     _format_memory_line,
 )
 from app.advisor.models import MemoryType
+
+
+def _metric_keys(caplog) -> list[str]:
+    """Extract the ``metric`` key from every captured INFO record."""
+    return [
+        rec.__dict__.get("metric", "")
+        for rec in caplog.records
+        if rec.levelname == "INFO"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -428,3 +442,66 @@ def test_format_memory_line_flattens_newlines_in_summary():
     assert "\n" not in rendered
     assert "\r" not in rendered
     assert "line1" in rendered and "line3" in rendered
+
+
+# ---------------------------------------------------------------------------
+# Telemetry — every tool invocation emits exactly one metric record.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_emits_saved_metric(caplog):
+    repo = _ToolRepo()
+    ctx = _make_ctx(repo)
+    with caplog.at_level(logging.INFO, logger="app.advisor.mcp.tools_memories"):
+        await HANDLERS[TOOL_NAME_SAVE](ctx, type="goal", text="grow my hair")
+
+    assert METRIC_MEMORY_SAVED in _metric_keys(caplog)
+
+
+@pytest.mark.asyncio
+async def test_save_emits_skipped_metric_on_dedup(caplog):
+    repo = _ToolRepo()
+    repo._exact_match = {"id": "existing", "content": {"text": "x"}, "type": "goal"}
+    ctx = _make_ctx(repo)
+    with caplog.at_level(logging.INFO, logger="app.advisor.mcp.tools_memories"):
+        await HANDLERS[TOOL_NAME_SAVE](ctx, type="goal", text="x")
+
+    keys = _metric_keys(caplog)
+    assert METRIC_MEMORY_SAVE_SKIPPED in keys
+    # Dedup path does NOT also fire the saved metric.
+    assert METRIC_MEMORY_SAVED not in keys
+
+
+@pytest.mark.asyncio
+async def test_save_emits_rejected_metric_on_invalid_type(caplog):
+    repo = _ToolRepo()
+    ctx = _make_ctx(repo)
+    with caplog.at_level(logging.INFO, logger="app.advisor.mcp.tools_memories"):
+        await HANDLERS[TOOL_NAME_SAVE](ctx, type="style_profile", text="x")
+
+    assert METRIC_MEMORY_SAVE_REJECTED in _metric_keys(caplog)
+
+
+@pytest.mark.asyncio
+async def test_search_emits_called_metric(caplog):
+    user_id = uuid4()
+    repo = _ToolRepo()
+    _seed_memories(repo, user_id)
+    ctx = _make_ctx(repo, user_id)
+    with caplog.at_level(logging.INFO, logger="app.advisor.mcp.tools_memories"):
+        await HANDLERS[TOOL_NAME_SEARCH](ctx, query="hair")
+
+    assert METRIC_SEARCH_CALLED in _metric_keys(caplog)
+
+
+@pytest.mark.asyncio
+async def test_list_recent_emits_called_metric(caplog):
+    user_id = uuid4()
+    repo = _ToolRepo()
+    _seed_memories(repo, user_id)
+    ctx = _make_ctx(repo, user_id)
+    with caplog.at_level(logging.INFO, logger="app.advisor.mcp.tools_memories"):
+        await HANDLERS[TOOL_NAME_LIST_RECENT](ctx)
+
+    assert METRIC_LIST_RECENT_CALLED in _metric_keys(caplog)

@@ -12,12 +12,25 @@ any hallucinated ``user_id`` key before it reaches these handlers.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.advisor.embedding_port import EmbeddingPort
 from app.advisor.mcp.context import McpContext
 from app.advisor.memory_manager import MemoryManager, summarize_memory_content
 from app.advisor.models import MemoryType
+
+logger = logging.getLogger(__name__)
+
+# Telemetry keys. Centralised so dashboards + ops grep find them in one
+# place and the handler bodies stay tidy. One event per tool call so
+# aggregate rates (saved/skipped, search/list, etc.) can be plotted
+# directly from the log stream.
+METRIC_MEMORY_SAVED = "advisor.memory_saved_by_model"
+METRIC_MEMORY_SAVE_SKIPPED = "advisor.memory_save_skipped"
+METRIC_MEMORY_SAVE_REJECTED = "advisor.memory_save_rejected"
+METRIC_SEARCH_CALLED = "advisor.search_memories_called"
+METRIC_LIST_RECENT_CALLED = "advisor.list_recent_memories_called"
 
 # ---------------------------------------------------------------------------
 # Shared constants — render order + provenance prefixes keep Ada's view of
@@ -328,6 +341,18 @@ async def handle_search(
         if line:
             lines.append(line)
 
+    logger.info(
+        "Advisor memory search: user=%s matches=%d limit=%d",
+        ctx.user_id,
+        len(lines),
+        n_limit,
+        extra={
+            "metric": METRIC_SEARCH_CALLED,
+            "user_id": str(ctx.user_id),
+            "matches": len(lines),
+            "limit": n_limit,
+        },
+    )
     text = "\n".join(lines) if lines else "no matches"
     return {"content": [{"type": "text", "text": text}], "is_error": False}
 
@@ -389,6 +414,20 @@ async def handle_list_recent(
     )
 
     body = "\n".join(lines) if lines else "no memories"
+    logger.info(
+        "Advisor memory list: user=%s rows=%d type=%s has_more=%s",
+        ctx.user_id,
+        len(lines),
+        type_filter or "all",
+        has_more,
+        extra={
+            "metric": METRIC_LIST_RECENT_CALLED,
+            "user_id": str(ctx.user_id),
+            "rows": len(lines),
+            "type": type_filter or "",
+            "has_more": has_more,
+        },
+    )
     # Cursor is returned as a SEPARATE content block (not inlined into
     # the body text) so a memory whose text happens to contain the
     # literal substring ``cursor:`` cannot fool the model into parsing
@@ -419,6 +458,17 @@ async def handle_save(
     """
     type_str = str(type).strip()
     if type_str not in _MODEL_SAVABLE_TYPES:
+        logger.info(
+            "Advisor memory save rejected: user=%s reason=invalid_type type=%s",
+            ctx.user_id,
+            type_str,
+            extra={
+                "metric": METRIC_MEMORY_SAVE_REJECTED,
+                "user_id": str(ctx.user_id),
+                "reason": "invalid_type",
+                "type": type_str,
+            },
+        )
         return {
             "content": [
                 {
@@ -434,6 +484,15 @@ async def handle_save(
 
     body = str(text).strip()
     if not body:
+        logger.info(
+            "Advisor memory save rejected: user=%s reason=empty_text",
+            ctx.user_id,
+            extra={
+                "metric": METRIC_MEMORY_SAVE_REJECTED,
+                "user_id": str(ctx.user_id),
+                "reason": "empty_text",
+            },
+        )
         return {
             "content": [{"type": "text", "text": "empty text"}],
             "is_error": True,
@@ -460,8 +519,32 @@ async def handle_save(
 
     dedup_reason = row.get("_dedup")
     if dedup_reason:
+        logger.info(
+            "Advisor memory save skipped: user=%s type=%s reason=%s",
+            ctx.user_id,
+            type_str,
+            dedup_reason,
+            extra={
+                "metric": METRIC_MEMORY_SAVE_SKIPPED,
+                "user_id": str(ctx.user_id),
+                "type": type_str,
+                "reason": dedup_reason,
+            },
+        )
         text_line = f"saved=false, dedup={dedup_reason}"
     else:
+        logger.info(
+            "Advisor memory saved: user=%s type=%s id=%s",
+            ctx.user_id,
+            type_str,
+            row.get("id", ""),
+            extra={
+                "metric": METRIC_MEMORY_SAVED,
+                "user_id": str(ctx.user_id),
+                "type": type_str,
+                "memory_id": str(row.get("id", "")),
+            },
+        )
         text_line = f"saved=true, type={type_str}, id={row.get('id', '')}"
     return {"content": [{"type": "text", "text": text_line}], "is_error": False}
 
