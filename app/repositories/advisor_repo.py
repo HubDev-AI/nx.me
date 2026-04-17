@@ -395,10 +395,13 @@ class AdvisorRepository:
         fetch_limit: int,
         cursor: str | None = None,
         type_filter: str | None = None,
+        authored_by: str | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch a page of memories (newest first).
 
-        Cursor format: ``{created_at}|{id}`` composite.
+        Cursor format: ``{created_at}|{id}`` composite. ``authored_by``
+        filters to a single provenance tier (the UI path passes
+        ``'user'`` to hide model-written and analysis-written rows).
         """
         query = (
             self._sb.table("user_memories")
@@ -410,6 +413,8 @@ class AdvisorRepository:
         )
         if type_filter is not None:
             query = query.eq("type", type_filter)
+        if authored_by is not None:
+            query = query.eq("authored_by", authored_by)
         if cursor:
             # A-7: Validate cursor format
             try:
@@ -443,25 +448,31 @@ class AdvisorRepository:
             count = len(result.data or [])
         return int(count)
 
-    def delete_oldest_memory_excluding_types(
-        self, user_id: str, exclude_types: tuple[str, ...]
+    def delete_oldest_memory_by_authored_by(
+        self,
+        user_id: str,
+        authored_by: str,
+        exclude_types: tuple[str, ...],
     ) -> list[dict[str, Any]]:
-        """Delete the single oldest memory whose type is not in ``exclude_types``.
+        """Delete the single oldest memory of a given provenance tier.
 
-        Used to enforce the per-user memory cap without evicting user-declared
-        intent (goals). Returns deleted rows (empty list if nothing to evict).
+        Used by ``MemoryManager._enforce_memory_cap`` to evict rows in
+        priority order: ``model`` first, then ``analysis``, then ``user``.
+        Returns deleted rows (empty list when the tier has nothing
+        evictable — caller falls through to the next tier).
         """
-        victim = (
+        query = (
             self._sb.table("user_memories")
             .select("id")
             .eq("user_id", user_id)
-            .not_.in_("type", list(exclude_types))
+            .eq("authored_by", authored_by)
             .order("created_at", desc=False)
             .order("id", desc=False)
             .limit(1)
-            .execute()
         )
-        victim_rows = victim.data or []
+        if exclude_types:
+            query = query.not_.in_("type", list(exclude_types))
+        victim_rows = query.execute().data or []
         if not victim_rows:
             return []
         victim_id = victim_rows[0]["id"]
@@ -473,6 +484,64 @@ class AdvisorRepository:
             .execute()
         )
         return deleted.data or []
+
+    def find_memory_by_content_hash(
+        self,
+        *,
+        user_id: str,
+        memory_type: str,
+        content_hash: str,
+    ) -> dict[str, Any] | None:
+        """Return an existing memory with a matching ``content_hash`` or ``None``.
+
+        Indexed lookup via ``idx_user_memories_content_hash_unique``
+        (migration 0042). The column is the app-computed canonical JSON
+        hash — store and query sides compute it the same way to survive
+        JSONB's unordered storage.
+        """
+        rows = (
+            self._sb.table("user_memories")
+            .select("id, type, content, created_at, authored_by, content_hash")
+            .eq("user_id", user_id)
+            .eq("type", memory_type)
+            .eq("content_hash", content_hash)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        return rows[0] if rows else None
+
+    def find_semantic_duplicate(
+        self,
+        user_id: str,
+        memory_type: str,
+        embedding: list[float],
+        threshold: float,
+    ) -> dict[str, Any] | None:
+        """Return the nearest same-type neighbor above ``threshold``, or ``None``.
+
+        Calls the ``match_user_memories_by_type`` RPC (migration 0042)
+        to fetch the single closest row of the same type for the user,
+        then gates on cosine similarity. Returning ``None`` below the
+        threshold lets the caller proceed with insertion.
+        """
+        result = self._sb.rpc(
+            "match_user_memories_by_type",
+            {
+                "p_user_id": user_id,
+                "p_embedding": embedding,
+                "p_type": memory_type,
+                "p_limit": 1,
+            },
+        ).execute()
+        rows = result.data or []
+        if not rows:
+            return None
+        top = rows[0]
+        if float(top.get("similarity", 0.0)) >= threshold:
+            return top
+        return None
 
     def delete_memory(self, memory_id: str, user_id: str) -> list[dict[str, Any]]:
         """Delete a user-owned memory. Returns deleted rows (empty if not found)."""
@@ -497,17 +566,6 @@ class AdvisorRepository:
                 "p_limit": limit,
             },
         ).execute()
-        return result.data or []
-
-    def get_recent_memories(self, user_id: str, since: str) -> list[dict[str, Any]]:
-        """Return memories created after ``since`` (ISO timestamp) for dedup."""
-        result = (
-            self._sb.table("user_memories")
-            .select("type, content")
-            .eq("user_id", user_id)
-            .gte("created_at", since)
-            .execute()
-        )
         return result.data or []
 
     def get_analysis_insights(self, user_id: str) -> list[dict[str, Any]]:
@@ -743,10 +801,7 @@ class AdvisorRepository:
         """
         result = (
             self._sb.table("jobs")
-            .select(
-                "id, status, source_type, created_at, "
-                "completed_at:updated_at"
-            )
+            .select("id, status, source_type, created_at, completed_at:updated_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .limit(1)

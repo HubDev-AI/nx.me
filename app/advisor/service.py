@@ -1,23 +1,19 @@
 """AdvisorService — orchestrates conversations, memories, nudges, and LLM calls.
 
-Spec Section 5.3 message flow:
-  1. require_feature("advisor_chat") — enforced at route layer
-  2. Get/create active conversation
-  3. Build context (Section 6)
-  4. Call Claude Sonnet
-  5. Save messages
-  6. Extract memory signals (async, Haiku)
-  7. Return response
+Chat message flow:
+  1. require_feature("advisor_chat") — enforced at route layer.
+  2. Get/create active conversation.
+  3. Build context (SOUL.md + user_data + nudges + history + user msg).
+  4. Call Claude Sonnet with tool registry — model fetches memories on
+     demand via search_memories / list_recent_memories, and persists new
+     ones via save_memory.
+  5. Save messages. No post-turn extraction pass.
 """
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import logging
-import random
 import re
-import weakref
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -25,6 +21,7 @@ from uuid import UUID
 from app.advisor.embedding_port import EmbeddingPort
 from app.advisor.llm_port import LLMPort
 
+import asyncio
 import redis.asyncio as aioredis
 
 from app.advisor import content_filter
@@ -48,17 +45,6 @@ logger = logging.getLogger(__name__)
 _MAX_TOKENS_CHAT = 256
 _MAX_TOKENS_SUMMARY = 512
 
-_background_tasks: weakref.WeakSet = weakref.WeakSet()
-
-
-def _task_done(t: asyncio.Task) -> None:
-    """Log errors from background tasks instead of letting them silently fail."""
-    if t.cancelled():
-        return
-    exc = t.exception()
-    if exc:
-        logger.error("Background task failed: %s", exc, exc_info=exc)
-
 
 class AdvisorService:
     """Orchestrates all advisor functionality."""
@@ -75,7 +61,6 @@ class AdvisorService:
         self._llm = llm_adapter
         self._memory_manager = MemoryManager(
             advisor_repo=advisor_repo,
-            llm_adapter=llm_adapter,
             embedding_adapter=embedding_adapter,
         )
 
@@ -144,36 +129,28 @@ class AdvisorService:
                     finally:
                         await self._redis.delete(lock_key)
 
-        # Step 4: Retrieve relevant memories
-        memories = await self._memory_manager.get_relevant_memories(user_id, message)
-
-        # Step 5: Build user data block from latest analysis
+        # Step 4: Build user data block from latest analysis.
         user_data_block = await run_sync(self._build_user_data, user_id)
 
-        # Step 5b: Fetch recent nudges for the 4th system block (Plan Unit 4).
+        # Step 4b: Fetch recent nudges for the 4th system block.
         # Read-only; never mutates read_at. Empty list → no nudge block.
         nudges = await run_sync(self._fetch_context_nudges, user_id)
 
-        # Step 6 (retired in Plan Unit 2): the eager ``_fetch_vision_content``
-        # path is gone. Vision arrives ONLY when the model explicitly calls
+        # Vision arrives ONLY when the model explicitly calls
         # ``get_latest_glowup`` / ``get_latest_photo`` / ``get_latest_generation``
         # via the tool registry below. When ``ADVISOR_TOOLS_ENABLED`` is
         # False, the turn runs text-only — the kill switch is a rollback
         # knob, not a parity guarantee.
         vision_content: list[dict[str, Any]] | None = None
 
-        # Step 7: Build LLM context
-        # Deterministic RNG for context assembly (hashlib, not hash() — cross-process safe)
-        _seed = int(hashlib.md5(conversation_id.encode()).hexdigest(), 16) % (2**32)
-        _rng = random.Random(_seed)
-
+        # Step 5: Build LLM context. Memories are no longer auto-injected
+        # — the model fetches on demand via the search_memories /
+        # list_recent_memories tools.
         messages = build_context(
             soul_md=_SOUL_MD,
             user_data=user_data_block,
-            memories=memories,
             conversation=history,
             message=message,
-            rng=_rng,
             nudges=nudges,
         )
 
@@ -187,11 +164,10 @@ class AdvisorService:
                 extra={"metric": "advisor.context_trimmed", "dropped": dropped},
             )
 
-        # Step 7b: Build per-turn tool registry (Plan Unit 9).
-        # The registry carries a frozen ``McpContext`` scoped to this user
-        # and is dropped when the turn ends. ``ADVISOR_TOOLS_ENABLED`` is
-        # the kill switch — when False, tools are not advertised to the
-        # model and the eager-vision path above remains authoritative.
+        # Step 6: Build per-turn tool registry. The registry carries a
+        # frozen ``McpContext`` scoped to this user and is dropped when
+        # the turn ends. ``ADVISOR_TOOLS_ENABLED`` is the kill switch —
+        # when False, tools are not advertised to the model.
         tool_registry: ToolRegistry | None = None
         tool_schemas: list[dict[str, Any]] | None = None
         if settings.ADVISOR_TOOLS_ENABLED:
@@ -204,14 +180,10 @@ class AdvisorService:
             tool_registry = ToolRegistry(ctx=mcp_ctx)
             tool_schemas = tool_registry.schemas()
 
-        # Step 8: Call LLM (with post-generation check + one retry)
+        # Step 7: Call LLM (with post-generation check + one retry).
         recent_advisor_messages = [
             m["content"] for m in history if m.get("role") == "advisor"
         ]
-        # Canonical counts for the payload logger (Plan Unit 4). The
-        # service layer is authoritative — trim may have dropped history
-        # turns but never touches the pinned memory / nudge blocks.
-        memory_count = len(memories) if memories else 0
         nudge_count = len(nudges) if nudges else 0
         advisor_response = await self._call_llm_with_check(
             user_id=user_id,
@@ -220,45 +192,19 @@ class AdvisorService:
             vision_content=vision_content,
             recent_responses=recent_advisor_messages,
             dropped=dropped,
-            memory_count=memory_count,
             nudge_count=nudge_count,
             tool_schemas=tool_schemas,
             tool_registry=tool_registry,
         )
 
-        # Step 9: Persist messages
+        # Step 8: Persist messages.
         await run_sync(self._save_message, conversation_id, "user", message)
         advisor_msg_row = await run_sync(
             self._save_message, conversation_id, "advisor", advisor_response
         )
 
-        # Update conversation updated_at
+        # Update conversation updated_at.
         await run_sync(self._repo.update_conversation_timestamp, conversation_id)
-
-        # Step 10: Async memory extraction (fire and forget, L-5 / M-6)
-        # No explicit retry — extraction will naturally re-trigger on next message.
-        # A-9: Structured error logging with extraction failure counter
-        async def _extract_with_logging() -> None:
-            try:
-                await self._memory_manager.extract_memories_from_turn(
-                    user_id=user_id,
-                    user_message=message,
-                    advisor_response=advisor_response,
-                )
-            except Exception:
-                logger.warning(
-                    "Memory extraction failed for user %s. Will retry on next message.",
-                    str(user_id),
-                    exc_info=True,
-                    extra={
-                        "metric": "advisor.memory_extraction_failure",
-                        "user_id": str(user_id),
-                    },
-                )
-
-        task = asyncio.create_task(_extract_with_logging())
-        task.add_done_callback(_task_done)
-        _background_tasks.add(task)
 
         return advisor_msg_row
 
@@ -506,9 +452,15 @@ class AdvisorService:
         user_id: UUID,
         memory_type: MemoryType,
         content: dict[str, Any],
+        authored_by: str = "user",
     ) -> dict[str, Any]:
-        """Add a user-authored memory (goal or note)."""
-        return await self._memory_manager.write_memory(user_id, memory_type, content)
+        """Add a memory. Defaults to ``authored_by='user'`` for the
+        POST /v1/memories path; the ``save_memory`` MCP tool passes
+        ``'model'`` explicitly.
+        """
+        return await self._memory_manager.write_memory(
+            user_id, memory_type, content, authored_by=authored_by
+        )
 
     async def list_memories(self, user_id: UUID) -> list[dict[str, Any]]:
         """List all memories for a user."""
@@ -520,11 +472,13 @@ class AdvisorService:
         limit: int = 50,
         cursor: str | None = None,
         type_filter: str | None = None,
+        authored_by: str | None = None,
     ) -> dict[str, Any]:
         """Return a paginated page of memories.
 
-        ``type_filter`` is a passthrough to the repo; when ``None`` the page
-        contains every memory type for the user (default behavior).
+        ``type_filter`` and ``authored_by`` are passthroughs to the repo.
+        The UI path passes ``authored_by='user'`` so Ada's own saves and
+        analysis-pipeline rows do not leak into the Goals/Notes tabs.
         """
         fetch_limit = limit + 1
         rows = await run_sync(
@@ -533,6 +487,7 @@ class AdvisorService:
             fetch_limit=fetch_limit,
             cursor=cursor,
             type_filter=type_filter,
+            authored_by=authored_by,
         )
         has_more = len(rows) > limit
         if has_more:

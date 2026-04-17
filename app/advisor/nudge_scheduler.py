@@ -505,9 +505,9 @@ def _parse_vision_nudge_json(raw: str) -> tuple[str, str] | None:
     """Parse a strict JSON ``{"body", "observation_tag"}`` response.
 
     Returns ``(body, observation_tag)`` when both fields are non-empty
-    strings; returns ``None`` on any parse or shape failure. Mirrors
-    the shape of :func:`memory_manager.extract_memories_from_turn`'s
-    ``json.loads`` guard — dropping on failure rather than retrying.
+    strings; returns ``None`` on any parse or shape failure. Dropping
+    on failure is preferred to retrying — a malformed response from
+    Haiku is usually a token-budget accident, not a retryable error.
     """
     try:
         data = json.loads(strip_json_code_fence(raw))
@@ -535,12 +535,11 @@ async def _build_memory_manager(ctx: dict):
     Extracted so tests can patch this without standing up real Supabase/Redis.
     """
     from app.advisor.memory_manager import MemoryManager
-    from app.api.deps import get_embedding_adapter, get_llm_adapter
+    from app.api.deps import get_embedding_adapter
 
     supabase: Client = ctx["supabase"]
     return MemoryManager(
         advisor_repo=AdvisorRepository(supabase),
-        llm_adapter=get_llm_adapter(),
         embedding_adapter=get_embedding_adapter(),
     )
 

@@ -1,10 +1,16 @@
-"""Memory manager — pgvector read/write, embedding, hybrid retrieval.
+"""Memory manager — pgvector read/write + model-driven retrieval.
 
 Handles:
-- Writing new memories (goal, user_note, analysis_insight, etc.)
-- Retrieving relevant memories via pgvector + hybrid scoring
-- Memory extraction from conversation turns (async, Haiku)
-- Deduplication before storage
+- Writing new memories with embedding + dedup (exact content + semantic).
+- Retrieving relevant memories via pgvector + hybrid scoring (called by
+  the search_memories MCP tool; no longer auto-invoked every chat turn).
+- Writing analysis_insight and style_profile rows from the face-analysis
+  pipeline.
+
+Post-refactor note (2026-04-18): the prior Haiku post-turn extraction
+path was deleted. Memory writes now go through three explicit sources
+— ``authored_by='user'`` (UI), ``authored_by='model'`` (Ada's
+save_memory tool), ``authored_by='analysis'`` (face pipeline).
 """
 
 from __future__ import annotations
@@ -12,31 +18,27 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
-from app.advisor._json_utils import strip_json_code_fence
 from app.advisor.embedding_port import EmbeddingPort
-from app.advisor.llm_port import LLMPort
-
 from app.advisor.models import MemoryType
-from app.advisor.nudge_policy import MODEL_HAIKU
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
 
-# Hybrid score weights (spec Section 4.4)
+# Hybrid score weights (retrieval re-ranker).
 _WEIGHT_SIMILARITY = 0.6
 _WEIGHT_RECENCY = 0.3
 _WEIGHT_IMPORTANCE = 0.1
 
-# Similarity threshold: discard candidates below this
+# Minimum cosine similarity for a candidate to qualify.
 _MIN_SIMILARITY = 0.60
 
-# Importance scores by memory type (spec Section 4.4)
+# Importance scores by memory type (retrieval ranker).
 _IMPORTANCE: dict[str, float] = {
     MemoryType.GOAL: 1.0,
     MemoryType.ACCEPTED_SUGGESTION: 0.9,
@@ -45,15 +47,25 @@ _IMPORTANCE: dict[str, float] = {
     MemoryType.DISMISSED_SUGGESTION: 0.4,
 }
 
-# Deduplication: word-overlap threshold for same-type memories in last 7 days
-_DEDUP_OVERLAP_THRESHOLD = 0.70
-
-# pgvector candidate pool size
+# pgvector candidate pool size for retrieval.
 _CANDIDATE_LIMIT = 15
+
+# Semantic-dedup threshold for write-time duplicate detection. A new
+# memory whose cosine similarity against any existing same-type row of
+# the same user meets or exceeds this floor is treated as a duplicate
+# and skipped. 0.92 is high enough to catch paraphrases of the same
+# intent ("grow my hair out" ≈ "growing my hair longer") while still
+# accepting genuinely different items within a narrow topic.
+_SEMANTIC_DEDUP_THRESHOLD = 0.92
+
+
+# Write-path provenance. Callers MUST pass one of these values; the
+# storage CHECK constraint (migration 0042) enforces it server-side.
+VALID_AUTHORED_BY: frozenset[str] = frozenset({"user", "model", "analysis"})
 
 
 def _recency_score(created_at_str: str) -> float:
-    """Compute recency score from ISO timestamp string (spec Section 4.4)."""
+    """Compute recency score from an ISO timestamp string."""
     try:
         created_at = datetime.fromisoformat(created_at_str)
     except (ValueError, TypeError):
@@ -72,15 +84,6 @@ def _recency_score(created_at_str: str) -> float:
     if age_days < 30:
         return 0.5
     return 0.2
-
-
-def _word_overlap(a: str, b: str) -> float:
-    """Jaccard word overlap between two strings."""
-    words_a = set(a.lower().split())
-    words_b = set(b.lower().split())
-    if not words_a or not words_b:
-        return 0.0
-    return len(words_a & words_b) / len(words_a | words_b)
 
 
 def summarize_memory_content(content: dict[str, Any]) -> str:
@@ -116,11 +119,9 @@ class MemoryManager:
     def __init__(
         self,
         advisor_repo: AdvisorRepository,
-        llm_adapter: LLMPort,
         embedding_adapter: EmbeddingPort,
     ) -> None:
         self._repo = advisor_repo
-        self._llm_adapter = llm_adapter
         self._embedding_adapter = embedding_adapter
 
     # -----------------------------------------------------------------------
@@ -132,38 +133,132 @@ class MemoryManager:
         user_id: UUID,
         memory_type: MemoryType,
         content: dict[str, Any],
+        authored_by: str,
     ) -> dict[str, Any]:
-        """Write a new memory row with embedding. Returns the created row.
+        """Write a new memory row with embedding. Returns the created row
+        or the existing row on dedup hit.
 
-        Enforces `ADVISOR_MEMORY_CAP` per spec §10: if the user is already at or
-        above the cap, evict the oldest non-goal memory before inserting. Goals
-        are never auto-evicted — if the user hits the cap with goals only, the
-        write still proceeds (overflow logged; intent is preserved).
+        Dedup runs before the insert in two stages, cheapest first:
+        1. Exact content fingerprint match against same-type rows of the
+           same user in the last 30 days. SHA-256 over the serialized
+           content. Skips the embedding call when a hit is found.
+        2. Semantic similarity match — compute the embedding, run pgvector
+           nearest-neighbor against same-user candidates, skip if any
+           same-type match is above ``_SEMANTIC_DEDUP_THRESHOLD``.
 
-        Soft-cap race: under concurrent extractions for the same user at the
-        boundary, two writes may each pass the count check and each evict one
-        row — final count can exceed the cap by one. Acceptable trade-off:
-        the cap is a bound on unbounded growth, not a hard invariant, and
-        real extraction volume is a few rows per turn.
+        On dedup hit the existing row is returned annotated with
+        ``_dedup: <reason>`` so callers (the save_memory tool) can
+        surface the outcome to the model without a second lookup.
+
+        Enforces ``ADVISOR_MEMORY_CAP``: if the user is at or above the
+        cap, evict by authored_by priority before inserting (see
+        ``_enforce_memory_cap``). Goals are never auto-evicted.
         """
-        await run_sync(self._enforce_memory_cap, user_id)
+        if authored_by not in VALID_AUTHORED_BY:
+            raise ValueError(
+                f"authored_by must be one of {sorted(VALID_AUTHORED_BY)!r}, "
+                f"got {authored_by!r}"
+            )
+
+        # Stage 1: exact-content dedup. Cheap hash lookup, no network
+        # call. Catches the "same user POSTs same goal twice" case
+        # before we burn an embedding request. The canonical JSON
+        # hash is stored alongside the row in ``content_hash`` so the
+        # check is a single indexed query rather than a Python-side
+        # scan, AND the partial unique index enforces the same
+        # invariant atomically at the DB level (see migration 0042).
+        content_hash = _content_fingerprint(content)
+        existing_exact = await run_sync(
+            self._repo.find_memory_by_content_hash,
+            user_id=str(user_id),
+            memory_type=memory_type.value,
+            content_hash=content_hash,
+        )
+        if existing_exact is not None:
+            logger.info(
+                "Memory write deduped (exact): user=%s type=%s",
+                user_id,
+                memory_type,
+            )
+            return {**existing_exact, "_dedup": "exact_content"}
 
         text = summarize_memory_content(content)
         embedding = await self._embedding_adapter.compute_embedding(text)
+
+        # Stage 2: semantic dedup. Find the nearest same-user neighbor
+        # of the SAME TYPE and skip if similarity crosses the threshold.
+        # We already have the embedding from the line above, so this
+        # costs one extra pgvector round-trip.
+        semantic_match = await run_sync(
+            self._repo.find_semantic_duplicate,
+            user_id=str(user_id),
+            memory_type=memory_type.value,
+            embedding=embedding,
+            threshold=_SEMANTIC_DEDUP_THRESHOLD,
+        )
+        if semantic_match is not None:
+            similarity = float(semantic_match.get("similarity", 0.0))
+            logger.info(
+                "Memory write deduped (semantic %.2f): user=%s type=%s",
+                similarity,
+                user_id,
+                memory_type,
+            )
+            return {**semantic_match, "_dedup": f"semantic_{similarity:.2f}"}
+
+        await run_sync(self._enforce_memory_cap, user_id)
 
         row = {
             "user_id": str(user_id),
             "type": memory_type.value,
             "content": content,
             "embedding": embedding,
+            "authored_by": authored_by,
+            "content_hash": content_hash,
         }
 
-        created = self._repo.insert_memory(row)
-        logger.info("Memory written: user=%s type=%s", user_id, memory_type)
+        # TOCTOU backstop: a concurrent writer could have inserted the
+        # same (user_id, type, content_hash) between our dedup check
+        # and this insert. The unique partial index in migration 0042
+        # makes the race impossible at the DB level; on violation we
+        # look up the winner and return it as a dedup hit.
+        try:
+            created = self._repo.insert_memory(row)
+        except Exception as exc:
+            if _is_unique_violation(exc):
+                winner = self._repo.find_memory_by_content_hash(
+                    user_id=str(user_id),
+                    memory_type=memory_type.value,
+                    content_hash=content_hash,
+                )
+                if winner is not None:
+                    logger.info(
+                        "Memory write deduped (race): user=%s type=%s",
+                        user_id,
+                        memory_type,
+                    )
+                    return {**winner, "_dedup": "race"}
+            raise
+        logger.info(
+            "Memory written: user=%s type=%s authored_by=%s",
+            user_id,
+            memory_type,
+            authored_by,
+        )
         return created
 
     def _enforce_memory_cap(self, user_id: UUID) -> None:
-        """If user is at or above the cap, delete the oldest non-goal memory."""
+        """If user is at or above the cap, evict by authored_by priority.
+
+        Eviction order (first class to find a victim wins):
+          1. ``authored_by='model'`` — Ada's own saves go first; she can
+             always re-save if the context still calls for it.
+          2. ``authored_by='analysis'`` (except ``style_profile`` which
+             is singleton-guarded by migration 0040).
+          3. ``authored_by='user'`` — user-typed rows are last-resort.
+             Even then, ``goal`` is protected and the eviction is skipped
+             if every candidate is a goal.
+        """
         cap = settings.ADVISOR_MEMORY_CAP
         try:
             count = self._repo.count_memories(str(user_id))
@@ -178,28 +273,48 @@ class MemoryManager:
         if count < cap:
             return
 
-        try:
-            evicted = self._repo.delete_oldest_memory_excluding_types(
-                str(user_id), exclude_types=(MemoryType.GOAL.value,)
-            )
-        except Exception:
-            logger.warning(
-                "Memory eviction failed for user %s",
-                user_id,
-                exc_info=True,
-            )
-            return
+        # Try each priority tier in order. Goals are never evicted.
+        eviction_priorities: list[dict[str, Any]] = [
+            {"authored_by": "model", "exclude_types": (MemoryType.GOAL.value,)},
+            {
+                "authored_by": "analysis",
+                "exclude_types": (
+                    MemoryType.GOAL.value,
+                    MemoryType.STYLE_PROFILE.value,
+                ),
+            },
+            {"authored_by": "user", "exclude_types": (MemoryType.GOAL.value,)},
+        ]
+        for tier in eviction_priorities:
+            try:
+                evicted = self._repo.delete_oldest_memory_by_authored_by(
+                    str(user_id),
+                    authored_by=tier["authored_by"],
+                    exclude_types=tier["exclude_types"],
+                )
+            except Exception:
+                logger.warning(
+                    "Memory eviction failed for user %s tier=%s",
+                    user_id,
+                    tier["authored_by"],
+                    exc_info=True,
+                )
+                return
+            if evicted:
+                return
 
-        if not evicted:
-            logger.warning(
-                "Memory cap reached with goals only for user %s — accepting overflow",
-                user_id,
-                extra={
-                    "metric": "advisor.memory_cap_goal_only",
-                    "user_id": str(user_id),
-                    "count": count,
-                },
-            )
+        # Every tier is empty of evictable rows — the user's memory is
+        # entirely goals. Accept the overflow; goals represent declared
+        # intent and the cap is a soft guard, not a hard invariant.
+        logger.warning(
+            "Memory cap reached with goals only for user %s — accepting overflow",
+            user_id,
+            extra={
+                "metric": "advisor.memory_cap_goal_only",
+                "user_id": str(user_id),
+                "count": count,
+            },
+        )
 
     async def get_relevant_memories(
         self,
@@ -209,14 +324,18 @@ class MemoryManager:
     ) -> list[dict[str, Any]]:
         """Retrieve top-k memories relevant to ``query`` via hybrid scoring.
 
+        Called only by the ``search_memories`` MCP tool. Not invoked
+        automatically on chat turns — the model decides when a memory
+        lookup is worth the cost.
+
         Steps:
-        1. Compute query embedding
-        2. Fetch _CANDIDATE_LIMIT candidates via pgvector RPC
-        3. Re-rank with hybrid score (similarity + recency + importance)
-        4. Deduplicate by content
-        5. Pin the user's latest ``analysis_insight`` at position 0 when
-           the hybrid-scored dedup pass did not already include it.
-        6. Return top ``limit`` results
+        1. Compute query embedding.
+        2. Fetch up to ``_CANDIDATE_LIMIT`` candidates via pgvector RPC.
+        3. Re-rank with hybrid score (similarity + recency + importance).
+        4. Deduplicate by content fingerprint.
+        5. Excludes ``style_profile`` rows: those are always rendered
+           into the chat turn's ``user_data`` system block, so surfacing
+           them again via search would duplicate context.
         """
         if limit is None:
             limit = settings.ADVISOR_CONTEXT_MEMORY_LIMIT
@@ -229,6 +348,8 @@ class MemoryManager:
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for row in candidates:
+            if row.get("type") == MemoryType.STYLE_PROFILE.value:
+                continue
             similarity = float(row.get("similarity", 0.0))
             if similarity < _MIN_SIMILARITY:
                 continue
@@ -244,34 +365,15 @@ class MemoryManager:
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        # Deduplicate by content fingerprint
         seen: set[str] = set()
         results: list[dict[str, Any]] = []
         for _, row in scored:
-            # M-4: Use SHA-256 instead of MD5 for content dedup fingerprint
-            key = _content_fingerprint(row.get("content", ""))
+            key = _content_fingerprint(row.get("content", {}))
             if key not in seen:
                 seen.add(key)
                 results.append(row)
             if len(results) >= limit:
                 break
-
-        # Always pin the latest analysis_insight — the 0.60 similarity floor
-        # can silently drop it for one-noun style queries like "hairstyle",
-        # but it is the single most load-bearing memory for style advice.
-        latest_insight = self._repo.get_latest_analysis_insight(str(user_id))
-        if latest_insight is not None:
-            insight_key = _content_fingerprint(latest_insight.get("content", ""))
-            if insight_key not in seen:
-                pinned = {
-                    "type": MemoryType.ANALYSIS_INSIGHT.value,
-                    **latest_insight,
-                }
-                results.insert(0, pinned)
-                # Enforce the limit by dropping the last scored item so the
-                # pinned row takes its slot.
-                if len(results) > limit:
-                    results = results[:limit]
 
         return results
 
@@ -280,108 +382,12 @@ class MemoryManager:
         return self._repo.get_memories(str(user_id))
 
     def delete_memory(self, user_id: UUID, memory_id: UUID) -> bool:
-        """Delete a memory owned by user_id. Returns True if deleted, False if not found."""
+        """Delete a memory owned by user_id. Returns True if deleted."""
         deleted_rows = self._repo.delete_memory(str(memory_id), str(user_id))
         deleted = len(deleted_rows) > 0
         if deleted:
             logger.info("Memory deleted: user=%s memory=%s", user_id, memory_id)
         return deleted
-
-    async def extract_memories_from_turn(
-        self,
-        user_id: UUID,
-        user_message: str,
-        advisor_response: str,
-    ) -> None:
-        """Extract and store memory signals from a conversation turn (async, Haiku).
-
-        Extracts: goals, accepted suggestions, dismissed suggestions, notes.
-        Validates and deduplicates before storage.
-        """
-        # Build extraction prompt for Haiku
-        extraction_prompt = (
-            f"User said: {user_message}\n\n"
-            f"Advisor replied: {advisor_response}\n\n"
-            "Extract any: goals (future intent >5 words), "
-            "accepted suggestions (user confirmed trying/doing something), "
-            "dismissed suggestions (user rejected), "
-            "or notes. "
-            'Respond with JSON: {"goals": [...], "accepted": [...], '
-            '"dismissed": [...], "notes": [...]}. '
-            "Empty arrays if nothing to extract."
-        )
-
-        try:
-            response = await self._llm_adapter.create_message(
-                model=MODEL_HAIKU,
-                system="Extract memory signals from the conversation. Return only valid JSON.",
-                messages=[{"role": "user", "content": extraction_prompt}],
-                max_tokens=300,
-            )
-            from app.advisor.payload_logger import log_llm_response
-
-            log_llm_response(
-                None,
-                model=MODEL_HAIKU,
-                user_id=user_id,
-                conversation_id="-",
-                response=response,
-                purpose="memory_extract",
-            )
-            extracted = json.loads(strip_json_code_fence(response.content))
-        except Exception as exc:  # includes json.JSONDecodeError and LLM errors
-            logger.warning("Memory extraction failed: %s", exc)
-            return
-
-        # Fetch recent same-type memories for dedup check (last 7 days)
-        recent_rows = self._repo.get_recent_memories(
-            str(user_id), _seven_days_ago_iso()
-        )
-        recent_by_type: dict[str, list[str]] = {}
-        for row in recent_rows:
-            t = row["type"]
-            text = summarize_memory_content(row.get("content", {}))
-            recent_by_type.setdefault(t, []).append(text)
-
-        # Process each category
-        for goal_text in extracted.get("goals", []):
-            words = goal_text.split()
-            if len(words) < 5:
-                continue
-            if _is_duplicate(goal_text, recent_by_type.get(MemoryType.GOAL, [])):
-                continue
-            await self.write_memory(user_id, MemoryType.GOAL, {"text": goal_text})
-
-        for acc_text in extracted.get("accepted", []):
-            markers = ("tried", "did", "got", "went", "bought", "used", "wore", "cut")
-            if not any(m in acc_text.lower() for m in markers):
-                continue
-            if _is_duplicate(
-                acc_text, recent_by_type.get(MemoryType.ACCEPTED_SUGGESTION, [])
-            ):
-                continue
-            await self.write_memory(
-                user_id, MemoryType.ACCEPTED_SUGGESTION, {"text": acc_text}
-            )
-
-        for dis_text in extracted.get("dismissed", []):
-            if _is_duplicate(
-                dis_text, recent_by_type.get(MemoryType.DISMISSED_SUGGESTION, [])
-            ):
-                continue
-            await self.write_memory(
-                user_id, MemoryType.DISMISSED_SUGGESTION, {"text": dis_text}
-            )
-
-        for note_text in extracted.get("notes", []):
-            if _is_duplicate(note_text, recent_by_type.get(MemoryType.USER_NOTE, [])):
-                continue
-            await self.write_memory(user_id, MemoryType.USER_NOTE, {"text": note_text})
-
-        # A-18: Note — async extraction is fire-and-forget (create_task in service.py).
-        # Out-of-order dedup may miss concurrent extractions for the same turn.
-        # Accepted trade-off: duplicate memories are low-impact and naturally
-        # deduplicated by the hybrid retrieval scoring.
 
     async def write_analysis_insight(
         self,
@@ -394,12 +400,9 @@ class MemoryManager:
         """Write an analysis_insight memory after a face analysis completes.
 
         Upload ownership is verified at the API gate before this job is
-        enqueued (see `analyze_glowup` → `GlowupService.create_analysis`,
-        which calls `UploadRepository.get_by_id_for_owner_check`). The
-        `user_id` passed here comes from the JWT claims, so no secondary
-        lookup is required — doing one would cross the upload/image schema
-        boundary (uploads.id is not an images.id; see migrations 0001 and
-        0034).
+        enqueued (see ``analyze_glowup`` → ``GlowupService.create_analysis``).
+        The ``user_id`` passed here comes from the JWT claims, so no
+        secondary lookup is required.
         """
         content: dict[str, Any] = {
             "face_shape": face_shape,
@@ -408,7 +411,12 @@ class MemoryManager:
             "upload_id": upload_id,
         }
         content["summary"] = summarize_memory_content(content)
-        await self.write_memory(user_id, MemoryType.ANALYSIS_INSIGHT, content)
+        await self.write_memory(
+            user_id,
+            MemoryType.ANALYSIS_INSIGHT,
+            content,
+            authored_by="analysis",
+        )
 
     async def upsert_style_profile(
         self,
@@ -419,20 +427,17 @@ class MemoryManager:
     ) -> dict[str, Any]:
         """Upsert the user's stable style_profile row.
 
-        Plan 2026-04-17-003 Unit 7. The profile is the current state
-        (one row per user, enforced by the partial unique index in
-        migration 0040); ``analysis_insight`` rows remain the immutable
-        per-event record.
+        The profile is the current state (one row per user, enforced by
+        the partial unique index in migration 0040); ``analysis_insight``
+        rows remain the immutable per-event record.
 
         Merge semantics: on re-analysis, new fields overwrite existing
         ones and absent fields are preserved. ``last_updated_at`` is
-        always refreshed from ``datetime.now(tz=timezone.utc)``. Prevents
-        regression if a later analysis returns a thinner payload (e.g.
-        the model omits ``recommendations``).
+        always refreshed. Prevents regression if a later analysis returns
+        a thinner payload (e.g. the model omits ``recommendations``).
 
-        Cap enforcement does NOT apply — the profile is a single row
-        per user and must not be evictable; the cap only governs the
-        unbounded extraction types.
+        Cap enforcement does NOT apply — the profile is a single row per
+        user and must not be evictable.
         """
         existing = self._repo.get_style_profile(str(user_id))
         merged: dict[str, Any] = dict(existing.get("content", {})) if existing else {}
@@ -453,6 +458,7 @@ class MemoryManager:
             "type": MemoryType.STYLE_PROFILE.value,
             "content": merged,
             "embedding": embedding,
+            "authored_by": "analysis",
         }
         result = self._repo.upsert_style_profile(row)
         logger.info("Style profile upserted: user=%s", user_id)
@@ -465,18 +471,28 @@ class MemoryManager:
 
 
 def _content_fingerprint(content: Any) -> str:
-    """SHA-256 fingerprint of memory content for dedup + pin matching."""
-    return hashlib.sha256(str(content).encode()).hexdigest()
+    """SHA-256 fingerprint of memory content for dedup.
+
+    Canonicalizes via ``json.dumps(sort_keys=True, default=str)`` so two
+    dicts with identical values but different key insertion order produce
+    the same hash. Matters because Postgres JSONB does not preserve key
+    order on round-trip; without canonicalization the write-side hash
+    and any read-side hash could diverge.
+    """
+    canonical = json.dumps(content, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _is_duplicate(text: str, recent_texts: list[str]) -> bool:
-    """Return True if text overlaps >70% with any recent same-type memory."""
-    for recent in recent_texts:
-        if _word_overlap(text, recent) > _DEDUP_OVERLAP_THRESHOLD:
-            return True
-    return False
+def _is_unique_violation(exc: Exception) -> bool:
+    """Heuristic match for a unique-constraint violation from Supabase/PostgREST.
 
-
-def _seven_days_ago_iso() -> str:
-    """Return ISO timestamp for 7 days ago."""
-    return (datetime.now(tz=timezone.utc) - timedelta(days=7)).isoformat()
+    The supabase-py client surfaces PostgREST errors as ``APIError`` with a
+    ``code`` attribute carrying Postgres's SQLSTATE (``23505`` for
+    ``unique_violation``). Kept as a string check so we do not import
+    PostgREST's error module (it moves between client versions).
+    """
+    code = getattr(exc, "code", None)
+    if code == "23505":
+        return True
+    message = str(exc).lower()
+    return "unique" in message and ("violat" in message or "duplicat" in message)

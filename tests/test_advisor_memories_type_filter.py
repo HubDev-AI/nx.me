@@ -52,6 +52,7 @@ class _RecordingMemoryRepo:
         text: str,
         created_at: str,
         memory_id: str | None = None,
+        authored_by: str = "user",
     ) -> str:
         mid = memory_id or str(uuid4())
         self.memories.append(
@@ -61,6 +62,7 @@ class _RecordingMemoryRepo:
                 "type": mem_type,
                 "content": {"text": text},
                 "created_at": created_at,
+                "authored_by": authored_by,
             }
         )
         return mid
@@ -71,6 +73,7 @@ class _RecordingMemoryRepo:
         fetch_limit: int,
         cursor: str | None = None,
         type_filter: str | None = None,
+        authored_by: str | None = None,
     ) -> list[dict[str, Any]]:
         self.calls.append(
             {
@@ -78,11 +81,14 @@ class _RecordingMemoryRepo:
                 "fetch_limit": fetch_limit,
                 "cursor": cursor,
                 "type_filter": type_filter,
+                "authored_by": authored_by,
             }
         )
         rows = [m for m in self.memories if m["user_id"] == user_id]
         if type_filter is not None:
             rows = [m for m in rows if m["type"] == type_filter]
+        if authored_by is not None:
+            rows = [m for m in rows if m.get("authored_by") == authored_by]
         # newest first by created_at, then id (ties)
         rows.sort(key=lambda m: (m["created_at"], m["id"]), reverse=True)
         if cursor:
@@ -103,20 +109,28 @@ def _make_service(repo: _RecordingMemoryRepo):
     svc = AdvisorService.__new__(AdvisorService)
     svc._repo = repo
     embed = MagicMock(compute_embedding=AsyncMock(return_value=[0.0] * 8))
-    svc._memory_manager = MemoryManager(
-        advisor_repo=repo, llm_adapter=MagicMock(), embedding_adapter=embed
-    )
+    svc._memory_manager = MemoryManager(advisor_repo=repo, embedding_adapter=embed)
     return svc
 
 
 def _seed_mixed(
     repo: _RecordingMemoryRepo, user_id: str
 ) -> tuple[list[str], list[str], list[str]]:
-    """Seed 2 goals + 1 user_note + 1 analysis_insight. Return ids per type."""
+    """Seed 2 goals + 1 user_note + 1 analysis_insight. Return ids per type.
+
+    analysis_insight is seeded with ``authored_by='analysis'`` so filters
+    based on provenance behave realistically.
+    """
     g1 = repo.add(user_id, "goal", "g1", "2026-04-10T00:00:00+00:00")
     g2 = repo.add(user_id, "goal", "g2", "2026-04-11T00:00:00+00:00")
     n1 = repo.add(user_id, "user_note", "n1", "2026-04-12T00:00:00+00:00")
-    a1 = repo.add(user_id, "analysis_insight", "a1", "2026-04-13T00:00:00+00:00")
+    a1 = repo.add(
+        user_id,
+        "analysis_insight",
+        "a1",
+        "2026-04-13T00:00:00+00:00",
+        authored_by="analysis",
+    )
     return [g1, g2], [n1], [a1]
 
 

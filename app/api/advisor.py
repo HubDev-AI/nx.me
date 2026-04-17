@@ -344,7 +344,10 @@ async def add_memory(
 
     user_id = UUID(claims["sub"])
     row = await svc.add_memory(
-        user_id=user_id, memory_type=body.type, content=body.content
+        user_id=user_id,
+        memory_type=body.type,
+        content=body.content,
+        authored_by="user",
     )
 
     memory_id = row.get("id", "")
@@ -378,18 +381,24 @@ async def list_memories(
     claims: UserClaims = Depends(get_user_or_guest),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> MemoryListPageResponse:
-    """List memories for the current user (paginated). All tiers.
+    """List user-authored memories (paginated). All tiers.
 
-    The optional ``type`` query param restricts results to a single
-    user-authored memory type. Only ``goal`` and ``user_note`` are accepted —
-    Ada-internal memory types (analysis_insight, accepted_suggestion,
-    dismissed_suggestion) are intentionally not exposed via this filter so
-    callers cannot bypass the UX-level hiding.
+    The response is scoped to ``authored_by='user'`` so Ada-internal
+    writes (``save_memory`` tool) and analysis-pipeline rows
+    (``analysis_insight``, ``style_profile``) never surface in the
+    Goals / Notes tabs regardless of the ``type`` filter.
+
+    The optional ``type`` query param further narrows to a single
+    user-authored memory type.
     """
     user_id = UUID(claims["sub"])
     try:
         result = await svc.list_memories_page(
-            user_id, limit=limit, cursor=cursor, type_filter=type
+            user_id,
+            limit=limit,
+            cursor=cursor,
+            type_filter=type,
+            authored_by="user",
         )
     except ValueError as exc:
         raise HTTPException(

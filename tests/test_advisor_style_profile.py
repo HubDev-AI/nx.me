@@ -80,8 +80,7 @@ class _ProfileStubRepo:
 def _make_manager() -> tuple[MemoryManager, _ProfileStubRepo]:
     repo = _ProfileStubRepo()
     embed = SimpleNamespace(compute_embedding=AsyncMock(return_value=[0.0] * 8))
-    llm = SimpleNamespace()
-    mm = MemoryManager(advisor_repo=repo, llm_adapter=llm, embedding_adapter=embed)
+    mm = MemoryManager(advisor_repo=repo, embedding_adapter=embed)
     return mm, repo
 
 
@@ -106,6 +105,7 @@ async def test_first_analysis_inserts_new_profile_row():
     inserted = repo.inserted[0]
     assert inserted["user_id"] == str(_FIXED_USER)
     assert inserted["type"] == MemoryType.STYLE_PROFILE.value
+    assert inserted["authored_by"] == "analysis"
     content = inserted["content"]
     assert content["face_shape"] == "oval"
     assert content["symmetry_score"] == 0.87
@@ -216,6 +216,11 @@ def _build_service_with_repo(repo: MagicMock) -> Any:
         llm_adapter=llm,
         embedding_adapter=embedding,
     )
+
+
+def _inserted_authored_by(repo: _ProfileStubRepo) -> str:
+    """Return the authored_by field the first upsert tried to write."""
+    return repo.inserted[0]["authored_by"]
 
 
 def test_build_user_data_prefers_style_profile():

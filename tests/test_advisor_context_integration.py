@@ -374,10 +374,11 @@ async def test_canonical_happy_path_all_four_signals_present(
         for m in pre_strip_messages
         if isinstance(m, dict) and m.get("role") == "system"
     ]
-    # system[0]=SOUL.md, system[1]=user_data, system[2]=memories,
-    # system[3]=nudges (Unit 4 provenance block).
-    assert len(system_blocks) == 4, (
-        f"expected 4 system blocks (SOUL, user_data, memories, nudges); got "
+    # system[0]=SOUL.md, system[1]=user_data, system[2]=nudges.
+    # Memories are no longer auto-injected — the model retrieves via
+    # search_memories / list_recent_memories when she needs them.
+    assert len(system_blocks) == 3, (
+        f"expected 3 system blocks (SOUL, user_data, nudges); got "
         f"{len(system_blocks)}: {system_blocks!r}"
     )
     user_data_block = system_blocks[1]
@@ -387,22 +388,8 @@ async def test_canonical_happy_path_all_four_signals_present(
     # ``summarize_memory_content``; the key recs words must survive.
     assert "brows" in user_data_block
 
-    # --- Pinned analysis_insight landed in memories (Unit 3) -----------
-    memories_block = system_blocks[2]
-    # The memories block is non-empty because ``match_memories`` returned
-    # nothing — the only way content reaches it is via the Unit 3 pin.
-    # ``format_memory`` renders the pinned row via ``summarize_memory_content``
-    # which emits "oval, symmetry 0.87, try bangs, clean up brows, …".
-    # The presence of BOTH the symmetry score AND at least one rec is
-    # the fingerprint that the pinned analysis_insight reached this block.
-    assert memories_block.strip(), (
-        "pinned analysis_insight missing — memories block empty"
-    )
-    assert "symmetry 0.87" in memories_block
-    assert "try bangs" in memories_block
-
-    # --- Nudges block is the 4th system block (Unit 4) -----------------
-    nudges_block = system_blocks[3]
+    # --- Nudges block is the 3rd system block (Unit 4) -----------------
+    nudges_block = system_blocks[2]
     assert "nudge (post_analysis)" in nudges_block
     assert "nudge (weekly_checkin)" in nudges_block
     assert "oval face shapes are versatile" in nudges_block
@@ -430,7 +417,6 @@ async def test_canonical_happy_path_all_four_signals_present(
     )
     rec = info_records[0]
     assert rec.system_block_count >= 3
-    assert rec.memory_count >= 1
     assert rec.nudge_count == 2
     # user_id_hash present, and is the SHA-256 truncation — never raw.
     expected_hash = _hash_user_id(_TEST_USER_ID)
@@ -499,9 +485,10 @@ async def test_minimal_profile_no_nudges_no_glowup(
         for m in pre_strip_messages
         if isinstance(m, dict) and m.get("role") == "system"
     ]
-    # SOUL.md + user_data + memories (pinned analysis_insight). No nudges.
-    assert len(system_blocks) == 3, (
-        f"expected 3 system blocks (no nudges); got "
+    # SOUL.md + user_data only — no nudges, and memories are no longer
+    # auto-injected (the model retrieves via tools).
+    assert len(system_blocks) == 2, (
+        f"expected 2 system blocks (SOUL + user_data only); got "
         f"{len(system_blocks)}: {system_blocks!r}"
     )
     # Payload logger's ``nudge_count`` is zero.
