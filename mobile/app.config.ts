@@ -106,6 +106,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "react-native-tiktok",
       { tiktokClientKey: process.env.TIKTOK_CLIENT_KEY ?? "" },
     ],
+    "./plugins/with-bundle-deployment-target",
   ],
   extra: {
     // Intentionally no default — API_BASE_URL must be set per environment
