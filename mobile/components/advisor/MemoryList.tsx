@@ -190,20 +190,17 @@ function SwipeableMemoryRow({
     year: "numeric",
   });
 
-  // Outer wrapper is a Pressable so a tap (no movement) on the row's
-  // card area closes any currently-open swipe row. The row's
-  // PanResponder lives on the inner Animated.View — when the user
-  // moves past the swipe threshold, PanResponder.onMoveShouldSet
-  // returns true and claims the responder, which cancels Pressable's
-  // press without firing onPress. Tapping the trash Pressable wins
-  // its own touch (closer in the tree), so this onPress only fires
-  // for taps on the visible card body.
-  const handleWrapperPress = useCallback(() => {
-    onOpenChange(null);
-  }, [onOpenChange]);
-
+  // The wrapper stays a plain View so the row's PanResponder owns the
+  // gesture cleanly — wrapping it in a Pressable claims the responder
+  // on touch start before PanResponder.onMoveShouldSet has a chance,
+  // which silently breaks every swipe. Tap-outside-close is handled
+  // at MemoryList level via:
+  //   - ListFooterComponent Pressable when a row is open
+  //   - onScrollBeginDrag
+  //   - handleTabChange (always resets, even on the active chip)
+  //   - other-row swipe (parent state swap closes this one)
   return (
-    <Pressable style={rowStyles.wrapper} onPress={handleWrapperPress}>
+    <View style={rowStyles.wrapper}>
       <View style={rowStyles.deleteContainer}>
         <Pressable
           onPress={handleDelete}
@@ -233,7 +230,7 @@ function SwipeableMemoryRow({
           <Text style={rowStyles.date}>{dateStr}</Text>
         </View>
       </Animated.View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -765,42 +762,45 @@ export function MemoryList() {
       keyboardVerticalOffset={keyboardVerticalOffset}
       enabled={Platform.OS !== "web"}
     >
-      {subTabs}
-
-      {/* listArea hosts the FlatList AND the empty/error overlays as
-          siblings — overlays absoluteFill listArea (NOT the subtabs+
-          listArea region). Centering inside listArea (which excludes
-          the subtabs above and the composer below) pulls the hero
-          DOWN by ~subtabs/2 vs. centering inside the full content
-          area; that compensates for the visual weight of the subtabs
-          chips above and lands the hero at the same OPTICAL position
-          as the Chat / Nudges heroes.
+      {/* listArea spans FROM subtabs-top TO composer-top — the same
+          vertical region the Chat tab's listArea covers. The overlay
+          children use StyleSheet.absoluteFill, so they're centered in
+          THIS box. If the overlay sat one level deeper (sibling of the
+          FlatList only, BELOW the subtabs row), the centering box
+          would be ~64pt shorter at the top and the hero would float
+          ~32pt above where Chat's hero sits — visually crammed against
+          the subtabs chips. Wrapping subtabs + the row scroll area in
+          one listArea pins the hero to the same screen-Y as Chat.
 
           accessibilityLiveRegion is Android-only; iOS VoiceOver
           ignores it. A future polish pass could call
           AccessibilityInfo.announceForAccessibility on tab change. */}
       <View style={styles.listArea} accessibilityLiveRegion="polite">
-        <FlatList
-          data={memories}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={MemorySeparator}
-          ListFooterComponent={
-            openMemoryId !== null ? (
-              <Pressable
-                style={styles.dismissFooter}
-                onPress={() => setOpenMemoryId(null)}
-                accessibilityElementsHidden
-                importantForAccessibility="no"
-              />
-            ) : null
-          }
-          onScrollBeginDrag={() => {
-            if (openMemoryId !== null) setOpenMemoryId(null);
-          }}
-        />
+        {subTabs}
+
+        <View style={styles.rowsArea}>
+          <FlatList
+            data={memories}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            ItemSeparatorComponent={MemorySeparator}
+            ListFooterComponent={
+              openMemoryId !== null ? (
+                <Pressable
+                  style={styles.dismissFooter}
+                  onPress={() => setOpenMemoryId(null)}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+              ) : null
+            }
+            onScrollBeginDrag={() => {
+              if (openMemoryId !== null) setOpenMemoryId(null);
+            }}
+          />
+        </View>
 
         {/* Tab-switch spinner — overlay; list stays rendered underneath. */}
         {refetching && (
@@ -810,8 +810,9 @@ export function MemoryList() {
         )}
 
         {/* Error overlay — scoped to the active tab; subtabs above stay
-            interactive so the user can switch away from a failed tab.
-            Retry reuses loadTab so the stale-response guard applies. */}
+            interactive so the user can switch away from a failed tab
+            (overlays use pointerEvents="box-none"). Retry reuses
+            loadTab so the stale-response guard applies. */}
         {activeState.error && memories.length === 0 && (
           <AdvisorEmptyOverlay
             icon="alert-circle-outline"
@@ -847,6 +848,15 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   listArea: {
+    flex: 1,
+  },
+  /**
+   * Hosts the FlatList only — sits BELOW subtabs inside listArea.
+   * flex:1 lets the rows fill the space below subtabs while the empty/
+   * error overlays absoluteFill listArea (the wider region) so they
+   * land at the same screen-Y as the Chat tab's empty hero.
+   */
+  rowsArea: {
     flex: 1,
   },
   listContent: {
