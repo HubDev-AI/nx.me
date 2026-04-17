@@ -16,6 +16,7 @@ from arq.connections import RedisSettings
 
 from app.config import settings
 from app.db.client import get_supabase_service
+from app.logging_config import configure_logging
 from app.generation.worker import process_generation_job, watchdog_stuck_jobs
 from app.api.social import persist_reaction, reconcile_reaction_counts
 from app.advisor.nudge_scheduler import (
@@ -26,6 +27,8 @@ from app.advisor.nudge_scheduler import (
 )
 from app.workers.orphan_reclaim import reclaim_orphaned_blobs
 from app.workers.retention import run_retention
+
+configure_logging()
 
 logger = logging.getLogger(__name__)
 

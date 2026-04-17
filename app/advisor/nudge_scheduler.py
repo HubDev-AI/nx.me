@@ -205,6 +205,16 @@ async def _generate_generic_nudge(
             messages=[{"role": "user", "content": user_content}],
             max_tokens=MAX_TOKENS_NUDGE,
         )
+        from app.advisor.payload_logger import log_llm_response
+
+        log_llm_response(
+            None,
+            model=settings.ADVISOR_MODEL_HAIKU,
+            user_id=user_id,
+            conversation_id="-",
+            response=response,
+            purpose=f"nudge:{trigger}",
+        )
         nudge_content = response.content.strip()
     except Exception as exc:
         logger.error(
@@ -359,6 +369,16 @@ async def _generate_vision_nudge(
             system=SOUL_MD,
             messages=[{"role": "user", "content": user_content}],
             max_tokens=MAX_TOKENS_NUDGE,
+        )
+        from app.advisor.payload_logger import log_llm_response
+
+        log_llm_response(
+            None,
+            model=settings.ADVISOR_MODEL_HAIKU,
+            user_id=user_id,
+            conversation_id="-",
+            response=response,
+            purpose=f"vision_nudge:{trigger}",
         )
         raw = response.content.strip()
     except Exception as exc:

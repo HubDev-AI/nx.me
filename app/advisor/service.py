@@ -36,7 +36,7 @@ from app.advisor.context_builder import (
 from app.advisor.mcp import McpContext, ToolRegistry
 from app.advisor.memory_manager import MemoryManager, summarize_memory_content
 from app.advisor.models import LLMResponse, MemoryType
-from app.advisor.payload_logger import log_llm_call
+from app.advisor.payload_logger import log_llm_call, log_llm_response
 from app.advisor.persona import SOUL_MD as _SOUL_MD
 from app.config import settings
 from app.db.async_helpers import run_sync
@@ -320,6 +320,14 @@ class AdvisorService:
                 vision_content=vision_content,
                 tools=tool_schemas,
                 tool_registry=tool_registry,
+            )
+            log_llm_response(
+                None,
+                model=model,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                response=response,
+                purpose="chat",
             )
             text = response.content.strip()
 
@@ -697,6 +705,14 @@ class AdvisorService:
                     }
                 ],
                 max_tokens=_MAX_TOKENS_SUMMARY,
+            )
+            log_llm_response(
+                None,
+                model=settings.ADVISOR_MODEL_HAIKU,
+                user_id="-",
+                conversation_id=conversation_id,
+                response=response,
+                purpose="summary",
             )
             summary = response.content.strip()
         except Exception as exc:

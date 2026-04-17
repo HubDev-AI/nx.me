@@ -10,6 +10,36 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ADMIN_API_KEY: str
 
+    # Logging — empty means "derive from APP_ENV": DEBUG in development,
+    # INFO everywhere else. Override with LOG_LEVEL=INFO|DEBUG|WARNING|...
+    # to pin the level explicitly. ``effective_log_level`` resolves the
+    # final value at runtime.
+    LOG_LEVEL: str = ""
+
+    @property
+    def effective_log_level(self) -> str:
+        explicit = (self.LOG_LEVEL or "").strip().upper()
+        if explicit:
+            return explicit
+        return "DEBUG" if self.APP_ENV.strip().lower() == "development" else "INFO"
+
+    @property
+    def advisor_debug_payload_enabled(self) -> bool:
+        """True when full Anthropic prompts + responses should hit the logs.
+
+        Defaults to True in development DEBUG mode so a fresh dev setup
+        sees the full advisor flow without flipping a flag. Production
+        must NEVER auto-enable: signed URLs and raw user content land in
+        DEBUG records. Explicit ``ADVISOR_DEBUG_LOG_PROMPT=true`` still
+        wins everywhere for ad-hoc debugging.
+        """
+        if self.ADVISOR_DEBUG_LOG_PROMPT:
+            return True
+        return (
+            self.APP_ENV.strip().lower() == "development"
+            and self.effective_log_level == "DEBUG"
+        )
+
     @field_validator("SECRET_KEY")
     @classmethod
     def _secret_key_min_length(cls, v: str) -> str:

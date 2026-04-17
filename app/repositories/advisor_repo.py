@@ -684,14 +684,15 @@ class AdvisorRepository:
         result = (
             self._sb.table("jobs")
             .select(
-                "id, status, source_type, created_at, completed_at, "
+                "id, status, source_type, created_at, "
+                "completed_at:updated_at, "
                 "before_image_url, after_image_url"
             )
             .eq("user_id", user_id)
             .eq("status", "completed")
             .not_.is_("before_image_url", "null")
             .not_.is_("after_image_url", "null")
-            .order("completed_at", desc=True)
+            .order("updated_at", desc=True)
             .order("created_at", desc=True)
             .limit(1)
             .execute()
@@ -715,7 +716,8 @@ class AdvisorRepository:
         result = (
             self._sb.table("jobs")
             .select(
-                "id, status, source_type, created_at, completed_at, "
+                "id, status, source_type, created_at, "
+                "completed_at:updated_at, "
                 "before_image_url, after_image_url"
             )
             .eq("user_id", user_id)
@@ -723,7 +725,7 @@ class AdvisorRepository:
             .eq("source_type", "glowup_analysis")
             .not_.is_("before_image_url", "null")
             .not_.is_("after_image_url", "null")
-            .order("completed_at", desc=True)
+            .order("updated_at", desc=True)
             .order("created_at", desc=True)
             .limit(1)
             .execute()
@@ -741,7 +743,10 @@ class AdvisorRepository:
         """
         result = (
             self._sb.table("jobs")
-            .select("id, status, source_type, created_at, completed_at")
+            .select(
+                "id, status, source_type, created_at, "
+                "completed_at:updated_at"
+            )
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .limit(1)
