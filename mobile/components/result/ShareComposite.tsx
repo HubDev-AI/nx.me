@@ -170,6 +170,14 @@ export function useShareComposite(): UseShareCompositeReturn {
   const bothReadyRef = useRef(false);
   bothReadyRef.current = beforeReady && afterReady;
 
+  // The composite mounts as soon as the result screen renders — well
+  // before the user taps Share — and its hook state starts with empty
+  // URL strings. Feeding `uri: ""` to <Image> makes React Native log a
+  // `source.uri should not be an empty string` warning per frame, so
+  // we only render the images after real URLs have been injected via
+  // `updateParams`.
+  const hasUrls = params.beforeUrl !== "" && params.afterUrl !== "";
+
   const ShareCompositeView = (
     <View style={styles.offscreenWrapper} pointerEvents="none">
       <View
@@ -177,26 +185,30 @@ export function useShareComposite(): UseShareCompositeReturn {
         collapsable={false}
         style={styles.composite}
       >
-        {/* Left half: Before image */}
-        <Image
-          source={{ uri: params.beforeUrl }}
-          style={styles.halfImage}
-          resizeMode="cover"
-          onLoad={() => setBeforeReady(true)}
-          accessibilityElementsHidden={true}
-        />
+        {hasUrls && (
+          <>
+            {/* Left half: Before image */}
+            <Image
+              source={{ uri: params.beforeUrl }}
+              style={styles.halfImage}
+              resizeMode="cover"
+              onLoad={() => setBeforeReady(true)}
+              accessibilityElementsHidden={true}
+            />
 
-        {/* Divider */}
-        <View style={styles.divider} />
+            {/* Divider */}
+            <View style={styles.divider} />
 
-        {/* Right half: After image */}
-        <Image
-          source={{ uri: params.afterUrl }}
-          style={styles.halfImage}
-          resizeMode="cover"
-          onLoad={() => setAfterReady(true)}
-          accessibilityElementsHidden={true}
-        />
+            {/* Right half: After image */}
+            <Image
+              source={{ uri: params.afterUrl }}
+              style={styles.halfImage}
+              resizeMode="cover"
+              onLoad={() => setAfterReady(true)}
+              accessibilityElementsHidden={true}
+            />
+          </>
+        )}
 
         {/* Bottom label strip */}
         <View style={styles.labelStrip} pointerEvents="none">
