@@ -399,6 +399,54 @@ class MemoryManager:
         content["summary"] = summarize_memory_content(content)
         await self.write_memory(user_id, MemoryType.ANALYSIS_INSIGHT, content)
 
+    async def upsert_style_profile(
+        self,
+        user_id: UUID,
+        face_shape: str | None,
+        symmetry_score: float | None,
+        recommendations: list[str] | None,
+    ) -> dict[str, Any]:
+        """Upsert the user's stable style_profile row.
+
+        Plan 2026-04-17-003 Unit 7. The profile is the current state
+        (one row per user, enforced by the partial unique index in
+        migration 0040); ``analysis_insight`` rows remain the immutable
+        per-event record.
+
+        Merge semantics: on re-analysis, new fields overwrite existing
+        ones and absent fields are preserved. ``last_updated_at`` is
+        always refreshed from ``datetime.now(tz=timezone.utc)``. Prevents
+        regression if a later analysis returns a thinner payload (e.g.
+        the model omits ``recommendations``).
+
+        Cap enforcement does NOT apply — the profile is a single row
+        per user and must not be evictable; the cap only governs the
+        unbounded extraction types.
+        """
+        existing = self._repo.get_style_profile(str(user_id))
+        merged: dict[str, Any] = dict(existing.get("content", {})) if existing else {}
+
+        if face_shape is not None:
+            merged["face_shape"] = face_shape
+        if symmetry_score is not None:
+            merged["symmetry_score"] = symmetry_score
+        if recommendations is not None:
+            merged["recommendations"] = recommendations
+        merged["last_updated_at"] = datetime.now(tz=timezone.utc).isoformat()
+
+        text = summarize_memory_content(merged)
+        embedding = await self._embedding_adapter.compute_embedding(text)
+
+        row = {
+            "user_id": str(user_id),
+            "type": MemoryType.STYLE_PROFILE.value,
+            "content": merged,
+            "embedding": embedding,
+        }
+        result = self._repo.upsert_style_profile(row)
+        logger.info("Style profile upserted: user=%s", user_id)
+        return result
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -17,6 +17,14 @@ from supabase import Client
 
 logger = logging.getLogger(__name__)
 
+# Kept as a module-local constant to avoid importing the enum from
+# ``app.advisor.models`` here — the repository sits below the advisor
+# module in the dependency DAG and should not reach upward. The literal
+# value matches ``MemoryType.STYLE_PROFILE.value``; a single-point
+# cross-reference is enforced by
+# ``tests/test_advisor_style_profile.py::test_repo_type_constant_matches_enum``.
+STYLE_PROFILE_TYPE = "style_profile"
+
 
 class AdvisorRepository:
     """Encapsulates all DB queries for the advisor module."""
@@ -555,6 +563,65 @@ class AdvisorRepository:
         )
         rows = result.data or []
         return rows[0] if rows else None
+
+    def get_style_profile(self, user_id: str) -> dict[str, Any] | None:
+        """Return the user's stable style_profile row (at most one), or None.
+
+        Plan 2026-04-17-003 Unit 7. The partial unique index defined in
+        migration 0040 guarantees that at most one row exists per user.
+        Returns the ``content`` and ``created_at`` columns only — callers
+        that need other columns should query directly.
+        """
+        result = (
+            self._sb.table("user_memories")
+            .select("content, created_at")
+            .eq("user_id", user_id)
+            .eq("type", STYLE_PROFILE_TYPE)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def upsert_style_profile(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Insert or update the user's style_profile row.
+
+        Plan 2026-04-17-003 Unit 7. The partial unique index on
+        ``user_memories(user_id) WHERE type='style_profile'`` cannot be
+        referenced through PostgREST's ``on_conflict`` parameter because the
+        parameter does not accept a WHERE clause. We use an explicit
+        read-then-update-or-insert flow; the index still prevents race
+        duplicates at the database level.
+
+        ``row`` is expected to contain the same keys as ``insert_memory``
+        (``user_id``, ``type``, ``content``, ``embedding``). Returns the
+        persisted row.
+        """
+        user_id = row["user_id"]
+        existing = (
+            self._sb.table("user_memories")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("type", STYLE_PROFILE_TYPE)
+            .limit(1)
+            .execute()
+        )
+        existing_rows = existing.data or []
+        if existing_rows:
+            row_id = existing_rows[0]["id"]
+            updated = (
+                self._sb.table("user_memories")
+                .update(
+                    {
+                        "content": row["content"],
+                        "embedding": row["embedding"],
+                    }
+                )
+                .eq("id", row_id)
+                .execute()
+            )
+            return (updated.data or [{}])[0]
+        return self.insert_memory(row)
 
     # ------------------------------------------------------------------
     # Images / storage (vision context)

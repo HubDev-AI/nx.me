@@ -259,14 +259,31 @@ async def write_analysis_insight_job(
 ) -> None:
     """Persist an `analysis_insight` memory row after a face analysis completes.
 
-    Fire-and-forget: any failure is logged and swallowed so a missing memory
-    never turns a successful analysis into a 5xx (spec §4.5, §16).
+    Also upserts the user's stable ``style_profile`` row (Plan
+    2026-04-17-003 Unit 7). The two writes are independent — a
+    ``style_profile`` upsert failure must not prevent the
+    ``analysis_insight`` row from being written (so the chat fallback
+    path in ``_build_user_data`` still has a source), and an
+    ``analysis_insight`` failure must not prevent the profile from
+    being refreshed. Both are fire-and-forget relative to the API
+    response.
     """
     if not settings.ADVISOR_ENABLED:
         return
 
+    mm = None
     try:
         mm = await _build_memory_manager(ctx)
+    except Exception:
+        logger.warning(
+            "Failed to build memory manager for user %s — skipping both writes",
+            user_id,
+            exc_info=True,
+            extra={"metric": "advisor.analysis_insight_failure", "user_id": user_id},
+        )
+        return
+
+    try:
         await mm.write_analysis_insight(
             user_id=UUID(user_id),
             face_shape=face_shape,
@@ -281,6 +298,25 @@ async def write_analysis_insight_job(
             user_id,
             exc_info=True,
             extra={"metric": "advisor.analysis_insight_failure", "user_id": user_id},
+        )
+
+    # Independent try/except: profile upsert must not inherit or be
+    # inherited by the insight write's failure. Matches the
+    # fire-and-forget pattern used throughout nudge_scheduler.
+    try:
+        await mm.upsert_style_profile(
+            user_id=UUID(user_id),
+            face_shape=face_shape,
+            symmetry_score=symmetry_score,
+            recommendations=recommendations,
+        )
+        logger.info("Style profile upserted for user %s", user_id)
+    except Exception:
+        logger.warning(
+            "Failed to upsert style profile for user %s",
+            user_id,
+            exc_info=True,
+            extra={"metric": "advisor.style_profile_failure", "user_id": user_id},
         )
 
 

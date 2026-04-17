@@ -19,6 +19,12 @@ class MemoryType(StrEnum):
     ACCEPTED_SUGGESTION = "accepted_suggestion"
     DISMISSED_SUGGESTION = "dismissed_suggestion"
     ANALYSIS_INSIGHT = "analysis_insight"
+    # One row per user (partial unique index, see migration 0040). Carries
+    # the current stable style facts (face shape, symmetry, current top
+    # recommendations) — upserted on every successful analysis. Chat
+    # user_data and nudge generation read from this row in preference to
+    # re-deriving from the most recent ``analysis_insight``.
+    STYLE_PROFILE = "style_profile"
 
 
 # ---------------------------------------------------------------------------

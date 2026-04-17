@@ -50,6 +50,10 @@ def _stub_repo(
     }
     repo.get_messages.return_value = []  # Empty history
     # User-data block: latest analysis insight is optional.
+    # Plan Unit 7: ``_build_user_data`` now checks ``get_style_profile``
+    # first and only falls through to ``get_latest_analysis_insight`` when
+    # the profile is absent. These tests exercise the fallback path.
+    repo.get_style_profile.return_value = None
     repo.get_latest_analysis_insight.return_value = latest_insight
     repo.count_analysis_insights.return_value = 0
     # The unit under test.

@@ -34,7 +34,7 @@ from app.advisor.context_builder import (
     has_visual_trigger,
     trim_to_budget,
 )
-from app.advisor.memory_manager import MemoryManager
+from app.advisor.memory_manager import MemoryManager, summarize_memory_content
 from app.advisor.models import LLMResponse, MemoryType
 from app.advisor.payload_logger import log_llm_call
 from app.advisor.persona import SOUL_MD as _SOUL_MD
@@ -561,24 +561,53 @@ class AdvisorService:
         return self._repo.insert_message(conversation_id, role, content)
 
     def _build_user_data(self, user_id: UUID) -> str:
-        """Build user data block from latest analysis insight."""
+        """Build user data block, preferring the stable style_profile.
+
+        Plan 2026-04-17-003 Unit 7. Read order:
+        1. ``style_profile`` (stable per-user row, written by
+           ``upsert_style_profile``).
+        2. ``analysis_insight`` (the most recent event row) — back-compat
+           path for users whose profile has not been written yet, or
+           when the profile upsert failed but the insight write
+           succeeded.
+
+        ``analysis_count`` still comes from the count of
+        ``analysis_insight`` rows regardless of source; the profile is
+        a single row and does not carry history.
+        """
+        analysis_count = self._repo.count_analysis_insights(str(user_id))
+
+        profile = self._repo.get_style_profile(str(user_id))
+        if profile:
+            content = profile.get("content") or {}
+            face_shape = content.get("face_shape")
+            symmetry_score = content.get("symmetry_score")
+            recommendations = content.get("recommendations")
+            # The profile carries `last_updated_at` instead of a
+            # per-event `summary`. Regenerate the human-readable
+            # fragment from the stored facts so the user_data block's
+            # third line remains the same terse shape it had when the
+            # source was an analysis_insight.
+            summary = _summarize_profile_content(content)
+            return build_user_data_block(
+                face_shape=face_shape,
+                symmetry_score=symmetry_score,
+                analysis_count=analysis_count,
+                recommendations=recommendations,
+                summary=summary,
+            )
+
         latest = self._repo.get_latest_analysis_insight(str(user_id))
         if not latest:
             return ""
 
         content = latest.get("content", {})
-        face_shape = content.get("face_shape")
-        symmetry_score = content.get("symmetry_score")
-        recommendations = content.get("recommendations")
-        summary = content.get("summary")
-        analysis_count = self._repo.count_analysis_insights(str(user_id))
-
         return build_user_data_block(
-            face_shape=face_shape,
-            symmetry_score=symmetry_score,
+            face_shape=content.get("face_shape"),
+            symmetry_score=content.get("symmetry_score"),
             analysis_count=analysis_count,
-            recommendations=recommendations,
-            summary=summary,
+            recommendations=content.get("recommendations"),
+            summary=content.get("summary"),
         )
 
     def _fetch_context_nudges(self, user_id: UUID) -> list[dict[str, Any]]:
@@ -693,6 +722,26 @@ def _first_sentence(text: str) -> str:
     parts = re.split(r"[.!?]", text.strip())
     first = parts[0].strip().lower() if parts else ""
     return first
+
+
+def _summarize_profile_content(content: dict[str, Any]) -> str:
+    """Render a style_profile content dict into the terse summary line.
+
+    Plan 2026-04-17-003 Unit 7. The profile does not carry a per-event
+    ``summary`` the way ``analysis_insight`` does, so the
+    ``build_user_data_block`` summary line is regenerated from the
+    facts already in ``content``. Uses the same summarizer as
+    ``memory_manager.write_analysis_insight`` so the user_data block
+    line matches regardless of source.
+
+    Returns an empty string when there is nothing to summarize so the
+    caller passes ``None``-equivalent to ``build_user_data_block`` and
+    the summary line is simply omitted.
+    """
+    if not content:
+        return ""
+    summary = summarize_memory_content(content)
+    return summary or ""
 
 
 def _post_check(response: str, recent_messages: list[str]) -> str | None:
