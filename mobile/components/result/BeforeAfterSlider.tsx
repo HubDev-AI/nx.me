@@ -140,14 +140,19 @@ export default function BeforeAfterSlider({
   }, [splitPosition, onAccessibilityToggle]);
 
   // PanResponder on the whole container.
-  // - `onMoveShouldSetPanResponder` only claims the gesture when it reads
-  //   as horizontal (|dx| dominates |dy|) so vertical drags pass through
-  //   to the parent ScrollView.
+  // - `onStartShouldSetPanResponder` claims the responder on every
+  //   touch-start, which is required for tap-to-zoom to fire at
+  //   release regardless of horizontal travel.
+  // - Because Start already captured the responder,
+  //   `onMoveShouldSetPanResponder` never fires on its own — vertical
+  //   pass-through to the parent ScrollView relies on
+  //   `onPanResponderTerminationRequest` returning true, which lets
+  //   the ScrollView reclaim the gesture when a vertical drag starts.
+  //   The directional filter is still expressed here as a defensive
+  //   signal in case Start claim is ever relaxed.
   // - A near-zero-travel release counts as a tap and fires the
   //   side-appropriate onPress callback (zoom viewer). Drag releases
   //   leave the divider at its current position.
-  // - `onPanResponderTerminationRequest` returns true so ScrollView can
-  //   reclaim mid-gesture if the user flips direction.
   const panResponder = useMemo(
     () =>
       PanResponder.create({

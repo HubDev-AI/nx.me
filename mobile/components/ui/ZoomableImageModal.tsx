@@ -132,8 +132,11 @@ export function ZoomableImageModal({
           const touches = evt.nativeEvent.touches;
 
           if (touches.length >= 2) {
-            // Re-seed on 1→2 transition so the pinch starts from the
-            // current finger spread rather than jumping.
+            // Re-seed whenever the pinch transitions in (first Move
+            // frame of a 2-finger span). pinchStartDistance is cleared
+            // both on release AND on 2→1 transitions below, so every
+            // fresh 2-finger span re-seeds from the current spread —
+            // no cross-span scale jump after a 2→1→2 lift/re-pinch.
             if (pinchStartDistance.current === 0) {
               pinchStartDistance.current = twoFingerDistance(touches);
               pinchStartScale.current = scale.value;
@@ -146,6 +149,16 @@ export function ZoomableImageModal({
               scale.value = next;
             }
             return;
+          }
+
+          // <2 touches — clear the pinch seeds so the next 2-finger
+          // span re-seeds from the new spread (see 2+ branch above).
+          // Also re-anchor the pan origin to the current translate so
+          // a pan that follows a pinch doesn't jump.
+          if (pinchStartDistance.current !== 0) {
+            pinchStartDistance.current = 0;
+            panStartX.current = translateX.value - gs.dx;
+            panStartY.current = translateY.value - gs.dy;
           }
 
           // Single-finger — either pan (when zoomed) or track the
