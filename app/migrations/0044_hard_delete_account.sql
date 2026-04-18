@@ -28,15 +28,17 @@ DROP VIEW IF EXISTS v_feed_posts CASCADE;
 DROP INDEX IF EXISTS idx_users_username_reserved;
 
 -- 2. Username reservation table (replaces users.username_reserved_until).
+--    `username` is stored already-normalized (app calls `_normalize_username`
+--    — NFKC + unidecode + lower — before every insert). The CHECK enforces
+--    lowercase at the storage layer so any app bug that bypasses
+--    normalization fails loudly instead of silently corrupting the set.
 CREATE TABLE username_reservations (
-    username       TEXT PRIMARY KEY,
+    username       TEXT PRIMARY KEY CHECK (username = lower(username)),
     reserved_until TIMESTAMPTZ NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_username_reservations_expiry
     ON username_reservations (reserved_until);
-CREATE UNIQUE INDEX idx_username_reservations_username_lower
-    ON username_reservations (lower(username));
 
 -- 3. Drop soft-delete columns.
 ALTER TABLE users
@@ -48,61 +50,65 @@ ALTER TABLE users
 
 -- 4a. CASCADE: rows belong to the user and should die with them.
 ALTER TABLE images
-    DROP CONSTRAINT IF EXISTS images_user_id_fkey,
+    DROP CONSTRAINT images_user_id_fkey,
     ADD CONSTRAINT images_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE credit_reservations
-    DROP CONSTRAINT IF EXISTS credit_reservations_user_id_fkey,
+    DROP CONSTRAINT credit_reservations_user_id_fkey,
     ADD CONSTRAINT credit_reservations_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE credit_ledger
-    DROP CONSTRAINT IF EXISTS credit_ledger_user_id_fkey,
+    DROP CONSTRAINT credit_ledger_user_id_fkey,
     ADD CONSTRAINT credit_ledger_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE subscriptions
-    DROP CONSTRAINT IF EXISTS subscriptions_user_id_fkey,
+    DROP CONSTRAINT subscriptions_user_id_fkey,
     ADD CONSTRAINT subscriptions_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE posts
-    DROP CONSTRAINT IF EXISTS posts_user_id_fkey,
+    DROP CONSTRAINT posts_user_id_fkey,
     ADD CONSTRAINT posts_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE reactions
-    DROP CONSTRAINT IF EXISTS reactions_user_id_fkey,
+    DROP CONSTRAINT reactions_user_id_fkey,
     ADD CONSTRAINT reactions_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE comments
-    DROP CONSTRAINT IF EXISTS comments_user_id_fkey,
+    DROP CONSTRAINT comments_user_id_fkey,
     ADD CONSTRAINT comments_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 ALTER TABLE shareable_cards
-    DROP CONSTRAINT IF EXISTS shareable_cards_user_id_fkey,
+    DROP CONSTRAINT shareable_cards_user_id_fkey,
     ADD CONSTRAINT shareable_cards_user_id_fkey
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- 4b. SET NULL: audit rows survive deletion with an anonymized reference.
 ALTER TABLE reports
     ALTER COLUMN reporter_user_id DROP NOT NULL,
-    DROP CONSTRAINT IF EXISTS reports_reporter_user_id_fkey,
+    DROP CONSTRAINT reports_reporter_user_id_fkey,
     ADD CONSTRAINT reports_reporter_user_id_fkey
         FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE SET NULL;
 
+-- blocked_users switches to CASCADE (not SET NULL): the RLS policy
+-- `blocker_id = auth.uid()` makes NULL-blocker rows unreadable by any user,
+-- which defeats the audit purpose. A deleted user's outbound/inbound blocks
+-- carry no moderation value after the account is gone — their Supabase
+-- auth.uid vanishes with them, so a re-registration would get a new uid
+-- and the old block wouldn't apply regardless.
 ALTER TABLE blocked_users
-    ALTER COLUMN blocker_id DROP NOT NULL,
-    ALTER COLUMN blocked_id DROP NOT NULL,
-    DROP CONSTRAINT IF EXISTS blocked_users_blocker_id_fkey,
+    DROP CONSTRAINT blocked_users_blocker_id_fkey,
     ADD CONSTRAINT blocked_users_blocker_id_fkey
-        FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE SET NULL,
-    DROP CONSTRAINT IF EXISTS blocked_users_blocked_id_fkey,
+        FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE CASCADE,
+    DROP CONSTRAINT blocked_users_blocked_id_fkey,
     ADD CONSTRAINT blocked_users_blocked_id_fkey
-        FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE SET NULL;
+        FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- 5. Re-create the RLS policy and view without the tombstone filter.
 --    Hard delete means a row is either present (active user) or gone;
@@ -227,3 +233,9 @@ CREATE POLICY username_reservations_deny_all ON username_reservations
 -- deleted_at/username_reserved_until from the reservations table and
 -- reverting every FK one-by-one. Use `make nuke` + re-run migrations
 -- if you need to start over locally.
+DO $$
+BEGIN
+    RAISE EXCEPTION
+        'migration 0044 is destructive and has no down path — use `make nuke` and re-run forward migrations';
+END
+$$;
