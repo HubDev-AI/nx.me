@@ -124,7 +124,7 @@ interface CreatePostRequest {
  * the dialog's local `job.post_id` / `job.share_hash` after publish.
  */
 interface CreatePostResponse {
-  id: string;
+  post_id: string;
   share_hash: string;
 }
 
@@ -593,7 +593,7 @@ export default function ProfileScreen() {
       });
       setDialogJob((prev) =>
         prev
-          ? { ...prev, post_id: post.id, share_hash: post.share_hash }
+          ? { ...prev, post_id: post.post_id, share_hash: post.share_hash }
           : prev,
       );
       setDialogVisible(false);
