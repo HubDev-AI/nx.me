@@ -37,6 +37,10 @@ export const SECURE_STORE_KEYS = {
    * purge runs once across launches in production builds.
    */
   GUEST_PURGED_AT: "nxme_guest_purged_at",
+  /** Device-local flag set once the onboarding screen has been completed. */
+  ONBOARDING_COMPLETE: "nxme_onboarding_complete",
+  /** Canonical location for the current user's username. */
+  USERNAME: "nxme_username",
 } as const;
 
 /** OAuth Client IDs — sourced from env / Expo config extras */
@@ -79,6 +83,11 @@ export const AUTH_ENDPOINTS = {
   REFRESH: "/v1/auth/refresh",
   /** Server-side logout — POST with JWT in Authorization header */
   LOGOUT: "/v1/auth/logout",
+  /**
+   * Hard-delete the authenticated account + 180-day username reservation.
+   * Long-running: bounded by DELETE_ACCOUNT_TIMEOUT_MS on the client.
+   */
+  DELETE_ACCOUNT: "/v1/auth/account",
 } as const;
 
 /** Auth provider type — matches backend provider strings */
@@ -459,6 +468,12 @@ export const DEV_FEATURE_FOCUS: string | null =
 
 /** Sentry DSN — empty disables crash reporting (warns in dev) */
 export const SENTRY_DSN: string = process.env.EXPO_PUBLIC_SENTRY_DSN ?? "";
+
+/**
+ * Maximum wait for DELETE /v1/auth/account before surfacing a recoverable
+ * error. Accounts with many blobs take time; 60s is 2× the observed p99.
+ */
+export const DELETE_ACCOUNT_TIMEOUT_MS = 60_000;
 
 /** Validation constants */
 export const AUTH_VALIDATION = {

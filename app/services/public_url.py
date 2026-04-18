@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 PUBLIC_BUCKET = "post-images"
 AVATAR_BUCKET = "avatars"
+RAW_SELFIES_BUCKET = "raw-selfies"
+GENERATED_IMAGES_BUCKET = "generated-images"
 
 
 @dataclass(frozen=True)

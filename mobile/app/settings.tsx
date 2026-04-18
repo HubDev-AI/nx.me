@@ -4,7 +4,7 @@
  * Route: /settings (custom header)
  * Auth: required — fetches /v1/auth/me for account details.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { usePreventRemove } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
@@ -30,17 +31,38 @@ import {
   HeaderBackButtonSpacer,
 } from "../components/ui/HeaderBackButton";
 import { Body, Caption, Heading, Label } from "../components/ui/Text";
+import { DeleteAccountOverlay } from "../components/settings/DeleteAccountOverlay";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { useCapabilities } from "../lib/capabilities";
-import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../constants/config";
+import {
+  AUTH_ENDPOINTS,
+  DELETE_ACCOUNT_TIMEOUT_MS,
+  MIN_TOUCH_TARGET,
+} from "../constants/config";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { showToast } from "../lib/toast";
 import { clearAllTokens } from "../lib/auth";
+import { wipeLocalDeviceState } from "../lib/account-wipe";
 
 /** Header title font size — matches subscription + upload screens. */
 const HEADER_TITLE_FONT_SIZE = 20;
+
+/**
+ * Sentinel error message that identifies a client-side delete-account
+ * timeout — lets the catch block distinguish timeouts from real API
+ * errors without string comparison on human copy.
+ */
+const TIMEOUT_SENTINEL = "delete-account-timeout";
+
+/**
+ * Copy shown after a timeout. The server-side flow is retry-safe, so
+ * either way we drop the device into a logged-out state and let the
+ * next login reconcile any partial state via the orphan sweeper.
+ */
+const DELETE_TIMEOUT_TOAST =
+  "Deletion is taking longer than expected. If you see issues on your next login, contact support.";
 
 // Safely resolve expo-constants — if unavailable (bare workflow edge case),
 // we fall back to a static version string instead of crashing the screen.
@@ -82,6 +104,17 @@ export default function SettingsScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const appVersion = Constants?.expoConfig?.version ?? "1.0.0";
+
+  // -------------------------------------------------------------------------
+  // Block navigation away while a delete request is in flight. The overlay
+  // hides the back button too, but swipe-back / hardware-back / deeplink
+  // redirects can still try to pop — usePreventRemove intercepts all of
+  // them with synchronous registration (no one-render gap between
+  // setIsDeleting(true) and guard activation).
+  // -------------------------------------------------------------------------
+  usePreventRemove(isDeleting, () => {
+    // no-op: rejection is the whole point
+  });
 
   // -------------------------------------------------------------------------
   // Fetch /v1/auth/me — only for real users; guests have no account record.
@@ -142,11 +175,18 @@ export default function SettingsScreen() {
 
   // -------------------------------------------------------------------------
   // Delete account
+  //
+  // On timeout we still drop the device into a logged-out state — the
+  // server flow is retry-safe (user row stays intact until every
+  // cascading delete commits; orphan-reconcile catches anything that
+  // half-landed). Leaving the device in "logged in" purgatory is worse
+  // than a stale local cache, because the user can't retry without a
+  // working local store.
   // -------------------------------------------------------------------------
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
       "Delete Account",
-      "This action is permanent and cannot be undone. All your data will be deleted.",
+      "Your photos, glow-ups, and account data will be permanently deleted. Your username will be reserved for 180 days. This cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -154,21 +194,54 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             setIsDeleting(true);
+            const controller = new AbortController();
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
             try {
-              await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
-              await clearAllTokens();
+              await new Promise<void>((resolve, reject) => {
+                timeoutId = setTimeout(() => {
+                  controller.abort();
+                  reject(new Error(TIMEOUT_SENTINEL));
+                }, DELETE_ACCOUNT_TIMEOUT_MS);
+                apiFetch<void>(AUTH_ENDPOINTS.DELETE_ACCOUNT, {
+                  method: "DELETE",
+                  signal: controller.signal,
+                })
+                  .then(() => {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    resolve();
+                  })
+                  .catch((err) => {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    reject(err);
+                  });
+              });
+              await wipeLocalDeviceState();
               setSessionMode("anon");
+              router.replace("/(auth)/login");
             } catch (err) {
-              const appError = parseApiError(err);
-              showToast({ kind: 'error', message: appError.message });
-            } finally {
-              setIsDeleting(false);
+              const isTimeout =
+                err instanceof Error && err.message === TIMEOUT_SENTINEL;
+              if (isTimeout) {
+                // Force the device into a logged-out state so the user can
+                // retry from login. Orphan-reconcile on the server side
+                // will catch any partial-failure state.
+                await wipeLocalDeviceState();
+                setSessionMode("anon");
+                router.replace("/(auth)/login");
+                showToast({ kind: "info", message: DELETE_TIMEOUT_TOAST });
+              } else {
+                const appError = parseApiError(err);
+                showToast({ kind: "error", message: appError.message });
+                setIsDeleting(false);
+              }
             }
+            // No finally { setIsDeleting(false) } — on success / timeout the
+            // screen unmounts via router.replace before the next tick.
           },
         },
       ],
     );
-  }, [setSessionMode]);
+  }, [router, setSessionMode]);
 
   // -------------------------------------------------------------------------
   // Render
@@ -179,7 +252,11 @@ export default function SettingsScreen() {
 
       {/* Custom header — matches subscription + upload screens. */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <HeaderBackButton onPress={() => router.back()} />
+        {isDeleting ? (
+          <HeaderBackButtonSpacer />
+        ) : (
+          <HeaderBackButton onPress={() => router.back()} />
+        )}
         <Heading
           size="md"
           style={styles.headerTitle}
@@ -374,6 +451,8 @@ export default function SettingsScreen() {
             </Animated.View>
           )}
       </ScrollView>
+
+      {isDeleting && <DeleteAccountOverlay />}
     </View>
   );
 }

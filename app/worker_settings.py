@@ -25,6 +25,9 @@ from app.advisor.nudge_scheduler import (
     check_nudge_eligibility,
     write_analysis_insight_job,
 )
+from app.repositories.image_repo import ImageRepository
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
+from app.workers.delete_account_blobs import wipe_deleted_user_blobs
 from app.workers.orphan_reclaim import reclaim_orphaned_blobs
 from app.workers.retention import run_retention
 
@@ -38,6 +41,8 @@ async def startup(ctx: dict) -> None:
     logger.info("Unified worker starting")
 
     ctx["supabase"] = get_supabase_service()
+    ctx["image_repo"] = ImageRepository(ctx["supabase"])
+    ctx["orphan_repo"] = OrphanedStorageKeyRepository(ctx["supabase"])
     ctx["redis"] = aioredis.from_url(
         settings.REDIS_URL,
         decode_responses=True,
@@ -70,6 +75,7 @@ class WorkerSettings:
         check_nudge_eligibility,
         write_analysis_insight_job,
         reconcile_reaction_counts,
+        wipe_deleted_user_blobs,
     ]
 
     on_startup = startup

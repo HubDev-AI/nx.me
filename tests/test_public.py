@@ -97,19 +97,15 @@ def _build_supabase_with_posts(rows: list[dict]) -> MagicMock:
     return sb
 
 
-def _post_row(
-    user_id: str, username: str, updated_at: datetime, deleted: bool = False
-) -> dict:
+def _post_row(user_id: str, username: str, updated_at: datetime) -> dict:
     # Matches the select projection in list_public_user_cursor:
-    #   "user_id, updated_at, users!inner(username, deleted_at)"
-    # Note: the repo relies on the !inner filter eq("users.deleted_at", "null")
-    # to filter deleted users at the DB layer, so rows handed back already
-    # exclude deleted users — tests mirror that by not emitting them.
-    assert not deleted, "deleted user rows are filtered by DB-level inner join"
+    #   "user_id, updated_at, users!inner(username)"
+    # Hard-deleted users are physically gone post migration 0044, so the
+    # !inner join drops orphan posts naturally — no tombstone filter needed.
     return {
         "user_id": user_id,
         "updated_at": updated_at.isoformat(),
-        "users": {"username": username, "deleted_at": None},
+        "users": {"username": username},
     }
 
 

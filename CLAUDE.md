@@ -52,6 +52,7 @@ cd mobile && npx expo lint      # ESLint
 - `card-web/` — Next.js web surface — see `card-web/AGENTS.md`
 - `scripts/` — Dev utilities
 - `tests/` — Python test suite (lives at project root, not under `app/`)
+- `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 When working inside any of `app/`, `mobile/`, or `card-web/`, read that module's `AGENTS.md` first — it has module-specific commands, layout, and gotchas not covered here.
 

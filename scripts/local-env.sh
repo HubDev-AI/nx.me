@@ -59,6 +59,9 @@ FEATURE_ONBOARDING_ENABLED=false
 
 LOGIN_IP_LIMIT=100
 REGISTRATION_IP_LIMIT=100
+
+# ── Account deletion — hard-delete + username reservation ────────────────────
+USERNAME_RESERVATION_DAYS=180
 EOF
 
 echo ".env generated with local Supabase defaults."

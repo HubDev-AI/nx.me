@@ -11,8 +11,8 @@ GET /api/public/cards/{username}/{share_hash}
   Returns a specific post identified by its share hash.
 
   HTTP 200 — card data
-  HTTP 404 — user exists but has no published posts / hash not found
-  HTTP 410 — account deleted or post hard-deleted
+  HTTP 404 — user not found (including hard-deleted accounts) or no
+             published posts / hash not found
 """
 
 from __future__ import annotations
@@ -241,26 +241,17 @@ async def get_shareable_card(
     No authentication required — fully public endpoint.
 
     Raises:
-        HTTP 410: account has been deleted.
-        HTTP 404: user has no published posts.
+        HTTP 404: user not found (including hard-deleted accounts) or
+                  user has no published posts.
     """
     # Step 1 — look up user by username
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(user_repo.get_by_username_for_card, username)
 
     if not user:
-        # Username not found — treat as Gone so callers don't leak enumeration
-        # info while still being semantically correct for deleted accounts.
         raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Account not found or has been deleted",
-        )
-
-    if user.get("deleted_at") is not None:
-        logger.info("Shareable card requested for deleted account: %s", username)
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Account not found or has been deleted",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     user_id: str = user["id"]
@@ -310,14 +301,8 @@ async def get_shareable_card_by_hash(
 
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Account not found or has been deleted",
-        )
-
-    if user.get("deleted_at") is not None:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Account not found or has been deleted",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
         )
 
     user_id: str = user["id"]

@@ -177,7 +177,7 @@ function AuthGuard() {
       return;
     }
 
-    getItem("nxme_onboarding_complete").then((value) => {
+    getItem(SECURE_STORE_KEYS.ONBOARDING_COMPLETE).then((value) => {
       router.replace(value ? "/(tabs)" : "/onboarding");
     });
   }, [

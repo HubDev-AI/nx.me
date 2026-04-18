@@ -221,7 +221,7 @@ class TestAuthSessionIsolation:
         )
 
         user_repo = MagicMock()
-        user_repo.check_username_taken.return_value = None
+        user_repo.check_username_availability.return_value = {"available": True}
         user_repo.upsert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "alice"}
         tier_repo = SimpleNamespace(

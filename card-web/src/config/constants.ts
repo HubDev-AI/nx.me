@@ -7,7 +7,11 @@
 /** ISR revalidation window in seconds (60s = FCP ≤2s target at P95 on 4G) */
 export const CARD_REVALIDATE_SECONDS = 60;
 
-/** HTTP status code the backend returns for a deleted/gone card */
+/**
+ * HTTP 410 Gone — kept for migration safety in case older backend versions
+ * still emit it.  As of PR #166 the current backend returns 404 instead.
+ * Remove once all environments have been updated.
+ */
 export const HTTP_GONE = 410;
 
 /** OG image dimensions (pixels) */
