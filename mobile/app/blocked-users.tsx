@@ -2,7 +2,7 @@
  * Blocked Users screen — displays the list of users the current user has blocked
  * and allows unblocking them.
  *
- * Route: /blocked-users (Stack.Screen)
+ * Route: /blocked-users (custom header)
  * Auth: required
  *
  * Backend:
@@ -17,7 +17,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -26,16 +26,24 @@ import { THEME } from "../constants/theme";
 import { PageBackground } from "../components/ui/PageBackground";
 import { PressableScale } from "../components/ui/PressableScale";
 import { EmptyState } from "../components/ui/EmptyState";
-import { Body, Caption } from "../components/ui/Text";
+import {
+  HeaderBackButton,
+  HeaderBackButtonSpacer,
+} from "../components/ui/HeaderBackButton";
+import { Body, Caption, Heading } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 import { useCapabilities } from "../lib/capabilities";
 import { useEntering } from "../lib/hooks/use-entering";
-import { FONTS } from "../hooks/useFonts";
 import { MIN_TOUCH_TARGET } from "../constants/config";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { showToast } from "../lib/toast";
 import { unblockUser } from "../lib/block";
+
+/** Header title font size — matches subscription + settings screens. */
+const HEADER_TITLE_FONT_SIZE = 20;
+/** Header chrome height (button row + bottom padding) — below insets.top. */
+const HEADER_CHROME_HEIGHT = MIN_TOUCH_TARGET + THEME.spacing.sm;
 
 // ---------------------------------------------------------------------------
 // Types (mirrors backend BlockedListResponse / BlockedUserResponse)
@@ -70,6 +78,7 @@ interface BlockedListResponse {
 // ---------------------------------------------------------------------------
 
 export default function BlockedUsersScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const caps = useCapabilities();
@@ -163,133 +172,136 @@ export default function BlockedUsersScreen() {
   // Render
   // -------------------------------------------------------------------------
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: "Blocked Users",
-          headerStyle: { backgroundColor: THEME.colors.bg },
-          headerTintColor: THEME.colors.textPrimary,
-          headerShadowVisible: false,
-          headerTitleStyle: {
-            fontFamily: FONTS.display,
-            fontSize: 18,
-          },
-        }}
-      />
+    <View style={styles.container}>
+      <PageBackground overlayOpacity={0.88} />
 
-      <View style={styles.container}>
-        <PageBackground overlayOpacity={0.88} />
-
-        {showEmptyScreen ? (
-          <Animated.View
-            entering={FadeInDown.duration(400)}
-            style={styles.fillCentered}
-          >
-            {isLoading ? (
-              <>
-                <ActivityIndicator color={theme.accent} size="large" />
-                <Caption color="secondary" style={styles.loadingText}>
-                  Loading blocked users…
-                </Caption>
-              </>
-            ) : error ? (
-              <EmptyState
-                icon="alert-circle-outline"
-                title="Could not load blocked users"
-                description={error}
-                action={{
-                  label: "Try Again",
-                  onPress: loadBlockedUsers,
-                  accessibilityLabel: "Retry loading blocked users",
-                }}
-              />
-            ) : (
-              <EmptyState
-                icon="shield-checkmark-outline"
-                title="No blocked users"
-                description="Users you block will appear here"
-              />
-            )}
-          </Animated.View>
-        ) : (
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: insets.bottom + THEME.spacing.xxxl },
-            ]}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Blocked users list */}
-            <View style={styles.list}>
-              {blockedUsers.map((user, index) => {
-                const isUnblocking = unblockingIds.has(user.blocked_id);
-                return (
-                  <Animated.View
-                    key={user.id}
-                    entering={fadeInDown(Math.min(index, 8) * 40, 240)}
-                  >
-                    <View style={styles.glassCard}>
-                      <View style={styles.userRow}>
-                        {/* Avatar placeholder */}
-                        <View
-                          style={[
-                            styles.avatar,
-                            { borderColor: theme.accent + "40" },
-                          ]}
-                        >
-                          <Ionicons
-                            name="person"
-                            size={20}
-                            color={THEME.colors.textMuted}
-                          />
-                        </View>
-
-                        {/* User info */}
-                        <View style={styles.userInfo}>
-                          <Body weight="medium" color="primary" numberOfLines={1}>
-                            {user.display_name || "Blocked User"}
-                          </Body>
-                          <Caption color="secondary" numberOfLines={1}>
-                            {user.username
-                              ? `@${user.username}`
-                              : `ID: ${user.blocked_id.slice(0, 8)}…`}
-                          </Caption>
-                        </View>
-
-                        {/* Unblock button */}
-                        <PressableScale
-                          onPress={() => handleUnblock(user)}
-                          disabled={isUnblocking}
-                          style={[
-                            styles.unblockButton,
-                            { borderColor: theme.accent },
-                            isUnblocking && styles.unblockButtonDisabled,
-                          ]}
-                          accessibilityLabel={`Unblock ${user.display_name || "user"}`}
-                          accessibilityRole="button"
-                        >
-                          {isUnblocking ? (
-                            <ActivityIndicator
-                              color={theme.accent}
-                              size="small"
-                            />
-                          ) : (
-                            <Caption weight="medium" color={theme.accent}>
-                              Unblock
-                            </Caption>
-                          )}
-                        </PressableScale>
+      {showEmptyScreen ? (
+        <Animated.View
+          entering={FadeInDown.duration(400)}
+          style={styles.fillCentered}
+        >
+          {isLoading ? (
+            <>
+              <ActivityIndicator color={theme.accent} size="large" />
+              <Caption color="secondary" style={styles.loadingText}>
+                Loading blocked users…
+              </Caption>
+            </>
+          ) : error ? (
+            <EmptyState
+              icon="alert-circle-outline"
+              title="Could not load blocked users"
+              description={error}
+              action={{
+                label: "Try Again",
+                onPress: loadBlockedUsers,
+                accessibilityLabel: "Retry loading blocked users",
+              }}
+            />
+          ) : (
+            <EmptyState
+              icon="shield-checkmark-outline"
+              title="No blocked users"
+              description="Users you block will appear here"
+            />
+          )}
+        </Animated.View>
+      ) : (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop:
+                insets.top + HEADER_CHROME_HEIGHT + THEME.spacing.lg,
+              paddingBottom: insets.bottom + THEME.spacing.xxxl,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Blocked users list */}
+          <View style={styles.list}>
+            {blockedUsers.map((user, index) => {
+              const isUnblocking = unblockingIds.has(user.blocked_id);
+              return (
+                <Animated.View
+                  key={user.id}
+                  entering={fadeInDown(Math.min(index, 8) * 40, 240)}
+                >
+                  <View style={styles.glassCard}>
+                    <View style={styles.userRow}>
+                      {/* Avatar placeholder */}
+                      <View
+                        style={[
+                          styles.avatar,
+                          { borderColor: theme.accent + "40" },
+                        ]}
+                      >
+                        <Ionicons
+                          name="person"
+                          size={20}
+                          color={THEME.colors.textMuted}
+                        />
                       </View>
+
+                      {/* User info */}
+                      <View style={styles.userInfo}>
+                        <Body weight="medium" color="primary" numberOfLines={1}>
+                          {user.display_name || "Blocked User"}
+                        </Body>
+                        <Caption color="secondary" numberOfLines={1}>
+                          {user.username
+                            ? `@${user.username}`
+                            : `ID: ${user.blocked_id.slice(0, 8)}…`}
+                        </Caption>
+                      </View>
+
+                      {/* Unblock button */}
+                      <PressableScale
+                        onPress={() => handleUnblock(user)}
+                        disabled={isUnblocking}
+                        style={[
+                          styles.unblockButton,
+                          { borderColor: theme.accent },
+                          isUnblocking && styles.unblockButtonDisabled,
+                        ]}
+                        accessibilityLabel={`Unblock ${user.display_name || "user"}`}
+                        accessibilityRole="button"
+                      >
+                        {isUnblocking ? (
+                          <ActivityIndicator
+                            color={theme.accent}
+                            size="small"
+                          />
+                        ) : (
+                          <Caption weight="medium" color={theme.accent}>
+                            Unblock
+                          </Caption>
+                        )}
+                      </PressableScale>
                     </View>
-                  </Animated.View>
-                );
-              })}
-            </View>
-          </ScrollView>
-        )}
+                  </View>
+                </Animated.View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+
+      {/* Custom header — absolute overlay so the centered empty state stays
+          at the true vertical center of the screen (does not shift down). */}
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <HeaderBackButton onPress={() => router.back()} />
+        <Heading
+          size="md"
+          style={styles.headerTitle}
+          maxFontSizeMultiplier={1.3}
+        >
+          Blocked Users
+        </Heading>
+        <HeaderBackButtonSpacer />
       </View>
-    </>
+    </View>
   );
 }
 
@@ -302,6 +314,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.bg,
   },
+
+  // Absolute header — overlays content so centered empty state stays
+  // at the true vertical center of the screen. Matches settings +
+  // subscription chrome spacing.
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: THEME.spacing.sm,
+    paddingBottom: THEME.spacing.sm,
+  },
+  headerTitle: {
+    fontSize: HEADER_TITLE_FONT_SIZE,
+  },
+
   scroll: {
     flex: 1,
   },
