@@ -12,6 +12,7 @@ and idempotent 204 for a user that was already deleted.
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -293,3 +294,130 @@ class TestHardDeleteAccount:
         user_repo.auth_delete_user.assert_not_called()
         user_repo.delete.assert_not_called()
         user_repo.insert_username_reservation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_db_delete_failure_raises_500(self, monkeypatch):
+        """DB-level failure after auth-delete must surface as HTTP 500."""
+        monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
+
+        user_repo = _make_user_repo(user_exists=True)
+        deps = _make_deps()
+        user_repo.delete.side_effect = RuntimeError("postgres down")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_account(
+                claims=_make_claims(),
+                user_repo=user_repo,
+                image_repo=deps.image_repo,
+                orphan_repo=deps.orphan_repo,
+                ledger=deps.ledger,
+                redis_client=deps.redis_client,
+                arq_pool=deps.arq_pool,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        # Auth-delete ran first; reservation must NOT run because no row
+        # actually got deleted.
+        user_repo.auth_delete_user.assert_called_once()
+        user_repo.insert_username_reservation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_row_vanished_mid_flow_returns_204_without_reservation(
+        self, monkeypatch
+    ):
+        """Auth-delete succeeds but ``user_repo.delete`` returns [] — benign race.
+
+        Some other actor (another delete request, a DB trigger) already
+        dropped the row between ``get_profile_by_id`` and the DELETE. We
+        return 204 without writing a reservation — because no row was
+        deleted here, writing one now would collide with the reservation
+        that the winning request already inserted.
+        """
+        monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
+
+        user_repo = _make_user_repo(user_exists=True)
+        deps = _make_deps()
+        user_repo.delete.return_value = []  # Row vanished between steps.
+
+        response = await delete_account(
+            claims=_make_claims(),
+            user_repo=user_repo,
+            image_repo=deps.image_repo,
+            orphan_repo=deps.orphan_repo,
+            ledger=deps.ledger,
+            redis_client=deps.redis_client,
+            arq_pool=deps.arq_pool,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        user_repo.auth_delete_user.assert_called_once()
+        user_repo.insert_username_reservation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_blob_enumeration_failure_raises_500_before_auth_delete(
+        self, monkeypatch
+    ):
+        """Storage enumeration failure must HALT the flow — do NOT auth-delete."""
+        monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
+
+        user_repo = _make_user_repo(user_exists=True)
+        user_repo.list_user_storage_keys.side_effect = RuntimeError("listing failed")
+        deps = _make_deps()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_account(
+                claims=_make_claims(),
+                user_repo=user_repo,
+                image_repo=deps.image_repo,
+                orphan_repo=deps.orphan_repo,
+                ledger=deps.ledger,
+                redis_client=deps.redis_client,
+                arq_pool=deps.arq_pool,
+            )
+
+        assert exc_info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        # The point of failing fast: auth-delete must NOT run — otherwise
+        # the account goes away with zero blob wipes and the user has no
+        # way to retry the wipe from the client.
+        user_repo.auth_delete_user.assert_not_called()
+        user_repo.delete.assert_not_called()
+        user_repo.insert_username_reservation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_arq_dedup_none_return_logs_warning_and_continues(
+        self, monkeypatch, caplog
+    ):
+        """ARQ dedup (enqueue_job returns None) must not abort the delete flow."""
+        monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
+
+        big_user_blobs = _INLINE_BLOB_WIPE_THRESHOLD + 1
+        user_repo = _make_user_repo(user_exists=True)
+        user_repo.list_user_storage_keys.return_value = {
+            "raw-selfies": [f"k-{i}.jpg" for i in range(big_user_blobs)],
+            "generated-images": [],
+            "post-images": [],
+            "avatars": [],
+        }
+        deps = _make_deps()
+        deps.arq_pool.enqueue_job = AsyncMock(return_value=None)
+
+        with caplog.at_level(logging.WARNING, logger="app.api.auth"):
+            response = await delete_account(
+                claims=_make_claims(),
+                user_repo=user_repo,
+                image_repo=deps.image_repo,
+                orphan_repo=deps.orphan_repo,
+                ledger=deps.ledger,
+                redis_client=deps.redis_client,
+                arq_pool=deps.arq_pool,
+            )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        # DB delete + reservation must still run — the dedup is only a
+        # blob-wipe scheduling concern, not a showstopper.
+        user_repo.delete.assert_called_once()
+        user_repo.insert_username_reservation.assert_called_once()
+        assert any(
+            "deduped" in rec.message and rec.levelno == logging.WARNING
+            for rec in caplog.records
+        )

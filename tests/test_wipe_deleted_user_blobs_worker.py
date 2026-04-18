@@ -41,9 +41,19 @@ async def test_chunks_remove_and_dlqs_failures():
 
     assert image_repo.remove.call_count == 4
     assert orphan_repo.record.call_count == 250
-    # Verify the DLQ calls are for the failed chunk's keys.
-    first_dlq_key = orphan_repo.record.call_args_list[0].args[1]
-    assert first_dlq_key == "u-1/raw/250.jpg"
+    # Verify every DLQ call records the correct bucket + reason + the
+    # failed chunk's keys. A weaker assertion would accept a bucket
+    # swap or missing reason, which would silently break the
+    # nightly reclaim worker's filtering.
+    first_call = orphan_repo.record.call_args_list[0]
+    assert first_call.args[0] == "raw-selfies"
+    assert first_call.args[1] == "u-1/raw/250.jpg"
+    assert first_call.args[2] == "delete_account"
+    # Bucket + reason should be consistent across every DLQ call for
+    # this chunk, so any off-by-one in the loop body surfaces.
+    for call in orphan_repo.record.call_args_list:
+        assert call.args[0] == "raw-selfies"
+        assert call.args[2] == "delete_account"
 
 
 @pytest.mark.asyncio
