@@ -6,17 +6,19 @@
  *
  * Coverage map:
  *   SecureStore (Keychain / Keystore) — every SECURE_STORE_KEYS value
- *   AsyncStorage                      — every @nxme:* key we own
+ *                                      (each key's SecureStore.deleteItemAsync
+ *                                      call is caught in isolation so a
+ *                                      single key failure doesn't leak
+ *                                      JWT/refresh tokens on device).
+ *   AsyncStorage                      — each module owns its own @nxme:*
+ *                                      key removal (clearDismissedJobs,
+ *                                      clearRefundToastSeen).
  *   MMKV (via mutationQueue)          — offline mutation queue
  *   In-process                        — dismissed-jobs-store, refund-toast-store,
  *                                       queryClient cache
  */
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import {
   SECURE_STORE_KEYS,
-  PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY,
-  REFUND_TOAST_SEEN_STORAGE_KEY,
 } from "../constants/config";
 import { deleteItem } from "./secure-storage";
 import { clearDismissedJobs } from "./dismissed-jobs-store";
@@ -25,23 +27,31 @@ import { mutationQueue } from "./offline-queue";
 import { queryClient } from "./query-client";
 
 export async function wipeLocalDeviceState(): Promise<void> {
-  // 1. SecureStore — every nxme_* key
+  // 1. SecureStore — every nxme_* key. Use per-item .catch so a single
+  //    failing key (e.g. Keychain access error on one entry) doesn't
+  //    short-circuit Promise.all and leave the JWT / refresh token on
+  //    device for the next session to pick up.
   await Promise.all(
-    Object.values(SECURE_STORE_KEYS).map((key) => deleteItem(key)),
+    Object.values(SECURE_STORE_KEYS).map((key) =>
+      deleteItem(key).catch((err) => {
+        if (__DEV__) {
+          console.warn(
+            `wipeLocalDeviceState: deleteItem(${key}) failed`,
+            err,
+          );
+        }
+      }),
+    ),
   );
 
-  // 2. AsyncStorage — every @nxme:* key we own
-  await AsyncStorage.multiRemove([
-    PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY,
-    REFUND_TOAST_SEEN_STORAGE_KEY,
-  ]);
-
-  // 3. Module-level caches (also idempotently purges backing AsyncStorage)
+  // 2. Module-level caches — each store owns its own AsyncStorage key
+  //    removal (so the @nxme:* key cleanup happens here, not via a
+  //    duplicate multiRemove at this layer).
   await Promise.all([clearDismissedJobs(), clearRefundToastSeen()]);
 
-  // 4. MMKV-backed offline mutation queue — not reachable via AsyncStorage
+  // 3. MMKV-backed offline mutation queue — not reachable via AsyncStorage
   mutationQueue.clear();
 
-  // 5. React Query cache
+  // 4. React Query cache
   queryClient.clear();
 }

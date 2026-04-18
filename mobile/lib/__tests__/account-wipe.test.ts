@@ -1,15 +1,9 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import * as secureStorage from "../secure-storage";
 import * as dismissedJobs from "../dismissed-jobs-store";
 import * as refundToast from "../refund-toast-store";
 import { mutationQueue } from "../offline-queue";
 import { queryClient } from "../query-client";
-import {
-  SECURE_STORE_KEYS,
-  PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY,
-  REFUND_TOAST_SEEN_STORAGE_KEY,
-} from "../../constants/config";
+import { SECURE_STORE_KEYS } from "../../constants/config";
 import { wipeLocalDeviceState } from "../account-wipe";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
@@ -49,15 +43,28 @@ describe("wipeLocalDeviceState", () => {
     expect(deleted).toHaveLength(Object.keys(SECURE_STORE_KEYS).length);
   });
 
-  it("clears every AsyncStorage key", async () => {
+  it("swallows per-key SecureStore errors so the remaining keys still clear", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    (secureStorage.deleteItem as jest.Mock).mockImplementation((key: string) =>
+      key === SECURE_STORE_KEYS.JWT
+        ? Promise.reject(new Error("keychain boom"))
+        : Promise.resolve(undefined),
+    );
+
+    await expect(wipeLocalDeviceState()).resolves.toBeUndefined();
+
+    const deleted = (secureStorage.deleteItem as jest.Mock).mock.calls.map(
+      (c) => c[0],
+    );
+    expect(deleted).toHaveLength(Object.keys(SECURE_STORE_KEYS).length);
+    warnSpy.mockRestore();
+  });
+
+  it("delegates AsyncStorage cleanup to the individual stores", async () => {
     await wipeLocalDeviceState();
 
-    expect(AsyncStorage.multiRemove).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY,
-        REFUND_TOAST_SEEN_STORAGE_KEY,
-      ]),
-    );
+    expect(dismissedJobs.clearDismissedJobs).toHaveBeenCalledTimes(1);
+    expect(refundToast.clearRefundToastSeen).toHaveBeenCalledTimes(1);
   });
 
   it("resets in-memory singletons and the query cache", async () => {

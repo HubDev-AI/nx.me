@@ -48,6 +48,21 @@ import { wipeLocalDeviceState } from "../lib/account-wipe";
 /** Header title font size — matches subscription + upload screens. */
 const HEADER_TITLE_FONT_SIZE = 20;
 
+/**
+ * Sentinel error message that identifies a client-side delete-account
+ * timeout — lets the catch block distinguish timeouts from real API
+ * errors without string comparison on human copy.
+ */
+const TIMEOUT_SENTINEL = "delete-account-timeout";
+
+/**
+ * Copy shown after a timeout. The server-side flow is retry-safe, so
+ * either way we drop the device into a logged-out state and let the
+ * next login reconcile any partial state via the orphan sweeper.
+ */
+const DELETE_TIMEOUT_TOAST =
+  "Deletion is taking longer than expected. If you see issues on your next login, contact support.";
+
 // Safely resolve expo-constants — if unavailable (bare workflow edge case),
 // we fall back to a static version string instead of crashing the screen.
 let Constants: typeof ExpoConstants | undefined;
@@ -162,6 +177,13 @@ export default function SettingsScreen() {
 
   // -------------------------------------------------------------------------
   // Delete account
+  //
+  // On timeout we still drop the device into a logged-out state — the
+  // server flow is retry-safe (user row stays intact until every
+  // cascading delete commits; orphan-reconcile catches anything that
+  // half-landed). Leaving the device in "logged in" purgatory is worse
+  // than a stale local cache, because the user can't retry without a
+  // working local store.
   // -------------------------------------------------------------------------
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
@@ -174,30 +196,49 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             setIsDeleting(true);
+            const controller = new AbortController();
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
             try {
-              await Promise.race([
-                apiFetch<void>("/v1/auth/account", { method: "DELETE" }),
-                new Promise<never>((_, reject) =>
-                  setTimeout(
-                    () => reject(new Error("delete-account-timeout")),
-                    DELETE_ACCOUNT_TIMEOUT_MS,
-                  ),
-                ),
-              ]);
+              await new Promise<void>((resolve, reject) => {
+                timeoutId = setTimeout(() => {
+                  controller.abort();
+                  reject(new Error(TIMEOUT_SENTINEL));
+                }, DELETE_ACCOUNT_TIMEOUT_MS);
+                apiFetch<void>(AUTH_ENDPOINTS.DELETE_ACCOUNT, {
+                  method: "DELETE",
+                  signal: controller.signal,
+                })
+                  .then(() => {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    resolve();
+                  })
+                  .catch((err) => {
+                    if (timeoutId) clearTimeout(timeoutId);
+                    reject(err);
+                  });
+              });
               await wipeLocalDeviceState();
               setSessionMode("anon");
               router.replace("/(auth)/login");
             } catch (err) {
-              const appError = parseApiError(err);
-              const message =
-                (err as Error)?.message === "delete-account-timeout"
-                  ? "Deletion is taking longer than expected. Your account may still be deleted — check back in a few minutes or contact support if you see issues."
-                  : appError.message;
-              showToast({ kind: "error", message });
-              setIsDeleting(false);
+              const isTimeout =
+                err instanceof Error && err.message === TIMEOUT_SENTINEL;
+              if (isTimeout) {
+                // Force the device into a logged-out state so the user can
+                // retry from login. Orphan-reconcile on the server side
+                // will catch any partial-failure state.
+                await wipeLocalDeviceState();
+                setSessionMode("anon");
+                router.replace("/(auth)/login");
+                showToast({ kind: "info", message: DELETE_TIMEOUT_TOAST });
+              } else {
+                const appError = parseApiError(err);
+                showToast({ kind: "error", message: appError.message });
+                setIsDeleting(false);
+              }
             }
-            // No finally { setIsDeleting(false) } — on success the screen
-            // unmounts via router.replace before the next tick.
+            // No finally { setIsDeleting(false) } — on success / timeout the
+            // screen unmounts via router.replace before the next tick.
           },
         },
       ],
