@@ -24,6 +24,8 @@ from app.entitlement.models import (
 )
 
 if TYPE_CHECKING:
+    from arq import ArqRedis
+
     from app.advisor.embedding_port import EmbeddingPort
     from app.advisor.llm_port import LLMPort
     from app.entitlement.ledger import CreditLedger
@@ -36,6 +38,7 @@ if TYPE_CHECKING:
     from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
+    from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
     from app.repositories.post_repo import PostRepository
     from app.repositories.subscription_repo import SubscriptionRepository
     from app.repositories.upload_repo import UploadRepository
@@ -258,6 +261,24 @@ def get_image_repo(request: Request) -> "ImageRepository":
     from app.repositories.image_repo import ImageRepository
 
     return ImageRepository(request.app.state.supabase)
+
+
+def get_orphaned_storage_repo(request: Request) -> "OrphanedStorageKeyRepository":
+    """Return an OrphanedStorageKeyRepository wired to the app's Supabase client."""
+    from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
+
+    return OrphanedStorageKeyRepository(request.app.state.supabase)
+
+
+def get_arq_pool(request: Request) -> "ArqRedis":
+    """Return the shared ARQ pool (stored on ``app.state.arq_pool`` at startup).
+
+    All ARQ enqueue sites across the API (glowup, social, delete_account)
+    share the same pool instance via ``request.app.state.arq_pool`` — this
+    dep simply exposes it as a FastAPI dependency so handlers can receive
+    it via ``Depends``.
+    """
+    return request.app.state.arq_pool
 
 
 def get_upload_repo(request: Request) -> "UploadRepository":

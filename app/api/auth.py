@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal, NoReturn
 from uuid import uuid4
 
+from arq import ArqRedis
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, StringConstraints, field_validator
 from slugify import slugify
@@ -31,9 +32,12 @@ from supabase import Client
 import redis.asyncio as aioredis
 
 from app.api.deps import (
+    get_arq_pool,
     get_client_ip,
     get_credit_ledger,
     get_current_user,
+    get_image_repo,
+    get_orphaned_storage_repo,
     get_redis,
     get_supabase,
     get_tier_repo,
@@ -44,6 +48,8 @@ from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.entitlement.trial_grantor import TrialGrantor
+from app.repositories.image_repo import ImageRepository
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.user_repo import UserRepository
 from app.services.disposable_email import is_disposable_email
 from app.services.rate_limiter import (
@@ -1284,106 +1290,164 @@ async def logout(
 
 
 # ---------------------------------------------------------------------------
-# Account Deletion — DELETE /auth/account
+# Account Deletion — DELETE /auth/account (hard-delete)
 # ---------------------------------------------------------------------------
+
+
+# Users with more blobs than this threshold have their storage wipe pushed
+# to an ARQ job so the HTTP request doesn't time out. The ``wipe_deleted_user_blobs``
+# worker is introduced in T5.5; until then, enqueued jobs will log as
+# "unknown task" in ARQ. Large-user deletion paths are exercised via test only.
+_INLINE_BLOB_WIPE_THRESHOLD = 500
 
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_account(
     claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
+    orphan_repo: OrphanedStorageKeyRepository = Depends(get_orphaned_storage_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
     redis_client: aioredis.Redis = Depends(get_redis),
+    arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> Response:
-    """Permanently delete the authenticated user's account (AC-3).
+    """Permanently delete the authenticated user and every owned artifact.
 
-    Actions:
-    1. Soft-delete the public.users row (deleted_at = NOW()).
-    2. Reserve the username for 180 days (username_reserved_until).
-    3. Delete the Supabase auth identity (removes login capability).
+    Ordering (do NOT re-order — see docs/plans/delete-account-hard-reset):
+    1. Fetch the user. Missing → idempotent 204.
+    2. Release active credit reservations.
+    3. Enumerate owned blob keys (before CASCADE kills enumeration).
+    4. Delete the Supabase auth identity FIRST — failure is retry-safe.
+    5. Wipe blobs (inline for small users, ARQ for large ones; DLQ on failure).
+    6. Hard-delete the users row — CASCADE fans out the rest.
+    7. Insert the username reservation (only if step 6 actually deleted a row).
+    8. Redis cleanup via scan_iter (never KEYS).
 
-    Primary storage (images, glow-up results) is deleted asynchronously
-    within 72 hours by a background job (deferred to Story 6-x).
-    Shareable card URLs return HTTP 410 once deleted_at is set (Story 6-1).
+    Idempotent: a second call on a user that's already gone returns 204.
     """
     user_id: str = claims["sub"]
     now_utc = datetime.now(tz=timezone.utc)
     reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
 
-    # --- Release active credit reservations (CS-1 AC-7) --------------------
+    user = await run_sync(user_repo.get_profile_by_id, user_id)
+    if not user:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    username: str = user["username"]
+
+    # 1. Release active credit reservations ---------------------------------
     try:
         active_reservations = user_repo.get_active_reservations(user_id)
-        if active_reservations:
-            from uuid import UUID as _UUID
+        for res in active_reservations:
+            try:
+                from uuid import UUID as _UUID
 
-            for res in active_reservations:
-                try:
-                    ledger.release(_UUID(res["id"]))
-                    logger.info(
-                        "Released reservation %s for deleting user %s",
-                        res["id"],
-                        user_id,
-                    )
-                except Exception as release_exc:  # noqa: BLE001 — best-effort release during account deletion
-                    logger.warning(
-                        "Failed to release reservation %s: %s", res["id"], release_exc
-                    )
+                ledger.release(_UUID(res["id"]))
+            except Exception as release_exc:  # noqa: BLE001
+                logger.warning(
+                    "Failed to release reservation %s: %s", res["id"], release_exc
+                )
     except Exception as exc:
         logger.error("Failed to release reservations for %s: %s", user_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Account deletion failed — could not release active credit reservations.",
+            detail="Account deletion failed — could not release credit reservations.",
         ) from exc
 
-    # --- Soft delete + username reservation --------------------------------
+    # 2. Collect blob keys BEFORE cascade makes enumeration impossible. -----
     try:
-        updated = user_repo.soft_delete(user_id, now_utc, reserved_until)
-
-        # CS-1 AC-6: Check if update affected any rows (already deleted?)
-        if not updated:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Account is already deleted.",
-            )
-    except HTTPException:
-        raise
+        keys_by_bucket = await run_sync(user_repo.list_user_storage_keys, user_id)
     except Exception as exc:
-        logger.error("users soft-delete failed for %s: %s", user_id, exc)
+        logger.error("Failed to enumerate storage keys for %s: %s", user_id, exc)
+        keys_by_bucket = {}
+
+    total_blobs = sum(len(k) for k in keys_by_bucket.values())
+
+    # 3. Delete Supabase auth identity FIRST. Failure = retry-safe (row intact).
+    try:
+        await run_sync(user_repo.auth_delete_user, user_id)
+    except Exception as exc:
+        logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Authentication service error — account was not deleted.",
+        ) from exc
+
+    # 4. Blob wipe — inline for small users, ARQ for large ones. ------------
+    if total_blobs <= _INLINE_BLOB_WIPE_THRESHOLD:
+        for bucket, keys in keys_by_bucket.items():
+            if not keys:
+                continue
+            try:
+                await run_sync(image_repo.remove, bucket, keys)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Blob wipe failed for user %s in bucket %s: %s — enqueueing DLQ",
+                    user_id,
+                    bucket,
+                    exc,
+                )
+                for key in keys:
+                    await run_sync(orphan_repo.record, bucket, key, "delete_account")
+    else:
+        logger.info(
+            "delete_account: %d blobs — offloading wipe to ARQ for user %s",
+            total_blobs,
+            user_id,
+        )
+        # NOTE: the ``wipe_deleted_user_blobs`` task is registered by T5.5;
+        # until that lands ARQ will log "unknown task" for large-user deletes.
+        await arq_pool.enqueue_job(
+            "wipe_deleted_user_blobs",
+            user_id=user_id,
+            keys_by_bucket=keys_by_bucket,
+            _job_id=f"delete_account:{user_id}",
+        )
+
+    # 5. Hard-delete the user row. CASCADE fans out everything owned. -------
+    try:
+        deleted = await run_sync(user_repo.delete, user_id)
+    except Exception as exc:
+        logger.error("users DELETE failed for %s: %s", user_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Account deletion failed.",
         ) from exc
 
-    # --- Remove Supabase auth identity -----------------------------------
-    try:
-        user_repo.auth_delete_user(user_id)
-        logger.info(
-            "Account deleted for user %s; username reserved until %s",
-            user_id,
-            reserved_until.date(),
-        )
-    except Exception as exc:
-        logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
-        # Soft delete already committed — log the failure, do not surface it.
-        # A cleanup job can retry auth deletion using the deleted_at flag.
+    if not deleted:
+        # Auth identity is gone but the row vanished between steps.
+        logger.info("delete_account: user %s row vanished mid-flow", user_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    # --- Clean up Redis keys for deleted user (A-13) -------------------------
+    # 6. Reservation — only if step 5 actually deleted a row. ---------------
+    try:
+        await run_sync(user_repo.insert_username_reservation, username, reserved_until)
+    except Exception as exc:
+        logger.warning(
+            "Reservation insert failed post-delete for user %s: %s",
+            user_id,
+            exc,
+        )
+
+    # Do NOT log the username — PII on a deleted row.
+    logger.info(
+        "Account hard-deleted for user %s (reserved until %s)",
+        user_id,
+        reserved_until.date(),
+    )
+
+    # 7. Redis cleanup — SCAN, not KEYS (non-blocking). ---------------------
     try:
         redis_keys_to_delete = [
             f"advisor_chat_rate:{user_id}",
             f"concurrent:{user_id}",
         ]
-        # Also clean up daily generation counter keys (gen:user_daily:{user_id}:*)
-        daily_keys = await redis_client.keys(f"gen:user_daily:{user_id}:*")
-        if daily_keys:
-            redis_keys_to_delete.extend(daily_keys)
+        async for key in redis_client.scan_iter(
+            match=f"gen:user_daily:{user_id}:*", count=100
+        ):
+            redis_keys_to_delete.append(key)
         if redis_keys_to_delete:
             await redis_client.delete(*redis_keys_to_delete)
-            logger.info(
-                "Cleaned up %d Redis keys for deleted user %s",
-                len(redis_keys_to_delete),
-                user_id,
-            )
     except Exception as exc:
         logger.warning("Redis cleanup failed for deleted user %s: %s", user_id, exc)
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
