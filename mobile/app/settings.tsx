@@ -4,14 +4,15 @@
  * Route: /settings (custom header)
  * Auth: required — fetches /v1/auth/me for account details.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Alert,
   ScrollView,
   StyleSheet,
   View,
 } from "react-native";
-import { useNavigation, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
+import { usePreventRemove } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
@@ -90,7 +91,6 @@ interface MeResponse {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { setSessionMode } = useAuth();
@@ -108,15 +108,13 @@ export default function SettingsScreen() {
   // -------------------------------------------------------------------------
   // Block navigation away while a delete request is in flight. The overlay
   // hides the back button too, but swipe-back / hardware-back / deeplink
-  // redirects can still try to pop — intercept them all.
+  // redirects can still try to pop — usePreventRemove intercepts all of
+  // them with synchronous registration (no one-render gap between
+  // setIsDeleting(true) and guard activation).
   // -------------------------------------------------------------------------
-  useEffect(() => {
-    if (!isDeleting) return undefined;
-    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
-      e.preventDefault();
-    });
-    return unsubscribe;
-  }, [isDeleting, navigation]);
+  usePreventRemove(isDeleting, () => {
+    // no-op: rejection is the whole point
+  });
 
   // -------------------------------------------------------------------------
   // Fetch /v1/auth/me — only for real users; guests have no account record.
