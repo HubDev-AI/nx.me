@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -102,20 +102,24 @@ export function ProfileHeader({
 
   const toggle = useCallback(() => {
     hapticLight();
-    setExpanded((prev) => {
-      const next = !prev;
-      const duration = next ? 250 : 200;
-      chevronRotation.value = withTiming(next ? 180 : 0, {
-        duration: 200,
-        easing: Easing.out(Easing.cubic),
-      });
-      borderProgress.value = withTiming(next ? 1 : 0, {
-        duration,
-        easing: Easing.out(Easing.cubic),
-      });
-      return next;
+    setExpanded((prev) => !prev);
+  }, []);
+
+  // Drive chevron + border animations off the `expanded` state. Writing to
+  // shared values inside the setState updater above would fire during
+  // React's render phase (strict mode runs updaters twice) and trip
+  // Reanimated's "writing to .value during render" warning.
+  useEffect(() => {
+    const duration = expanded ? 250 : 200;
+    chevronRotation.value = withTiming(expanded ? 180 : 0, {
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
     });
-  }, [borderProgress, chevronRotation]);
+    borderProgress.value = withTiming(expanded ? 1 : 0, {
+      duration,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [expanded, borderProgress, chevronRotation]);
 
   const handleShare = useCallback(async () => {
     try {
