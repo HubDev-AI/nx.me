@@ -63,15 +63,47 @@ class UserRepository:
             return None
         return result.data
 
-    def check_username_availability(self, username: str) -> dict | None:
-        """Return the row (including deleted_at / username_reserved_until) if username exists, else None."""
-        result = (
+    def check_username_availability(
+        self, username: str, exclude_user_id: str | None = None
+    ) -> dict:
+        """Return { available: bool, reason?: str }.
+
+        Checks (in order): active users, then active username_reservations.
+        Normalizes via NFKC + ASCII-fold so homographs collide.
+        """
+        from datetime import timezone
+
+        from app.api.auth_helpers import normalize_username
+
+        normalized = normalize_username(username)
+
+        users_result = (
             self._sb.table("users")
-            .select("id, deleted_at, username_reserved_until")
-            .eq("username", username)
+            .select("id, username")
+            .ilike("username", normalized)
             .execute()
         )
-        return result.data[0] if result.data else None
+        for row in users_result.data or []:
+            if exclude_user_id and row["id"] == exclude_user_id:
+                continue
+            return {"available": False, "reason": "taken"}
+
+        now_iso = datetime.now(tz=timezone.utc).isoformat()
+        reservations_result = (
+            self._sb.table("username_reservations")
+            .select("username, reserved_until")
+            .eq("username", normalized)
+            .gt("reserved_until", now_iso)
+            .execute()
+        )
+        if reservations_result.data:
+            return {"available": False, "reason": "reserved"}
+
+        return {"available": True}
+
+    # Post-normalization, the old case-insensitive-only method is equivalent.
+    # Keep the name as a thin alias so existing call sites don't break.
+    check_username_available_ci = check_username_availability
 
     def check_username_taken(
         self, username: str, exclude_user_id: str | None = None
@@ -89,42 +121,6 @@ class UserRepository:
         if exclude_user_id and result.data["id"] == exclude_user_id:
             return None
         return result.data
-
-    def check_username_available_ci(
-        self, username: str, exclude_user_id: str | None = None
-    ) -> dict:
-        """Check if a username is available (case-insensitive).
-
-        Returns { available: bool, reason?: str }.
-        Checks: active users, reserved usernames (deleted accounts within reservation window).
-        """
-        from datetime import timezone
-
-        result = (
-            self._sb.table("users")
-            .select("id, deleted_at, username_reserved_until")
-            .ilike("username", username)
-            .execute()
-        )
-
-        if not result.data:
-            return {"available": True}
-
-        for row in result.data:
-            if row.get("deleted_at") is None:
-                if exclude_user_id and row["id"] == exclude_user_id:
-                    continue
-                return {"available": False, "reason": "taken"}
-
-            reserved_until_str = row.get("username_reserved_until")
-            if reserved_until_str:
-                reserved_until = datetime.fromisoformat(reserved_until_str)
-                if reserved_until.tzinfo is None:
-                    reserved_until = reserved_until.replace(tzinfo=timezone.utc)
-                if reserved_until > datetime.now(tz=timezone.utc):
-                    return {"available": False, "reason": "reserved"}
-
-        return {"available": True}
 
     def get_trial_analyses_remaining(self, user_id: str) -> int:
         """Return trial_analyses_remaining for the given user (0 if not found)."""
@@ -198,35 +194,27 @@ class UserRepository:
             }
         ).eq("id", user_id).execute()
 
-    def soft_delete(
-        self, user_id: str, now_utc: datetime, reserved_until: datetime
-    ) -> list[dict]:
-        """Soft-delete a user row; returns the updated rows (empty if already deleted).
+    def insert_username_reservation(
+        self, username: str, reserved_until: datetime
+    ) -> None:
+        """UPSERT a normalized reservation row, extending the window on conflict.
 
-        Scrubs unique identifier columns (``email``, ``tiktok_open_id``) so the
-        same human can re-register with the same identity after deletion. The
-        ``username`` column is preserved for the 180-day reservation window.
-
-        Atomicity note (M-12): all columns are set in a single ``.update()``
-        call — one database statement, no transaction wrapper needed. The
-        ``is_("deleted_at", "null")`` guard ensures idempotency (a concurrent
-        call sees zero rows).
+        Stores the username already-normalized (NFKC + ASCII-fold lowercase).
+        The DB CHECK constraint enforces lowercase at the storage layer.
         """
-        result = (
-            self._sb.table("users")
-            .update(
+        from app.api.auth_helpers import normalize_username
+
+        (
+            self._sb.table("username_reservations")
+            .upsert(
                 {
-                    "deleted_at": now_utc.isoformat(),
-                    "username_reserved_until": reserved_until.isoformat(),
-                    "email": None,
-                    "tiktok_open_id": None,
-                }
+                    "username": normalize_username(username),
+                    "reserved_until": reserved_until.isoformat(),
+                },
+                on_conflict="username",
             )
-            .eq("id", user_id)
-            .is_("deleted_at", "null")
             .execute()
         )
-        return result.data or []
 
     # ------------------------------------------------------------------
     # credit_reservations table (used during account deletion)

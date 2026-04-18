@@ -263,23 +263,15 @@ async def register(
 
     # --- Username availability (AC-FR3: reservation enforcement) ----------
     # Must be checked before auth user creation to avoid orphaned auth records.
-    row = await run_sync(user_repo.check_username_availability, body.username)
-    if row:
-        if row.get("deleted_at") is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Username is already taken.",
-            )
-        reserved_until_str = row.get("username_reserved_until")
-        if reserved_until_str:
-            reserved_until = datetime.fromisoformat(reserved_until_str)
-            if reserved_until.tzinfo is None:
-                reserved_until = reserved_until.replace(tzinfo=timezone.utc)
-            if reserved_until > datetime.now(tz=timezone.utc):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Username is temporarily reserved.",
-                )
+    result = await run_sync(user_repo.check_username_availability, body.username)
+    if not result["available"]:
+        reason = result.get("reason", "taken")
+        detail = (
+            "Username is reserved from a recent account deletion."
+            if reason == "reserved"
+            else "Username is already taken."
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
     # --- Age gate (AC-6) --------------------------------------------------
     is_minor: bool | None = None

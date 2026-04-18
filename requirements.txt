@@ -34,6 +34,11 @@ httpx==0.28.1
 # Username slugification
 python-slugify==8.0.4
 
+# Username normalization (NFKC + ASCII-fold for homograph-safe availability
+# checks and reservation storage — applied at registration, availability
+# check, and reservation insert).
+unidecode==1.4.0
+
 # Image processing
 Pillow==12.1.1
 pillow-heif==0.21.0
