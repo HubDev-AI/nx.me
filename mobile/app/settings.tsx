@@ -11,7 +11,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import Animated from "react-native-reanimated";
@@ -30,14 +30,20 @@ import {
   HeaderBackButtonSpacer,
 } from "../components/ui/HeaderBackButton";
 import { Body, Caption, Heading, Label } from "../components/ui/Text";
+import { DeleteAccountOverlay } from "../components/settings/DeleteAccountOverlay";
 import { useTheme } from "../lib/theme-context";
 import { useAuth } from "../lib/auth-context";
 import { useCapabilities } from "../lib/capabilities";
-import { AUTH_ENDPOINTS, MIN_TOUCH_TARGET } from "../constants/config";
+import {
+  AUTH_ENDPOINTS,
+  DELETE_ACCOUNT_TIMEOUT_MS,
+  MIN_TOUCH_TARGET,
+} from "../constants/config";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { showToast } from "../lib/toast";
 import { clearAllTokens } from "../lib/auth";
+import { wipeLocalDeviceState } from "../lib/account-wipe";
 
 /** Header title font size — matches subscription + upload screens. */
 const HEADER_TITLE_FONT_SIZE = 20;
@@ -69,6 +75,7 @@ interface MeResponse {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { setSessionMode } = useAuth();
@@ -82,6 +89,19 @@ export default function SettingsScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const appVersion = Constants?.expoConfig?.version ?? "1.0.0";
+
+  // -------------------------------------------------------------------------
+  // Block navigation away while a delete request is in flight. The overlay
+  // hides the back button too, but swipe-back / hardware-back / deeplink
+  // redirects can still try to pop — intercept them all.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!isDeleting) return undefined;
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      e.preventDefault();
+    });
+    return unsubscribe;
+  }, [isDeleting, navigation]);
 
   // -------------------------------------------------------------------------
   // Fetch /v1/auth/me — only for real users; guests have no account record.
@@ -146,7 +166,7 @@ export default function SettingsScreen() {
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
       "Delete Account",
-      "This action is permanent and cannot be undone. All your data will be deleted.",
+      "Your photos, glow-ups, and account data will be permanently deleted. Your username will be reserved for 180 days. This cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -155,20 +175,34 @@ export default function SettingsScreen() {
           onPress: async () => {
             setIsDeleting(true);
             try {
-              await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
-              await clearAllTokens();
+              await Promise.race([
+                apiFetch<void>("/v1/auth/account", { method: "DELETE" }),
+                new Promise<never>((_, reject) =>
+                  setTimeout(
+                    () => reject(new Error("delete-account-timeout")),
+                    DELETE_ACCOUNT_TIMEOUT_MS,
+                  ),
+                ),
+              ]);
+              await wipeLocalDeviceState();
               setSessionMode("anon");
+              router.replace("/(auth)/login");
             } catch (err) {
               const appError = parseApiError(err);
-              showToast({ kind: 'error', message: appError.message });
-            } finally {
+              const message =
+                (err as Error)?.message === "delete-account-timeout"
+                  ? "Deletion is taking longer than expected. Your account may still be deleted — check back in a few minutes or contact support if you see issues."
+                  : appError.message;
+              showToast({ kind: "error", message });
               setIsDeleting(false);
             }
+            // No finally { setIsDeleting(false) } — on success the screen
+            // unmounts via router.replace before the next tick.
           },
         },
       ],
     );
-  }, [setSessionMode]);
+  }, [router, setSessionMode]);
 
   // -------------------------------------------------------------------------
   // Render
@@ -179,7 +213,11 @@ export default function SettingsScreen() {
 
       {/* Custom header — matches subscription + upload screens. */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
-        <HeaderBackButton onPress={() => router.back()} />
+        {isDeleting ? (
+          <HeaderBackButtonSpacer />
+        ) : (
+          <HeaderBackButton onPress={() => router.back()} />
+        )}
         <Heading
           size="md"
           style={styles.headerTitle}
@@ -374,6 +412,8 @@ export default function SettingsScreen() {
             </Animated.View>
           )}
       </ScrollView>
+
+      {isDeleting && <DeleteAccountOverlay />}
     </View>
   );
 }

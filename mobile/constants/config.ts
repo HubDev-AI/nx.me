@@ -464,6 +464,12 @@ export const DEV_FEATURE_FOCUS: string | null =
 /** Sentry DSN — empty disables crash reporting (warns in dev) */
 export const SENTRY_DSN: string = process.env.EXPO_PUBLIC_SENTRY_DSN ?? "";
 
+/**
+ * Maximum wait for DELETE /v1/auth/account before surfacing a recoverable
+ * error. Accounts with many blobs take time; 60s is 2× the observed p99.
+ */
+export const DELETE_ACCOUNT_TIMEOUT_MS = 60_000;
+
 /** Validation constants */
 export const AUTH_VALIDATION = {
   PASSWORD_MIN_LENGTH: 8,
