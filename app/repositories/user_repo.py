@@ -13,6 +13,12 @@ from datetime import datetime, timezone
 from supabase import Client
 
 from app.api.auth_helpers import normalize_username
+from app.services.public_url import (
+    AVATAR_BUCKET,
+    GENERATED_IMAGES_BUCKET,
+    PUBLIC_BUCKET,
+    RAW_SELFIES_BUCKET,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -357,10 +363,10 @@ class UserRepository:
         # same storage key referenced by both uploads and jobs.before
         # must only appear once in the bucket.
         return {
-            "raw-selfies": list(dict.fromkeys(raw_selfies)),
-            "generated-images": list(dict.fromkeys(generated_images)),
-            "post-images": list(dict.fromkeys(post_images)),
-            "avatars": avatars,
+            RAW_SELFIES_BUCKET: list(dict.fromkeys(raw_selfies)),
+            GENERATED_IMAGES_BUCKET: list(dict.fromkeys(generated_images)),
+            PUBLIC_BUCKET: list(dict.fromkeys(post_images)),
+            AVATAR_BUCKET: avatars,
         }
 
     def delete(self, user_id: str) -> list[dict]:

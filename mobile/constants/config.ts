@@ -83,6 +83,11 @@ export const AUTH_ENDPOINTS = {
   REFRESH: "/v1/auth/refresh",
   /** Server-side logout — POST with JWT in Authorization header */
   LOGOUT: "/v1/auth/logout",
+  /**
+   * Hard-delete the authenticated account + 180-day username reservation.
+   * Long-running: bounded by DELETE_ACCOUNT_TIMEOUT_MS on the client.
+   */
+  DELETE_ACCOUNT: "/v1/auth/account",
 } as const;
 
 /** Auth provider type — matches backend provider strings */

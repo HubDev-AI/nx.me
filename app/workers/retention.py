@@ -26,6 +26,7 @@ from supabase import Client
 
 from app.api.social import RECONCILE_LOCK_KEY
 from app.config import settings
+from app.services.public_url import RAW_SELFIES_BUCKET
 
 logger = logging.getLogger(__name__)
 
@@ -187,7 +188,7 @@ async def run_retention(ctx: dict) -> None:
 
         if storage_keys:
             try:
-                supabase.storage.from_("raw-selfies").remove(storage_keys)
+                supabase.storage.from_(RAW_SELFIES_BUCKET).remove(storage_keys)
                 purged_storage_count = len(storage_keys)
             except Exception:
                 logger.error(
