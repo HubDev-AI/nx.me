@@ -215,6 +215,33 @@ class PostRepository:
         data = result.data or []
         return data[0] if data else None
 
+    def get_active_by_glow_up_job_id(self, glow_up_job_id: str) -> dict | None:
+        """Fetch ``{id, share_hash}`` for the live post of a glow-up job, or None.
+
+        Same filter predicate as ``get_by_glow_up_job_id`` (partial unique
+        index from migration 0046: ``is_deleted = FALSE AND is_hidden =
+        FALSE``), but with a narrower projection for the hot-path status
+        poll. Used by ``GET /jobs/{job_id}`` to populate
+        ``JobStatusResponse.post_id`` / ``share_hash`` when a completed
+        glow-up has a visible public post.
+
+        Kept separate from ``get_by_glow_up_job_id`` on purpose — that
+        method's wider projection feeds the ``PostResponse`` idempotency
+        body in ``create_post``; this one runs on every status poll and
+        should move as few columns as possible.
+        """
+        result = (
+            self._sb.table("posts")
+            .select("id, share_hash")
+            .eq("glow_up_job_id", glow_up_job_id)
+            .eq("is_deleted", False)
+            .eq("is_hidden", False)
+            .limit(1)
+            .execute()
+        )
+        data = result.data or []
+        return data[0] if data else None
+
     def get_active_post(self, post_id: str) -> dict | None:
         """Fetch post id only, filtering out deleted posts."""
         result = (

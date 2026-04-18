@@ -25,6 +25,7 @@ from app.api.deps import (
     get_credit_ledger,
     get_current_user,
     get_job_repo,
+    get_post_repo,
     get_redis,
 )
 from app.api.middleware.auth import UserClaims
@@ -37,6 +38,7 @@ from app.generation.models import (
     JobStatus,
 )
 from app.repositories.job_repo import JobRepository
+from app.repositories.post_repo import PostRepository
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +63,13 @@ class JobStatusResponse(BaseModel):
     retry_eligible: bool | None = None
     user_guidance: str | None = None
     saved_at: str | None = None
+    # Populated only when ``status == COMPLETED`` AND a live post
+    # (``is_deleted = FALSE AND is_hidden = FALSE``) exists for this
+    # job. Mobile uses them to (a) hide the Publish row when already
+    # published, (b) decide whether to append the card-web URL in
+    # Share, (c) build the hash-URL for result-card Share.
+    post_id: str | None = None
+    share_hash: str | None = None
 
 
 class SaveResponse(BaseModel):
@@ -91,6 +100,7 @@ async def get_job(
     claims: UserClaims = Depends(get_user_or_guest),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> JobStatusResponse:
     """Poll job status with estimated wait time.
 
@@ -152,6 +162,10 @@ async def get_job(
     before_url: str | None = None
     after_url: str | None = None
     identity_preserved: bool | None = None
+    # R4/R5/R9 — attached only when a live post exists for this job so the
+    # client can gate Publish and build a non-broken share URL.
+    post_id: str | None = None
+    share_hash: str | None = None
 
     if job_status == JobStatus.COMPLETED:
         identity_preserved = job.get("identity_preserved")
@@ -173,6 +187,13 @@ async def get_job(
                 job["after_image_url"],
                 settings.SIGNED_URL_EXPIRY_SECONDS,
             )
+
+        active_post = await run_sync(
+            post_repo.get_active_by_glow_up_job_id, str(job_id)
+        )
+        if active_post:
+            post_id = active_post.get("id")
+            share_hash = active_post.get("share_hash")
 
     # Failed: include refund and retry info
     credit_refunded: bool | None = None
@@ -208,6 +229,8 @@ async def get_job(
         retry_eligible=retry_eligible,
         user_guidance=user_guidance,
         saved_at=saved_at_str,
+        post_id=post_id,
+        share_hash=share_hash,
     )
 
 
