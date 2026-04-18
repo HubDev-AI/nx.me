@@ -53,6 +53,7 @@ from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.user_repo import UserRepository
 from app.services.disposable_email import is_disposable_email
 from app.services.rate_limiter import (
+    check_delete_account_rate_limit,
     check_ip_registration_rate_limit,
     check_login_rate_limit,
     check_registration_rate_limit,
@@ -1324,6 +1325,15 @@ async def delete_account(
     Idempotent: a second call on a user that's already gone returns 204.
     """
     user_id: str = claims["sub"]
+
+    allowed, retry_after = await check_delete_account_rate_limit(user_id, redis_client)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many account-deletion attempts. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     now_utc = datetime.now(tz=timezone.utc)
     reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
 

@@ -117,3 +117,41 @@ async def check_login_rate_limit(
         return True, 0
     ttl: int = await r.ttl(key)
     return False, max(ttl, 0)
+
+
+# ---------------------------------------------------------------------------
+# Per-user rate limit for DELETE /auth/account (SEC-005)
+# ---------------------------------------------------------------------------
+
+# 3 attempts per 10 minutes — generous enough for honest retry after a
+# transient 502, tight enough to prevent a stolen JWT from grinding the
+# paginated reads.
+_DELETE_ACCOUNT_WINDOW_SECONDS = 600  # 10 minutes
+_DELETE_ACCOUNT_MAX_ATTEMPTS = 3
+
+
+async def check_delete_account_rate_limit(
+    user_id: str, r: aioredis.Redis
+) -> tuple[bool, int]:
+    """Return (allowed, retry_after_seconds).
+
+    Uses the same INCR + EXPIRE NX pattern as the other limiters in this
+    module. Key: ``delete_account_rate:{user_id}``.
+    """
+    key = f"delete_account_rate:{user_id}"
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, _DELETE_ACCOUNT_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(
+                "Redis pipeline command %d failed in check_delete_account_rate_limit: %s",
+                i,
+                result,
+            )
+    count: int = results[0]
+    if count <= _DELETE_ACCOUNT_MAX_ATTEMPTS:
+        return True, 0
+    ttl: int = await r.ttl(key)
+    return False, max(ttl, 1)

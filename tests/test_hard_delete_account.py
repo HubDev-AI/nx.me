@@ -72,6 +72,26 @@ class _EmptyScanIter:
         raise StopAsyncIteration
 
 
+class _FakeRedisPipeline:
+    """Minimal async-compatible pipeline stub for rate-limiter tests.
+
+    `pipeline()` chains incr/expire synchronously; `execute()` is awaitable
+    and returns ``[1, True]`` so the first call is always within the limit.
+    """
+
+    def __init__(self) -> None:
+        self._count = 1  # INCR return value — always 1 (first attempt)
+
+    def incr(self, key: str) -> "_FakeRedisPipeline":
+        return self
+
+    def expire(self, key: str, ttl: int, nx: bool = False) -> "_FakeRedisPipeline":
+        return self
+
+    async def execute(self) -> list:
+        return [self._count, True]
+
+
 def _make_deps() -> SimpleNamespace:
     """Build image/orphan/ledger/redis/arq mocks with safe defaults."""
     image_repo = MagicMock()
@@ -84,6 +104,9 @@ def _make_deps() -> SimpleNamespace:
     redis_client = MagicMock()
     redis_client.scan_iter = MagicMock(return_value=_EmptyScanIter())
     redis_client.delete = AsyncMock(return_value=None)
+    # Rate-limiter pipeline — returns count=1 (always within limit by default)
+    redis_client.pipeline = MagicMock(side_effect=lambda: _FakeRedisPipeline())
+    redis_client.ttl = AsyncMock(return_value=0)
 
     arq_pool = MagicMock()
     arq_pool.enqueue_job = AsyncMock(return_value=None)
@@ -382,6 +405,79 @@ class TestHardDeleteAccount:
         user_repo.auth_delete_user.assert_not_called()
         user_repo.delete.assert_not_called()
         user_repo.insert_username_reservation.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_returns_429_after_threshold(self, monkeypatch):
+        """Fourth call within 10 minutes → 429 before any DB work."""
+        monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
+
+        from app.services.rate_limiter import _DELETE_ACCOUNT_MAX_ATTEMPTS
+
+        user_repo = _make_user_repo()
+        deps = _make_deps()
+
+        # Wire a stateful pipeline that increments a real counter so we can
+        # drive it past the threshold without actually running Redis.
+        call_count = 0
+
+        class _CountingPipeline:
+            def __init__(self) -> None:
+                nonlocal call_count
+                call_count += 1
+                self._count = call_count
+
+            def incr(self, key: str) -> "_CountingPipeline":
+                return self
+
+            def expire(self, key: str, ttl: int, nx: bool = False) -> "_CountingPipeline":
+                return self
+
+            async def execute(self) -> list:
+                return [self._count, True]
+
+        deps.redis_client.pipeline = MagicMock(
+            side_effect=lambda: _CountingPipeline()
+        )
+        deps.redis_client.ttl = AsyncMock(return_value=120)
+
+        # First `threshold` calls should succeed (rate limit not exceeded)
+        for _ in range(_DELETE_ACCOUNT_MAX_ATTEMPTS):
+            user_repo.get_profile_by_id.return_value = {
+                "id": _USER_ID,
+                "username": _USERNAME,
+            }
+            user_repo.delete.return_value = [{"id": _USER_ID}]
+            user_repo.insert_username_reservation.return_value = None
+            user_repo.get_active_reservations.return_value = []
+            user_repo.list_user_storage_keys.return_value = {
+                "raw-selfies": [],
+                "generated-images": [],
+                "post-images": [],
+                "avatars": [],
+            }
+            await delete_account(
+                claims={"sub": _USER_ID},
+                user_repo=user_repo,
+                image_repo=deps.image_repo,
+                orphan_repo=deps.orphan_repo,
+                ledger=deps.ledger,
+                redis_client=deps.redis_client,
+                arq_pool=deps.arq_pool,
+            )
+
+        # The next call should be rate-limited
+        with pytest.raises(HTTPException) as exc:
+            await delete_account(
+                claims={"sub": _USER_ID},
+                user_repo=user_repo,
+                image_repo=deps.image_repo,
+                orphan_repo=deps.orphan_repo,
+                ledger=deps.ledger,
+                redis_client=deps.redis_client,
+                arq_pool=deps.arq_pool,
+            )
+        assert exc.value.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        assert exc.value.headers.get("Retry-After") == "120"
 
     @pytest.mark.asyncio
     async def test_arq_dedup_none_return_logs_warning_and_continues(
