@@ -24,14 +24,16 @@ make nuke    # pre-launch: wipe local DB so drop-column + FK changes have no sta
 ## File Structure
 
 **Backend:**
-- Create `app/migrations/0044_hard_delete_account.sql` — reservations table, drop soft-delete columns, CASCADE 11 FKs.
-- Modify `app/repositories/user_repo.py` — remove `soft_delete`, add `delete`, add `list_user_storage_keys`, add `insert_username_reservation`, update `check_username_availability` to consult reservations.
-- Modify `app/api/auth.py` — rewrite `delete_account`; drop `users.deleted_at` references; drop `username_reserved_until` usage.
-- Modify `app/repositories/feed_repo.py`, `app/repositories/post_repo.py` — drop `is_("deleted_at", "null")` guards (no more tombstones).
-- Modify `app/api/public.py` — drop shareable-card HTTP 410 branch.
+- Create `app/migrations/0044_hard_delete_account.sql` — reservations table, drop soft-delete columns (after dropping the view + RLS policy + partial index that depend on `users.deleted_at`), CASCADE the FKs still on `NO ACTION`.
+- Modify `app/repositories/user_repo.py` — remove `soft_delete`, add `delete`, add `list_user_storage_keys`, add `insert_username_reservation`, update `check_username_availability` + `check_username_available_ci` to consult reservations, drop `deleted_at` / `username_reserved_until` from all `select(...)` lists, drop `.is_("deleted_at", "null")` filters in `get_profile_by_id` + `get_by_username_for_card`.
+- Modify `app/api/auth.py` — rewrite `delete_account`; drop every `users.deleted_at` + `username_reserved_until` reference (including the registration-path dict inspection around line 266-282).
+- Modify `app/repositories/feed_repo.py`, `app/repositories/post_repo.py` — drop `is_("deleted_at", "null")` guards.
+- Modify `app/entitlement/service.py` — drop the two `.is_("deleted_at", "null")` sites.
+- Modify `app/api/public.py` — drop BOTH shareable-card HTTP 410 branches and every `user.get("deleted_at")` check.
 - Modify `app/workers/retention.py` — add nightly reservation cleanup.
-- Delete `tests/test_user_repo_soft_delete.py` — method is gone.
-- Create `tests/test_hard_delete_account.py`, `tests/test_username_availability_with_reservations.py`, `tests/test_retention_reservation_cleanup.py`.
+- Modify `tests/test_public.py` — drop `deleted_at` keys from user fixtures.
+- Delete `tests/test_user_repo_soft_delete.py` if it exists in the working branch — method is gone.
+- Create `tests/test_hard_delete_account.py`, `tests/test_username_availability_with_reservations.py`, `tests/test_retention_reservation_cleanup.py`, `tests/test_migration_0044_hard_delete.py`.
 
 **Mobile:**
 - Modify `mobile/constants/config.ts` — add `ONBOARDING_COMPLETE` and `USERNAME` to `SECURE_STORE_KEYS`.
@@ -64,6 +66,15 @@ Create `app/migrations/0044_hard_delete_account.sql`:
 -- before apply.
 
 BEGIN;
+
+-- 0. Drop dependents of users.deleted_at before DROP COLUMN can succeed.
+--    Migration 0028 created `users_public_read` RLS policy + `v_feed_posts`
+--    view filtering on `deleted_at IS NULL`; migration 0005 created a partial
+--    index `idx_users_username_reserved` on (username, deleted_at,
+--    username_reserved_until). All three must be dropped first.
+DROP POLICY IF EXISTS users_public_read ON users;
+DROP VIEW IF EXISTS v_feed_posts CASCADE;  -- feed_trending / feed_newest / feed_biggest_improvements recreate below
+DROP INDEX IF EXISTS idx_users_username_reserved;
 
 -- 1. Reservation table
 CREATE TABLE username_reservations (
@@ -140,8 +151,29 @@ ALTER TABLE blocked_users
     ADD  CONSTRAINT blocked_users_blocked_id_fkey
          FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE CASCADE;
 
+-- 4. Recreate the RLS policy + feed view WITHOUT the deleted_at filter.
+--    Post-hard-delete, the row is gone — no need for a tombstone check.
+CREATE POLICY users_public_read ON users
+    FOR SELECT TO anon, authenticated USING (true);
+
+-- Re-create v_feed_posts (copy of the 0028 definition with the
+--   `AND u.deleted_at IS NULL` clause removed). If the 0028 view body
+--   has diverged, run `\d+ v_feed_posts` before the migration to capture
+--   the current definition, and drop `AND u.deleted_at IS NULL` only.
+CREATE OR REPLACE VIEW v_feed_posts AS
+    SELECT p.*, u.username, u.display_name, u.avatar_storage_key
+      FROM posts p
+      JOIN users u ON u.id = p.user_id
+     WHERE p.published_at IS NOT NULL;
+
 COMMIT;
 ```
+
+> Cross-check the view body against the live DB before committing
+> (`\d+ v_feed_posts` in `psql`). The shape above is the 0028 definition
+> minus the `AND u.deleted_at IS NULL` clause; if later migrations widened
+> the projection, copy that wider shape and only drop the `deleted_at`
+> predicate.
 
 > Verify the exact constraint names before running by inspecting the live DB:
 > `\d images` (etc.) in `psql`. PostgREST / Supabase sometimes uses a different
@@ -373,11 +405,15 @@ Delete the now-obsolete `soft_delete` method from the same file.
 
 Expected: 5 passed.
 
-- [ ] **Step 5: Delete the stale soft-delete test file**
+- [ ] **Step 5: Delete the stale soft-delete test file (if present)**
 
 ```bash
-git rm tests/test_user_repo_soft_delete.py
+if [ -f tests/test_user_repo_soft_delete.py ]; then
+  git rm tests/test_user_repo_soft_delete.py
+fi
 ```
+
+The file shipped in PR #162 and may or may not be on the working branch.
 
 - [ ] **Step 6: Commit**
 
@@ -411,7 +447,7 @@ from app.repositories.user_repo import UserRepository
 def _build_sb_serving(
     *,
     uploads: list[dict] | None = None,
-    glowup_analyses: list[dict] | None = None,
+    jobs: list[dict] | None = None,
     users: list[dict] | None = None,
 ):
     deletes: list[str] = []
@@ -422,8 +458,8 @@ def _build_sb_serving(
         qb.eq.return_value = qb
         if name == "uploads":
             qb.execute.return_value = MagicMock(data=uploads or [])
-        elif name == "glowup_analyses":
-            qb.execute.return_value = MagicMock(data=glowup_analyses or [])
+        elif name == "jobs":
+            qb.execute.return_value = MagicMock(data=jobs or [])
         elif name == "users":
             qb.execute.return_value = MagicMock(data=users or [])
 
@@ -451,7 +487,7 @@ class TestListUserStorageKeys:
                 {"image_url": "users/u-1/raw/a.jpg"},
                 {"image_url": "users/u-1/raw/b.jpg"},
             ],
-            glowup_analyses=[
+            jobs=[
                 {
                     "before_image_url": "users/u-1/before.jpg",
                     "after_image_url": "users/u-1/after.jpg",
@@ -462,28 +498,39 @@ class TestListUserStorageKeys:
         repo = UserRepository(sb)
         result = repo.list_user_storage_keys("u-1")
 
+        # raw-selfies bucket: uploads + jobs.before_image_url
         assert set(result["raw-selfies"]) == {
             "users/u-1/raw/a.jpg",
             "users/u-1/raw/b.jpg",
-        }
-        assert set(result["images"]) == {
             "users/u-1/before.jpg",
-            "users/u-1/after.jpg",
         }
+        # generated-images bucket: jobs.after_image_url
+        assert result["generated-images"] == ["users/u-1/after.jpg"]
         assert result["avatars"] == ["avatars/u-1/v1.jpg"]
 
     def test_ignores_missing_urls(self):
         sb, _ = _build_sb_serving(
             uploads=[{"image_url": None}, {"image_url": "users/u-1/raw/c.jpg"}],
-            glowup_analyses=[{"before_image_url": None, "after_image_url": None}],
+            jobs=[{"before_image_url": None, "after_image_url": None}],
             users=[{"avatar_storage_key": None}],
         )
         repo = UserRepository(sb)
         result = repo.list_user_storage_keys("u-1")
 
         assert result["raw-selfies"] == ["users/u-1/raw/c.jpg"]
-        assert result["images"] == []
+        assert result["generated-images"] == []
         assert result["avatars"] == []
+
+    def test_dedupes_before_image_against_upload_key(self):
+        shared_key = "users/u-1/raw/a.jpg"
+        sb, _ = _build_sb_serving(
+            uploads=[{"image_url": shared_key}],
+            jobs=[{"before_image_url": shared_key, "after_image_url": None}],
+            users=[{"avatar_storage_key": None}],
+        )
+        repo = UserRepository(sb)
+        result = repo.list_user_storage_keys("u-1")
+        assert result["raw-selfies"] == [shared_key]
 
 
 class TestUserRepoDelete:
@@ -519,8 +566,8 @@ def list_user_storage_keys(self, user_id: str) -> dict[str, list[str]]:
 
     Called before the DB hard-delete so the keys can be enumerated while
     the owning rows still exist. Any row with a null URL is skipped.
-    Buckets returned: ``raw-selfies`` (uploads), ``images`` (glowup
-    before/after), ``avatars`` (profile avatar).
+    Buckets returned: ``raw-selfies`` (uploads.image_url + jobs.before_image_url),
+    ``generated-images`` (jobs.after_image_url), ``avatars`` (users.avatar_storage_key).
     """
     uploads = (
         self._sb.table("uploads")
@@ -530,18 +577,20 @@ def list_user_storage_keys(self, user_id: str) -> dict[str, list[str]]:
     )
     raw_selfies = [r["image_url"] for r in (uploads.data or []) if r.get("image_url")]
 
-    glowups = (
-        self._sb.table("glowup_analyses")
+    jobs_result = (
+        self._sb.table("jobs")
         .select("before_image_url, after_image_url")
         .eq("user_id", user_id)
         .execute()
     )
-    images: list[str] = []
-    for row in glowups.data or []:
+    generated_images: list[str] = []
+    for row in jobs_result.data or []:
+        # Before-images live in raw-selfies (same bucket as uploads).
         if row.get("before_image_url"):
-            images.append(row["before_image_url"])
+            raw_selfies.append(row["before_image_url"])
+        # After-images live in generated-images (private generation bucket).
         if row.get("after_image_url"):
-            images.append(row["after_image_url"])
+            generated_images.append(row["after_image_url"])
 
     user = (
         self._sb.table("users")
@@ -554,7 +603,13 @@ def list_user_storage_keys(self, user_id: str) -> dict[str, list[str]]:
         if row.get("avatar_storage_key"):
             avatars.append(row["avatar_storage_key"])
 
-    return {"raw-selfies": raw_selfies, "images": images, "avatars": avatars}
+    # Dedupe raw-selfies: the same key can appear in both uploads.image_url
+    # and jobs.before_image_url (worker copies the raw reference).
+    return {
+        "raw-selfies": list(dict.fromkeys(raw_selfies)),
+        "generated-images": generated_images,
+        "avatars": avatars,
+    }
 
 
 def delete(self, user_id: str) -> list[dict]:
@@ -582,7 +637,7 @@ Expected: 4 passed.
 ```bash
 rtk proxy docker exec -i supabase_db_nxme.ai psql -U postgres -d postgres -c \
   "SELECT column_name FROM information_schema.columns
-    WHERE table_name IN ('uploads','glowup_analyses','users')
+    WHERE table_name IN ('uploads','jobs','users')
       AND column_name IN ('image_url','before_image_url','after_image_url','avatar_storage_key')
     ORDER BY table_name, column_name;"
 ```
@@ -630,10 +685,13 @@ from tests.conftest import requires_routers
 class TestDeleteAccount:
     def _make_user_repo(self, *, user_exists: bool = True):
         repo = MagicMock()
+        repo.get_profile_by_id.return_value = (
+            {"id": "u-1", "username": "alice"} if user_exists else None
+        )
         repo.get_active_reservations.return_value = []
         repo.list_user_storage_keys.return_value = {
             "raw-selfies": ["users/u-1/raw/a.jpg"],
-            "images": ["users/u-1/before.jpg"],
+            "generated-images": ["users/u-1/after.jpg"],
             "avatars": [],
         }
         repo.delete.return_value = [{"id": "u-1"}] if user_exists else []
@@ -664,7 +722,7 @@ class TestDeleteAccount:
         # Reservation inserted
         assert user_repo.insert_username_reservation.call_count == 1
         args, _ = user_repo.insert_username_reservation.call_args
-        assert args[0] == user_repo.get_by_id.return_value["username"]
+        assert args[0] == "alice"
         reserved_until: datetime = args[1]
         assert reserved_until > datetime.now(tz=timezone.utc) + timedelta(days=179)
 
@@ -674,8 +732,8 @@ class TestDeleteAccount:
             ["users/u-1/raw/a.jpg"],
         )
         assert image_repo.remove.call_args_list[1].args == (
-            "images",
-            ["users/u-1/before.jpg"],
+            "generated-images",
+            ["users/u-1/after.jpg"],
         )
         orphan_repo.record.assert_not_called()
 
@@ -714,7 +772,7 @@ class TestDeleteAccount:
             (c.args[0], c.args[1]) for c in orphan_repo.record.call_args_list
         }
         assert ("raw-selfies", "users/u-1/raw/a.jpg") in recorded
-        assert ("images", "users/u-1/before.jpg") in recorded
+        assert ("generated-images", "users/u-1/after.jpg") in recorded
 
         # Delete still happens
         user_repo.delete.assert_called_once_with("u-1")
@@ -797,7 +855,7 @@ async def delete_account(
 
     Steps (all best-effort after the reservation is in place):
       1. Release active credit reservations.
-      2. Collect blob keys from uploads + glowup_analyses + avatar.
+      2. Collect blob keys from uploads + jobs + avatar.
       3. Insert 180-day username_reservations row (UPSERT).
       4. Wipe blobs per bucket; failures are recorded in the orphan DLQ.
       5. DELETE FROM users — cascades every owned row.
@@ -808,7 +866,10 @@ async def delete_account(
     now_utc = datetime.now(tz=timezone.utc)
     reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
 
-    user = await run_sync(user_repo.get_by_id, user_id)
+    # NOTE: `get_profile_by_id` must have its `.is_("deleted_at", "null")`
+    # filter removed in Task 5 (it is a no-op post-hard-delete since the row
+    # is physically gone, but the filter references a dropped column).
+    user = await run_sync(user_repo.get_profile_by_id, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -889,10 +950,11 @@ async def delete_account(
     # 6. Remove Supabase auth identity.
     try:
         await run_sync(user_repo.auth_delete_user, user_id)
+        # Do NOT log the username — it is PII on a row the user asked to be
+        # forgotten. `user_id` alone is enough for operator triage.
         logger.info(
-            "Account hard-deleted for user %s (username=%s reserved until %s)",
+            "Account hard-deleted for user %s (reserved until %s)",
             user_id,
-            username,
             reserved_until.date(),
         )
     except Exception as exc:
@@ -930,7 +992,10 @@ from app.api.deps import get_image_repo, get_orphaned_storage_repo
 .venv/bin/python -m pytest -x -q tests/test_hard_delete_account.py
 ```
 
-Expected: 3 passed.
+Expected: `3 passed` (not `3 skipped`). If pytest reports skipped tests
+it means `@requires_routers` short-circuited — investigate
+`tests/conftest.py` for what condition the decorator checks and register
+the auth router in the test config before re-running.
 
 - [ ] **Step 6: Run the full suite**
 
@@ -1227,13 +1292,56 @@ git commit -m "refactor(mobile): promote onboarding + username storage keys to c
 - Create: `mobile/lib/account-wipe.ts`
 - Test: `mobile/lib/__tests__/account-wipe.test.ts`
 
-- [ ] **Step 1: Confirm which singletons expose `clear()`**
+- [ ] **Step 1: Prerequisite — expose a `clear()` surface on each store**
 
-```bash
-cd mobile && rtk grep "export.*clear\b\|clear(): void\|clear(): Promise" lib --type ts
+Current state (verified via grep, 2026-04-18):
+
+| Store | Export name | Has `clear()`? | Storage backend |
+|---|---|---|---|
+| `mobile/lib/dismissed-jobs-store.ts` | functions only (`loadDismissedJobIds`, `addDismissedJobId`, `__resetDismissedJobIdsForTests`) | **no** | AsyncStorage (`@nxme:dismissed_errored_jobs`) |
+| `mobile/lib/refund-toast-store.ts` | functions only (`markRefundToastSeen`, `__resetRefundToastSeenForTests`) | **no** | AsyncStorage (`@nxme:refund_toasts_seen`) |
+| `mobile/lib/offline-queue.ts` | `mutationQueue` (instance) | **yes** (`.clear()`) | MMKV |
+
+Three sub-steps:
+
+1. In `mobile/lib/dismissed-jobs-store.ts`, add a new module-level export:
+
+```ts
+export async function clearDismissedJobs(): Promise<void> {
+  cache = new Set();
+  hydratePromise = null;
+  try {
+    await AsyncStorage.removeItem(PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY);
+  } catch (err) {
+    if (__DEV__) console.warn("clearDismissedJobs: storage remove failed", err);
+  }
+}
 ```
 
-Expected: hits in `dismissed-jobs-store.ts`, `refund-toast-store.ts`, `offline-queue.ts`. If any file does not expose a `clear()` method, add one at the top of that file as a prerequisite step — the unit test below will enforce it.
+Match the private state names used at the top of the existing file (rename `cache` / `hydratePromise` to whatever the file already uses).
+
+2. In `mobile/lib/refund-toast-store.ts`, add the symmetric helper:
+
+```ts
+export async function clearRefundToastSeen(): Promise<void> {
+  cache = new Set();
+  hydratePromise = null;
+  try {
+    await AsyncStorage.removeItem(REFUND_TOAST_SEEN_STORAGE_KEY);
+  } catch (err) {
+    if (__DEV__) console.warn("clearRefundToastSeen: storage remove failed", err);
+  }
+}
+```
+
+3. `mutationQueue` already exposes `.clear()` — use it as-is. Note that it is backed by `react-native-mmkv` (not AsyncStorage), so `AsyncStorage.multiRemove` in the helper will NOT reach it; `mutationQueue.clear()` is the only way to wipe that backing store.
+
+Commit these three store changes separately before proceeding:
+
+```bash
+git add mobile/lib/dismissed-jobs-store.ts mobile/lib/refund-toast-store.ts
+git commit -m "feat(mobile): clearDismissedJobs + clearRefundToastSeen for wipe"
+```
 
 - [ ] **Step 2: Write the failing test**
 
@@ -1245,7 +1353,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as secureStorage from "../secure-storage";
 import * as dismissedJobs from "../dismissed-jobs-store";
 import * as refundToast from "../refund-toast-store";
-import * as offlineQueue from "../offline-queue";
+import { mutationQueue } from "../offline-queue";
 import { queryClient } from "../query-client";
 import { SECURE_STORE_KEYS } from "../../constants/config";
 import {
@@ -1256,14 +1364,15 @@ import { wipeLocalDeviceState } from "../account-wipe";
 
 jest.mock("@react-native-async-storage/async-storage", () => ({
   multiRemove: jest.fn().mockResolvedValue(undefined),
+  removeItem: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe("wipeLocalDeviceState", () => {
   beforeEach(() => {
     jest.spyOn(secureStorage, "deleteItem").mockResolvedValue(undefined);
-    jest.spyOn(dismissedJobs.dismissedJobsStore, "clear").mockReturnValue(undefined);
-    jest.spyOn(refundToast.refundToastStore, "clear").mockReturnValue(undefined);
-    jest.spyOn(offlineQueue.offlineQueue, "clear").mockReturnValue(undefined);
+    jest.spyOn(dismissedJobs, "clearDismissedJobs").mockResolvedValue(undefined);
+    jest.spyOn(refundToast, "clearRefundToastSeen").mockResolvedValue(undefined);
+    jest.spyOn(mutationQueue, "clear").mockReturnValue(undefined);
     jest.spyOn(queryClient, "clear").mockReturnValue(undefined);
   });
 
@@ -1296,9 +1405,9 @@ describe("wipeLocalDeviceState", () => {
   it("resets in-memory singletons and the query cache", async () => {
     await wipeLocalDeviceState();
 
-    expect(dismissedJobs.dismissedJobsStore.clear).toHaveBeenCalledTimes(1);
-    expect(refundToast.refundToastStore.clear).toHaveBeenCalledTimes(1);
-    expect(offlineQueue.offlineQueue.clear).toHaveBeenCalledTimes(1);
+    expect(dismissedJobs.clearDismissedJobs).toHaveBeenCalledTimes(1);
+    expect(refundToast.clearRefundToastSeen).toHaveBeenCalledTimes(1);
+    expect(mutationQueue.clear).toHaveBeenCalledTimes(1);
     expect(queryClient.clear).toHaveBeenCalledTimes(1);
   });
 });
@@ -1321,39 +1430,50 @@ Create `mobile/lib/account-wipe.ts`:
  * wipeLocalDeviceState — reset every user-owned device-local surface.
  *
  * Called ONLY by the delete-account flow. Logout stays narrow (tokens only).
- * Adding new client-local state?  Wire it in here.
+ * Adding new client-local state? Wire it in here.
+ *
+ * Coverage map:
+ *   SecureStore (Keychain / Keystore) — every SECURE_STORE_KEYS value
+ *   AsyncStorage                      — every @nxme:* key we own
+ *   MMKV (via mutationQueue)          — offline mutation queue
+ *   In-process                        — dismissed-jobs-store, refund-toast-store,
+ *                                       queryClient cache
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { SECURE_STORE_KEYS } from "../constants/config";
 import {
+  SECURE_STORE_KEYS,
   PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY,
   REFUND_TOAST_SEEN_STORAGE_KEY,
 } from "../constants/config";
 import { deleteItem } from "./secure-storage";
-import { dismissedJobsStore } from "./dismissed-jobs-store";
-import { refundToastStore } from "./refund-toast-store";
-import { offlineQueue } from "./offline-queue";
+import { clearDismissedJobs } from "./dismissed-jobs-store";
+import { clearRefundToastSeen } from "./refund-toast-store";
+import { mutationQueue } from "./offline-queue";
 import { queryClient } from "./query-client";
 
 export async function wipeLocalDeviceState(): Promise<void> {
+  // 1. SecureStore — every nxme_* key (includes JWT / refresh / guest / onboarding / username)
   await Promise.all(
     Object.values(SECURE_STORE_KEYS).map((key) => deleteItem(key)),
   );
 
+  // 2. AsyncStorage — every @nxme:* key we own
   await AsyncStorage.multiRemove([
     PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY,
     REFUND_TOAST_SEEN_STORAGE_KEY,
   ]);
 
-  dismissedJobsStore.clear();
-  refundToastStore.clear();
-  offlineQueue.clear();
+  // 3. Module-level caches (also idempotently purges their backing AsyncStorage keys)
+  await Promise.all([clearDismissedJobs(), clearRefundToastSeen()]);
+
+  // 4. MMKV-backed offline mutation queue — not reachable via AsyncStorage
+  mutationQueue.clear();
+
+  // 5. React Query cache
   queryClient.clear();
 }
 ```
-
-> If any of `dismissedJobsStore` / `refundToastStore` / `offlineQueue` is exported under a different name, update the import + the test to match. Do not rename the singletons in other files as part of this task.
 
 - [ ] **Step 5: Run test to verify it passes**
 
@@ -1429,15 +1549,22 @@ describe("handleDeleteAccount", () => {
 });
 ```
 
-If `mobile/jest.setup.ts` does not auto-confirm destructive `Alert.alert` prompts, add:
+**Prerequisite: Alert.alert auto-confirm helper.** Before Step 2, open
+`mobile/jest.setup.ts` and grep for `Alert.alert` — if no auto-confirm
+mock exists, append:
 
 ```ts
 import { Alert } from "react-native";
 
 jest.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
-  buttons?.find((b) => b.style === "destructive")?.onPress?.();
+  const destructive = buttons?.find((b) => b.style === "destructive");
+  if (destructive?.onPress) destructive.onPress();
 });
 ```
+
+This mock is global and affects every test in the suite. Run the full
+Jest suite after adding it to verify no pre-existing test relied on
+Alert.alert staying un-mocked — fix any regression before continuing.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1457,23 +1584,36 @@ Add import:
 import { wipeLocalDeviceState } from "../lib/account-wipe";
 ```
 
-Replace the body of `handleDeleteAccount`'s `onPress` with:
+Update the confirmation dialog copy (currently: "This action is permanent
+and cannot be undone. All your data will be deleted.") to reflect
+hard-delete semantics:
 
 ```ts
-onPress: async () => {
-  setIsDeleting(true);
-  try {
-    await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
-    await wipeLocalDeviceState();
-    setSessionMode("anon");
-    router.replace("/(auth)/login");
-  } catch (err) {
-    const appError = parseApiError(err);
-    showToast({ kind: "error", message: appError.message });
-  } finally {
-    setIsDeleting(false);
-  }
-},
+Alert.alert(
+  "Delete Account",
+  "Your photos, glow-ups, and account data will be permanently deleted. Your username will be reserved for 180 days. This cannot be undone.",
+  [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Delete",
+      style: "destructive",
+      onPress: async () => {
+        setIsDeleting(true);
+        try {
+          await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
+          await wipeLocalDeviceState();
+          setSessionMode("anon");
+          router.replace("/(auth)/login");
+        } catch (err) {
+          const appError = parseApiError(err);
+          showToast({ kind: "error", message: appError.message });
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+    },
+  ],
+);
 ```
 
 Remove the old `clearAllTokens()` call — `wipeLocalDeviceState` covers token deletion via `SECURE_STORE_KEYS`. Leave `clearAllTokens` itself intact; logout still uses it.
