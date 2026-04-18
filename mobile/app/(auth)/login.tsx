@@ -102,6 +102,7 @@ export default function AuthScreen() {
                 size="lg"
                 glow
                 accentColor={theme.accent}
+                style={{ alignSelf: "center" }}
               />
             </View>
           )}
