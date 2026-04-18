@@ -20,6 +20,7 @@ it checks the shared ``RECONCILE_LOCK_KEY`` mutex before doing any work.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from supabase import Client
 
@@ -27,6 +28,22 @@ from app.api.social import RECONCILE_LOCK_KEY
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+async def purge_expired_username_reservations(supabase: Client) -> int:
+    """Delete username_reservations rows whose window has elapsed.
+
+    Availability logic already ignores expired rows, so this is pure
+    table-hygiene that bounds table growth over years. Returns the
+    number of rows deleted.
+    """
+    result = (
+        supabase.table("username_reservations")
+        .delete()
+        .lt("reserved_until", datetime.now(tz=timezone.utc).isoformat())
+        .execute()
+    )
+    return len(result.data or [])
 
 
 async def run_retention(ctx: dict) -> None:
@@ -84,38 +101,36 @@ async def run_retention(ctx: dict) -> None:
     )
     expired_uploads: list[dict] = expired_uploads_result.data or []
 
-    if not expired_uploads:
-        logger.info(
-            "Retention: purged %d jobs, 0 uploads, 0 storage objects",
-            purged_job_count,
-        )
-        return
-
-    upload_ids = [row["id"] for row in expired_uploads]
-    storage_keys = [row["image_url"] for row in expired_uploads if row.get("image_url")]
-
-    # ------------------------------------------------------------------
-    # Step 3: Delete uploads (CASCADE drops glowup_analyses + orphaned jobs)
-    # ------------------------------------------------------------------
-
-    supabase.table("uploads").delete().in_("id", upload_ids).execute()
-    purged_upload_count = len(upload_ids)
-
-    # ------------------------------------------------------------------
-    # Step 4: Remove blobs from Supabase storage (raw-selfies bucket)
-    # ------------------------------------------------------------------
-
+    purged_upload_count = 0
     purged_storage_count = 0
-    if storage_keys:
-        try:
-            supabase.storage.from_("raw-selfies").remove(storage_keys)
-            purged_storage_count = len(storage_keys)
-        except Exception:
-            logger.error(
-                "Retention: storage blob cleanup failed for %d keys — orphaned blobs may remain",
-                len(storage_keys),
-                exc_info=True,
-            )
+
+    if expired_uploads:
+        upload_ids = [row["id"] for row in expired_uploads]
+        storage_keys = [
+            row["image_url"] for row in expired_uploads if row.get("image_url")
+        ]
+
+        # --------------------------------------------------------------
+        # Step 3: Delete uploads (CASCADE drops glowup_analyses + orphans)
+        # --------------------------------------------------------------
+
+        supabase.table("uploads").delete().in_("id", upload_ids).execute()
+        purged_upload_count = len(upload_ids)
+
+        # --------------------------------------------------------------
+        # Step 4: Remove blobs from Supabase storage (raw-selfies bucket)
+        # --------------------------------------------------------------
+
+        if storage_keys:
+            try:
+                supabase.storage.from_("raw-selfies").remove(storage_keys)
+                purged_storage_count = len(storage_keys)
+            except Exception:
+                logger.error(
+                    "Retention: storage blob cleanup failed for %d keys — orphaned blobs may remain",
+                    len(storage_keys),
+                    exc_info=True,
+                )
 
     # ------------------------------------------------------------------
     # Step 5: Observability log
@@ -127,3 +142,16 @@ async def run_retention(ctx: dict) -> None:
         purged_upload_count,
         purged_storage_count,
     )
+
+    # ------------------------------------------------------------------
+    # Step 6: Purge expired username_reservations (table hygiene)
+    # ------------------------------------------------------------------
+
+    try:
+        purged_reservations = await purge_expired_username_reservations(supabase)
+        logger.info(
+            "Retention: purged %d expired username reservations",
+            purged_reservations,
+        )
+    except Exception:
+        logger.exception("username_reservations cleanup failed")
