@@ -711,19 +711,25 @@ async def social_login(
     )
 
     # P2-5: Guarantee unique username — retry with random suffix on collision (M-2/M-3)
+    # Also consults username_reservations so a recently-deleted handle can't be
+    # silently claimed by a new social signup (COR-001).
     base_username = auto_username
     max_retries = 3
     for attempt in range(max_retries):
-        # Check if username is taken by another user
-        existing = await run_sync(
-            user_repo.check_username_taken, auto_username, user_id
+        # Check if username is taken or reserved
+        result = await run_sync(
+            user_repo.check_username_availability, auto_username, user_id
         )
-        if existing:
+        if not result["available"]:
+            # Either "taken" (by another active user) or "reserved" (from a
+            # recent account deletion). Either way, generate a new suffix and
+            # re-check before attempting the upsert.
             suffix = f"_{uuid4().hex[:6]}"
             # Truncate base to stay within 30-char limit (M-3)
             if len(base_username) + len(suffix) > 30:
                 base_username = base_username[: 30 - len(suffix)]
             auto_username = f"{base_username}{suffix}"
+            continue
 
         # Upsert public.users row — new social users won't have a row yet.
         # On conflict (existing account) do nothing to preserve existing data.
@@ -1050,14 +1056,18 @@ async def tiktok_login(
     base_username = auto_username
     max_retries = 3
     for attempt in range(max_retries):
-        existing = await run_sync(
-            user_repo.check_username_taken, auto_username, user_id
+        # Check if username is taken or reserved (COR-001)
+        result = await run_sync(
+            user_repo.check_username_availability, auto_username, user_id
         )
-        if existing:
+        if not result["available"]:
+            # Either "taken" (by another active user) or "reserved" (from a
+            # recent account deletion). Generate a new suffix and re-check.
             suffix = f"_{uuid4().hex[:6]}"
             if len(base_username) + len(suffix) > 30:
                 base_username = base_username[: 30 - len(suffix)]
             auto_username = f"{base_username}{suffix}"
+            continue
 
         try:
             await run_sync(
