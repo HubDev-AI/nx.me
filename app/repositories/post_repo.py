@@ -187,6 +187,34 @@ class PostRepository:
         )
         return result.data if result else None
 
+    def get_by_glow_up_job_id(self, glow_up_job_id: str) -> dict | None:
+        """Fetch the live post for a glow-up job, or None.
+
+        "Live" matches the partial unique index predicate from migration
+        0046: ``is_deleted = FALSE AND is_hidden = FALSE``. Under that
+        index there is at most one matching row; the partial constraint
+        guarantees uniqueness, so ``limit(1)`` is defensive rather than
+        load-bearing.
+
+        Used by ``create_post`` to resolve the 23505 idempotency path:
+        when an insert races another caller and fires unique_violation,
+        the existing live post is returned to the caller as 200.
+        """
+        result = (
+            self._sb.table("posts")
+            .select(
+                "id, user_id, glow_up_job_id, caption, "
+                "before_image_url, after_image_url, created_at, share_hash"
+            )
+            .eq("glow_up_job_id", glow_up_job_id)
+            .eq("is_deleted", False)
+            .eq("is_hidden", False)
+            .limit(1)
+            .execute()
+        )
+        data = result.data or []
+        return data[0] if data else None
+
     def get_active_post(self, post_id: str) -> dict | None:
         """Fetch post id only, filtering out deleted posts."""
         result = (

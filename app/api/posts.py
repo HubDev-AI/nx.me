@@ -46,6 +46,30 @@ router = APIRouter(
     dependencies=[Depends(require_app_feature("social_enabled"))],
 )
 
+# Postgres SQLSTATE for unique_violation. Raised by migration 0046's partial
+# UNIQUE index ``idx_posts_live_glow_up_job_id`` when two INSERTs race for
+# the same live (is_deleted=FALSE AND is_hidden=FALSE) glow_up_job_id.
+# Surface as caller-idempotency: return the existing live post instead of 500.
+_PG_UNIQUE_VIOLATION_SQLSTATE = "23505"
+
+
+def _is_unique_violation(exc: Exception) -> bool:
+    """Return True iff ``exc`` is a PostgREST unique_violation.
+
+    Supabase's ``postgrest.exceptions.APIError`` exposes ``.code`` with the
+    Postgres SQLSTATE. Mirrors the pattern used in
+    ``app/advisor/memory_manager.py::_is_unique_violation`` and
+    ``app/entitlement/trial_grantor.py`` so we don't import a moving PostgREST
+    module. Falls back to string-match for clients whose wrapper drops ``.code``.
+    """
+    if getattr(exc, "code", None) == _PG_UNIQUE_VIOLATION_SQLSTATE:
+        return True
+    message = str(exc).lower()
+    return _PG_UNIQUE_VIOLATION_SQLSTATE in message or (
+        "unique" in message and ("violat" in message or "duplicat" in message)
+    )
+
+
 # M-3: Comment rate limit constants moved to app/config/__init__.py
 
 
@@ -212,40 +236,90 @@ async def create_post(
 
     now_utc = datetime.now(tz=timezone.utc).isoformat()
 
-    post = await run_sync(
-        post_repo.insert_post,
-        {
-            "user_id": user_id,
-            "glow_up_job_id": body.glow_up_job_id,
-            "caption": body.caption,
-            "before_image_id": job_data["original_image_id"],
-            "after_image_id": job_data["generated_image_id"],
-            "before_image_url": before_url,
-            "after_image_url": after_url,
-            "created_at": now_utc,
-            "updated_at": now_utc,
-        },
-    )
+    insert_row = {
+        "user_id": user_id,
+        "glow_up_job_id": body.glow_up_job_id,
+        "caption": body.caption,
+        "before_image_id": job_data["original_image_id"],
+        "after_image_id": job_data["generated_image_id"],
+        "before_image_url": before_url,
+        "after_image_url": after_url,
+        "created_at": now_utc,
+        "updated_at": now_utc,
+    }
+
+    # Caller-idempotency on the partial UNIQUE index from migration 0046
+    # (idx_posts_live_glow_up_job_id). Two INSERTs racing for the same
+    # live glow_up_job_id surface as 23505; return the existing live post
+    # as 200 instead of propagating 500. M-5 already verified the job was
+    # completed above — do not re-run M-5 on retry, it only adds a race
+    # window and provides no information we don't already have.
+    try:
+        post = await run_sync(post_repo.insert_post, insert_row)
+        response_status = status.HTTP_201_CREATED
+    except Exception as exc:
+        if not _is_unique_violation(exc):
+            raise
+
+        existing = await run_sync(post_repo.get_by_glow_up_job_id, body.glow_up_job_id)
+        if existing is None:
+            # Unique fired but nothing live exists — the peer post was
+            # soft-deleted or auto-hidden between INSERT and SELECT. The
+            # partial predicate now permits a fresh row; retry once.
+            # A second failure (or any other exception) escalates unchanged.
+            post = await run_sync(post_repo.insert_post, insert_row)
+            response_status = status.HTTP_201_CREATED
+        else:
+            # Ownership re-check — jobs are user-scoped, but defend in depth.
+            # Leak-avoidance 404 on mismatch matches the create-path posture
+            # above ("Job not found") rather than returning the peer's post.
+            if existing["user_id"] != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Job not found",
+                )
+            post = existing
+            response_status = status.HTTP_200_OK
 
     post_id = post["id"]
 
     logger.info(
-        "Post %s created by user %s from job %s", post_id, user_id, body.glow_up_job_id
+        "Post %s %s for user %s from job %s",
+        post_id,
+        "created"
+        if response_status == status.HTTP_201_CREATED
+        else "returned (idempotent)",
+        user_id,
+        body.glow_up_job_id,
     )
 
     from fastapi.responses import JSONResponse
 
+    # Prefer the existing row's fields on the idempotent path so the caller
+    # always sees the post as it truly lives in the DB (caption from a prior
+    # request may differ from ``body.caption`` on the retry).
+    if response_status == status.HTTP_200_OK:
+        response_caption = post.get("caption")
+        response_before_url = post.get("before_image_url", before_url)
+        response_after_url = post.get("after_image_url", after_url)
+        response_created_at = post.get("created_at", now_utc)
+    else:
+        response_caption = body.caption
+        response_before_url = before_url
+        response_after_url = after_url
+        response_created_at = now_utc
+
     payload = PostResponse(
         post_id=post_id,
-        before_image_url=before_url,
-        after_image_url=after_url,
-        caption=body.caption,
-        created_at=now_utc,
+        before_image_url=response_before_url,
+        after_image_url=response_after_url,
+        caption=response_caption,
+        created_at=response_created_at,
         share_hash=post["share_hash"],
     )
     return JSONResponse(
         content=payload.model_dump(),
-        status_code=status.HTTP_201_CREATED,
+        status_code=response_status,
         headers={"Location": f"/v1/posts/{post_id}"},
     )
 
