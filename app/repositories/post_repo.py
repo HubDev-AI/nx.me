@@ -103,9 +103,10 @@ class PostRepository:
 
         Implementation note: the supabase-py client does not expose SQL
         ``GROUP BY``, so aggregation happens in Python. The upstream query
-        uses a PostgREST inner-join to exclude soft-deleted users at the DB
-        layer. An upper-bound fetch cap guards against runaway memory — the
-        sole caller is the card-web sitemap (a single low-frequency reader).
+        uses a PostgREST inner-join against users so rows whose owner has
+        been hard-deleted drop out naturally (the row is gone). An
+        upper-bound fetch cap guards against runaway memory — the sole
+        caller is the card-web sitemap (a single low-frequency reader).
 
         Known boundary quirk: because the pre-filter is ``lte(updated_at)``
         (not a tuple filter, which PostgREST does not express), a user whose
@@ -121,9 +122,8 @@ class PostRepository:
 
         query = (
             self._sb.table("posts")
-            .select("user_id, updated_at, users!inner(username, deleted_at)")
+            .select("user_id, updated_at, users!inner(username)")
             .eq("is_deleted", False)
-            .is_("users.deleted_at", "null")
             .order("updated_at", desc=True)
         )
 

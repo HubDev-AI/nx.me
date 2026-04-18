@@ -45,7 +45,6 @@ class UserRepository:
                 "username_changed_at, face_mod_consent_at"
             )
             .eq("id", user_id)
-            .is_("deleted_at", "null")
             .maybe_single()
             .execute()
         )
@@ -54,14 +53,13 @@ class UserRepository:
         return result.data
 
     def get_by_username(self, username: str) -> dict | None:
-        """Fetch a non-deleted user by username, or None if not found."""
+        """Fetch a user by username, or None if not found."""
         result = (
             self._sb.table("users")
             .select(
                 "id, username, display_name, avatar_storage_key, created_at, username_changed_at"
             )
             .eq("username", username)
-            .is_("deleted_at", "null")
             .maybe_single()
             .execute()
         )
@@ -145,10 +143,10 @@ class UserRepository:
         return rows[0] if rows else {}
 
     def get_by_username_for_card(self, username: str) -> dict | None:
-        """Fetch user fields needed by the shareable card endpoint (includes deleted_at)."""
+        """Fetch user fields needed by the shareable card endpoint."""
         result = (
             self._sb.table("users")
-            .select("id, username, display_name, deleted_at")
+            .select("id, username, display_name")
             .eq("username", username)
             .maybe_single()
             .execute()
@@ -265,12 +263,11 @@ class UserRepository:
     # ------------------------------------------------------------------
 
     def find_by_tiktok_open_id(self, open_id: str) -> dict | None:
-        """Find a non-deleted user by their TikTok open_id, or None."""
+        """Find a user by their TikTok open_id, or None."""
         result = (
             self._sb.table("users")
             .select("id, username, display_name, email")
             .eq("tiktok_open_id", open_id)
-            .is_("deleted_at", "null")
             .maybe_single()
             .execute()
         )
