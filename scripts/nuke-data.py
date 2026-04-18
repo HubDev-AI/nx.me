@@ -34,11 +34,12 @@ TABLES_IN_ORDER: list[tuple[str, str | None]] = [
     ("reactions", "user_id"),
     ("comments", "user_id"),
     ("reports", "reporter_user_id"),
-    ("prompt_experiments", None),
+    ("prompt_experiments", None),  # FK via jobs
     ("posts", "user_id"),
     ("credit_reservations", "user_id"),
-    ("glow_up_jobs", "user_id"),
-    ("analyses", "user_id"),
+    ("jobs", "user_id"),
+    ("glowup_analyses", None),  # FK via uploads
+    ("uploads", "user_id"),
     ("images", "user_id"),
     ("credit_ledger", "user_id"),
     ("usage_events", "user_id"),
@@ -114,7 +115,12 @@ def main() -> None:
                 elif table == "prompt_experiments":
                     cur.execute(
                         f"DELETE FROM prompt_experiments WHERE job_id IN "
-                        f"(SELECT id FROM glow_up_jobs WHERE user_id IN ({id_list}))"
+                        f"(SELECT id FROM jobs WHERE user_id IN ({id_list}))"
+                    )
+                elif table == "glowup_analyses":
+                    cur.execute(
+                        f"DELETE FROM glowup_analyses WHERE upload_id IN "
+                        f"(SELECT id FROM uploads WHERE user_id IN ({id_list}))"
                     )
                 elif table == "processed_webhook_events":
                     # Not user-scoped — skip (shared infra table)
