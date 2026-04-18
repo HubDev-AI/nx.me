@@ -1,4 +1,4 @@
-.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-android mobile-start mobile-lint
+.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-android mobile-start mobile-lint card-web-start card-web-lint
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv app/.env
@@ -67,6 +67,13 @@ mobile-start:
 mobile-lint:
 	cd mobile && npx expo lint
 
+# ── Card Web (Next.js — shareable card surface) ───────────────────────────────
+card-web-start: card-web/node_modules
+	cd card-web && npm run dev
+
+card-web-lint: card-web/node_modules
+	cd card-web && npm run lint
+
 # ── Internal targets ──────────────────────────────────────────────────────────
 .venv:
 	python3 -m venv .venv
@@ -74,3 +81,6 @@ mobile-lint:
 
 app/.env:
 	@./scripts/local-env.sh app/.env
+
+card-web/node_modules:
+	cd card-web && npm install

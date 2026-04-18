@@ -43,6 +43,16 @@ cd mobile && npx expo start        # JS-only reload after initial build
 cd mobile && npx expo run:android
 ```
 
+## Card Web
+
+Next.js surface for the shareable before/after card (served separately on port 3006).
+
+```bash
+make card-web-start
+```
+
+Opens on http://localhost:3006. Copy `card-web/.env.local.example` to `card-web/.env.local` and fill in values before first run.
+
 ## Commands
 
 ### Backend
@@ -64,6 +74,13 @@ cd mobile && npx expo run:android
 | `make mobile-android` | Native build + run on Android emulator |
 | `make mobile-start` | JS-only dev server (after initial native build) |
 | `make mobile-lint` | ESLint mobile code |
+
+### Card Web
+
+| Command | What it does |
+|---------|-------------|
+| `make card-web-start` | Next dev server on port 3006 (auto-installs deps on first run) |
+| `make card-web-lint` | `next lint` on web code |
 
 ## Configuration
 
