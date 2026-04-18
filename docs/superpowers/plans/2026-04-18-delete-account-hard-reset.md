@@ -1949,6 +1949,16 @@ import { wipeLocalDeviceState } from "../lib/account-wipe";
 import { DeleteAccountOverlay } from "../components/settings/DeleteAccountOverlay";
 ```
 
+**Client-side timeout constant** — add to `mobile/constants/config.ts`:
+
+```ts
+/**
+ * Maximum wait for DELETE /v1/auth/account before surfacing a recoverable
+ * error. Accounts with many blobs take time; 60s is 2× the observed p99.
+ */
+export const DELETE_ACCOUNT_TIMEOUT_MS = 60_000;
+```
+
 Update the confirmation dialog copy (currently: "This action is permanent
 and cannot be undone. All your data will be deleted.") to reflect
 hard-delete semantics, and add `usePreventRemove` so the user cannot
@@ -1979,13 +1989,28 @@ const handleDeleteAccount = useCallback(() => {
         onPress: async () => {
           setIsDeleting(true);
           try {
-            await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
+            // Client-side timeout — if the server is slow or hangs, we
+            // unblock the UI with a recoverable error rather than trapping
+            // the user behind usePreventRemove + the hidden back button.
+            await Promise.race([
+              apiFetch<void>("/v1/auth/account", { method: "DELETE" }),
+              new Promise<never>((_, reject) =>
+                setTimeout(
+                  () => reject(new Error("delete-account-timeout")),
+                  DELETE_ACCOUNT_TIMEOUT_MS,
+                ),
+              ),
+            ]);
             await wipeLocalDeviceState();
             setSessionMode("anon");
             router.replace("/(auth)/login");
           } catch (err) {
             const appError = parseApiError(err);
-            showToast({ kind: "error", message: appError.message });
+            const message =
+              (err as Error)?.message === "delete-account-timeout"
+                ? "Deletion is taking longer than expected. Your account may still be deleted — check back in a few minutes or contact support if you see issues."
+                : appError.message;
+            showToast({ kind: "error", message });
             setIsDeleting(false);
           }
           // NOTE: no `finally { setIsDeleting(false) }` — on success the
@@ -2024,9 +2049,11 @@ Create `mobile/components/settings/DeleteAccountOverlay.tsx`:
 
 ```tsx
 /**
- * Full-screen overlay shown while the delete-account server request is
- * in flight. Pairs with usePreventRemove in settings.tsx so the user
- * cannot navigate away mid-operation.
+ * Full-screen overlay shown while the delete-account server request is in
+ * flight. Pairs with usePreventRemove in settings.tsx so the user cannot
+ * navigate away mid-operation. A client-side timeout (DELETE_ACCOUNT_TIMEOUT_MS)
+ * in the caller ensures the overlay cannot trap the user forever — on
+ * timeout, the overlay dismisses and a toast surfaces a recovery message.
  */
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
@@ -2035,11 +2062,28 @@ import { Body, Heading } from "../ui/Text";
 
 export function DeleteAccountOverlay() {
   return (
-    <View style={styles.overlay} accessibilityRole="progressbar" accessibilityLabel="Deleting your account">
+    <View
+      style={styles.overlay}
+      accessibilityRole="progressbar"
+      accessibilityLabel="Deleting your account"
+      // Trap VoiceOver/TalkBack focus inside the overlay so the underlying
+      // settings list + header controls are not navigable while hidden.
+      accessibilityViewIsModal
+    >
       <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
-      <Heading size="md" style={styles.title}>Deleting your account…</Heading>
-      <Body color="secondary" style={styles.subtitle}>
-        This can take a few seconds. Don&apos;t close the app.
+      <Heading
+        size="md"
+        style={styles.title}
+        maxFontSizeMultiplier={1.3}
+      >
+        Deleting your account…
+      </Heading>
+      <Body
+        color="secondary"
+        style={styles.subtitle}
+        maxFontSizeMultiplier={1.4}
+      >
+        This can take up to a minute while we remove your photos and data. Keep the app open.
       </Body>
     </View>
   );

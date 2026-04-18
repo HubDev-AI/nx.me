@@ -1,8 +1,19 @@
 # Delete Account — Hard Reset Design
 
 **Date:** 2026-04-18
-**Status:** Approved (sections 1–5)
+**Status:** Approved (sections 1–5); amended 2026-04-18 after plan refine pass.
 **Author:** brainstorm session with @trifonov
+
+> **Amendment history**
+>
+> 2026-04-18 (refine): added ARQ offload for large-user blob wipe; added
+> `post-images` public bucket to the wipe set; switched `reports.reporter_user_id`
+> and both `blocked_users` FKs to `ON DELETE SET NULL` (preserve moderation +
+> safety signal); added NFKC + ASCII-fold (`unidecode`) username normalization
+> at every comparison site; added RLS deny-all on `username_reservations`;
+> reordered the delete sequence to auth-delete → blobs → DB DELETE →
+> reservation-only-if-rows-deleted; added a full-screen `DeleteAccountOverlay`
+> + `usePreventRemove` + client-side `DELETE_ACCOUNT_TIMEOUT_MS` escape.
 
 ## Problem
 
@@ -48,32 +59,48 @@ a freshly-deleted user.
 ```
 DELETE /v1/auth/account
     │
-    ├── 1. Release active credit reservations           (existing)
+    ├── 1. Release active credit reservations               (existing)
     │
-    ├── 2. Collect blob storage keys                    (NEW)
-    │      uploads.storage_key + glowup outputs + avatar
+    ├── 2. Collect blob keys (paginated, BEFORE cascade)    (NEW)
+    │      uploads.image_url + jobs.before/after_image_url
+    │      + posts.before/after_storage_key + avatar
+    │      → bucket groups: raw-selfies, generated-images,
+    │                        post-images, avatars
     │
-    ├── 3. Insert username_reservations row             (NEW)
-    │      (username, reserved_until = now+180d)
-    │      ON CONFLICT (username) DO UPDATE
-    │        SET reserved_until = EXCLUDED.reserved_until
+    ├── 3. auth.admin.delete_user(id)                       (REORDERED — first)
+    │      On failure: 502, row intact, user can retry.
     │
-    ├── 4. Storage wipe                                 (NEW — inline)
-    │      image_repo.remove(bucket, keys)
-    │      on failure → orphan_repo.enqueue_many(…)     (DLQ fallback)
+    ├── 4. Storage wipe                                     (NEW)
+    │      If total_blobs ≤ 500: inline image_repo.remove()
+    │                            + orphan_repo DLQ on failure
+    │      Else:                 enqueue ARQ wipe_deleted_user_blobs
+    │                            job_id=f"delete_account:{user_id}" (dedupe)
     │
-    ├── 5. DELETE FROM public.users WHERE id=:id        (CHANGED)
-    │      CASCADEs to every user-owned table
+    ├── 5. DELETE FROM public.users WHERE id=:id            (CHANGED)
+    │      CASCADEs most FKs; SET NULL on reports +
+    │      blocked_users to preserve moderation + safety.
     │
-    ├── 6. auth.admin.delete_user(id)                   (existing)
+    ├── 6. Insert username_reservations row                 (MOVED AFTER DELETE)
+    │      Only if step 5 returned a row — no orphan reservations.
+    │      UPSERT on lower(_normalize_username(username))
     │
-    └── 7. Redis key cleanup                            (existing)
+    └── 7. Redis key cleanup (SCAN, not KEYS)               (existing)
 
 Client (settings.tsx → handleDeleteAccount):
-    await apiFetch("/v1/auth/account", { method: "DELETE" })
-    await wipeLocalDeviceState()                         (NEW)
-    setSessionMode("anon")
-    router.replace("/(auth)/login")
+    Alert.alert(destructive confirm, hard-delete semantics copy)
+      → onPress:
+          setIsDeleting(true)                              // overlay shows
+          Promise.race([
+            apiFetch("/v1/auth/account", { method: "DELETE" }),
+            timeout(DELETE_ACCOUNT_TIMEOUT_MS)             // 60s escape hatch
+          ])
+          await wipeLocalDeviceState()
+          setSessionMode("anon")
+          router.replace("/(auth)/login")
+
+    <DeleteAccountOverlay /> full-screen while isDeleting
+    usePreventRemove blocks hardware back + iOS edge-swipe
+    HeaderBackButton hidden while isDeleting
 ```
 
 ## Backend
@@ -100,14 +127,42 @@ ALTER TABLE users
     DROP COLUMN deleted_at,
     DROP COLUMN username_reserved_until;
 
--- 3. Switch 11 FKs to ON DELETE CASCADE
+-- 3. FK rewrites. Most tables CASCADE (their rows have no independent
+--    meaning after the owning user is gone). Moderation + safety tables
+--    (reports, blocked_users) SET NULL so the record survives to preserve
+--    the audit trail and the blockee's safety signal.
+
+-- CASCADE set (8 FKs):
 ALTER TABLE images           DROP CONSTRAINT images_user_id_fkey,
                              ADD  CONSTRAINT images_user_id_fkey
                                   FOREIGN KEY (user_id) REFERENCES users(id)
                                   ON DELETE CASCADE;
 -- …repeat for: posts, reactions, comments, shareable_cards,
---               subscriptions, credit_ledger, credit_reservations,
---               reports, blocked_users (blocker_id AND blocked_id).
+--               subscriptions, credit_ledger, credit_reservations.
+
+-- SET NULL set (3 FKs): preserve the row, drop the identity.
+ALTER TABLE reports
+    ALTER COLUMN reporter_user_id DROP NOT NULL,
+    DROP CONSTRAINT reports_reporter_user_id_fkey,
+    ADD  CONSTRAINT reports_reporter_user_id_fkey
+         FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE blocked_users
+    ALTER COLUMN blocker_id DROP NOT NULL,
+    DROP CONSTRAINT blocked_users_blocker_id_fkey,
+    ADD  CONSTRAINT blocked_users_blocker_id_fkey
+         FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE blocked_users
+    ALTER COLUMN blocked_id DROP NOT NULL,
+    DROP CONSTRAINT blocked_users_blocked_id_fkey,
+    ADD  CONSTRAINT blocked_users_blocked_id_fkey
+         FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- 4. RLS: username_reservations is service-role only. Blocks an
+--    authenticated user from enumerating the table and learning who
+--    recently deleted an account.
+ALTER TABLE username_reservations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY username_reservations_deny_all ON username_reservations
+    FOR ALL TO anon, authenticated USING (false) WITH CHECK (false);
 
 COMMIT;
 ```
@@ -131,16 +186,23 @@ Rewritten to the 7-step order above. Key changes:
 
 ### `check_username_availability` semantics
 
-Public repo API is unchanged. Internals do two checks:
+Public repo API is unchanged. Internals do two checks against the
+**NFKC + ASCII-folded lowercase** normalized form of the input (via the
+`_normalize_username` helper using `unicodedata.normalize("NFKC", s)` +
+`unidecode(s).lower()` — add `unidecode` via `uv add unidecode`):
 
-1. `SELECT 1 FROM users WHERE lower(username) = lower($1)` → taken.
+1. `SELECT 1 FROM users WHERE lower(username) = lower($norm)` → taken.
 2. `SELECT 1 FROM username_reservations
-     WHERE lower(username) = lower($1)
+     WHERE lower(username) = lower($norm)
        AND reserved_until > now()` → reserved.
 3. Otherwise → available.
 
-A single SQL with `UNION ALL`+`LIMIT 1` is fine; prefer that over two
-round-trips.
+Normalization is applied at every call site (registration, availability,
+reservation insert) so Cyrillic 'а', fullwidth 'ａ', and diacritics
+('café') cannot bypass the reservation by masquerading as a new handle.
+
+Both `check_username_availability` and its alias `check_username_available_ci`
+(consumed by the mobile availability endpoint) must consult reservations.
 
 ### Reservation hygiene
 
@@ -168,6 +230,39 @@ Remove every `is_("deleted_at", "null")` guard across repos:
 - Drop `user_repo.soft_delete` + the `tests/test_user_repo_soft_delete.py`
   suite shipped in PR #162.
 - Drop `users.username_reserved_until` references everywhere.
+
+### Blob wipe — inline vs ARQ offload
+
+`_INLINE_BLOB_WIPE_THRESHOLD = 500` blobs:
+
+- **≤ 500 blobs:** inline `image_repo.remove(bucket, chunk)`; failures
+  per-key to the existing orphan DLQ.
+- **> 500 blobs:** enqueue ARQ job `wipe_deleted_user_blobs` with
+  `job_id=f"delete_account:{user_id}"` (idempotent dedupe). The worker
+  chunks each bucket into 250-key batches; failed batches push every
+  key to the orphan DLQ. Buckets covered: `raw-selfies`,
+  `generated-images`, `post-images`, `avatars`.
+
+The threshold keeps the HTTP handler well under the reverse-proxy timeout
+for the common case; large users get a best-effort background wipe with
+the same DLQ safety net.
+
+### Delete order and recovery
+
+The endpoint orders operations so no partial failure leaves a worse state
+than "user still exists and can retry":
+
+1. `auth.admin.delete_user` first → if it fails, DB untouched, retry OK.
+2. Blob enumeration + wipe (or ARQ enqueue) → orphan blobs are safer than
+   stale rows.
+3. `DELETE FROM users` → CASCADE + SET NULL fan-out.
+4. `insert_username_reservation` only if step 3 returned a row → no
+   orphan reservations blocking the user's own handle.
+5. Redis cleanup with `SCAN_ITER` (not `KEYS`) → no blocking O(N) scan.
+
+Second call on an already-deleted user returns 204 (idempotent). No
+rate-limiting, no advisory lock — double-delete work is bounded and the
+orphan DLQ dedupes.
 
 ## Mobile
 
@@ -213,16 +308,44 @@ All call sites use the constant. This makes the "did a reviewer
 remember to update `wipeLocalDeviceState`?" check a trivial grep over
 `SECURE_STORE_KEYS` definitions.
 
-### Wiring
+### Wiring + delete UX
 
-`mobile/app/settings.tsx → handleDeleteAccount`:
+`mobile/app/settings.tsx → handleDeleteAccount` is wrapped in a
+destructive `Alert.alert` whose copy reflects hard-delete semantics
+("Your photos, glow-ups, and account data will be permanently deleted.
+Your username will be reserved for 180 days. This cannot be undone.").
+
+On confirm:
 
 ```ts
-await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
-await wipeLocalDeviceState();
-setSessionMode("anon");
-router.replace("/(auth)/login");
+setIsDeleting(true);
+try {
+  await Promise.race([
+    apiFetch<void>("/v1/auth/account", { method: "DELETE" }),
+    timeout(DELETE_ACCOUNT_TIMEOUT_MS),   // 60s — unblocks the UI on hang
+  ]);
+  await wipeLocalDeviceState();
+  setSessionMode("anon");
+  router.replace("/(auth)/login");
+} catch (err) {
+  // Surface a recovery message; distinguish timeout from other errors.
+  setIsDeleting(false);
+  showToast({ kind: "error", message: messageFor(err) });
+}
 ```
+
+While `isDeleting` is true:
+
+- A full-screen `DeleteAccountOverlay` component covers the screen
+  (`accessibilityViewIsModal` traps VO/TB focus, activity indicator +
+  title + subtitle with `maxFontSizeMultiplier` caps).
+- `usePreventRemove` (via `navigation.addListener("beforeRemove")`)
+  blocks iOS edge-swipe + Android hardware back.
+- `HeaderBackButton` is replaced with a spacer so the visible chrome
+  cannot initiate navigation either.
+- `DELETE_ACCOUNT_TIMEOUT_MS` is the escape hatch: if the server hangs,
+  the overlay dismisses with a recoverable toast rather than trapping
+  the user forever.
 
 Logout path (`handleLogout` etc.) is **not** modified.
 
@@ -294,4 +417,27 @@ Mobile
 ## Open Questions
 
 None. Every branch surfaced during the brainstorming pass is resolved
-inline above.
+inline above, and the refine-pass additions (ARQ offload, SET NULL FKs,
+NFKC+ASCII-fold, RLS, overlay/timeout UX) have been folded back into
+the spec body.
+
+## Residual Risks (accepted, not addressed in this iteration)
+
+These surfaced in review but are knowingly out of scope for this change.
+Called out so a future iteration can pick them up.
+
+- **Outstanding JWT after auth-delete.** Supabase GoTrue revokes refresh
+  tokens on `auth.admin.delete_user`, but access tokens stay valid until
+  their `exp`. Between auth-delete and DB delete, a valid JWT could be
+  replayed; the calls are ordered so the DB row cascade/set-null happens
+  immediately after. Not addressed: pre-emptive session revocation.
+- **post-images bucket for `shareable_cards`.** The main `posts` table's
+  public copies are wiped; the `shareable_cards` URL path (separate
+  artefact) still 404s via cascade but any CDN-cached public bytes may
+  outlive deletion until the CDN TTL expires.
+- **Username reservation PII.** The preserved handle is indirectly PII
+  for 180 days. No GDPR erasure endpoint exists for the reservation
+  itself.
+- **Concurrent-delete race with no lock.** Accepted: double-work is
+  bounded (second DELETE returns 0 rows, DLQ dedupes). If we see it in
+  practice, add a Redis `SET NX` lock keyed on `user_id`.
