@@ -81,7 +81,7 @@ function startMockServer(): Promise<number> {
           res.end(JSON.stringify(card));
           return;
         }
-        res.writeHead(410, { 'Content-Type': 'application/json' });
+        res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ detail: 'Account not found' }));
         return;
       }
@@ -314,8 +314,8 @@ test.describe('E) Backend API integration', () => {
     const response = await request.fetch(
       'http://localhost:8001/api/public/cards/definitely_not_a_real_user_xyz',
     );
-    // Backend returns 410 (gone) or 500 depending on internal state
-    expect([404, 410, 500]).toContain(response.status());
+    // Backend returns 404 for unknown users; 500 covers transient backend-down state
+    expect([404, 500]).toContain(response.status());
   });
 });
 
@@ -354,11 +354,11 @@ test.describe('F) Card rendering — mock API', () => {
     expect(body.recommendations).toHaveLength(5);
   });
 
-  test('mock API returns 410 for unknown user', async ({ request }) => {
+  test('mock API returns 404 for unknown user', async ({ request }) => {
     const response = await request.fetch(
       `http://127.0.0.1:${mockApiPort}/api/public/cards/unknown_xyz`,
     );
-    expect(response.status()).toBe(410);
+    expect(response.status()).toBe(404);
   });
 });
 
