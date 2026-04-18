@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
+    from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
     from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
     from app.repositories.post_repo import PostRepository
     from app.repositories.subscription_repo import SubscriptionRepository
@@ -268,6 +269,13 @@ def get_orphaned_storage_repo(request: Request) -> "OrphanedStorageKeyRepository
     from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 
     return OrphanedStorageKeyRepository(request.app.state.supabase)
+
+
+def get_orphaned_analyses_repo(request: Request) -> "OrphanedAnalysesRepository":
+    """Return an OrphanedAnalysesRepository wired to the app's Supabase client."""
+    from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
+
+    return OrphanedAnalysesRepository(request.app.state.supabase)
 
 
 def get_arq_pool(request: Request) -> "ArqRedis":

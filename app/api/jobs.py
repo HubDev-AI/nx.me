@@ -26,6 +26,7 @@ from app.api.deps import (
     get_current_user,
     get_image_repo,
     get_job_repo,
+    get_orphaned_analyses_repo,
     get_orphaned_storage_repo,
     get_post_repo,
     get_redis,
@@ -41,6 +42,7 @@ from app.generation.models import (
 )
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository, SOURCE_TYPE_GLOWUP
+from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.post_repo import PostRepository
 from app.services.rate_limiter import check_delete_glowup_rate_limit
@@ -495,6 +497,9 @@ async def delete_job(
     job_repo: JobRepository = Depends(get_job_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
     orphan_repo: OrphanedStorageKeyRepository = Depends(get_orphaned_storage_repo),
+    orphan_analyses_repo: OrphanedAnalysesRepository = Depends(
+        get_orphaned_analyses_repo
+    ),
 ) -> Response:
     """Hard-delete a glow-up, its post (if any), and every owned blob.
 
@@ -605,13 +610,16 @@ async def delete_job(
             await run_sync(job_repo.delete_analysis_by_id, source_id)
         except Exception as exc:  # noqa: BLE001
             # Don't fail the request — analysis orphan is recoverable
-            # (plan §Risks acknowledges; one-off cleanup script if
-            # observed in production).
+            # (plan §Risks acknowledges; a future reclaim worker drains
+            # the DLQ). Record the orphan so the sweeper has a durable
+            # handle; ``record`` is itself defensive and never raises.
             logger.warning(
-                "delete_glowup: analysis row delete failed for %s: %s",
+                "delete_glowup: analysis row delete failed for %s: %s — "
+                "recording to DLQ",
                 source_id,
                 exc,
             )
+            await run_sync(orphan_analyses_repo.record, source_id, DELETE_GLOWUP_REASON)
 
     # 7. Inline blob wipe. Per-key so a single failing key lands in the
     # DLQ alone — batching the whole list would force us to DLQ every

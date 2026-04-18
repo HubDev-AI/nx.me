@@ -214,12 +214,16 @@ def _make_deps(
     orphan_repo = MagicMock()
     orphan_repo.record.return_value = None
 
+    orphan_analyses_repo = MagicMock()
+    orphan_analyses_repo.record.return_value = None
+
     redis_client = _make_redis(limiter_count=limiter_count, ttl_value=limiter_ttl)
 
     return SimpleNamespace(
         job_repo=job_repo,
         image_repo=image_repo,
         orphan_repo=orphan_repo,
+        orphan_analyses_repo=orphan_analyses_repo,
         redis_client=redis_client,
     )
 
@@ -256,6 +260,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -289,6 +294,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -319,6 +325,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -340,6 +347,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -366,6 +374,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -385,6 +394,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -412,6 +422,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -439,6 +450,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -459,6 +471,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -479,6 +492,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -500,6 +514,7 @@ class TestDeleteGlowupCascade:
                 job_repo=deps.job_repo,
                 image_repo=deps.image_repo,
                 orphan_repo=deps.orphan_repo,
+                orphan_analyses_repo=deps.orphan_analyses_repo,
             )
 
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
@@ -525,6 +540,7 @@ class TestDeleteGlowupCascade:
                 job_repo=deps.job_repo,
                 image_repo=deps.image_repo,
                 orphan_repo=deps.orphan_repo,
+                orphan_analyses_repo=deps.orphan_analyses_repo,
             )
 
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
@@ -550,6 +566,7 @@ class TestDeleteGlowupCascade:
                 job_repo=deps.job_repo,
                 image_repo=deps.image_repo,
                 orphan_repo=deps.orphan_repo,
+                orphan_analyses_repo=deps.orphan_analyses_repo,
             )
 
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
@@ -579,6 +596,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -612,6 +630,7 @@ class TestDeleteGlowupCascade:
                 job_repo=deps.job_repo,
                 image_repo=deps.image_repo,
                 orphan_repo=deps.orphan_repo,
+                orphan_analyses_repo=deps.orphan_analyses_repo,
             )
 
         assert exc_info.value.status_code == status.HTTP_429_TOO_MANY_REQUESTS
@@ -659,6 +678,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -687,6 +707,7 @@ class TestDeleteGlowupCascade:
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,
             orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
