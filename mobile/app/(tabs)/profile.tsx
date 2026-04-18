@@ -28,7 +28,6 @@ import {
   DISMISS_ERRORED_JOB_REMOVE_LABEL,
   DISMISS_ERRORED_JOB_TITLE,
   GLOWUP_ENDPOINTS,
-  UNIVERSAL_LINK_ORIGIN,
 } from "../../constants/config";
 import { clearAllTokens } from "../../lib/auth";
 import { apiFetch } from "../../lib/api";
@@ -47,8 +46,8 @@ import {
   type ShareDialogJob,
 } from "../../components/result/ShareDialog";
 import { useShareComposite } from "../../components/result/ShareComposite";
-import { saveJob, type JobResult } from "../../lib/analysis";
-import type { SaveState } from "../../components/result/ResultActions";
+import { useShareDialog } from "../../components/result/useShareDialog";
+import { type JobResult } from "../../lib/analysis";
 import type { GlowUpItem, UpdateProfilePayload } from "../../components/profile/types";
 
 /** Status values that surface as a dismissable errored cell on the grid. */
@@ -81,46 +80,23 @@ const DELETE_CONFIRM_CANCEL_LABEL = "Cancel";
 // User-visible error strings. Centralized so toast + retry paths stay in sync.
 const DELETE_ERROR_MESSAGE = "Couldn't delete — try again.";
 const JOB_FETCH_ERROR_MESSAGE = "Couldn't open that glow-up — try again.";
-const PUBLISH_ERROR_MESSAGE = "Couldn't publish — try again.";
-const SAVE_ERROR_MESSAGE = "Couldn't save on profile. Try again.";
-const SAVE_SUCCESS_MESSAGE = "Saved on your profile.";
-const SHARE_SAVE_FAILED_MESSAGE = "Couldn't save — try again.";
-const SHARE_COMPOSITE_TIMEOUT_MESSAGE =
-  "Images didn't finish loading. Try again in a moment.";
-const SHARE_RIGHT_LABEL = "Glow Up";
 
 /**
- * Endpoint paths the long-press action sheet consumes. They live here
- * (not in constants/config.ts) so this unit stays confined to its
- * three-file scope; the matching backend-wide builders can move to
- * config.ts in a follow-up pass without changing behavior here.
+ * Endpoint path for the delete action on the long-press sheet. Lives
+ * here (not in constants/config.ts) so this unit stays confined to its
+ * file scope; the matching backend-wide builder can move to config.ts
+ * in a follow-up without changing behavior. Post/save/share endpoints
+ * moved into `useShareDialog` when the handler logic was extracted.
  */
 const JOB_DELETE_PATH = (jobId: string) => `/v1/jobs/${jobId}`;
-const POSTS_CREATE_PATH = "/v1/posts";
-
-/**
- * Request body for POST /v1/posts. Backend spec: `glow_up_job_id`
- * (required) + optional caption (deferred; no UI for captions yet).
- */
-interface CreatePostRequest {
-  glow_up_job_id: string;
-}
-
-/**
- * Subset of POST /v1/posts response we consume. The endpoint returns a
- * full PostResponse; we only need the post id + share hash to hydrate
- * the dialog's local `job.post_id` / `job.share_hash` after publish.
- */
-interface CreatePostResponse {
-  post_id: string;
-  share_hash: string;
-}
 
 /**
  * Best-effort decode of an apiFetch error body. apiFetch throws an
  * `ApiError` with `.body` set to the raw response text; we try to
  * extract the `detail` field when present, falling back to a default
- * user-facing string.
+ * user-facing string. Used for the delete error path — the dialog
+ * Save/Share/Publish handlers in `useShareDialog` use `parseApiError`
+ * to stay consistent with the rest of the app's error UX.
  */
 function messageForError(err: unknown, fallback: string): string {
   if (err && typeof err === "object" && "body" in err) {
@@ -155,12 +131,12 @@ export default function ProfileScreen() {
 
   // Share-dialog state. Parent owns visibility + the job snapshot so
   // the dialog can render before the server's post_id/share_hash land
-  // from a fresh GET /v1/jobs/{id} poll.
+  // from a fresh GET /v1/jobs/{id} poll. The Save/Share/Publish
+  // handler triplet lives in `useShareDialog` so this screen and the
+  // result-screen entry stay in lockstep on the R5/R8 blocking-
+  // auto-save invariant.
   const [dialogVisible, setDialogVisible] = useState(false);
   const [dialogJob, setDialogJob] = useState<ShareDialogJob | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>("pending");
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [publishError, setPublishError] = useState<string | null>(null);
 
   /**
    * Client-only filter for cells the user just deleted but the server
@@ -368,30 +344,107 @@ export default function ProfileScreen() {
    * the dialog starts with authoritative state — the /history row only
    * carries saved_at, not post state.
    */
-  const openShareDialogForJob = useCallback(async (item: GlowUpItem) => {
-    if (!item.job_id) return;
-    const jobId = item.job_id;
-    try {
-      const job = await apiFetch<JobResult>(
-        GLOWUP_ENDPOINTS.JOB_STATUS(jobId),
-      );
-      setDialogJob({
-        id: jobId,
-        saved_at: job.saved_at,
-        post_id: job.post_id ?? null,
-        share_hash: job.share_hash ?? null,
-      });
-      setSaveState(job.saved_at ? "saved" : "pending");
-      setPublishError(null);
-      setIsPublishing(false);
-      setDialogVisible(true);
-    } catch (err) {
-      showToast({
-        kind: "error",
-        message: messageForError(err, JOB_FETCH_ERROR_MESSAGE),
-      });
+  // Close handler is referenced by `useShareDialog` below + the
+  // dialog's onClose prop. Defined here so the hook's memoized
+  // `onDialogClose` dependency stays stable.
+  const handleCloseDialog = useCallback(() => {
+    setDialogVisible(false);
+  }, []);
+
+  // Wrap `dialogJob` patch callbacks so the hook only exposes the
+  // payload to parents — this screen merges the patch into its local
+  // `dialogJob` state to keep the ShareDialog's `job` prop fresh.
+  // Defined as a stable ref so `onSaveSuccess` / `onPublishSuccess`
+  // below can call it without pulling `profile` / `refresh` into their
+  // own dep arrays (which would churn the hook's dependency chain).
+  const profileRef = useRef<typeof profile>(null);
+  profileRef.current = profile;
+  const refreshRef = useRef<typeof refresh>(refresh);
+  refreshRef.current = refresh;
+  const refreshProfileAfterMutation = useCallback(() => {
+    const current = profileRef.current;
+    if (current) {
+      void refreshRef.current(current.username);
     }
   }, []);
+
+  const handleDialogSaveSuccess = useCallback(
+    (saved_at: string) => {
+      setDialogJob((prev) => (prev ? { ...prev, saved_at } : prev));
+      refreshProfileAfterMutation();
+    },
+    [refreshProfileAfterMutation],
+  );
+
+  const handleDialogPublishSuccess = useCallback(
+    (post_id: string, share_hash: string) => {
+      setDialogJob((prev) =>
+        prev ? { ...prev, post_id, share_hash } : prev,
+      );
+      refreshProfileAfterMutation();
+    },
+    [refreshProfileAfterMutation],
+  );
+
+  // Provide the composite with fresh image URLs. Profile's /history
+  // row doesn't carry before/after URLs, so we fire a dedicated GET
+  // /v1/jobs/{id} when the Share handler needs them.
+  const getShareImageUrls = useCallback(async () => {
+    if (!dialogJob) return { before: null, after: null };
+    const jobDetail = await apiFetch<JobResult>(
+      GLOWUP_ENDPOINTS.JOB_STATUS(dialogJob.id),
+    );
+    return {
+      before: jobDetail.before_image_url,
+      after: jobDetail.after_image_url,
+    };
+  }, [dialogJob]);
+
+  const {
+    saveState: dialogSaveState,
+    isPublishing,
+    publishError,
+    handleSave: handleDialogSave,
+    handleShare: handleDialogShare,
+    handlePublish: handleDialogPublish,
+    resetPublishError,
+  } = useShareDialog({
+    job: dialogJob,
+    username: profile?.username ?? null,
+    generateAndShare,
+    getImageUrls: getShareImageUrls,
+    onDialogClose: handleCloseDialog,
+    onSaveSuccess: handleDialogSaveSuccess,
+    onPublishSuccess: handleDialogPublishSuccess,
+  });
+
+  const openShareDialogForJob = useCallback(
+    async (item: GlowUpItem) => {
+      if (!item.job_id) return;
+      const jobId = item.job_id;
+      try {
+        const job = await apiFetch<JobResult>(
+          GLOWUP_ENDPOINTS.JOB_STATUS(jobId),
+        );
+        setDialogJob({
+          id: jobId,
+          saved_at: job.saved_at,
+          post_id: job.post_id ?? null,
+          share_hash: job.share_hash ?? null,
+        });
+        // Clear any stale publish error before the new job's dialog
+        // opens — re-open from a different cell should start clean.
+        resetPublishError();
+        setDialogVisible(true);
+      } catch (err) {
+        showToast({
+          kind: "error",
+          message: messageForError(err, JOB_FETCH_ERROR_MESSAGE),
+        });
+      }
+    },
+    [resetPublishError],
+  );
 
   /**
    * Long-press dispatch by status.
@@ -455,145 +508,6 @@ export default function ProfileScreen() {
       promptDeleteGlowup,
     ],
   );
-
-  // --- Share-dialog handlers ------------------------------------------------
-
-  const handleCloseDialog = useCallback(() => {
-    setDialogVisible(false);
-  }, []);
-
-  /**
-   * Save row — fires POST /v1/jobs/{id}/save and updates the dialog's
-   * local job so the row disappears on the next render (Save row is
-   * gated on `saved_at === null`).
-   */
-  const handleDialogSave = useCallback(async () => {
-    if (!dialogJob) return;
-    if (saveState !== "pending") return;
-    setSaveState("saving");
-    try {
-      const { saved_at } = await saveJob(dialogJob.id);
-      setSaveState("saved");
-      setDialogJob((prev) => (prev ? { ...prev, saved_at } : prev));
-      showToast({ kind: "success", message: SAVE_SUCCESS_MESSAGE });
-      // Refresh so the grid's saved badge hydrates from the server.
-      if (profile) {
-        void refresh(profile.username);
-      }
-    } catch (err) {
-      setSaveState("pending");
-      showToast({
-        kind: "error",
-        message: messageForError(err, SAVE_ERROR_MESSAGE),
-      });
-    }
-  }, [dialogJob, saveState, profile, refresh]);
-
-  /**
-   * Share row — blocking auto-save (per R8). If `saved_at` is null we
-   * must save first; any failure there surfaces in the dialog and
-   * does NOT proceed to the native share sheet (otherwise we'd leak
-   * a link to a job retention will purge). Then assemble the card-web
-   * URL from (post_id, share_hash) and hand off to useShareComposite.
-   */
-  const handleDialogShare = useCallback(async () => {
-    if (!dialogJob) return;
-    // Need both images to compose the share sheet; guard against a
-    // pre-image-URL state so the user sees the save toast error
-    // rather than a silent no-op.
-    let job: ShareDialogJob = dialogJob;
-    if (job.saved_at === null) {
-      setSaveState("saving");
-      try {
-        const { saved_at } = await saveJob(job.id);
-        job = { ...job, saved_at };
-        setDialogJob(job);
-        setSaveState("saved");
-      } catch (err) {
-        setSaveState("pending");
-        showToast({
-          kind: "error",
-          message: messageForError(err, SHARE_SAVE_FAILED_MESSAGE),
-        });
-        return;
-      }
-    }
-
-    // Re-fetch so the composite has before/after URLs — the dialog job
-    // shape doesn't carry them.
-    let jobDetail: JobResult;
-    try {
-      jobDetail = await apiFetch<JobResult>(
-        GLOWUP_ENDPOINTS.JOB_STATUS(job.id),
-      );
-    } catch (err) {
-      showToast({
-        kind: "error",
-        message: messageForError(err, JOB_FETCH_ERROR_MESSAGE),
-      });
-      return;
-    }
-    if (!jobDetail.before_image_url || !jobDetail.after_image_url) {
-      showToast({ kind: "error", message: SHARE_COMPOSITE_TIMEOUT_MESSAGE });
-      return;
-    }
-
-    const shareUrl =
-      job.post_id && job.share_hash && profile?.username
-        ? `${UNIVERSAL_LINK_ORIGIN}/${profile.username}/glow-up/${job.share_hash}`
-        : undefined;
-
-    // Close the dialog BEFORE handing off to the native share sheet so
-    // the modal scrim doesn't sit under the native share picker.
-    setDialogVisible(false);
-    try {
-      await generateAndShare({
-        beforeUrl: jobDetail.before_image_url,
-        afterUrl: jobDetail.after_image_url,
-        rightLabel: SHARE_RIGHT_LABEL,
-        shareUrl,
-        shareMessage: shareUrl ? `My NXME glow-up — ${shareUrl}` : undefined,
-      });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("timeout")) {
-        showToast({ kind: "error", message: SHARE_COMPOSITE_TIMEOUT_MESSAGE });
-      }
-      // User-cancelled native share sheet — not an error.
-    }
-  }, [dialogJob, profile, generateAndShare]);
-
-  /**
-   * Publish row — POST /v1/posts (idempotent per Unit 2). On success
-   * merge the new post_id + share_hash into the dialog's local job and
-   * close. Failures stay in the dialog so the user can retry without
-   * re-opening it.
-   */
-  const handleDialogPublish = useCallback(async () => {
-    if (!dialogJob) return;
-    if (isPublishing) return;
-    setIsPublishing(true);
-    setPublishError(null);
-    try {
-      const body: CreatePostRequest = { glow_up_job_id: dialogJob.id };
-      const post = await apiFetch<CreatePostResponse>(POSTS_CREATE_PATH, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      setDialogJob((prev) =>
-        prev
-          ? { ...prev, post_id: post.post_id, share_hash: post.share_hash }
-          : prev,
-      );
-      setDialogVisible(false);
-      if (profile) {
-        void refresh(profile.username);
-      }
-    } catch (err) {
-      setPublishError(messageForError(err, PUBLISH_ERROR_MESSAGE));
-    } finally {
-      setIsPublishing(false);
-    }
-  }, [dialogJob, isPublishing, profile, refresh]);
 
   // Menu items derive from capabilities — single source of truth keeps this
   // screen and any future profile actions in sync with the (features × session)
@@ -776,7 +690,7 @@ export default function ProfileScreen() {
           onPublish={() => {
             void handleDialogPublish();
           }}
-          saveState={saveState}
+          saveState={dialogSaveState}
           isPublishing={isPublishing}
           publishError={publishError}
         />

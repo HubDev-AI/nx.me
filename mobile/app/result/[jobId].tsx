@@ -47,6 +47,7 @@ import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
 import { ResultActions, type SaveState } from "../../components/result/ResultActions";
 import { useShareComposite } from "../../components/result/ShareComposite";
 import { ShareDialog } from "../../components/result/ShareDialog";
+import { useShareDialog } from "../../components/result/useShareDialog";
 import { HeaderBackButton } from "../../components/ui/HeaderBackButton";
 import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import {
@@ -70,7 +71,6 @@ import {
   RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS,
   RESULT_WAITING_BODY,
   RESULT_WAITING_TITLE,
-  UNIVERSAL_LINK_ORIGIN,
 } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
 import { useAppMutation } from "../../lib/hooks/use-app-mutation";
@@ -98,17 +98,6 @@ const TICK_INTERVAL_MS = 1_000;
 /** Hourglass rotation period (ms) — slow enough to read as patient, not stuck. */
 const HOURGLASS_ROTATION_MS = 2_400;
 
-// --- Copy — placeholders pending writer review ---------------------------
-//
-// TODO(writer-review): The share sheet strings below are the literal text
-// that will appear when the user bubbles a glow-up out to another app. Per
-// `feedback_female_user_targeting`, all voice must target the app's
-// majority-female audience; strings are placeholders until writer review.
-/** Prose shared alongside the image when a live hash URL exists. */
-const SHARE_MESSAGE_WITH_URL = (url: string): string => `My NXME glow-up — ${url}`;
-/** Prose shared alongside the image when no card-web URL is attached. */
-const SHARE_MESSAGE_NO_URL = "My NXME glow-up";
-
 // TODO(writer-review): Delete-confirm copy must name external-link
 // breakage per `feedback_female_user_targeting` + plan §Risks table
 // ("Links you've already shared will stop working").
@@ -120,12 +109,6 @@ const DELETE_CONFIRM_DELETE_LABEL = "Delete";
 
 /** Header-right overflow accessibility label. */
 const HEADER_OVERFLOW_LABEL = "More options";
-
-/** POST /v1/posts response — mirrors backend PostResponse shape. */
-interface PostCreateResponse {
-  post_id: string;
-  share_hash: string;
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -148,17 +131,17 @@ export default function ResultScreen() {
   const { username } = useAuth();
 
   // ShareDialog state — owned by the screen so the dialog can open from
-  // either the primary button or (future) other entry points.
+  // either the primary button or (future) other entry points. The
+  // Save/Share/Publish handler triplet lives in `useShareDialog` so this
+  // screen and the profile long-press path stay in lockstep on the
+  // R5/R8 blocking-auto-save invariant.
   const [shareDialogVisible, setShareDialogVisible] = useState(false);
-  /** Publish in-flight flag — drives the Publish confirm spinner. */
-  const [isPublishing, setIsPublishing] = useState(false);
-  /** Inline error surfaced on the Publish confirm panel when POST fails. */
-  const [publishError, setPublishError] = useState<string | null>(null);
   /**
    * Client-side mirror of `post_id` + `share_hash`. Populated from either
    * the latest `GET /v1/jobs/{id}` poll (backend Unit 3) or the
-   * `POST /v1/posts` response (Unit 8 handler) so the dialog + share URL
-   * pick up a fresh publish without a round-trip refetch.
+   * `POST /v1/posts` response (via `useShareDialog` `onPublishSuccess`)
+   * so the dialog + share URL pick up a fresh publish without a
+   * round-trip refetch.
    */
   const [postState, setPostState] = useState<{
     post_id: string | null;
@@ -302,12 +285,70 @@ export default function ResultScreen() {
 
   // ---- ShareDialog handlers -------------------------------------------
   //
+  // The triplet (Save / Share / Publish) lives in `useShareDialog` so
+  // this screen and the profile long-press entry share the R5/R8
+  // blocking-auto-save invariant. Parent still owns visibility + the
+  // postState mirror; hook owns in-flight + error state.
+  const closeShareDialog = useCallback(() => {
+    setShareDialogVisible(false);
+  }, []);
+
+  const dialogJob = useMemo(
+    () => ({
+      id: (jobId as string) ?? "",
+      saved_at: result?.saved_at ?? null,
+      post_id: postState.post_id,
+      share_hash: postState.share_hash,
+    }),
+    [jobId, result?.saved_at, postState.post_id, postState.share_hash],
+  );
+
+  const getShareImageUrls = useCallback(
+    async () => ({
+      before: result?.before_image_url ?? null,
+      after: result?.after_image_url ?? null,
+    }),
+    [result?.before_image_url, result?.after_image_url],
+  );
+
+  const handleDialogSaveSuccess = useCallback(() => {
+    // Reuse the primary-row mutation's "saved" state so both the
+    // outline Save-on-profile button and the dialog Save row stay in
+    // lockstep. No-op if already saved.
+    setSaveState("saved");
+  }, []);
+
+  const handleDialogPublishSuccess = useCallback(
+    (post_id: string, share_hash: string) => {
+      setPostState({ post_id, share_hash });
+    },
+    [],
+  );
+
+  const {
+    saveState: dialogSaveState,
+    isPublishing,
+    publishError,
+    handleSave: handleDialogSave,
+    handleShare: handleDialogShare,
+    handlePublish: handleDialogPublish,
+    resetPublishError,
+  } = useShareDialog({
+    job: dialogJob,
+    username,
+    generateAndShare,
+    getImageUrls: getShareImageUrls,
+    onDialogClose: closeShareDialog,
+    onSaveSuccess: handleDialogSaveSuccess,
+    onPublishSuccess: handleDialogPublishSuccess,
+  });
+
   // Dialog-entry tap from the primary button. Clears any stale publish
   // error so a re-open starts clean.
   const handleOpenShareDialog = useCallback(() => {
-    setPublishError(null);
+    resetPublishError();
     setShareDialogVisible(true);
-  }, []);
+  }, [resetPublishError]);
 
   const handleCloseShareDialog = useCallback(() => {
     // Don't let the user dismiss mid-publish — parent-owned lifecycle
@@ -315,114 +356,6 @@ export default function ResultScreen() {
     if (isPublishing) return;
     setShareDialogVisible(false);
   }, [isPublishing]);
-
-  /** Save from inside the dialog — same mutation as the primary-row save. */
-  const handleDialogSave = useCallback(() => {
-    if (saveState !== "pending") return;
-    setSaveState("saving");
-    saveMutation.mutate();
-    // Close on success via the shared mutation onSuccess toast. The
-    // dialog's saveState prop reflects "saved" on next render so the
-    // Save row auto-hides per ShareDialog's visibility rules. No
-    // explicit close call — the user can still tap Share or Publish.
-  }, [saveState, saveMutation]);
-
-  /**
-   * Share from inside the dialog — R5/R8 critical path. Auto-save is
-   * BLOCKING: if the save call fails we surface an inline error on
-   * ShareDialog and do NOT open the native share sheet. Letting the
-   * sheet open anyway would hand the user a card-web URL that retention
-   * will purge within days.
-   *
-   * Auto-save calls `saveJob` directly (not `saveMutation.mutate`) so the
-   * mutation's success-toast doesn't fire on the Share path — the user
-   * only explicitly asked to Share, they didn't ask for a Save toast.
-   */
-  const handleDialogShare = useCallback(async () => {
-    if (!result?.before_image_url || !result.after_image_url) return;
-
-    // Step 1: block on auto-save when the job isn't saved yet (R8).
-    if (!result.saved_at) {
-      setSaveState("saving");
-      try {
-        await saveJob(jobId as string);
-        setSaveState("saved");
-      } catch (err) {
-        // Surface via toast (native layer renders ABOVE the Modal; an
-        // inline badge behind the dialog's scrim would be invisible).
-        // Leave the dialog open so the user can re-tap Share once
-        // they see the toast and dismiss it.
-        setSaveState("pending");
-        const app = parseApiError(err);
-        showToast({ kind: "error", message: app.message });
-        return;
-      }
-    }
-
-    // Step 2: build the shareUrl — hash URL when a live post exists, else
-    // undefined. Never append a bare `/{username}` to avoid 404 links (R5).
-    const { post_id, share_hash } = postState;
-    const shareUrl =
-      post_id && share_hash && username
-        ? `${UNIVERSAL_LINK_ORIGIN}/${username}/glow-up/${share_hash}`
-        : undefined;
-
-    // Step 3: compose + hand to native share sheet.
-    try {
-      await generateAndShare({
-        beforeUrl: result.before_image_url,
-        afterUrl: result.after_image_url,
-        rightLabel: "Glow Up",
-        shareUrl,
-        shareMessage: shareUrl
-          ? SHARE_MESSAGE_WITH_URL(shareUrl)
-          : SHARE_MESSAGE_NO_URL,
-      });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("timeout")) {
-        Alert.alert(
-          "Share failed",
-          "Images didn't finish loading. Try again in a moment.",
-        );
-      }
-      // User-cancelled native share sheet — not an error.
-    }
-
-    // Step 4: close the dialog once the sheet dismisses.
-    setShareDialogVisible(false);
-  }, [result, jobId, generateAndShare, username, postState]);
-
-  /**
-   * Publish from inside the dialog's confirm panel. On 201 we merge the
-   * response into `postState` so the dialog + share URL pick up the new
-   * post without a refetch. On 4xx we surface an inline error inside the
-   * confirm panel and keep it open for retry.
-   */
-  const handleDialogPublish = useCallback(async () => {
-    if (isPublishing) return;
-    setIsPublishing(true);
-    setPublishError(null);
-    try {
-      const res = await apiFetch<PostCreateResponse>("/v1/posts", {
-        method: "POST",
-        body: JSON.stringify({ glow_up_job_id: jobId }),
-      });
-      // Merge into local state so the dialog closes + Share can build
-      // the fresh hash URL on the next tap.
-      setPostState({
-        post_id: res.post_id,
-        share_hash: res.share_hash,
-      });
-      setShareDialogVisible(false);
-      // TODO(analytics): emit `glowup_publish` once the event shape
-      // lands in `app/analytics/events.py` (plan §Open Questions).
-    } catch (err) {
-      const app = parseApiError(err);
-      setPublishError(app.message);
-    } finally {
-      setIsPublishing(false);
-    }
-  }, [isPublishing, jobId]);
 
   // ---- Delete overflow (header-right) ---------------------------------
 
@@ -771,16 +704,11 @@ export default function ResultScreen() {
       <ShareDialog
         visible={shareDialogVisible}
         onClose={handleCloseShareDialog}
-        job={{
-          id: (jobId as string) ?? "",
-          saved_at: result?.saved_at ?? null,
-          post_id: postState.post_id,
-          share_hash: postState.share_hash,
-        }}
+        job={dialogJob}
         onSave={handleDialogSave}
         onShare={handleDialogShare}
         onPublish={handleDialogPublish}
-        saveState={saveState}
+        saveState={dialogSaveState}
         isPublishing={isPublishing}
         publishError={publishError}
       />
