@@ -203,10 +203,14 @@ class UserRepository:
     ) -> list[dict]:
         """Soft-delete a user row; returns the updated rows (empty if already deleted).
 
-        Atomicity note (M-12): both ``deleted_at`` and ``username_reserved_until``
-        are set in a single ``.update()`` call, so they are applied in the same
-        database statement — no transaction wrapper needed.  The ``is_("deleted_at", "null")``
-        guard ensures idempotency (a concurrent call sees zero rows).
+        Scrubs unique identifier columns (``email``, ``tiktok_open_id``) so the
+        same human can re-register with the same identity after deletion. The
+        ``username`` column is preserved for the 180-day reservation window.
+
+        Atomicity note (M-12): all columns are set in a single ``.update()``
+        call — one database statement, no transaction wrapper needed. The
+        ``is_("deleted_at", "null")`` guard ensures idempotency (a concurrent
+        call sees zero rows).
         """
         result = (
             self._sb.table("users")
@@ -214,6 +218,8 @@ class UserRepository:
                 {
                     "deleted_at": now_utc.isoformat(),
                     "username_reserved_until": reserved_until.isoformat(),
+                    "email": None,
+                    "tiktok_open_id": None,
                 }
             )
             .eq("id", user_id)
