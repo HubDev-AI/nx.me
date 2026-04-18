@@ -110,6 +110,25 @@ export async function markRefundToastSeen(jobId: string): Promise<void> {
   }
 }
 
+/**
+ * Reset the refund-toast store for a full device wipe. Clears the
+ * in-memory cache, the in-flight hydrate promise, and the backing
+ * AsyncStorage key. Storage errors are swallowed — the in-memory
+ * reset is the durable signal.
+ *
+ * Called exclusively by the delete-account flow via
+ * `wipeLocalDeviceState`. Logout stays narrow (tokens only).
+ */
+export async function clearRefundToastSeen(): Promise<void> {
+  cache = new Set();
+  hydratePromise = null;
+  try {
+    await AsyncStorage.removeItem(REFUND_TOAST_SEEN_STORAGE_KEY);
+  } catch (err) {
+    if (__DEV__) console.warn("clearRefundToastSeen: storage remove failed", err);
+  }
+}
+
 /** Test seam — production code should never call this. */
 export function __resetRefundToastSeenForTests(): void {
   cache = null;

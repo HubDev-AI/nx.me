@@ -111,6 +111,25 @@ export async function addDismissedJobId(jobId: string): Promise<void> {
 }
 
 /**
+ * Reset the dismissed-jobs store for a full device wipe. Clears the
+ * in-memory cache, the in-flight hydrate promise, and the backing
+ * AsyncStorage key. Storage errors are swallowed — the in-memory
+ * reset is the durable signal.
+ *
+ * Called exclusively by the delete-account flow via
+ * `wipeLocalDeviceState`. Logout stays narrow (tokens only).
+ */
+export async function clearDismissedJobs(): Promise<void> {
+  cache = new Set();
+  hydratePromise = null;
+  try {
+    await AsyncStorage.removeItem(PROFILE_DISMISSED_ERRORED_JOBS_STORAGE_KEY);
+  } catch (err) {
+    if (__DEV__) console.warn("clearDismissedJobs: storage remove failed", err);
+  }
+}
+
+/**
  * Test seam — resets module state. Production code should never need
  * to call this.
  */
