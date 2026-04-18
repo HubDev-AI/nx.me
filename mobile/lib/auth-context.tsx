@@ -2,8 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { getItem, setItem, deleteItem } from "./secure-storage";
 import { setSessionExpiredHandler } from "./api";
 import { buildSessionState, type SessionMode, type SessionState } from "./session";
-
-const USERNAME_KEY = "nxme_username";
+import { SECURE_STORE_KEYS } from "../constants/config";
 
 interface AuthContextValue {
   /** Resolved session — single source of truth, no more booleans. */
@@ -64,7 +63,7 @@ export function AuthProvider({
 
   // Load stored username on mount
   useEffect(() => {
-    getItem(USERNAME_KEY).then((u) => {
+    getItem(SECURE_STORE_KEYS.USERNAME).then((u) => {
       if (u) setUsernameState(u);
     }).catch((err) => { if (__DEV__) console.warn("Failed to load stored username:", err); });
   }, []);
@@ -73,7 +72,7 @@ export function AuthProvider({
     setSession((prev) => buildSessionState(mode, prev.ready));
     if (mode === "anon") {
       setUsernameState(null);
-      deleteItem(USERNAME_KEY).catch((err) => { if (__DEV__) console.warn("Failed to clear stored username:", err); });
+      deleteItem(SECURE_STORE_KEYS.USERNAME).catch((err) => { if (__DEV__) console.warn("Failed to clear stored username:", err); });
     }
   }, []);
 
@@ -84,9 +83,9 @@ export function AuthProvider({
   const setUsername = useCallback((value: string | null) => {
     setUsernameState(value);
     if (value) {
-      setItem(USERNAME_KEY, value).catch((err) => { if (__DEV__) console.warn("Failed to persist username:", err); });
+      setItem(SECURE_STORE_KEYS.USERNAME, value).catch((err) => { if (__DEV__) console.warn("Failed to persist username:", err); });
     } else {
-      deleteItem(USERNAME_KEY).catch((err) => { if (__DEV__) console.warn("Failed to clear stored username:", err); });
+      deleteItem(SECURE_STORE_KEYS.USERNAME).catch((err) => { if (__DEV__) console.warn("Failed to clear stored username:", err); });
     }
   }, []);
 

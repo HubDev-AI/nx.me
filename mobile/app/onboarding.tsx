@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "../lib/api";
 import { parseApiError } from "../lib/errors";
 import { setItem } from "../lib/secure-storage";
+import { SECURE_STORE_KEYS } from "../constants/config";
 import { THEME } from "../constants/theme";
 import { SUCCESS_DARK } from "../constants/colors";
 import { PageBackground } from "../components/ui/PageBackground";
@@ -83,7 +84,7 @@ export default function OnboardingScreen() {
   }, []);
 
   const handleAnalyzeCTA = useCallback(async () => {
-    await setItem("nxme_onboarding_complete", "true");
+    await setItem(SECURE_STORE_KEYS.ONBOARDING_COMPLETE, "true");
     router.replace("/(tabs)/create");
   }, [router]);
 

@@ -37,6 +37,10 @@ export const SECURE_STORE_KEYS = {
    * purge runs once across launches in production builds.
    */
   GUEST_PURGED_AT: "nxme_guest_purged_at",
+  /** Device-local flag set once the onboarding screen has been completed. */
+  ONBOARDING_COMPLETE: "nxme_onboarding_complete",
+  /** Canonical location for the current user's username. */
+  USERNAME: "nxme_username",
 } as const;
 
 /** OAuth Client IDs — sourced from env / Expo config extras */
