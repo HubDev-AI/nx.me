@@ -1,10 +1,17 @@
 /**
- * ResultActions — Save / Share / Try-again button bar for result screens.
+ * ResultActions — Save / Share & Publish / Try-again button bar for result screens.
  *
  * Rules per AGENTS.md:
  *   - Action buttons stay VISIBLE when disabled — never hide them.
  *   - Visual opacity conveys disabled state; button is always rendered.
  *   - creditsRemaining badge is optional; rendered only when a number is passed.
+ *
+ * Primary row:
+ *   - "Save on profile" (outline) — one-tap save so the common case never
+ *     requires opening the ShareDialog (Unit 7).
+ *   - "Share & Publish…" or "Share…" (primary) — opens the ShareDialog.
+ *     Label swaps on `canPublishGlowup`; both end in `…` to signal that
+ *     the button opens a dialog rather than firing the action immediately.
  */
 import { useCallback } from "react";
 import {
@@ -54,9 +61,22 @@ export type SaveState = "pending" | "saving" | "saved";
 
 export interface ResultActionsProps {
   onSave: () => void;
-  onShare: () => void;
+  /**
+   * Opens the unified ShareDialog (Unit 7). The dialog routes Save /
+   * Share / Publish from a single entry point so the user sees plain-
+   * language disclosure of what each action does before committing.
+   */
+  onOpenShareDialog: () => void;
   onTryAnother: () => void;
   saveState: SaveState;
+  /**
+   * Drives the primary-row label: "Share & Publish…" when true,
+   * "Share…" when false. Keeps the dialog button honest — no false
+   * promise of Publish when the user can't actually publish
+   * (social_enabled=false, guest session, etc). Resolved by the parent
+   * via `useCapabilities()` so gating stays centralized.
+   */
+  canPublishGlowup: boolean;
   /** When provided, renders a small credit badge next to Try-again. */
   creditsRemaining?: number | null;
 }
@@ -170,15 +190,16 @@ function ActionButton({
 
 export function ResultActions({
   onSave,
-  onShare,
+  onOpenShareDialog,
   onTryAnother,
   saveState,
+  canPublishGlowup,
   creditsRemaining,
 }: ResultActionsProps) {
-  const handleShare = useCallback(() => {
+  const handleOpenShareDialog = useCallback(() => {
     hapticMedium();
-    onShare();
-  }, [onShare]);
+    onOpenShareDialog();
+  }, [onOpenShareDialog]);
 
   // "Save on profile" framing — the endpoint persists the result to
   // the user's profile (indefinite retention). The old bare "Save"
@@ -196,9 +217,15 @@ export function ResultActions({
   const saveIcon: React.ComponentProps<typeof Ionicons>["name"] =
     saveState === "saved" ? "checkmark-circle" : "bookmark-outline";
 
+  // Primary-row label swaps on publish availability. Both variants end
+  // in `…` to signal that the button opens the ShareDialog rather than
+  // firing the action immediately. Matches the plan's "Share &
+  // Publish…" / "Share…" labeling rule (Unit 8 decision).
+  const shareDialogLabel = canPublishGlowup ? "Share & Publish…" : "Share…";
+
   return (
     <View style={styles.container}>
-      {/* Primary row: Save + Share */}
+      {/* Primary row: Save + Share-dialog entry */}
       <View style={styles.primaryRow}>
         <View style={styles.primaryButton}>
           <ActionButton
@@ -212,9 +239,9 @@ export function ResultActions({
         </View>
         <View style={styles.primaryButton}>
           <ActionButton
-            label="Share"
+            label={shareDialogLabel}
             iconName="share-outline"
-            onPress={handleShare}
+            onPress={handleOpenShareDialog}
             variant="primary"
           />
         </View>
