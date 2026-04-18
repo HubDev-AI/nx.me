@@ -152,6 +152,21 @@ def glowup_share(
     _emit("glowup.share", job_id=job_id, user_id=user_id)
 
 
+def glowup_delete(
+    *,
+    job_id: str,
+    user_id: str,
+) -> None:
+    """Fired when a user hard-deletes a completed/failed/cancelled glow-up.
+
+    Emitted at the end of the DELETE /v1/jobs/{job_id} cascade after the
+    DB row is gone and blobs are wiped (or DLQ'd). Swallow-wrapped at the
+    call site like ``glowup_save`` — analytics failure must not take down
+    a destructive path that already committed.
+    """
+    _emit("glowup.delete", job_id=job_id, user_id=user_id)
+
+
 # ---------------------------------------------------------------------------
 # Glow Up — consent
 # ---------------------------------------------------------------------------

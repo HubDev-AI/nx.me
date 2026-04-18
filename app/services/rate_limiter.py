@@ -155,3 +155,44 @@ async def check_delete_account_rate_limit(
         return True, 0
     ttl: int = await r.ttl(key)
     return False, max(ttl, 1)
+
+
+# ---------------------------------------------------------------------------
+# Per-caller rate limit for DELETE /v1/jobs/{job_id} (Unit 5, Plan §R3)
+# ---------------------------------------------------------------------------
+
+# 10 deletes per minute per caller. Tight enough to defuse a stolen-token
+# sweep (which would otherwise pound blob storage and inflate the orphan
+# DLQ), loose enough that a user cleaning up 5-6 old glow-ups back-to-back
+# never feels it. Guest + real-user both key on the claim ``sub`` — guest
+# tokens resolve to a stable user UUID upstream of this call.
+_DELETE_GLOWUP_WINDOW_SECONDS = 60
+_DELETE_GLOWUP_MAX_ATTEMPTS = 10
+
+
+async def check_delete_glowup_rate_limit(
+    user_id: str, r: aioredis.Redis
+) -> tuple[bool, int]:
+    """Return ``(allowed, retry_after_seconds)`` for DELETE /jobs/{id}.
+
+    Mirrors :func:`check_delete_account_rate_limit` — same INCR + EXPIRE NX
+    pattern, separate key namespace and separate constants so the two
+    limits don't share a counter. Key: ``delete_glowup_rate:{user_id}``.
+    """
+    key = f"delete_glowup_rate:{user_id}"
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, _DELETE_GLOWUP_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(
+                "Redis pipeline command %d failed in check_delete_glowup_rate_limit: %s",
+                i,
+                result,
+            )
+    count: int = results[0]
+    if count <= _DELETE_GLOWUP_MAX_ATTEMPTS:
+        return True, 0
+    ttl: int = await r.ttl(key)
+    return False, max(ttl, 1)

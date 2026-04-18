@@ -15,6 +15,12 @@ from datetime import datetime, timezone
 
 from supabase import Client
 
+from app.services.public_url import (
+    GENERATED_IMAGES_BUCKET,
+    PUBLIC_BUCKET,
+    RAW_SELFIES_BUCKET,
+)
+
 logger = logging.getLogger(__name__)
 
 # Columns needed for job status polling. created_at is used by the dev-only
@@ -308,3 +314,126 @@ class JobRepository:
             .execute()
         )
         return result.data or []
+
+    # ------------------------------------------------------------------
+    # Hard-delete cascade (Unit 5) — callers must run enumeration BEFORE
+    # ``delete_by_id`` so the FK cascade does not kill the joins used to
+    # enumerate post-images storage keys. See
+    # ``docs/solutions/best-practices/account-delete-hard-reset-invariant``.
+    # ------------------------------------------------------------------
+
+    def enumerate_blob_keys_for_delete(self, job_id: str) -> list[tuple[str, str]]:
+        """Return every ``(bucket, storage_key)`` tuple owned by this job.
+
+        Combines the job's own ``before_image_url`` (``raw-selfies``) and
+        ``after_image_url`` (``generated-images``) with the denormalized
+        ``posts.before_image_url`` + ``posts.after_image_url`` columns for
+        the live public post (if any). Same enumeration contract as
+        ``user_repo.list_user_storage_keys`` so the delete-glowup and
+        delete-account paths stay symmetric — see the plan's
+        "API surface parity" line.
+
+        Only ``post-images`` keys from a live post (``is_deleted = FALSE
+        AND is_hidden = FALSE``) are returned. Hidden / soft-deleted posts
+        are left alone — their blobs are reclaimed by nightly retention.
+
+        Returns ``[]`` when the job does not exist. Safe to call multiple
+        times; idempotent because every call re-queries from source.
+        """
+        keys: list[tuple[str, str]] = []
+
+        job_row = (
+            self._sb.table("jobs")
+            .select("before_image_url, after_image_url")
+            .eq("id", job_id)
+            .maybe_single()
+            .execute()
+        )
+        if not job_row or not job_row.data:
+            return keys
+
+        before = job_row.data.get("before_image_url")
+        after = job_row.data.get("after_image_url")
+        if before:
+            keys.append((RAW_SELFIES_BUCKET, before))
+        if after:
+            keys.append((GENERATED_IMAGES_BUCKET, after))
+
+        # Live post lookup — partial unique index (migration 0046) means at
+        # most one row. Skip deleted/hidden per the plan's enumeration rule.
+        post_row = (
+            self._sb.table("posts")
+            .select("before_image_url, after_image_url")
+            .eq("glow_up_job_id", job_id)
+            .eq("is_deleted", False)
+            .eq("is_hidden", False)
+            .limit(1)
+            .execute()
+        )
+        post_rows = post_row.data or []
+        if post_rows:
+            row = post_rows[0]
+            post_before = row.get("before_image_url")
+            post_after = row.get("after_image_url")
+            if post_before:
+                keys.append((PUBLIC_BUCKET, post_before))
+            if post_after:
+                keys.append((PUBLIC_BUCKET, post_after))
+
+        return keys
+
+    def count_peer_jobs_for_source(
+        self,
+        source_id: str,
+        *,
+        exclude_id: str,
+        exclude_statuses: set[str] | None = None,
+    ) -> int:
+        """Count jobs sharing a ``source_id`` (excluding this job).
+
+        Peer definition (per plan §Key Technical Decisions):
+          ``source_id = this.source_id AND id != this.id AND status NOT IN
+          (exclude_statuses)``
+
+        The endpoint passes ``exclude_statuses={"cancelled"}`` — a
+        cancelled peer has already released its reservation and does not
+        keep the analysis alive, so we want those treated as "gone" for
+        ref-counting. ``queued|processing|finalizing|completed|failed``
+        peers DO keep the analysis. Cheap: an indexed equality scan on
+        ``jobs.source_id``.
+        """
+        exclude_statuses = exclude_statuses or set()
+        query = (
+            self._sb.table("jobs")
+            .select("id", count="exact")
+            .eq("source_id", source_id)
+            .neq("id", exclude_id)
+        )
+        if exclude_statuses:
+            query = query.not_.in_("status", list(exclude_statuses))
+        result = query.execute()
+        return int(result.count or 0)
+
+    def delete_by_id(self, job_id: str) -> None:
+        """Hard-delete a single job row.
+
+        The FK cascade added in migration 0045 (``posts.glow_up_job_id
+        ON DELETE CASCADE``) fans out to ``posts``; pre-existing cascades
+        on ``posts.id`` wipe ``reactions``, ``comments``, ``reports``.
+        The endpoint must have already enumerated and ideally wiped blobs
+        before calling this — see ``enumerate_blob_keys_for_delete`` and
+        the ORDER MATTERS comment in ``delete_job``.
+        """
+        self._sb.table("jobs").delete().eq("id", job_id).execute()
+
+    def delete_analysis_by_id(self, analysis_id: str) -> None:
+        """Hard-delete a row from ``glowup_analyses`` by id.
+
+        There is **no** FK cascade from ``jobs.source_id`` to this table
+        (the column is a plain UUID; polymorphic ref). The endpoint
+        invokes this only when ``count_peer_jobs_for_source`` says no
+        other job references the analysis, AND ``source_type`` is
+        ``glowup_analysis``. Uploads are NOT touched here — they have
+        independent lifecycle owned by ``retention.py``.
+        """
+        self._sb.table("glowup_analyses").delete().eq("id", analysis_id).execute()

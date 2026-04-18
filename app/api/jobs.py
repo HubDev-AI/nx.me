@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from app.analytics import events
@@ -24,7 +24,9 @@ from app.api.deps import (
     get_user_or_guest,
     get_credit_ledger,
     get_current_user,
+    get_image_repo,
     get_job_repo,
+    get_orphaned_storage_repo,
     get_post_repo,
     get_redis,
 )
@@ -37,12 +39,36 @@ from app.generation.models import (
     FAILURE_IDENTITY,
     JobStatus,
 )
-from app.repositories.job_repo import JobRepository
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository, SOURCE_TYPE_GLOWUP
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.post_repo import PostRepository
+from app.services.rate_limiter import check_delete_glowup_rate_limit
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["jobs"])
+
+
+# Reason string recorded in ``orphaned_storage_keys`` when a blob wipe
+# fails during DELETE /v1/jobs/{job_id}. Mirrors ``"delete_account"`` from
+# ``delete_account`` — purely server-side; never derived from user input.
+DELETE_GLOWUP_REASON = "delete_glowup"
+
+# Statuses from which a glow-up can be hard-deleted. In-flight statuses
+# (queued/processing/finalizing) must be cancelled first so we do not
+# race the ARQ worker. Diverges from ``cancel_job`` (which flips
+# non-terminal jobs to cancelled); here we refuse them entirely.
+_DELETABLE_JOB_STATUSES: frozenset[str] = frozenset(
+    {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+)
+
+# Peer statuses that should *NOT* keep a shared ``glowup_analyses`` row
+# alive. A cancelled peer already released its reservation and is, for
+# ref-counting purposes, gone. Other non-terminal + completed + failed
+# peers DO keep the analysis so re-generation off the same analysis
+# stays possible (see plan §Key Technical Decisions, "peers" paragraph).
+_CANCELLED_PEER_STATUSES: frozenset[str] = frozenset({JobStatus.CANCELLED})
 
 
 # ---------------------------------------------------------------------------
@@ -452,3 +478,173 @@ async def refund_job(
         status=job["status"],
         credit_refunded=credit_refunded,
     )
+
+
+# ---------------------------------------------------------------------------
+# DELETE /jobs/{job_id} — hard-cascade the glow-up and everything it produced.
+# ---------------------------------------------------------------------------
+
+
+# ORDER MATTERS: enumerate blob keys BEFORE DELETE FROM jobs — the FK cascade
+# drops posts/images rows, and the join to find storage keys dies with them.
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(
+    job_id: UUID,
+    claims: UserClaims = Depends(get_user_or_guest),
+    redis_client: aioredis.Redis = Depends(get_redis),
+    job_repo: JobRepository = Depends(get_job_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
+    orphan_repo: OrphanedStorageKeyRepository = Depends(get_orphaned_storage_repo),
+) -> Response:
+    """Hard-delete a glow-up, its post (if any), and every owned blob.
+
+    ORDER MATTERS: enumerate blob keys BEFORE DELETE FROM jobs — the FK
+    cascade drops posts/images rows, and the join to find storage keys
+    dies with them.
+
+    Cascade chain (reverse-chronological in effect):
+      1. Rate-limit gate (per-caller, 10/min).
+      2. Status gate: ``completed | failed | cancelled`` only. In-flight
+         jobs must be cancelled first via ``POST /jobs/{id}/cancel``.
+      3. Enumerate ``(bucket, key)`` for every blob this job owns —
+         raw-selfies, generated-images, and (if a live post exists)
+         post-images. ``JobRepository.enumerate_blob_keys_for_delete``
+         does the post lookup internally to keep this handler tidy.
+      4. Ref-count the shared ``glowup_analyses`` row via peer jobs.
+         Cancelled peers do not count; any other peer keeps the analysis
+         alive for re-generation. Only glow-up sources are considered —
+         future ``makeup_session`` source_types route elsewhere.
+      5. Issue the single ``DELETE FROM jobs`` — FK cascade wipes posts,
+         reactions, comments, reports, credit_reservations,
+         prompt_experiments.
+      6. If peers=0 and source is a glowup, delete the analysis row.
+      7. Inline blob wipe per key — on exception, record to
+         ``orphaned_storage_keys`` with ``reason=DELETE_GLOWUP_REASON``
+         (nightly reclaim worker drains it).
+      8. Emit ``events.glowup_delete`` (swallow-wrapped like glowup_save).
+
+    Response posture — **intentional divergence from sibling /jobs
+    endpoints**: missing job + wrong-owner + already-deleted all return
+    204. This mirrors ``delete_account`` and satisfies the idempotency
+    invariant from ``docs/solutions/best-practices/account-delete-hard-
+    reset-invariant-2026-04-18.md`` — destructive ops that are retried
+    must not surface 404 on the second call, or clients cannot tell
+    success from "never existed". GET/cancel/refund/save return 404 on
+    wrong-owner; DELETE here deliberately does not.
+    """
+    user_id_str: str = claims["sub"]
+
+    # 1. Rate-limit gate (before any DB work so a sweep can't wedge DLQ).
+    allowed, retry_after = await check_delete_glowup_rate_limit(
+        user_id_str, redis_client
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many glow-up deletions. Try again in a moment.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    job_id_str = str(job_id)
+
+    # 2a. Fetch job. Missing → idempotent 204 (mirrors delete_account).
+    job = await run_sync(job_repo.get_by_id, job_id_str)
+    if not job:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 2b. Wrong owner → 204 (see docstring for the divergence rationale).
+    if job.get("user_id") != user_id_str:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 2c. Status gate. Non-terminal statuses must be cancelled first so
+    # the DB DELETE does not race the ARQ worker writing back results.
+    job_status = job.get("status")
+    if job_status not in _DELETABLE_JOB_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "JOB_NOT_CANCELLABLE",
+                    "message": (
+                        "This glow-up is still in progress. Cancel it first, "
+                        "then try again."
+                    ),
+                }
+            },
+        )
+
+    # 3. Enumerate blob keys BEFORE cascade. If this step is skipped or
+    # reordered after the DELETE, the post-images keys (denormalized on
+    # ``posts.before_image_url``/``after_image_url``) vanish with the
+    # cascaded row and the blobs orphan silently.
+    blob_keys = await run_sync(job_repo.enumerate_blob_keys_for_delete, job_id_str)
+
+    # 4. Ref-count peer jobs sharing this source_id. Only relevant for
+    # ``glowup_analysis`` source_type — other polymorphic sources own
+    # their own lifecycle and must not be touched by this endpoint.
+    source_type = job.get("source_type")
+    source_id = job.get("source_id")
+    delete_analysis = False
+    if source_type == SOURCE_TYPE_GLOWUP and source_id:
+        peer_count = await run_sync(
+            job_repo.count_peer_jobs_for_source,
+            source_id,
+            exclude_id=job_id_str,
+            exclude_statuses=set(_CANCELLED_PEER_STATUSES),
+        )
+        if peer_count == 0:
+            delete_analysis = True
+
+    # 5. DB cascade. Single DELETE fans out via FK cascade.
+    await run_sync(job_repo.delete_by_id, job_id_str)
+
+    # 6. Analysis row — no FK cascade, explicit delete after we know the
+    # jobs row is gone.
+    if delete_analysis:
+        try:
+            await run_sync(job_repo.delete_analysis_by_id, source_id)
+        except Exception as exc:  # noqa: BLE001
+            # Don't fail the request — analysis orphan is recoverable
+            # (plan §Risks acknowledges; one-off cleanup script if
+            # observed in production).
+            logger.warning(
+                "delete_glowup: analysis row delete failed for %s: %s",
+                source_id,
+                exc,
+            )
+
+    # 7. Inline blob wipe. Per-key so a single failing key lands in the
+    # DLQ alone — batching the whole list would force us to DLQ every
+    # key on a single storage blip.
+    for bucket, key in blob_keys:
+        try:
+            await run_sync(image_repo.remove, bucket, [key])
+        except Exception as exc:  # noqa: BLE001 — wide net on purpose
+            logger.warning(
+                "delete_glowup: blob wipe failed for %s/%s: %s — recording to DLQ",
+                bucket,
+                key,
+                exc,
+            )
+            # orphan_repo.record is itself defensive — it never raises —
+            # but wrap in try/except anyway so a theoretical future
+            # regression doesn't break the request.
+            try:
+                await run_sync(orphan_repo.record, bucket, key, DELETE_GLOWUP_REASON)
+            except Exception as record_exc:  # noqa: BLE001
+                logger.warning(
+                    "delete_glowup: DLQ record also failed for %s/%s: %s",
+                    bucket,
+                    key,
+                    record_exc,
+                )
+
+    # 8. Emit analytics (swallow-wrapped — analytics failure must not fail
+    # a destructive path that already committed).
+    try:
+        events.glowup_delete(job_id=job_id_str, user_id=user_id_str)
+    except Exception:
+        logger.warning("Analytics emit failed for glowup_delete", exc_info=True)
+
+    logger.info("Glow-up %s hard-deleted by user %s", job_id_str, user_id_str)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
