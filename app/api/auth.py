@@ -10,7 +10,7 @@ Story 2-2:
   POST /auth/tiktok-login  — TikTok OAuth code exchange (gated by AUTH_PROVIDER_TIKTOK_ENABLED)
   POST /auth/refresh       — exchange refresh_token for new session
   POST /auth/logout        — server-side session invalidation
-  DELETE /auth/account     — soft delete + 180-day username reservation
+  DELETE /auth/account     — hard-delete account + 180-day username reservation
   GET  /auth/providers     — list enabled auth providers (for mobile UI)
 """
 
@@ -1334,10 +1334,10 @@ async def delete_account(
 
     # 1. Release active credit reservations ---------------------------------
     try:
-        active_reservations = user_repo.get_active_reservations(user_id)
+        active_reservations = await run_sync(user_repo.get_active_reservations, user_id)
         for res in active_reservations:
             try:
-                ledger.release(UUID(res["id"]))
+                await run_sync(ledger.release, UUID(res["id"]))
             except Exception as release_exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to release reservation %s: %s", res["id"], release_exc
@@ -1350,11 +1350,17 @@ async def delete_account(
         ) from exc
 
     # 2. Collect blob keys BEFORE cascade makes enumeration impossible. -----
+    # Fail fast if enumeration fails — otherwise we'd hard-delete the auth
+    # identity with zero blob wipes, losing the only source of truth for
+    # what to wipe. The user row is still intact, so retry is safe.
     try:
         keys_by_bucket = await run_sync(user_repo.list_user_storage_keys, user_id)
     except Exception as exc:
         logger.error("Failed to enumerate storage keys for %s: %s", user_id, exc)
-        keys_by_bucket = {}
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Account deletion failed — could not enumerate user storage.",
+        ) from exc
 
     total_blobs = sum(len(k) for k in keys_by_bucket.values())
 
@@ -1392,12 +1398,22 @@ async def delete_account(
         )
         # NOTE: the ``wipe_deleted_user_blobs`` task is registered by T5.5;
         # until that lands ARQ will log "unknown task" for large-user deletes.
-        await arq_pool.enqueue_job(
+        # ARQ dedup: enqueue_job returns None if a job with the same _job_id
+        # already sits in the 24h result-key TTL. Log and continue — the prior
+        # wipe snapshot will still run; there's no reason to block the rest
+        # of the delete flow on it.
+        job = await arq_pool.enqueue_job(
             "wipe_deleted_user_blobs",
             user_id=user_id,
             keys_by_bucket=keys_by_bucket,
             _job_id=f"delete_account:{user_id}",
         )
+        if job is None:
+            logger.warning(
+                "delete_account: ARQ job delete_account:%s was deduped "
+                "(already enqueued within last 24h) — previous wipe snapshot will run",
+                user_id,
+            )
 
     # 5. Hard-delete the user row. CASCADE fans out everything owned. -------
     try:

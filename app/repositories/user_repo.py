@@ -7,6 +7,7 @@ methods are synchronous (callers use run_sync for async handlers).
 from __future__ import annotations
 
 import logging
+from collections.abc import Generator
 from datetime import datetime, timezone
 
 from supabase import Client
@@ -80,7 +81,7 @@ class UserRepository:
         users_result = (
             self._sb.table("users")
             .select("id, username")
-            .ilike("username", normalized)
+            .eq("username", normalized)
             .execute()
         )
         for row in users_result.data or []:
@@ -279,7 +280,9 @@ class UserRepository:
     # Hard-delete (account deletion flow)
     # ------------------------------------------------------------------
 
-    def _paginate(self, table: str, columns: str, user_id: str):
+    def _paginate(
+        self, table: str, columns: str, user_id: str
+    ) -> Generator[list[dict], None, None]:
         """Yield rows from ``table`` scoped to ``user_id`` in pages of
         ``_PAGINATION_PAGE_SIZE``. Generator so callers stream the result.
         """
