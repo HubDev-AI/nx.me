@@ -21,7 +21,7 @@ import hmac
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Literal, NoReturn
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from arq import ArqRedis
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
@@ -710,8 +710,6 @@ async def social_login(
     )
 
     # P2-5: Guarantee unique username — retry with random suffix on collision (M-2/M-3)
-    from uuid import uuid4
-
     base_username = auto_username
     max_retries = 3
     for attempt in range(max_retries):
@@ -1339,9 +1337,7 @@ async def delete_account(
         active_reservations = user_repo.get_active_reservations(user_id)
         for res in active_reservations:
             try:
-                from uuid import UUID as _UUID
-
-                ledger.release(_UUID(res["id"]))
+                ledger.release(UUID(res["id"]))
             except Exception as release_exc:  # noqa: BLE001
                 logger.warning(
                     "Failed to release reservation %s: %s", res["id"], release_exc
