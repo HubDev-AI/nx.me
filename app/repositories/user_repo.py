@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from supabase import Client
 
-from app.api.auth_helpers import normalize_username
+from app.utils.username import normalize_username
 from app.services.public_url import (
     AVATAR_BUCKET,
     GENERATED_IMAGES_BUCKET,

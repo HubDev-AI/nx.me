@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-from app.api.auth_helpers import normalize_username
+from app.utils.username import normalize_username
 from app.repositories.user_repo import UserRepository
 
 

@@ -1,7 +1,10 @@
-"""Shared auth helpers that both the API layer and repositories import.
+"""Username normalization helper.
 
-Kept in its own module so `user_repo.py` can import without pulling the
-full FastAPI router tree from `auth.py`.
+NFKC + ASCII-fold + lowercase produces a homograph-safe canonical form
+used at every username write/compare site (registration, availability
+check, reservation insert). Both app-side and DB-side (CHECK constraint
+in migration 0044) enforce lowercase — the two together are what
+prevents Cyrillic/fullwidth/diacritic bypass of the 180-day reservation.
 """
 
 from __future__ import annotations

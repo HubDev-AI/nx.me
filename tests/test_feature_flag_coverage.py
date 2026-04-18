@@ -59,7 +59,6 @@ EXPECTED_UNGATED_ROUTERS: frozenset[str] = frozenset(
         "app/api/__init__.py",
         "app/api/admin.py",
         "app/api/auth.py",
-        "app/api/auth_helpers.py",
         "app/api/deps.py",
         "app/api/entitlement.py",
         "app/api/errors.py",
