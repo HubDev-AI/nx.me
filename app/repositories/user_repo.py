@@ -15,6 +15,10 @@ from app.api.auth_helpers import normalize_username
 
 logger = logging.getLogger(__name__)
 
+# Tune: 1000 rows × ~60 bytes per URL ≈ 60 KB per page — comfortable for
+# Supabase PostgREST without multi-MB responses.
+_PAGINATION_PAGE_SIZE = 1000
+
 
 class UserRepository:
     """Encapsulates all DB and auth.admin calls related to the users table."""
@@ -273,3 +277,97 @@ class UserRepository:
         if not result or not result.data:
             return None
         return result.data
+
+    # ------------------------------------------------------------------
+    # Hard-delete (account deletion flow)
+    # ------------------------------------------------------------------
+
+    def _paginate(self, table: str, columns: str, user_id: str):
+        """Yield rows from ``table`` scoped to ``user_id`` in pages of
+        ``_PAGINATION_PAGE_SIZE``. Generator so callers stream the result.
+        """
+        offset = 0
+        while True:
+            result = (
+                self._sb.table(table)
+                .select(columns)
+                .eq("user_id", user_id)
+                .range(offset, offset + _PAGINATION_PAGE_SIZE - 1)
+                .execute()
+            )
+            rows = result.data or []
+            if not rows:
+                return
+            yield rows
+            if len(rows) < _PAGINATION_PAGE_SIZE:
+                return
+            offset += _PAGINATION_PAGE_SIZE
+
+    def list_user_storage_keys(self, user_id: str) -> dict[str, list[str]]:
+        """Group every blob this user owns by bucket name.
+
+        Called before the DB hard-delete so the keys can be enumerated
+        while the owning rows still exist. Any row with a null URL is
+        skipped. Queries paginate in pages of ``_PAGINATION_PAGE_SIZE``.
+
+        Buckets returned (all four always present, even if empty):
+          ``raw-selfies``      — uploads.image_url + jobs.before_image_url
+          ``generated-images`` — jobs.after_image_url
+          ``post-images``      — posts.before_image_url + posts.after_image_url
+          ``avatars``          — users.avatar_storage_key
+        """
+        raw_selfies: list[str] = []
+        generated_images: list[str] = []
+        post_images: list[str] = []
+
+        for page in self._paginate("uploads", "image_url", user_id):
+            raw_selfies.extend(r["image_url"] for r in page if r.get("image_url"))
+
+        for page in self._paginate(
+            "jobs", "before_image_url, after_image_url", user_id
+        ):
+            for row in page:
+                if row.get("before_image_url"):
+                    raw_selfies.append(row["before_image_url"])
+                if row.get("after_image_url"):
+                    generated_images.append(row["after_image_url"])
+
+        for page in self._paginate(
+            "posts", "before_image_url, after_image_url", user_id
+        ):
+            for row in page:
+                if row.get("before_image_url"):
+                    post_images.append(row["before_image_url"])
+                if row.get("after_image_url"):
+                    post_images.append(row["after_image_url"])
+
+        user_rows = (
+            self._sb.table("users")
+            .select("avatar_storage_key")
+            .eq("id", user_id)
+            .execute()
+        )
+        avatars = [
+            r["avatar_storage_key"]
+            for r in (user_rows.data or [])
+            if r.get("avatar_storage_key")
+        ]
+
+        # dict.fromkeys preserves first-seen ordering while deduping —
+        # same storage key referenced by both uploads and jobs.before
+        # must only appear once in the bucket.
+        return {
+            "raw-selfies": list(dict.fromkeys(raw_selfies)),
+            "generated-images": list(dict.fromkeys(generated_images)),
+            "post-images": list(dict.fromkeys(post_images)),
+            "avatars": avatars,
+        }
+
+    def delete(self, user_id: str) -> list[dict]:
+        """Hard-delete the user row. Cascading FKs drop all owned rows.
+
+        Returns the deleted rows (empty if the user was already gone —
+        callers treat that as idempotent success).
+        """
+        result = self._sb.table("users").delete().eq("id", user_id).execute()
+        return result.data or []
