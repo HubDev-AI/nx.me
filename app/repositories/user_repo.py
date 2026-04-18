@@ -7,9 +7,11 @@ methods are synchronous (callers use run_sync for async handlers).
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from supabase import Client
+
+from app.api.auth_helpers import normalize_username
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +73,6 @@ class UserRepository:
         Checks (in order): active users, then active username_reservations.
         Normalizes via NFKC + ASCII-fold so homographs collide.
         """
-        from datetime import timezone
-
-        from app.api.auth_helpers import normalize_username
-
         normalized = normalize_username(username)
 
         users_result = (
@@ -185,8 +183,6 @@ class UserRepository:
 
     def update_username(self, user_id: str, new_username: str) -> None:
         """Update username and set username_changed_at atomically."""
-        from datetime import timezone
-
         self._sb.table("users").update(
             {
                 "username": new_username,
@@ -202,8 +198,6 @@ class UserRepository:
         Stores the username already-normalized (NFKC + ASCII-fold lowercase).
         The DB CHECK constraint enforces lowercase at the storage layer.
         """
-        from app.api.auth_helpers import normalize_username
-
         (
             self._sb.table("username_reservations")
             .upsert(
