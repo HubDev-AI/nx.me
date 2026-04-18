@@ -29,6 +29,18 @@ import type { JobResult } from "../../lib/analysis";
 import { PendingGlowUpCell } from "./PendingGlowUpCell";
 import type { GlowUpItem } from "./types";
 
+// Published-state globe indicator tuning. Sized + positioned to mirror the
+// saved check-mark badge (top-right corner on saved cells), but on the
+// opposite (top-left) corner so a saved + published cell shows both badges
+// without overlap. The circular pill keeps the icon readable on any
+// thumbnail tone — white-on-dark glass.
+const PUBLISHED_INDICATOR_SIZE = 22;
+const PUBLISHED_INDICATOR_ICON_SIZE = 14;
+const PUBLISHED_INDICATOR_BG = "rgba(0,0,0,0.55)";
+const PUBLISHED_INDICATOR_BORDER = "rgba(255,255,255,0.8)";
+// testID — referenced in RN tests to locate the globe indicator.
+const PUBLISHED_INDICATOR_TEST_ID = "glowup-cell-published-indicator";
+
 interface GlowUpGridProps {
   items: GlowUpItem[];
   isLoadingMore: boolean;
@@ -300,6 +312,26 @@ const GlowUpCell = React.memo(function GlowUpCell({
             />
           </View>
         ) : null}
+
+        {/* Published indicator — surfaces which transformations have a
+            live public post so the profile grid answers "did I publish
+            this?" at a glance. Positioned in the opposite corner of the
+            saved check-mark so the two badges never overlap on a
+            saved+published cell. */}
+        {item.post_id ? (
+          <View
+            style={styles.publishedBadge}
+            accessibilityLabel="Published"
+            accessible
+            testID={PUBLISHED_INDICATOR_TEST_ID}
+          >
+            <Ionicons
+              name="globe-outline"
+              size={PUBLISHED_INDICATOR_ICON_SIZE}
+              color={THEME.colors.white}
+            />
+          </View>
+        ) : null}
       </Pressable>
     </Animated.View>
   );
@@ -368,6 +400,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.8)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Published globe badge — top-left corner of a cell whose glow-up has
+  // a live public post. Matches the saved pill's size/finish so a cell
+  // with both indicators reads as two balanced dots in the top corners.
+  publishedBadge: {
+    position: "absolute",
+    top: THEME.spacing.xs,
+    left: THEME.spacing.xs,
+    width: PUBLISHED_INDICATOR_SIZE,
+    height: PUBLISHED_INDICATOR_SIZE,
+    borderRadius: PUBLISHED_INDICATOR_SIZE / 2,
+    backgroundColor: PUBLISHED_INDICATOR_BG,
+    borderWidth: 1,
+    borderColor: PUBLISHED_INDICATOR_BORDER,
     alignItems: "center",
     justifyContent: "center",
   },

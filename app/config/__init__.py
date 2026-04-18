@@ -326,6 +326,11 @@ class Settings(BaseSettings):
         30  # uploads not accessed for N days are purged (with CASCADE)
     )
     RETENTION_JOB_DAYS: int = 7  # unsaved jobs older than N days are purged
+    # Cap on the per-run unsaved-job purge batch — the nightly worker runs
+    # enumerate-before-cascade one job at a time and wipes blobs inline, so
+    # a very large backlog is bounded here to keep any single run short.
+    # The next night's run picks up the remainder.
+    RETENTION_JOB_BATCH_LIMIT: int = 1000
 
     # Orphan-blob reclaim — nightly cron in app/workers/orphan_reclaim.py
     # (migration 0036). Rows exceeding MAX_ATTEMPTS stay in the DLQ table for

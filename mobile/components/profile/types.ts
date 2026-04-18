@@ -43,6 +43,15 @@ export interface GlowUpItem {
    * have already kept.
    */
   saved_at: string | null;
+  /**
+   * ID of the currently LIVE public post for this glow-up, or null when
+   * the glow-up is not published (or its post was soft-deleted / auto-
+   * hidden). "Live" matches migration 0046's partial unique predicate
+   * (``is_deleted = FALSE AND is_hidden = FALSE``). Present only on
+   * responses from backends with the published-indicator projection —
+   * older backends omit the field, hence the optional marker.
+   */
+  post_id?: string | null;
 }
 
 /** Matches HistoryResponse in app/api/users.py */

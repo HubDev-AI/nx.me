@@ -191,15 +191,28 @@ class JobRepository:
     ) -> list[dict]:
         """Fetch jobs for a list of source_ids filtered by source_type + status set.
 
-        Returns id, status, source_id, after_image_url, created_at ordered desc by
-        created_at. Callers take the first occurrence per source_id to get the
-        most recent job in any included status. Used by the history endpoint to
-        surface non-terminal (queued/processing/finalizing) and errored
-        (failed/cancelled) rows on the profile grid alongside completed ones.
+        Returns id, status, source_id, after_image_url, created_at, saved_at
+        ordered desc by created_at, plus a nested ``posts`` array with each
+        post's id/is_deleted/is_hidden flags. Callers take the first occurrence
+        per source_id to get the most recent job in any included status. Used
+        by the history endpoint to surface non-terminal (queued/processing/
+        finalizing) and errored (failed/cancelled) rows on the profile grid
+        alongside completed ones.
+
+        The nested ``posts(...)`` select is a LEFT JOIN via the
+        ``posts.glow_up_job_id → jobs.id`` foreign key (migration 0045).
+        Callers filter the returned array for live rows client-side
+        (``is_deleted = FALSE AND is_hidden = FALSE``) — the partial UNIQUE
+        index from migration 0046 guarantees at most one live row matches.
+        Soft-deleted / auto-hidden rows from prior publish attempts can still
+        be present, so the filter step is required.
         """
         result = (
             self._sb.table("jobs")
-            .select("id, status, source_id, after_image_url, created_at, saved_at")
+            .select(
+                "id, status, source_id, after_image_url, created_at, saved_at, "
+                "posts(id, is_deleted, is_hidden)"
+            )
             .eq("source_type", source_type)
             .in_("source_id", source_ids)
             .in_("status", statuses)
@@ -218,6 +231,42 @@ class JobRepository:
             .execute()
         )
         return result.data or []
+
+    def list_expired_unsaved_jobs(self, cutoff: str) -> list[dict]:
+        """Fetch unsaved jobs older than ``cutoff`` for nightly retention purge.
+
+        Projection matches what ``enumerate_blob_keys_for_delete`` needs to
+        re-derive blob keys per job, plus ``source_type``/``source_id`` so
+        callers can extend the purge to analysis rows later if desired.
+        The retention worker enumerates via ``enumerate_blob_keys_for_delete``
+        (same helper Unit 5's DELETE /v1/jobs path uses) so raw-selfies +
+        generated-images + live post-images keys are all captured BEFORE the
+        DB DELETE fans out via FK cascade and the posts join dies.
+
+        ``cutoff`` is an ISO-8601 UTC timestamp string.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select("id, source_id, source_type, before_image_url, after_image_url")
+            .is_("saved_at", "null")
+            .lt("created_at", cutoff)
+            .execute()
+        )
+        return result.data or []
+
+    def delete_by_ids(self, job_ids: list[str]) -> None:
+        """Bulk-hard-delete jobs by ID list.
+
+        The FK cascade added in migration 0045 (``posts.glow_up_job_id
+        ON DELETE CASCADE``) fans out to ``posts``; pre-existing cascades
+        on ``posts.id`` wipe ``reactions``, ``comments``, ``reports``.
+        Callers must have already enumerated blob keys before invoking
+        this — once the cascade runs the posts join is gone and the
+        denormalized post-images keys cannot be recovered.
+        """
+        if not job_ids:
+            return
+        self._sb.table("jobs").delete().in_("id", job_ids).execute()
 
     # ------------------------------------------------------------------
     # jobs — write
