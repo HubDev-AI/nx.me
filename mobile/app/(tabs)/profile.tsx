@@ -90,18 +90,6 @@ const SHARE_COMPOSITE_TIMEOUT_MESSAGE =
 const SHARE_RIGHT_LABEL = "Glow Up";
 
 /**
- * JobResult from the poll endpoint plus the Unit 3 post fields. The
- * canonical `JobResult` in lib/analysis.ts does not yet carry these;
- * we widen it here so the long-press handler can pre-fill the
- * ShareDialog job shape without another round-trip. Matches the
- * backend shape added in Unit 3.
- */
-type JobStatusResponse = JobResult & {
-  post_id: string | null;
-  share_hash: string | null;
-};
-
-/**
  * Endpoint paths the long-press action sheet consumes. They live here
  * (not in constants/config.ts) so this unit stays confined to its
  * three-file scope; the matching backend-wide builders can move to
@@ -384,14 +372,14 @@ export default function ProfileScreen() {
     if (!item.job_id) return;
     const jobId = item.job_id;
     try {
-      const job = await apiFetch<JobStatusResponse>(
+      const job = await apiFetch<JobResult>(
         GLOWUP_ENDPOINTS.JOB_STATUS(jobId),
       );
       setDialogJob({
         id: jobId,
         saved_at: job.saved_at,
-        post_id: job.post_id,
-        share_hash: job.share_hash,
+        post_id: job.post_id ?? null,
+        share_hash: job.share_hash ?? null,
       });
       setSaveState(job.saved_at ? "saved" : "pending");
       setPublishError(null);
@@ -533,9 +521,9 @@ export default function ProfileScreen() {
 
     // Re-fetch so the composite has before/after URLs — the dialog job
     // shape doesn't carry them.
-    let jobDetail: JobStatusResponse;
+    let jobDetail: JobResult;
     try {
-      jobDetail = await apiFetch<JobStatusResponse>(
+      jobDetail = await apiFetch<JobResult>(
         GLOWUP_ENDPOINTS.JOB_STATUS(job.id),
       );
     } catch (err) {

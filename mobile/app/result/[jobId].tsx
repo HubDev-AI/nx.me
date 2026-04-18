@@ -121,19 +121,6 @@ const DELETE_CONFIRM_DELETE_LABEL = "Delete";
 /** Header-right overflow accessibility label. */
 const HEADER_OVERFLOW_LABEL = "More options";
 
-/**
- * Local extension of `JobResult` — the backend (Unit 3) surfaces
- * `post_id` + `share_hash` on `JobStatusResponse`, but the shared
- * `mobile/lib/analysis.ts` type hasn't picked them up yet. Unit 9
- * consumes the same fields from the profile grid; the shared type
- * update is a follow-up task. Extending locally keeps Unit 8 scoped to
- * its three files without silently breaking type safety.
- */
-interface JobWithPost extends JobResult {
-  post_id?: string | null;
-  share_hash?: string | null;
-}
-
 /** POST /v1/posts response — mirrors backend PostResponse shape. */
 interface PostCreateResponse {
   post_id: string;
@@ -258,7 +245,7 @@ export default function ResultScreen() {
     },
   });
 
-  const result = jobQuery.data as JobWithPost | undefined;
+  const result = jobQuery.data;
   const error = jobQuery.appError;
 
   // Hydrate the save button from the server-known state: if the job was
