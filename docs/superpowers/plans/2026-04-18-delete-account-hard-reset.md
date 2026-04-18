@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current soft-delete account flow with a hard-delete that wipes every user-owned surface (DB rows, blobs, Redis keys, device-local storage, in-memory singletons, React Query cache), while preserving a 180-day username reservation in a dedicated table.
+**Goal:** Replace the current soft-delete account flow with a hard-delete that wipes every user-owned surface (DB rows, blobs including public CDN, Redis keys, device-local storage, in-memory singletons, React Query cache), while preserving a 180-day username reservation in a dedicated RLS-locked table. Moderation + safety records (reports, blocked_users) are preserved via SET NULL on the deleted-user side rather than CASCADE.
 
-**Architecture:** One migration switches 11 NO-ACTION FKs to ON DELETE CASCADE, creates a `username_reservations` table, and drops `users.deleted_at` + `users.username_reserved_until`. The `DELETE /v1/auth/account` endpoint is rewritten to collect blob keys, insert a reservation row, wipe blobs inline (with DLQ fallback), `DELETE FROM users` (cascades all owned data), delete the auth identity, and clean Redis. Client adds a `wipeLocalDeviceState` helper that clears every known SecureStore / AsyncStorage key and resets singletons + the React Query cache; it is called only from `handleDeleteAccount`, never from logout.
+**Architecture:** One migration creates a `username_reservations` table (with RLS deny-all), drops `users.deleted_at` + `users.username_reserved_until` after dropping their dependents (RLS policy, v_feed_posts view, partial index), and rewrites user-referencing FKs. Most FKs switch to `ON DELETE CASCADE`; `reports.reporter_user_id` and both `blocked_users` columns switch to `ON DELETE SET NULL` (columns made nullable) to preserve moderation audit trails and safety signals. The `DELETE /v1/auth/account` endpoint is rewritten with auth-delete first (so a failure leaves the row intact and the user can retry), then blob-wipe, then `DELETE FROM users` (cascade/set-null), then reservation insert (only if the DELETE returned a row), then Redis cleanup. Large users (>500 blobs) offload the blob wipe to an ARQ job so the HTTP request stays synchronous. Username lookups everywhere (users + reservations) normalize via NFKC + ASCII-fold. Client adds a `wipeLocalDeviceState` helper and a full-screen deleting overlay with back-navigation blocked via `usePreventRemove`.
 
 **Tech Stack:** Python 3.12, FastAPI, Supabase (Postgres via supabase-py + PostgREST), ARQ, pytest. Mobile: TypeScript, React Native, Expo, expo-secure-store, @react-native-async-storage/async-storage, @tanstack/react-query, Maestro.
 
@@ -17,6 +17,27 @@ git checkout dev
 git pull origin dev
 git checkout -b feat/delete-account-hard-reset
 make nuke    # pre-launch: wipe local DB so drop-column + FK changes have no stale rows to worry about
+```
+
+Add the reservation-window setting to `app/config/__init__.py`:
+
+```python
+# In the Settings class, alongside existing username/auth tunables:
+USERNAME_RESERVATION_DAYS: int = 180
+```
+
+And to `app/.env.example`:
+
+```
+# Days a username is held after an account is hard-deleted (blocks re-registration under the same handle).
+USERNAME_RESERVATION_DAYS=180
+```
+
+Commit as a discrete prep:
+
+```bash
+git add app/config/__init__.py app/.env.example
+git commit -m "chore(config): USERNAME_RESERVATION_DAYS setting"
 ```
 
 ---
@@ -136,20 +157,30 @@ ALTER TABLE shareable_cards
     ADD  CONSTRAINT shareable_cards_user_id_fkey
          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
+-- Moderation + safety: SET NULL (preserve the record, drop the identity)
 ALTER TABLE reports
+    ALTER COLUMN reporter_user_id DROP NOT NULL,
     DROP CONSTRAINT reports_reporter_user_id_fkey,
     ADD  CONSTRAINT reports_reporter_user_id_fkey
-         FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE CASCADE;
+         FOREIGN KEY (reporter_user_id) REFERENCES users(id) ON DELETE SET NULL;
 
 ALTER TABLE blocked_users
+    ALTER COLUMN blocker_id DROP NOT NULL,
     DROP CONSTRAINT blocked_users_blocker_id_fkey,
     ADD  CONSTRAINT blocked_users_blocker_id_fkey
-         FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE CASCADE;
+         FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE SET NULL;
 
 ALTER TABLE blocked_users
+    ALTER COLUMN blocked_id DROP NOT NULL,
     DROP CONSTRAINT blocked_users_blocked_id_fkey,
     ADD  CONSTRAINT blocked_users_blocked_id_fkey
-         FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE CASCADE;
+         FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- RLS: username_reservations is service-role only. Deny all reads from
+-- anon/authenticated to prevent a "who recently deleted an account" oracle.
+ALTER TABLE username_reservations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY username_reservations_deny_all ON username_reservations
+    FOR ALL TO anon, authenticated USING (false) WITH CHECK (false);
 
 -- 4. Recreate the RLS policy + feed view WITHOUT the deleted_at filter.
 --    Post-hard-delete, the row is gone — no need for a tombstone check.
@@ -340,7 +371,19 @@ Expected: FAIL with `AttributeError: ... has no attribute 'insert_username_reser
 
 - [ ] **Step 3: Implement**
 
-Replace the existing `check_username_availability` and add `insert_username_reservation` in `app/repositories/user_repo.py`:
+First, add the normalization helper at the top of
+`app/repositories/user_repo.py` (importing from the shared module defined
+in Task 4's endpoint):
+
+```python
+from app.api.auth import _normalize_username
+```
+
+Replace BOTH `check_username_availability` AND `check_username_available_ci`
+in `app/repositories/user_repo.py` so every caller (registration path,
+mobile availability endpoint) consults reservations. Both methods also
+normalize via NFKC + ASCII-fold so homographs can't bypass the
+reservation. Also add `insert_username_reservation`:
 
 ```python
 def check_username_availability(
@@ -348,15 +391,17 @@ def check_username_availability(
 ) -> dict:
     """Return { available: bool, reason?: str }.
 
-    Checks (in order): active users, then username_reservations still
-    within the reservation window.
+    Checks (in order): active users, then active username_reservations.
+    Normalizes via NFKC + ASCII-fold so homographs collide.
     """
     from datetime import timezone
+
+    normalized = _normalize_username(username)
 
     users_result = (
         self._sb.table("users")
         .select("id, username")
-        .ilike("username", username)
+        .ilike("username", normalized)
         .execute()
     )
     for row in users_result.data or []:
@@ -368,7 +413,7 @@ def check_username_availability(
     reservations_result = (
         self._sb.table("username_reservations")
         .select("username, reserved_until")
-        .ilike("username", username)
+        .ilike("username", normalized)
         .gt("reserved_until", now_iso)
         .execute()
     )
@@ -378,15 +423,22 @@ def check_username_availability(
     return {"available": True}
 
 
+# check_username_available_ci previously duplicated the logic with a
+# case-insensitive ilike. Post-normalization, both methods produce the
+# same result for any input — keep as a thin alias so existing mobile
+# callers don't break.
+check_username_available_ci = check_username_availability
+
+
 def insert_username_reservation(
     self, username: str, reserved_until: datetime
 ) -> None:
-    """UPSERT a reservation row, extending the window on conflict."""
+    """UPSERT a normalized reservation row, extending the window on conflict."""
     (
         self._sb.table("username_reservations")
         .upsert(
             {
-                "username": username,
+                "username": _normalize_username(username),
                 "reserved_until": reserved_until.isoformat(),
             },
             on_conflict="username",
@@ -396,6 +448,28 @@ def insert_username_reservation(
 ```
 
 Delete the now-obsolete `soft_delete` method from the same file.
+
+Also update the registration path in `app/api/auth.py` (around line
+266-282) that consumes `check_username_availability` — it currently
+inspects `row.get("deleted_at")` / `row.get("username_reserved_until")`.
+Replace that branch with the new return shape:
+
+```python
+# Before: inspected deleted_at / username_reserved_until on the returned row
+# After:
+result = await run_sync(user_repo.check_username_availability, body.username)
+if not result["available"]:
+    reason = result.get("reason", "taken")
+    if reason == "reserved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username is reserved from a recent account deletion.",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Username is taken.",
+    )
+```
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -561,36 +635,50 @@ Expected: FAIL with `AttributeError: 'UserRepository' object has no attribute 'l
 Add the two methods to `app/repositories/user_repo.py`:
 
 ```python
+_PAGINATION_PAGE_SIZE = 1000
+
+
 def list_user_storage_keys(self, user_id: str) -> dict[str, list[str]]:
     """Group every blob this user owns by bucket name.
 
     Called before the DB hard-delete so the keys can be enumerated while
     the owning rows still exist. Any row with a null URL is skipped.
-    Buckets returned: ``raw-selfies`` (uploads.image_url + jobs.before_image_url),
-    ``generated-images`` (jobs.after_image_url), ``avatars`` (users.avatar_storage_key).
-    """
-    uploads = (
-        self._sb.table("uploads")
-        .select("image_url")
-        .eq("user_id", user_id)
-        .execute()
-    )
-    raw_selfies = [r["image_url"] for r in (uploads.data or []) if r.get("image_url")]
+    Queries paginate in pages of ``_PAGINATION_PAGE_SIZE`` so a user with
+    100k+ uploads does not OOM the process.
 
-    jobs_result = (
-        self._sb.table("jobs")
-        .select("before_image_url, after_image_url")
-        .eq("user_id", user_id)
-        .execute()
-    )
+    Buckets returned:
+      ``raw-selfies``      — uploads.image_url + jobs.before_image_url
+      ``generated-images`` — jobs.after_image_url
+      ``post-images``      — posts.before_storage_key + posts.after_storage_key
+                             (public CDN copies from publication)
+      ``avatars``          — users.avatar_storage_key
+    """
+    raw_selfies: list[str] = []
     generated_images: list[str] = []
-    for row in jobs_result.data or []:
-        # Before-images live in raw-selfies (same bucket as uploads).
-        if row.get("before_image_url"):
-            raw_selfies.append(row["before_image_url"])
-        # After-images live in generated-images (private generation bucket).
-        if row.get("after_image_url"):
-            generated_images.append(row["after_image_url"])
+    post_images: list[str] = []
+
+    # uploads.image_url
+    for page in self._paginate("uploads", "image_url", user_id):
+        raw_selfies.extend(r["image_url"] for r in page if r.get("image_url"))
+
+    # jobs.before_image_url / after_image_url
+    for page in self._paginate("jobs", "before_image_url, after_image_url", user_id):
+        for row in page:
+            if row.get("before_image_url"):
+                raw_selfies.append(row["before_image_url"])
+            if row.get("after_image_url"):
+                generated_images.append(row["after_image_url"])
+
+    # posts — published-post CDN copies. Column names are best-guess; verify
+    # via psql before implementing (Step 5 covers this).
+    for page in self._paginate(
+        "posts", "before_storage_key, after_storage_key", user_id
+    ):
+        for row in page:
+            if row.get("before_storage_key"):
+                post_images.append(row["before_storage_key"])
+            if row.get("after_storage_key"):
+                post_images.append(row["after_storage_key"])
 
     user = (
         self._sb.table("users")
@@ -598,18 +686,42 @@ def list_user_storage_keys(self, user_id: str) -> dict[str, list[str]]:
         .eq("id", user_id)
         .execute()
     )
-    avatars: list[str] = []
-    for row in user.data or []:
-        if row.get("avatar_storage_key"):
-            avatars.append(row["avatar_storage_key"])
+    avatars = [
+        r["avatar_storage_key"]
+        for r in (user.data or [])
+        if r.get("avatar_storage_key")
+    ]
 
     # Dedupe raw-selfies: the same key can appear in both uploads.image_url
     # and jobs.before_image_url (worker copies the raw reference).
     return {
         "raw-selfies": list(dict.fromkeys(raw_selfies)),
-        "generated-images": generated_images,
+        "generated-images": list(dict.fromkeys(generated_images)),
+        "post-images": list(dict.fromkeys(post_images)),
         "avatars": avatars,
     }
+
+
+def _paginate(self, table: str, columns: str, user_id: str):
+    """Yield rows from ``table`` scoped to ``user_id`` in pages of
+    ``_PAGINATION_PAGE_SIZE``. Generator so callers stream the result.
+    """
+    offset = 0
+    while True:
+        result = (
+            self._sb.table(table)
+            .select(columns)
+            .eq("user_id", user_id)
+            .range(offset, offset + _PAGINATION_PAGE_SIZE - 1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return
+        yield rows
+        if len(rows) < _PAGINATION_PAGE_SIZE:
+            return
+        offset += _PAGINATION_PAGE_SIZE
 
 
 def delete(self, user_id: str) -> list[dict]:
@@ -636,13 +748,21 @@ Expected: 4 passed.
 
 ```bash
 rtk proxy docker exec -i supabase_db_nxme.ai psql -U postgres -d postgres -c \
-  "SELECT column_name FROM information_schema.columns
-    WHERE table_name IN ('uploads','jobs','users')
-      AND column_name IN ('image_url','before_image_url','after_image_url','avatar_storage_key')
+  "SELECT table_name, column_name FROM information_schema.columns
+    WHERE table_name IN ('uploads','jobs','users','posts')
+      AND column_name IN (
+        'image_url','before_image_url','after_image_url',
+        'avatar_storage_key','before_storage_key','after_storage_key',
+        'before_url','after_url'
+      )
     ORDER BY table_name, column_name;"
 ```
 
-Expected: all four column names appear on the matching tables. If a column is missing or named differently, update `list_user_storage_keys` + the test before continuing.
+Expected columns: `uploads.image_url`, `jobs.before_image_url`, `jobs.after_image_url`, `users.avatar_storage_key`, and a pair on `posts` that store the public CDN copies. The exact column names on `posts` may be `before_storage_key`/`after_storage_key` or `before_url`/`after_url` — adjust `list_user_storage_keys` + the test to match whatever the schema actually names them.
+
+If the `posts` table stores only `share_hash` / URLs without explicit
+storage-key columns, derive the bucket keys via the naming convention used
+at publish time (`rtk grep "post-images" app` to find the upload site).
 
 - [ ] **Step 6: Commit**
 
@@ -697,109 +817,144 @@ class TestDeleteAccount:
         repo.delete.return_value = [{"id": "u-1"}] if user_exists else []
         return repo
 
+    def _make_deps(self):
+        """Common dep-kwargs dict that every test reuses."""
+
+        async def empty_scan(match, count):
+            for _ in ():
+                yield _
+
+        redis_client = MagicMock()
+        redis_client.scan_iter = empty_scan
+        redis_client.delete = AsyncMock(return_value=0)
+        return dict(
+            image_repo=MagicMock(),
+            orphan_repo=MagicMock(),
+            ledger=MagicMock(),
+            redis_client=redis_client,
+            arq_pool=MagicMock(enqueue_job=AsyncMock(return_value=None)),
+        )
+
     @pytest.mark.asyncio
-    async def test_happy_path_wipes_everything(self, monkeypatch):
+    async def test_happy_path_auth_delete_before_db_and_reservation_after(self):
         from app.api.auth import delete_account
 
         user_repo = self._make_user_repo()
-        ledger = MagicMock()
-        image_repo = MagicMock()
-        orphan_repo = MagicMock()
+        deps = self._make_deps()
 
-        redis_client = MagicMock()
-        redis_client.keys = AsyncMock(return_value=[])
-        redis_client.delete = AsyncMock(return_value=1)
+        call_order: list[str] = []
+        user_repo.auth_delete_user.side_effect = lambda *_: call_order.append("auth")
+        deps["image_repo"].remove.side_effect = lambda *_: call_order.append("blob")
+        user_repo.delete.side_effect = lambda *_: (
+            call_order.append("db") or [{"id": "u-1"}]
+        )
+        user_repo.insert_username_reservation.side_effect = (
+            lambda *_: call_order.append("reservation")
+        )
 
         resp = await delete_account(
-            claims={"sub": "u-1"},
-            user_repo=user_repo,
-            image_repo=image_repo,
-            orphan_repo=orphan_repo,
-            ledger=ledger,
-            redis_client=redis_client,
+            claims={"sub": "u-1"}, user_repo=user_repo, **deps
         )
 
-        # Reservation inserted
-        assert user_repo.insert_username_reservation.call_count == 1
-        args, _ = user_repo.insert_username_reservation.call_args
-        assert args[0] == "alice"
-        reserved_until: datetime = args[1]
-        assert reserved_until > datetime.now(tz=timezone.utc) + timedelta(days=179)
-
-        # Blob wipe called per bucket
-        assert image_repo.remove.call_args_list[0].args == (
-            "raw-selfies",
-            ["users/u-1/raw/a.jpg"],
-        )
-        assert image_repo.remove.call_args_list[1].args == (
-            "generated-images",
-            ["users/u-1/after.jpg"],
-        )
-        orphan_repo.record.assert_not_called()
-
-        # DB delete + auth delete
-        user_repo.delete.assert_called_once_with("u-1")
-        user_repo.auth_delete_user.assert_called_once_with("u-1")
-
-        # 204
+        # Order: auth → blob → db → reservation
+        assert call_order.index("auth") < call_order.index("db")
+        assert call_order.index("blob") < call_order.index("db")
+        assert call_order.index("db") < call_order.index("reservation")
         assert resp.status_code == status.HTTP_204_NO_CONTENT
+
+    @pytest.mark.asyncio
+    async def test_reservation_uses_normalized_username(self):
+        from app.api.auth import delete_account
+
+        user_repo = self._make_user_repo()
+        user_repo.get_profile_by_id.return_value = {
+            "id": "u-1",
+            "username": "Álicé",  # NFC composed + non-ASCII
+        }
+        deps = self._make_deps()
+
+        await delete_account(
+            claims={"sub": "u-1"}, user_repo=user_repo, **deps
+        )
+
+        args, _ = user_repo.insert_username_reservation.call_args
+        assert args[0] == "alice"  # NFKC + unidecode + lower
+
+    @pytest.mark.asyncio
+    async def test_auth_delete_failure_raises_502_and_skips_db_delete(self):
+        from app.api.auth import delete_account
+
+        user_repo = self._make_user_repo()
+        user_repo.auth_delete_user.side_effect = RuntimeError("supabase down")
+        deps = self._make_deps()
+
+        with pytest.raises(HTTPException) as exc:
+            await delete_account(
+                claims={"sub": "u-1"}, user_repo=user_repo, **deps
+            )
+        assert exc.value.status_code == status.HTTP_502_BAD_GATEWAY
+        user_repo.delete.assert_not_called()
+        user_repo.insert_username_reservation.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_blob_wipe_failure_falls_through_to_dlq(self):
         from app.api.auth import delete_account
 
         user_repo = self._make_user_repo()
-        image_repo = MagicMock()
-        image_repo.remove.side_effect = RuntimeError("boom")
-        orphan_repo = MagicMock()
-        ledger = MagicMock()
-
-        redis_client = MagicMock()
-        redis_client.keys = AsyncMock(return_value=[])
-        redis_client.delete = AsyncMock(return_value=0)
+        deps = self._make_deps()
+        deps["image_repo"].remove.side_effect = RuntimeError("boom")
 
         await delete_account(
-            claims={"sub": "u-1"},
-            user_repo=user_repo,
-            image_repo=image_repo,
-            orphan_repo=orphan_repo,
-            ledger=ledger,
-            redis_client=redis_client,
+            claims={"sub": "u-1"}, user_repo=user_repo, **deps
         )
 
-        # Each failed key recorded in DLQ
         recorded = {
-            (c.args[0], c.args[1]) for c in orphan_repo.record.call_args_list
+            (c.args[0], c.args[1])
+            for c in deps["orphan_repo"].record.call_args_list
         }
         assert ("raw-selfies", "users/u-1/raw/a.jpg") in recorded
         assert ("generated-images", "users/u-1/after.jpg") in recorded
-
-        # Delete still happens
+        # DB delete still happens because blob failure is best-effort.
         user_repo.delete.assert_called_once_with("u-1")
 
     @pytest.mark.asyncio
-    async def test_already_deleted_raises_404(self):
+    async def test_large_user_offloads_blob_wipe_to_arq(self):
+        from app.api.auth import delete_account
+
+        user_repo = self._make_user_repo()
+        user_repo.list_user_storage_keys.return_value = {
+            "raw-selfies": [f"users/u-1/raw/{i}.jpg" for i in range(600)],
+            "generated-images": [],
+            "avatars": [],
+        }
+        deps = self._make_deps()
+
+        await delete_account(
+            claims={"sub": "u-1"}, user_repo=user_repo, **deps
+        )
+
+        # Inline remove not called; ARQ job enqueued.
+        deps["image_repo"].remove.assert_not_called()
+        deps["arq_pool"].enqueue_job.assert_called_once()
+        job_args = deps["arq_pool"].enqueue_job.call_args
+        assert job_args.args[0] == "wipe_deleted_user_blobs"
+        assert job_args.kwargs["user_id"] == "u-1"
+
+    @pytest.mark.asyncio
+    async def test_already_deleted_is_idempotent_204(self):
+        """Second call on an already-deleted user is a no-op success."""
         from app.api.auth import delete_account
 
         user_repo = self._make_user_repo(user_exists=False)
-        image_repo = MagicMock()
-        orphan_repo = MagicMock()
-        ledger = MagicMock()
-        redis_client = MagicMock()
-        redis_client.keys = AsyncMock(return_value=[])
-        redis_client.delete = AsyncMock(return_value=0)
+        deps = self._make_deps()
 
-        with pytest.raises(HTTPException) as exc:
-            await delete_account(
-                claims={"sub": "u-1"},
-                user_repo=user_repo,
-                image_repo=image_repo,
-                orphan_repo=orphan_repo,
-                ledger=ledger,
-                redis_client=redis_client,
-            )
-
-        assert exc.value.status_code == status.HTTP_404_NOT_FOUND
+        resp = await delete_account(
+            claims={"sub": "u-1"}, user_repo=user_repo, **deps
+        )
+        assert resp.status_code == status.HTTP_204_NO_CONTENT
+        user_repo.auth_delete_user.assert_not_called()
+        user_repo.delete.assert_not_called()
+        user_repo.insert_username_reservation.assert_not_called()
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -838,8 +993,20 @@ Replace the entire block in `app/api/auth.py` (currently lines ~1294-1397) with:
 ```python
 # ---------------------------------------------------------------------------
 # Account Deletion — DELETE /auth/account (hard-delete with 180-day username
-# reservation, blob wipe, CASCADE, and Redis cleanup).
+# reservation, blob wipe, CASCADE/SET NULL, and Redis cleanup).
+#
+# Ordering chosen so no single step leaves the system in a worse state than
+# "user still exists and can retry":
+#   - auth identity deleted first  → if it fails, row intact, user retries.
+#   - blob wipe second             → orphaned blobs are safer than stale rows.
+#   - DB DELETE third              → cascades/set-nulls drop/anonymize the rest.
+#   - reservation inserted ONLY if the DELETE returned a row → never orphaned.
+#   - Redis cleanup best-effort    → nightly retention is the backstop.
 # ---------------------------------------------------------------------------
+
+# Large-user threshold: above this blob count we enqueue an ARQ job instead of
+# wiping inline, so the HTTP request doesn't time out or starve the worker.
+_INLINE_BLOB_WIPE_THRESHOLD = 500
 
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
@@ -850,34 +1017,23 @@ async def delete_account(
     orphan_repo: OrphanedStorageKeyRepository = Depends(get_orphaned_storage_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
     redis_client: aioredis.Redis = Depends(get_redis),
+    arq_pool: ArqRedis = Depends(get_arq_pool),
 ) -> Response:
     """Permanently delete the authenticated user and every owned artifact.
 
-    Steps (all best-effort after the reservation is in place):
-      1. Release active credit reservations.
-      2. Collect blob keys from uploads + jobs + avatar.
-      3. Insert 180-day username_reservations row (UPSERT).
-      4. Wipe blobs per bucket; failures are recorded in the orphan DLQ.
-      5. DELETE FROM users — cascades every owned row.
-      6. Delete the Supabase auth identity.
-      7. Clean Redis keys for the user.
+    Idempotent: second call (user already gone) returns 204.
     """
     user_id: str = claims["sub"]
     now_utc = datetime.now(tz=timezone.utc)
     reserved_until = now_utc + timedelta(days=settings.USERNAME_RESERVATION_DAYS)
 
-    # NOTE: `get_profile_by_id` must have its `.is_("deleted_at", "null")`
-    # filter removed in Task 5 (it is a no-op post-hard-delete since the row
-    # is physically gone, but the filter references a dropped column).
     user = await run_sync(user_repo.get_profile_by_id, user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Account not found.",
-        )
+        # Idempotent: already deleted. No-op success.
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     username: str = user["username"]
 
-    # 1. Release active credit reservations
+    # 1. Release active credit reservations (unchanged from prior impl).
     try:
         active_reservations = user_repo.get_active_reservations(user_id)
         for res in active_reservations:
@@ -896,50 +1052,64 @@ async def delete_account(
             detail="Account deletion failed — could not release credit reservations.",
         ) from exc
 
-    # 2. Collect blob keys BEFORE the DB delete (cascade would make this
-    #    impossible afterwards).
+    # 2. Collect blob keys BEFORE cascade makes enumeration impossible.
     try:
         keys_by_bucket = await run_sync(user_repo.list_user_storage_keys, user_id)
     except Exception as exc:
         logger.error("Failed to enumerate storage keys for %s: %s", user_id, exc)
         keys_by_bucket = {}
 
-    # 3. Reserve the username (UPSERT — extends window on re-delete).
+    total_blobs = sum(len(k) for k in keys_by_bucket.values())
+
+    # 3. Delete Supabase auth identity FIRST. If this fails, everything below
+    #    is skipped — the user can retry.
     try:
-        await run_sync(user_repo.insert_username_reservation, username, reserved_until)
+        await run_sync(user_repo.auth_delete_user, user_id)
     except Exception as exc:
-        logger.error("Reservation insert failed for %s: %s", user_id, exc)
+        logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Account deletion failed — could not reserve username.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Authentication service error — account was not deleted.",
         ) from exc
 
-    # 4. Inline blob wipe, DLQ fallback on failure.
-    for bucket, keys in keys_by_bucket.items():
-        if not keys:
-            continue
-        try:
-            await run_sync(image_repo.remove, bucket, keys)
-        except Exception as exc:  # noqa: BLE001 — fall through to DLQ per key
-            logger.warning(
-                "Blob wipe failed for user %s in bucket %s: %s — enqueueing DLQ",
-                user_id,
-                bucket,
-                exc,
-            )
-            for key in keys:
-                await run_sync(
-                    orphan_repo.record, bucket, key, "delete_account"
+    # 4. Blob wipe. Inline for small users; offload to ARQ for large users so
+    #    the HTTP request finishes quickly and the worker can paginate.
+    if total_blobs <= _INLINE_BLOB_WIPE_THRESHOLD:
+        for bucket, keys in keys_by_bucket.items():
+            if not keys:
+                continue
+            try:
+                await run_sync(image_repo.remove, bucket, keys)
+            except Exception as exc:  # noqa: BLE001 — fall through to DLQ per key
+                logger.warning(
+                    "Blob wipe failed for user %s in bucket %s: %s — enqueueing DLQ",
+                    user_id,
+                    bucket,
+                    exc,
                 )
+                for key in keys:
+                    await run_sync(
+                        orphan_repo.record, bucket, key, "delete_account"
+                    )
+    else:
+        # Offload to ARQ worker (wipe_deleted_user_blobs). The job collects the
+        # remaining keys itself via cursor-paginated queries that now return
+        # nothing for this user_id (they race; the pagination handles it).
+        logger.info(
+            "delete_account: %d blobs — offloading wipe to ARQ for user %s",
+            total_blobs,
+            user_id,
+        )
+        await arq_pool.enqueue_job(
+            "wipe_deleted_user_blobs",
+            user_id=user_id,
+            keys_by_bucket=keys_by_bucket,
+            _job_id=f"delete_account:{user_id}",  # dedupe concurrent calls
+        )
 
-    # 5. Hard-delete the user row (cascades to every owned table).
+    # 5. Hard-delete the user row. Cascade/set-null handle every FK.
     try:
         deleted = await run_sync(user_repo.delete, user_id)
-        if not deleted:
-            # Rare race: row disappeared between get_by_id and delete.
-            # Reservation is already in place, so treat as idempotent 204.
-            logger.info("delete_account: user %s already gone", user_id)
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as exc:
         logger.error("users DELETE failed for %s: %s", user_id, exc)
         raise HTTPException(
@@ -947,19 +1117,36 @@ async def delete_account(
             detail="Account deletion failed.",
         ) from exc
 
-    # 6. Remove Supabase auth identity.
+    if not deleted:
+        # Auth identity is gone but the row vanished between steps — treat as
+        # idempotent success. No reservation (nothing to reserve).
+        logger.info("delete_account: user %s row vanished mid-flow", user_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 6. Reservation — only if the DELETE actually deleted something. Guards
+    #    against orphan reservations blocking the user's own handle on a
+    #    partial-failure retry.
     try:
-        await run_sync(user_repo.auth_delete_user, user_id)
-        # Do NOT log the username — it is PII on a row the user asked to be
-        # forgotten. `user_id` alone is enough for operator triage.
-        logger.info(
-            "Account hard-deleted for user %s (reserved until %s)",
-            user_id,
-            reserved_until.date(),
+        normalized_username = _normalize_username(username)
+        await run_sync(
+            user_repo.insert_username_reservation,
+            normalized_username,
+            reserved_until,
         )
     except Exception as exc:
-        logger.error("auth.admin.delete_user failed for %s: %s", user_id, exc)
-        # DB already committed; nightly cleanup can retry via auth admin later.
+        # DB is already gone; log and move on. Retention sweeper reconciles.
+        logger.warning(
+            "Reservation insert failed post-delete for user %s: %s",
+            user_id,
+            exc,
+        )
+
+    # Do NOT log the username — PII on a row the user asked to be forgotten.
+    logger.info(
+        "Account hard-deleted for user %s (reserved until %s)",
+        user_id,
+        reserved_until.date(),
+    )
 
     # 7. Redis cleanup.
     try:
@@ -967,9 +1154,11 @@ async def delete_account(
             f"advisor_chat_rate:{user_id}",
             f"concurrent:{user_id}",
         ]
-        daily_keys = await redis_client.keys(f"gen:user_daily:{user_id}:*")
-        if daily_keys:
-            redis_keys_to_delete.extend(daily_keys)
+        # SCAN (non-blocking) instead of KEYS — KEYS is O(N) on full keyspace.
+        async for key in redis_client.scan_iter(
+            match=f"gen:user_daily:{user_id}:*", count=100
+        ):
+            redis_keys_to_delete.append(key)
         if redis_keys_to_delete:
             await redis_client.delete(*redis_keys_to_delete)
     except Exception as exc:
@@ -977,6 +1166,29 @@ async def delete_account(
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 ```
+
+**Username normalization helper** (used by both the endpoint and `user_repo`):
+
+```python
+# app/api/auth.py (top of file) or a shared helpers module.
+import unicodedata
+from unidecode import unidecode  # add to pyproject via `uv add unidecode`
+
+
+def _normalize_username(username: str) -> str:
+    """NFKC + ASCII-fold lowercase — homograph-safe availability key.
+
+    Applied at registration, availability check, and reservation insert so
+    Cyrillic 'а', fullwidth 'ａ', and diacritic variants ('café') all
+    collide with their ASCII base forms.
+    """
+    return unidecode(unicodedata.normalize("NFKC", username)).lower()
+```
+
+`user_repo.check_username_availability`, `check_username_available_ci`, and
+`insert_username_reservation` (Task 2) must all call `_normalize_username`
+on their inputs before hitting the DB. The `lower(username)` unique index
+on `username_reservations` then matches the normalized form naturally.
 
 Add the two imports at the top of the file if not already present:
 
@@ -992,7 +1204,7 @@ from app.api.deps import get_image_repo, get_orphaned_storage_repo
 .venv/bin/python -m pytest -x -q tests/test_hard_delete_account.py
 ```
 
-Expected: `3 passed` (not `3 skipped`). If pytest reports skipped tests
+Expected: `6 passed` (not skipped). If pytest reports skipped tests
 it means `@requires_routers` short-circuited — investigate
 `tests/conftest.py` for what condition the decorator checks and register
 the auth router in the test config before re-running.
@@ -1075,6 +1287,157 @@ Expected: green. Fix anything red before moving on.
 ```bash
 git add app/ tests/
 git commit -m "refactor: drop deleted_at tombstone checks (no longer exists)"
+```
+
+---
+
+## Task 5.5: ARQ worker — `wipe_deleted_user_blobs` (large-user offload)
+
+**Files:**
+- Modify: `app/workers/orphan_reclaim.py` OR new `app/workers/delete_account_blobs.py`
+- Modify: `app/worker_settings.py` — register the new job
+- Test: `tests/test_wipe_deleted_user_blobs_worker.py`
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+"""wipe_deleted_user_blobs — ARQ job that drains blob-wipe work for large users.
+
+Invoked by delete_account when total blob count exceeds the inline threshold.
+Chunks image_repo.remove into 250-key batches; failures go to the orphan DLQ.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from app.workers.delete_account_blobs import wipe_deleted_user_blobs
+
+
+@pytest.mark.asyncio
+async def test_chunks_remove_and_dlqs_failures():
+    image_repo = MagicMock()
+    orphan_repo = MagicMock()
+
+    # 600 keys in raw-selfies; 200 in generated-images.
+    image_repo.remove.side_effect = [
+        None,                    # first 250 raw-selfies succeed
+        RuntimeError("boom"),    # next 250 raw-selfies fail → DLQ each
+        None,                    # last 100 raw-selfies succeed
+        None,                    # 200 generated-images succeed
+    ]
+
+    ctx = {"image_repo": image_repo, "orphan_repo": orphan_repo}
+    keys_by_bucket = {
+        "raw-selfies": [f"u-1/raw/{i}.jpg" for i in range(600)],
+        "generated-images": [f"u-1/gen/{i}.jpg" for i in range(200)],
+        "post-images": [],
+        "avatars": [],
+    }
+
+    await wipe_deleted_user_blobs(ctx, user_id="u-1", keys_by_bucket=keys_by_bucket)
+
+    # 4 batched removes total (600/250 ceil=3 + 200/250 ceil=1)
+    assert image_repo.remove.call_count == 4
+    # The failed batch (250 keys) each went to DLQ
+    assert orphan_repo.record.call_count == 250
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+```bash
+.venv/bin/python -m pytest -x -q tests/test_wipe_deleted_user_blobs_worker.py
+```
+
+Expected: `ModuleNotFoundError: No module named 'app.workers.delete_account_blobs'`.
+
+- [ ] **Step 3: Implement the worker**
+
+Create `app/workers/delete_account_blobs.py`:
+
+```python
+"""ARQ job: wipe a deleted user's blobs in chunked batches.
+
+Invoked by DELETE /auth/account when the user's total blob count exceeds
+the inline-wipe threshold. Chunks each bucket into batches of
+_CHUNK_SIZE keys; failed batches enqueue every key in the orphan DLQ so
+the nightly reclaim worker can retry.
+"""
+
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+_CHUNK_SIZE = 250
+
+
+async def wipe_deleted_user_blobs(
+    ctx: dict,
+    *,
+    user_id: str,
+    keys_by_bucket: dict[str, list[str]],
+) -> None:
+    image_repo = ctx["image_repo"]
+    orphan_repo = ctx["orphan_repo"]
+
+    wiped = 0
+    failed = 0
+    for bucket, keys in keys_by_bucket.items():
+        for start in range(0, len(keys), _CHUNK_SIZE):
+            chunk = keys[start : start + _CHUNK_SIZE]
+            try:
+                image_repo.remove(bucket, chunk)
+                wiped += len(chunk)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "wipe_deleted_user_blobs: bucket %s chunk [%d:%d] failed for %s: %s",
+                    bucket,
+                    start,
+                    start + len(chunk),
+                    user_id,
+                    exc,
+                )
+                for key in chunk:
+                    orphan_repo.record(bucket, key, "delete_account")
+                failed += len(chunk)
+
+    logger.info(
+        "wipe_deleted_user_blobs: user=%s wiped=%d failed=%d",
+        user_id,
+        wiped,
+        failed,
+    )
+```
+
+Register in `app/worker_settings.py` (alongside the existing
+`reclaim_orphaned_blobs` registration — follow the exact pattern there):
+
+```python
+from app.workers.delete_account_blobs import wipe_deleted_user_blobs
+
+WorkerSettings.functions = [
+    # ...existing jobs...
+    wipe_deleted_user_blobs,
+]
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+.venv/bin/python -m pytest -x -q tests/test_wipe_deleted_user_blobs_worker.py
+```
+
+Expected: 1 passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/workers/delete_account_blobs.py app/worker_settings.py tests/test_wipe_deleted_user_blobs_worker.py
+git commit -m "feat(workers): wipe_deleted_user_blobs ARQ job"
 ```
 
 ---
@@ -1578,45 +1941,123 @@ Expected: FAIL — `wipeLocalDeviceState` is not imported yet in `settings.tsx`.
 
 In `mobile/app/settings.tsx`:
 
-Add import:
+Add imports:
 
 ```ts
+import { useNavigation } from "@react-navigation/native";
 import { wipeLocalDeviceState } from "../lib/account-wipe";
+import { DeleteAccountOverlay } from "../components/settings/DeleteAccountOverlay";
 ```
 
 Update the confirmation dialog copy (currently: "This action is permanent
 and cannot be undone. All your data will be deleted.") to reflect
-hard-delete semantics:
+hard-delete semantics, and add `usePreventRemove` so the user cannot
+navigate away mid-operation via hardware back or iOS edge-swipe:
 
 ```ts
-Alert.alert(
-  "Delete Account",
-  "Your photos, glow-ups, and account data will be permanently deleted. Your username will be reserved for 180 days. This cannot be undone.",
-  [
-    { text: "Cancel", style: "cancel" },
-    {
-      text: "Delete",
-      style: "destructive",
-      onPress: async () => {
-        setIsDeleting(true);
-        try {
-          await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
-          await wipeLocalDeviceState();
-          setSessionMode("anon");
-          router.replace("/(auth)/login");
-        } catch (err) {
-          const appError = parseApiError(err);
-          showToast({ kind: "error", message: appError.message });
-        } finally {
-          setIsDeleting(false);
-        }
+// Block hardware back + iOS edge-swipe while deleting. Alongside the
+// full-screen DeleteAccountOverlay, this makes navigation-during-delete
+// impossible.
+const navigation = useNavigation();
+useEffect(() => {
+  if (!isDeleting) return undefined;
+  const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+    e.preventDefault();
+  });
+  return unsubscribe;
+}, [isDeleting, navigation]);
+
+const handleDeleteAccount = useCallback(() => {
+  Alert.alert(
+    "Delete Account",
+    "Your photos, glow-ups, and account data will be permanently deleted. Your username will be reserved for 180 days. This cannot be undone.",
+    [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          setIsDeleting(true);
+          try {
+            await apiFetch<void>("/v1/auth/account", { method: "DELETE" });
+            await wipeLocalDeviceState();
+            setSessionMode("anon");
+            router.replace("/(auth)/login");
+          } catch (err) {
+            const appError = parseApiError(err);
+            showToast({ kind: "error", message: appError.message });
+            setIsDeleting(false);
+          }
+          // NOTE: no `finally { setIsDeleting(false) }` — on success the
+          // screen unmounts via router.replace before the next tick.
+        },
       },
-    },
-  ],
+    ],
+  );
+}, [router, setSessionMode]);
+```
+
+Render the overlay alongside the existing scroll view (outside it, so it
+covers the full screen including the header):
+
+```tsx
+return (
+  <View style={styles.container}>
+    <PageBackground overlayOpacity={0.88} />
+    <View style={[styles.header, { paddingTop: insets.top }]}>
+      {/* Hide back button while deleting — user cannot navigate away. */}
+      {isDeleting ? <HeaderBackButtonSpacer /> : <HeaderBackButton onPress={() => router.back()} />}
+      <Heading ...>Settings</Heading>
+      <HeaderBackButtonSpacer />
+    </View>
+    <ScrollView>
+      {/* ...existing sections... */}
+    </ScrollView>
+    {isDeleting && <DeleteAccountOverlay />}
+  </View>
 );
 ```
 
 Remove the old `clearAllTokens()` call — `wipeLocalDeviceState` covers token deletion via `SECURE_STORE_KEYS`. Leave `clearAllTokens` itself intact; logout still uses it.
+
+Create `mobile/components/settings/DeleteAccountOverlay.tsx`:
+
+```tsx
+/**
+ * Full-screen overlay shown while the delete-account server request is
+ * in flight. Pairs with usePreventRemove in settings.tsx so the user
+ * cannot navigate away mid-operation.
+ */
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+
+import { THEME } from "../../constants/theme";
+import { Body, Heading } from "../ui/Text";
+
+export function DeleteAccountOverlay() {
+  return (
+    <View style={styles.overlay} accessibilityRole="progressbar" accessibilityLabel="Deleting your account">
+      <ActivityIndicator size="large" color={THEME.colors.textPrimary} />
+      <Heading size="md" style={styles.title}>Deleting your account…</Heading>
+      <Body color="secondary" style={styles.subtitle}>
+        This can take a few seconds. Don&apos;t close the app.
+      </Body>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: THEME.spacing.lg,
+    paddingHorizontal: THEME.spacing.xxl,
+  },
+  title: { textAlign: "center" },
+  subtitle: { textAlign: "center" },
+});
+```
 
 - [ ] **Step 4: Run test to verify it passes**
 
