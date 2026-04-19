@@ -282,6 +282,23 @@ class UserRepository:
             return None
         return result.data
 
+    def find_by_stripe_customer_id(self, stripe_customer_id: str) -> dict | None:
+        """Find a user by their Stripe customer ID, or None.
+
+        Used by dispute + refund webhook handlers to resolve user_id from
+        the Stripe customer object when no user_id metadata is present.
+        """
+        result = (
+            self._sb.table("users")
+            .select("id")
+            .eq("stripe_customer_id", stripe_customer_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
     # ------------------------------------------------------------------
     # Hard-delete (account deletion flow)
     # ------------------------------------------------------------------

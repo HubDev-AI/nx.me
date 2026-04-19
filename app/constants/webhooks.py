@@ -20,3 +20,26 @@ EVT_INVOICE_PAYMENT_FAILED = "invoice.payment_failed"
 
 # Payment-sheet flow discriminator (reused from entitlement module).
 FLOW_PAYMENT_SHEET = "payment_sheet"
+
+# Unit 8b — credit-pack + dispute + refund event types.
+EVT_PAYMENT_INTENT_SUCCEEDED = "payment_intent.succeeded"
+EVT_CHARGE_REFUNDED = "charge.refunded"
+EVT_CHARGE_DISPUTE_CREATED = "charge.dispute.created"
+EVT_CHARGE_DISPUTE_UPDATED = "charge.dispute.updated"
+EVT_CHARGE_DISPUTE_CLOSED = "charge.dispute.closed"
+EVT_CHARGE_DISPUTE_FUNDS_WITHDRAWN = "charge.dispute.funds_withdrawn"
+
+# Stripe dispute outcome status values (object.status on charge.dispute.closed).
+DISPUTE_STATUS_WON = "won"
+DISPUTE_STATUS_LOST = "lost"
+# Stripe also emits 'warning_closed' / 'warning_needs_response' for
+# pre-dispute inquiries (not formal chargebacks). Treat as won-equivalent
+# (no lock, no compensation) — the account was never actually at risk.
+DISPUTE_STATUS_WARNING_CLOSED = "warning_closed"
+DISPUTE_STATUS_WARNING_NEEDS_RESPONSE = "warning_needs_response"
+
+# Apply-dispute RPC status strings (must match the SQL CASE enum).
+DISPUTE_EVENT_CREATED = "created"
+DISPUTE_EVENT_CLOSED_WON = "closed_won"
+DISPUTE_EVENT_CLOSED_LOST = "closed_lost"
+DISPUTE_EVENT_FUNDS_WITHDRAWN = "funds_withdrawn"

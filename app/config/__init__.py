@@ -321,6 +321,10 @@ class Settings(BaseSettings):
     # 100 milli = 1 glow-up. Scheduled ARQ worker delivers it on a 7-day cadence.
     WEEKLY_FREE_GRANT_MILLI: int = 100
 
+    # Credit-pack grant — milli-credits issued per CREDIT_PACK_V1 purchase.
+    # 500 milli = 5 glow-ups at 100 milli/glow-up.
+    CREDIT_PACK_V1_CREDITS_MILLI: int = 500
+
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3  # max attempts per device fingerprint
     REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours

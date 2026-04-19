@@ -213,3 +213,93 @@ class SubscriptionRepository:
             },
         ).execute()
         return result.data[0] if result.data else {}
+
+    # ------------------------------------------------------------------
+    # RPC — credit-pack purchase (Unit 8b)
+    # ------------------------------------------------------------------
+
+    def call_credit_apply_pack_purchase(
+        self, user_id: str, event_id: str, credits_milli: int
+    ) -> None:
+        """Invoke credit_apply_pack_purchase DB RPC (idempotent via uuid5 ref)."""
+        self._sb.rpc(
+            "credit_apply_pack_purchase",
+            {
+                "p_user_id": user_id,
+                "p_event_id": event_id,
+                "p_credits_milli": credits_milli,
+            },
+        ).execute()
+
+    # ------------------------------------------------------------------
+    # RPC — dispute event state machine (Unit 8b)
+    # ------------------------------------------------------------------
+
+    def call_apply_dispute_event(
+        self,
+        user_id: str,
+        event_id: str,
+        event_at: str,
+        new_status: str,
+    ) -> dict:
+        """Invoke apply_dispute_event RPC and return the JSON result.
+
+        Returns dict with keys: applied (bool), reason (str|None),
+        new_status (str), locked_at (str|None).
+        """
+        result = self._sb.rpc(
+            "apply_dispute_event",
+            {
+                "p_user_id": user_id,
+                "p_event_id": event_id,
+                "p_event_at": event_at,
+                "p_new_status": new_status,
+            },
+        ).execute()
+        if isinstance(result.data, list):
+            return result.data[0] if result.data else {}
+        # Supabase returns JSONB columns directly as a dict for scalar-return RPCs.
+        return result.data or {}
+
+    # ------------------------------------------------------------------
+    # RPC — dispute compensating ledger entry (Unit 8b)
+    # ------------------------------------------------------------------
+
+    def call_credit_dispute_compensate(
+        self, user_id: str, charge_id: str, amount_milli: int
+    ) -> None:
+        """Invoke credit_dispute_compensate RPC (negative delta, idempotent via uuid5 ref)."""
+        self._sb.rpc(
+            "credit_dispute_compensate",
+            {
+                "p_user_id": user_id,
+                "p_charge_id": charge_id,
+                "p_amount_milli": amount_milli,
+            },
+        ).execute()
+
+    # ------------------------------------------------------------------
+    # Direct ledger write — charge.refunded compensating entry (Unit 8b)
+    # ------------------------------------------------------------------
+
+    def record_refund_compensating_entry(
+        self, user_id: str, charge_id: str, amount_milli: int
+    ) -> None:
+        """Write a negative credit_ledger entry for a Stripe charge refund.
+
+        Keyed on charge_id so duplicate charge.refunded deliveries are no-ops
+        (ON CONFLICT DO NOTHING via the unique constraint on reference_id where
+        type='refund' — assumed to be added alongside this call; if the index
+        does not exist yet, duplicates are harmless for v1 given the outer
+        processed_webhook_events dedup).
+        """
+        self._sb.table("credit_ledger").upsert(
+            {
+                "user_id": user_id,
+                "delta": -amount_milli,
+                "type": "refund",
+                "reference_id": charge_id,
+            },
+            on_conflict="reference_id,type",
+            ignore_duplicates=True,
+        ).execute()

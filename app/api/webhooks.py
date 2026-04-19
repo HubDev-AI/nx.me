@@ -20,8 +20,12 @@ Subscription-lifecycle semantics (Unit 8a):
   - 5xx on out-of-order subscription.updated (Stripe retry handles ordering).
   - No tier-gating reads; Pro is a marketing label derived from dates.
 
-Credit-pack / Payment-sheet handlers (Unit 8b scope) are preserved from
-the prior implementation — they are not changed in this unit.
+Credit-pack + dispute + refund handlers (Unit 8b):
+  - payment_intent.succeeded with flow=payment_sheet → credit_apply_pack_purchase.
+  - charge.refunded → compensating ledger entry (type='refund').
+  - charge.dispute.created/closed/funds_withdrawn → apply_dispute_event CAS
+    state machine; 500 on out-of-order so Stripe retries.
+  - charge.dispute.closed (lost) → also calls credit_dispute_compensate.
 """
 
 from __future__ import annotations
@@ -38,13 +42,26 @@ from app.api.deps import (
     get_payment_adapter,
     get_plan_version_repo,
     get_subscription_repo,
+    get_user_repo,
 )
 from app.api.entitlement import FLOW_PAYMENT_SHEET
+from app.config import settings
 from app.constants.tiers import TIER_ID_CREDIT_HOLDER, TIER_ID_TRIAL
 from app.constants.webhooks import (
+    DISPUTE_EVENT_CLOSED_LOST,
+    DISPUTE_EVENT_CLOSED_WON,
+    DISPUTE_EVENT_CREATED,
+    DISPUTE_EVENT_FUNDS_WITHDRAWN,
+    DISPUTE_STATUS_LOST,
+    DISPUTE_STATUS_WON,
+    EVT_CHARGE_DISPUTE_CLOSED,
+    EVT_CHARGE_DISPUTE_CREATED,
+    EVT_CHARGE_DISPUTE_FUNDS_WITHDRAWN,
+    EVT_CHARGE_REFUNDED,
     EVT_CHECKOUT_SESSION_COMPLETED,
     EVT_INVOICE_PAYMENT_FAILED,
     EVT_INVOICE_PAYMENT_SUCCEEDED,
+    EVT_PAYMENT_INTENT_SUCCEEDED,
     EVT_SUBSCRIPTION_CREATED,
     EVT_SUBSCRIPTION_DELETED,
     EVT_SUBSCRIPTION_UPDATED,
@@ -53,6 +70,7 @@ from app.constants.webhooks import (
 )
 from app.repositories.plan_version_repo import PlanVersionRepository, PRO_VERSION_NUM
 from app.repositories.subscription_repo import SubscriptionRepository
+from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +82,15 @@ async def stripe_webhook(
     request: Request,
     sub_repo: SubscriptionRepository = Depends(get_subscription_repo),
     plan_repo: PlanVersionRepository = Depends(get_plan_version_repo),
+    user_repo: UserRepository = Depends(get_user_repo),
 ) -> dict:
     """Handle Stripe webhook events with idempotent processing.
 
     Security: signature verified BEFORE idempotency check or any DB write.
     Ordering: subscription.updated returns 500 when the subscription row is
     not yet present so Stripe's retry backoff handles ordering automatically.
+    Dispute ordering: apply_dispute_event returns out_of_order → handler
+    returns 500 so Stripe retries until CAS sequence converges.
     """
     t_start = time.monotonic()
 
@@ -132,8 +153,20 @@ async def stripe_webhook(
             await _handle_payment_succeeded(sub_repo, plan_repo, data)
         elif event_type == EVT_INVOICE_PAYMENT_FAILED:
             _handle_payment_failed(sub_repo, data)
-        elif event_type == "payment_intent.succeeded":
+        elif event_type == EVT_PAYMENT_INTENT_SUCCEEDED:
             await _handle_payment_intent_succeeded(sub_repo, data, event_id)
+        elif event_type == EVT_CHARGE_REFUNDED:
+            _handle_charge_refunded(sub_repo, user_repo, data, event_id)
+        elif event_type == EVT_CHARGE_DISPUTE_CREATED:
+            _handle_dispute_event(
+                sub_repo, user_repo, data, event_id, DISPUTE_EVENT_CREATED
+            )
+        elif event_type == EVT_CHARGE_DISPUTE_CLOSED:
+            _handle_dispute_closed(sub_repo, user_repo, data, event_id)
+        elif event_type == EVT_CHARGE_DISPUTE_FUNDS_WITHDRAWN:
+            _handle_dispute_event(
+                sub_repo, user_repo, data, event_id, DISPUTE_EVENT_FUNDS_WITHDRAWN
+            )
         else:
             logger.info("Unhandled webhook event type: %s", event_type)
 
@@ -489,7 +522,7 @@ def _handle_payment_failed(sub_repo: SubscriptionRepository, invoice: dict) -> N
 
 
 # ---------------------------------------------------------------------------
-# Payment-sheet / PaymentIntent handler (Unit 8b scope — preserved)
+# Payment-sheet / PaymentIntent handler (Unit 8b)
 # ---------------------------------------------------------------------------
 
 
@@ -501,6 +534,10 @@ async def _handle_payment_intent_succeeded(
     Only processes intents stamped with ``metadata.flow=payment_sheet``
     so legacy Checkout-created PaymentIntents are ignored here (the
     ``checkout.session.completed`` handler owns those).
+
+    Calls credit_apply_pack_purchase RPC with CREDIT_PACK_V1_CREDITS_MILLI
+    from settings, ignoring the intent's metadata.credits field, so the
+    server is the single source of truth for pack size (R7-Pack).
     """
     metadata = intent.get("metadata") or {}
     if metadata.get("flow") != FLOW_PAYMENT_SHEET:
@@ -527,37 +564,227 @@ async def _handle_payment_intent_succeeded(
         )
         return
 
-    credits_str = metadata.get("credits", "0")
-    try:
-        credits = int(credits_str)
-    except (ValueError, TypeError):
-        logger.error(
-            "payment_intent.succeeded: invalid credits value '%s' in event %s",
-            credits_str,
-            event_id,
-        )
-        return
-
-    if credits <= 0:
-        logger.warning(
-            "payment_intent.succeeded with invalid credits=%s (event=%s)",
-            credits_str,
-            event_id,
-        )
-        return
-
-    rpc_result = sub_repo.handle_checkout_credit_atomic(
+    credits_milli = settings.CREDIT_PACK_V1_CREDITS_MILLI
+    sub_repo.call_credit_apply_pack_purchase(
         user_id=user_id,
-        credits=credits,
         event_id=event_id,
-        trial_tier_id=TIER_ID_TRIAL,
-        credit_holder_tier_id=TIER_ID_CREDIT_HOLDER,
+        credits_milli=credits_milli,
     )
 
     logger.info(
-        "PaymentIntent credit purchase: user=%s, credits=%d, event=%s, tier_upgraded=%s",
+        "PaymentIntent credit pack purchase: user=%s, credits_milli=%d, event=%s",
         user_id,
-        credits,
+        credits_milli,
         event_id,
-        rpc_result.get("tier_upgraded", False),
     )
+
+
+# ---------------------------------------------------------------------------
+# Charge refund handler (Unit 8b)
+# ---------------------------------------------------------------------------
+
+
+def _handle_charge_refunded(
+    sub_repo: SubscriptionRepository,
+    user_repo: UserRepository,
+    charge: dict,
+    event_id: str,
+) -> None:
+    """Handle charge.refunded — write a compensating credit_ledger entry.
+
+    Looks up user_id via users.stripe_customer_id (backfilled in Unit 1).
+    Writes a negative ledger entry (type='refund') keyed on charge_id so
+    duplicate charge.refunded deliveries are no-ops via outer dedup.
+    Amount is the refund amount_refunded in pence/cents; we store a
+    milli-credit equivalent of CREDIT_PACK_V1_CREDITS_MILLI (one pack)
+    per refund regardless of the monetary amount, as packs are atomic.
+    """
+    customer_id = charge.get("customer")
+    charge_id = charge.get("id", "")
+
+    if not customer_id:
+        logger.warning(
+            "charge.refunded missing customer field (event=%s, charge=%s)",
+            event_id,
+            charge_id,
+        )
+        return
+
+    user_row = user_repo.find_by_stripe_customer_id(customer_id)
+    if not user_row:
+        logger.warning(
+            "charge.refunded: no user found for customer=%s (event=%s)",
+            customer_id,
+            event_id,
+        )
+        return
+
+    user_id = user_row["id"]
+    amount_milli = settings.CREDIT_PACK_V1_CREDITS_MILLI
+
+    sub_repo.record_refund_compensating_entry(
+        user_id=user_id,
+        charge_id=charge_id,
+        amount_milli=amount_milli,
+    )
+
+    logger.info(
+        "Charge refunded compensating entry: user=%s charge=%s amount_milli=%d event=%s",
+        user_id,
+        charge_id,
+        amount_milli,
+        event_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dispute event handlers (Unit 8b)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_dispute_user_id(
+    user_repo: UserRepository, dispute: dict, event_id: str
+) -> str | None:
+    """Resolve user_id for a dispute object from stripe_customer_id.
+
+    Returns user_id string or None if the user cannot be found.
+    """
+    customer_id = dispute.get("customer") or dispute.get("charge", {})
+    # dispute object carries .customer directly
+    if not isinstance(customer_id, str):
+        customer_id = dispute.get("customer")
+
+    if not customer_id:
+        logger.warning("dispute event missing customer field (event=%s)", event_id)
+        return None
+
+    user_row = user_repo.find_by_stripe_customer_id(customer_id)
+    if not user_row:
+        logger.warning(
+            "dispute event: no user found for customer=%s (event=%s)",
+            customer_id,
+            event_id,
+        )
+        return None
+
+    return user_row["id"]
+
+
+def _handle_dispute_event(
+    sub_repo: SubscriptionRepository,
+    user_repo: UserRepository,
+    dispute: dict,
+    event_id: str,
+    new_status: str,
+) -> None:
+    """Apply a dispute state transition via the apply_dispute_event CAS RPC.
+
+    Returns 500 (re-raises HTTPException) on out-of-order events so Stripe
+    retries delivery — the CAS state machine converges on the final state.
+    Duplicate event_id (Stripe retry of same event) returns applied=False
+    with reason='duplicate'; this is treated as success.
+    """
+    user_id = _resolve_dispute_user_id(user_repo, dispute, event_id)
+    if not user_id:
+        return
+
+    # dispute object carries 'created' as a unix timestamp.
+    raw_created = dispute.get("created")
+    if raw_created is None:
+        logger.warning("dispute event missing created timestamp (event=%s)", event_id)
+        return
+    event_at = datetime.fromtimestamp(raw_created, tz=timezone.utc).isoformat()
+
+    result = sub_repo.call_apply_dispute_event(
+        user_id=user_id,
+        event_id=event_id,
+        event_at=event_at,
+        new_status=new_status,
+    )
+
+    applied = result.get("applied", False)
+    reason = result.get("reason")
+
+    if not applied and reason == "out_of_order":
+        logger.warning(
+            "dispute event out-of-order: user=%s event=%s status=%s — returning 500 for Stripe retry",
+            user_id,
+            event_id,
+            new_status,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": {
+                    "code": "DISPUTE_OUT_OF_ORDER",
+                    "message": (
+                        "Dispute event arrived out-of-order. "
+                        "Stripe will retry delivery."
+                    ),
+                }
+            },
+        )
+
+    logger.info(
+        "Dispute event applied: user=%s event=%s status=%s applied=%s reason=%s locked_at=%s",
+        user_id,
+        event_id,
+        new_status,
+        applied,
+        reason,
+        result.get("locked_at"),
+    )
+
+
+def _handle_dispute_closed(
+    sub_repo: SubscriptionRepository,
+    user_repo: UserRepository,
+    dispute: dict,
+    event_id: str,
+) -> None:
+    """Handle charge.dispute.closed — map Stripe outcome status to dispute event.
+
+    Stripe sends a single charge.dispute.closed event; the outcome lives in
+    dispute.status. Maps:
+      won                 → closed_won  (clear locked_at)
+      lost                → closed_lost (keep locked_at + compensating entry)
+      warning_closed /
+      warning_needs_response → closed_won (pre-dispute inquiry, not a chargeback)
+    """
+    stripe_status = dispute.get("status", "")
+    charge_id = dispute.get("charge", "") or dispute.get("id", "")
+
+    if stripe_status == DISPUTE_STATUS_WON:
+        new_status = DISPUTE_EVENT_CLOSED_WON
+    elif stripe_status == DISPUTE_STATUS_LOST:
+        new_status = DISPUTE_EVENT_CLOSED_LOST
+    else:
+        # warning_closed / warning_needs_response / unknown → treat as won.
+        logger.info(
+            "charge.dispute.closed with status=%s — treating as closed_won (event=%s)",
+            stripe_status,
+            event_id,
+        )
+        new_status = DISPUTE_EVENT_CLOSED_WON
+
+    # Apply the CAS state transition (raises 500 on out-of-order).
+    _handle_dispute_event(sub_repo, user_repo, dispute, event_id, new_status)
+
+    # For closed_lost: write the compensating ledger entry AFTER the state
+    # transition so a concurrent reserve sees locked_at before the negative
+    # delta lands (belt-and-braces; the advisory lock in the RPC already
+    # serialises these).
+    if new_status == DISPUTE_EVENT_CLOSED_LOST:
+        user_id = _resolve_dispute_user_id(user_repo, dispute, event_id)
+        if user_id and charge_id:
+            sub_repo.call_credit_dispute_compensate(
+                user_id=user_id,
+                charge_id=charge_id,
+                amount_milli=settings.CREDIT_PACK_V1_CREDITS_MILLI,
+            )
+            logger.info(
+                "Dispute closed_lost compensating entry: user=%s charge=%s event=%s",
+                user_id,
+                charge_id,
+                event_id,
+            )
