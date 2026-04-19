@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 import redis.asyncio as aioredis
-from arq import cron
+from arq import create_pool, cron
 from arq.connections import RedisSettings
 
 from app.config import settings
@@ -50,6 +50,17 @@ async def startup(ctx: dict) -> None:
         encoding="utf-8",
     )
 
+    # ARQ dispatch pool for fire-and-forget enqueue_job calls from within
+    # worker jobs (e.g. _enqueue_post_glowup_nudge in generation/worker.py,
+    # schedule_post_analysis_nudge in advisor/nudge_scheduler.py). ARQ
+    # populates ctx["redis"] with its ArqRedis pool by default, but the
+    # block above overwrites it with a plain aioredis client configured
+    # for string decoding — dropping ArqRedis's enqueue_job method. The
+    # dedicated pool here mirrors the FastAPI app.state.arq_pool pattern
+    # (app/main.py:152) and restores enqueue_job without forcing the
+    # plain redis ops used elsewhere to migrate off string decoding.
+    ctx["arq_pool"] = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+
     if settings.ADAPTER__IMAGE_GENERATION_ADAPTER != "mock":
         from app.generation.identity_checker import preload_arcface
 
@@ -62,6 +73,8 @@ async def shutdown(ctx: dict) -> None:
     """Worker shutdown: cleanup."""
     if "redis" in ctx:
         await ctx["redis"].aclose()
+    if "arq_pool" in ctx:
+        await ctx["arq_pool"].aclose()
     logger.info("Unified worker stopped")
 
 

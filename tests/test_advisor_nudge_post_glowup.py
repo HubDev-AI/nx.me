@@ -162,16 +162,64 @@ async def test_worker_enqueue_swallows_redis_errors(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
-async def test_worker_enqueue_noop_without_arq_pool():
-    """No ``arq_pool`` in ctx → noop, no raise."""
+async def test_worker_enqueue_falls_back_to_inline_without_arq_pool(
+    monkeypatch, caplog
+):
+    """No ``arq_pool`` in ctx → inline ``generate_nudge`` call, WARN logged.
+
+    Defense in depth: ``worker_settings.startup`` populates ctx["arq_pool"]
+    in production, but if that ever regresses the user must still receive
+    the nudge rather than silently lose it. This test pins the fallback
+    contract introduced alongside the startup fix.
+    """
+    from app.advisor.nudge_policy import TRIGGER_POST_GLOWUP
     from app.generation import worker
 
+    generate_nudge_mock = AsyncMock()
+    monkeypatch.setattr(
+        "app.advisor.nudge_scheduler.generate_nudge", generate_nudge_mock
+    )
+
+    caplog.set_level(logging.WARNING)
+    await worker._enqueue_post_glowup_nudge(
+        ctx={},
+        job_id=_TEST_JOB_ID,
+        user_id=_TEST_USER_ID,
+    )
+
+    generate_nudge_mock.assert_awaited_once_with(
+        {},
+        _TEST_USER_ID,
+        TRIGGER_POST_GLOWUP,
+        None,
+        _TEST_JOB_ID,
+    )
+    assert any(
+        "No arq_pool in ctx" in r.message and r.levelname == "WARNING"
+        for r in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_enqueue_inline_fallback_swallows_errors(monkeypatch, caplog):
+    """Inline fallback must also be fire-and-forget — a failing
+    ``generate_nudge`` must not bubble up and fail the glow-up."""
+    from app.generation import worker
+
+    monkeypatch.setattr(
+        "app.advisor.nudge_scheduler.generate_nudge",
+        AsyncMock(side_effect=RuntimeError("advisor down")),
+    )
+
+    caplog.set_level(logging.WARNING)
     # Must not raise
     await worker._enqueue_post_glowup_nudge(
         ctx={},
         job_id=_TEST_JOB_ID,
         user_id=_TEST_USER_ID,
     )
+
+    assert any("Inline generate_nudge failed" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

@@ -785,16 +785,33 @@ async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> No
     usage_event update for terminal state transitions: the primary
     happy path must never be blocked by optional advisor work.
     """
+    from app.advisor.nudge_policy import TRIGGER_POST_GLOWUP
+
     arq_pool = ctx.get("arq_pool")
     if arq_pool is None:
-        logger.debug(
-            "No arq_pool in ctx — skipping post_glowup nudge enqueue for job %s",
+        # Defense in depth: if worker_settings.startup ever regresses and
+        # stops populating ctx["arq_pool"], run the nudge inline so users
+        # still receive post-glow-up guidance. Matches the fallback shape
+        # in advisor/nudge_scheduler.py::schedule_post_analysis_nudge.
+        # WARN (not DEBUG) because a missing pool is always a bug —
+        # production logs must surface it.
+        logger.warning(
+            "No arq_pool in ctx — running generate_nudge inline for post_glowup (job %s)",
             job_id,
         )
+        try:
+            from app.advisor.nudge_scheduler import generate_nudge
+
+            await generate_nudge(ctx, user_id, TRIGGER_POST_GLOWUP, None, job_id)
+        except Exception:
+            logger.warning(
+                "Inline generate_nudge failed for user %s (job %s)",
+                user_id,
+                job_id,
+                exc_info=True,
+            )
         return
     try:
-        from app.advisor.nudge_policy import TRIGGER_POST_GLOWUP
-
         await arq_pool.enqueue_job(
             "generate_nudge",
             user_id,
