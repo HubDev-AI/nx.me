@@ -44,28 +44,39 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt -r requirements-dev.txt
-      - name: Bootstrap Supabase auth schema (CI Postgres only)
-        # Migrations 0003/0016 reference `auth.users(id)` for ON DELETE
-        # CASCADE FKs, and migrations 0049/0050/0051 call `auth.role()` /
-        # `auth.uid()` for RLS-style guards. Real Supabase ships these via
-        # GoTrue; CI's bare Postgres needs minimal stubs so the runner
-        # doesn't blow up at 0003.
+      - name: Bootstrap Supabase auth + extensions schemas (CI Postgres only)
+        # Real Supabase ships these via GoTrue + custom extension setup. CI's
+        # bare Postgres needs stubs so:
+        #   - 0003 / 0016: REFERENCES auth.users(id) ON DELETE CASCADE
+        #   - 0013 / 0048 / 0052 / 0053: GRANT / REVOKE on anon, authenticated, service_role
+        #   - 0049 / 0050 / 0051: auth.uid() / auth.role() RLS guards
+        #   - 0050: extensions.uuid_generate_v5 / extensions.uuid_ns_url
+        # The auth.uid() / auth.role() stubs read from the `request.jwt.claims`
+        # GUC the same way real Supabase does, so tests that SET LOCAL the
+        # JWT claims get per-call identity (see test_42501_cross_user_call_rejected).
+        env:
+          PGPASSWORD: postgres
         run: |
-          PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d postgres <<'SQL'
+          psql -h localhost -p 54322 -U postgres -d postgres <<'SQL'
           CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE SCHEMA IF NOT EXISTS extensions;
+
           CREATE TABLE IF NOT EXISTS auth.users (
               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
               email TEXT,
               created_at TIMESTAMPTZ DEFAULT now()
           );
+
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID
-              LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+              LANGUAGE sql STABLE AS $body$
+              SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->>'sub', '')::uuid
+              $body$;
           CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT
-              LANGUAGE sql STABLE AS $$ SELECT 'service_role'::text $$;
-          -- RLS migrations (0013, 0048, 0052, 0053) GRANT/REVOKE on
-          -- Supabase's built-in roles. Create them as no-login roles
-          -- so the GRANT statements don't error out.
-          DO $$
+              LANGUAGE sql STABLE AS $body$
+              SELECT COALESCE(current_setting('request.jwt.claims', true)::jsonb->>'role', 'service_role')
+              $body$;
+
+          DO $do$
           BEGIN
               IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
                   CREATE ROLE anon NOLOGIN;
@@ -77,8 +88,12 @@ jobs:
                   CREATE ROLE service_role NOLOGIN;
               END IF;
           END
-          $$;
+          $do$;
           SQL
+          # 0050 calls extensions.uuid_generate_v5; install uuid-ossp under
+          # the `extensions` schema BEFORE the migration's own CREATE EXTENSION
+          # runs (CREATE EXTENSION IF NOT EXISTS skips when already installed).
+          psql -h localhost -p 54322 -U postgres -d postgres -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA extensions'
       - name: Apply database migrations
         run: python -m app.migrations.run
         env:
