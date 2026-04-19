@@ -472,6 +472,7 @@ class StripePaymentAdapter:
                 event_type=event["type"],
                 event_id=event["id"],
                 data=dict(event),
+                created=event.get("created"),
             )
         except self._stripe.SignatureVerificationError as exc:
             raise ValueError(f"Invalid Stripe webhook signature: {exc}") from exc

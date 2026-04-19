@@ -55,9 +55,53 @@ class SubscriptionRepository:
     # subscriptions table — writes
     # ------------------------------------------------------------------
 
+    def get_subscription_by_provider_id(
+        self, provider_subscription_id: str
+    ) -> dict | None:
+        """Return the subscription row for a provider ID, or None if not found."""
+        result = (
+            self._sb.table("subscriptions")
+            .select("id, user_id, status, grace_until")
+            .eq("provider_subscription_id", provider_subscription_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
     def insert_subscription(self, row: dict) -> None:
         """Insert a new subscription row."""
         self._sb.table("subscriptions").insert(row).execute()
+
+    def upsert_subscription(self, row: dict) -> None:
+        """Upsert a subscription row keyed on provider_subscription_id."""
+        self._sb.table("subscriptions").upsert(
+            row, on_conflict="provider_subscription_id"
+        ).execute()
+
+    def stamp_stripe_customer_id(self, user_id: str, customer_id: str) -> None:
+        """Write users.stripe_customer_id for a user (best-effort; logs on failure)."""
+        try:
+            self._sb.table("users").update({"stripe_customer_id": customer_id}).eq(
+                "id", user_id
+            ).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed to stamp stripe_customer_id for user=%s: %s", user_id, exc
+            )
+
+    def call_credit_apply_monthly_allotment(
+        self, user_id: str, plan_version_id: str
+    ) -> None:
+        """Invoke the credit_apply_monthly_allotment DB RPC (REPLACE semantics)."""
+        self._sb.rpc(
+            "credit_apply_monthly_allotment",
+            {
+                "p_user_id": user_id,
+                "p_plan_version_id": plan_version_id,
+            },
+        ).execute()
 
     def update_subscription_by_provider_id(
         self,

@@ -42,6 +42,7 @@ from app.api.errors import (
     rate_limit_handler,
     validation_error_handler,
 )
+from app.api.middleware.logging import RequestLoggingMiddleware
 from app.api.middleware.security_headers import SecurityHeadersMiddleware
 from app.config import settings
 from app.db.client import get_supabase_service
@@ -175,6 +176,9 @@ def create_app() -> FastAPI:
 
     # ── Security headers ─────────────────────────────────────────────────────
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # ── Request logging (scrubs Authorization + X-Install-UUID) ─────────────
+    app.add_middleware(RequestLoggingMiddleware)
 
     # ── C-2: Body size limit ──────────────────────────────────────────────────
     from fastapi.responses import JSONResponse as JSONResp

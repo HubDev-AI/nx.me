@@ -105,6 +105,7 @@ class MockPaymentAdapter:
             event_type=raw.get("type", ""),
             event_id=raw.get("id", ""),
             data=data,
+            created=raw.get("created"),
         )
 
     async def retrieve_subscription(
