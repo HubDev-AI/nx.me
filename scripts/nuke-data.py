@@ -9,6 +9,7 @@ Usage:
     make nuke          # wipe all NXME data except tiers
     make nuke-keep     # also keep demo/seed users
 """
+
 from __future__ import annotations
 
 import argparse
@@ -20,7 +21,7 @@ import redis
 from supabase import create_client
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+load_dotenv(Path(__file__).resolve().parent.parent / "app" / ".env")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]

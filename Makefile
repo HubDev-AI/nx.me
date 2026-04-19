@@ -29,11 +29,11 @@ reset:
 	@echo "Reset complete. Run 'make up' to start fresh."
 
 # ── Wipe all test data (no restart needed) ───────────────────────────────────
-nuke:
-	.venv/bin/python scripts/nuke-data.py
+nuke: app/.env
+	@set -a && . ./app/.env && set +a && .venv/bin/python scripts/nuke-data.py
 
-nuke-keep:
-	.venv/bin/python scripts/nuke-data.py --keep-demo
+nuke-keep: app/.env
+	@set -a && . ./app/.env && set +a && .venv/bin/python scripts/nuke-data.py --keep-demo
 
 # ── Run DB migrations ─────────────────────────────────────────────────────────
 migrate: app/.env
