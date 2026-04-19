@@ -210,9 +210,7 @@ async def test_save_memory_surfaces_dedup_reason_on_exact_match():
     }
     ctx = _make_ctx(repo)
 
-    result = await HANDLERS[TOOL_NAME_SAVE](
-        ctx, type="goal", text="grow my hair"
-    )
+    result = await HANDLERS[TOOL_NAME_SAVE](ctx, type="goal", text="grow my hair")
 
     assert result["is_error"] is False
     text = result["content"][0]["text"]
@@ -226,9 +224,7 @@ async def test_save_memory_rejects_non_writable_type():
     repo = _ToolRepo()
     ctx = _make_ctx(repo)
 
-    result = await HANDLERS[TOOL_NAME_SAVE](
-        ctx, type="style_profile", text="anything"
-    )
+    result = await HANDLERS[TOOL_NAME_SAVE](ctx, type="style_profile", text="anything")
 
     assert result["is_error"] is True
     assert "invalid type" in result["content"][0]["text"]
@@ -301,7 +297,9 @@ async def test_list_recent_renders_provenance_prefix():
     assert "tried: got the side-swept fringe" in body
     assert "avoid: short crop" in body
     # Newest first.
-    lines = [line for line in body.split("\n") if line and not line.startswith("cursor:")]
+    lines = [
+        line for line in body.split("\n") if line and not line.startswith("cursor:")
+    ]
     assert lines[0].startswith("goal (user):")
 
 

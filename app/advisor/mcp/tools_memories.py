@@ -194,15 +194,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "type": "integer",
                     "minimum": _LIST_MIN_LIMIT,
                     "maximum": _LIST_MAX_LIMIT,
-                    "description": (
-                        f"Page size (default {_LIST_DEFAULT_LIMIT})."
-                    ),
+                    "description": (f"Page size (default {_LIST_DEFAULT_LIMIT})."),
                 },
                 "cursor": {
                     "type": "string",
                     "description": (
-                        "Pagination cursor from a prior response's "
-                        "``next_cursor``."
+                        "Pagination cursor from a prior response's ``next_cursor``."
                     ),
                 },
             },
@@ -278,9 +275,7 @@ def _format_memory_line(row: dict[str, Any]) -> str:
     user_flag = " (user)" if row.get("authored_by") == "user" else ""
     summary = summarize_memory_content(row.get("content") or {})
     # Flatten any embedded newlines so the block stays one-row-per-line.
-    summary = (
-        summary.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
-    )
+    summary = summary.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
     return f"{prefix}{user_flag}: {summary}" if summary else ""
 
 
@@ -435,9 +430,7 @@ async def handle_list_recent(
     # text blocks and they are concatenated for the model in order.
     content_blocks: list[dict[str, Any]] = [{"type": "text", "text": body}]
     if next_cursor:
-        content_blocks.append(
-            {"type": "text", "text": f"next_cursor={next_cursor}"}
-        )
+        content_blocks.append({"type": "text", "text": f"next_cursor={next_cursor}"})
     return {"content": content_blocks, "is_error": False}
 
 
