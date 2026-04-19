@@ -1,10 +1,9 @@
-"""Tests for auth: JWT validation, disposable email, rate limiting, trial grantor, error mapping.
+"""Tests for auth: JWT validation, disposable email, rate limiting, error mapping.
 
 Exercises production code in:
   - app/api/middleware/auth.py (validate_jwt)
   - app/services/disposable_email.py (is_disposable_email)
   - app/services/rate_limiter.py (check_registration_rate_limit, etc.)
-  - app/entitlement/trial_grantor.py (TrialGrantor)
   - app/api/auth.py (_handle_supabase_auth_error) — guarded by import check
 """
 
@@ -19,9 +18,8 @@ import pytest
 from app.api.middleware.auth import validate_jwt
 from app.config import settings
 from app.services.disposable_email import is_disposable_email
-from app.entitlement.trial_grantor import TrialGrantor
 
-from tests.conftest import make_jwt, MockSupabase, MockRedis
+from tests.conftest import make_jwt, MockRedis
 
 
 # Check if auth module is importable (FastAPI version compat)
@@ -179,46 +177,6 @@ class TestAuthErrorMapping:
         with pytest.raises(HTTPException) as exc_info:
             _handle_supabase_auth_error(Exception("Something unexpected"))
         assert exc_info.value.status_code == 500
-
-
-# ===========================================================================
-# TrialGrantor tests
-# ===========================================================================
-
-
-class TestTrialGrantor:
-    """Unit tests for TrialGrantor.grant() — exercises app/entitlement/trial_grantor.py."""
-
-    def test_grant_calls_rpc_with_correct_params(self):
-        sb = MockSupabase()
-        sb.set_table_data("credit_ledger", [])
-        grantor = TrialGrantor(sb)
-        uid = uuid4()
-        grantor.grant(uid)
-
-    def test_grant_is_idempotent_when_already_granted(self):
-        sb = MockSupabase()
-        sb.set_table_data(
-            "credit_ledger", [{"id": str(uuid4()), "type": "trial_grant"}]
-        )
-        grantor = TrialGrantor(sb)
-        uid = uuid4()
-        grantor.grant(uid)
-
-    def test_grant_raises_when_rpc_fails(self):
-        """C-3 fix: non-atomic fallback removed — RPC failure raises RuntimeError."""
-        sb = MockSupabase()
-        sb.set_table_data("credit_ledger", [])
-
-        def failing_rpc(name, params=None):
-            if name == "grant_trial":
-                raise Exception("RPC not available")
-
-        sb.rpc = failing_rpc
-        grantor = TrialGrantor(sb)
-        uid = uuid4()
-        with pytest.raises(RuntimeError, match="Failed to grant trial"):
-            grantor.grant(uid)
 
 
 # ===========================================================================

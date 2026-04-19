@@ -47,14 +47,6 @@ def _fake_llm(response_text: str):
     return SimpleNamespace(create_message=_create)
 
 
-def _patch_entitlement(monkeypatch):
-    ent = MagicMock()
-    ent.check = AsyncMock(return_value=SimpleNamespace(allowed=True, error_code=None))
-    monkeypatch.setattr(
-        "app.entitlement.service.EntitlementService", MagicMock(return_value=ent)
-    )
-
-
 def _patch_repo(
     monkeypatch,
     *,
@@ -272,7 +264,7 @@ async def test_rapid_retry_dedup_skips_second_run_on_same_upload(monkeypatch, ca
         "_get_llm_adapter",
         lambda: _fake_llm('{"body": "warm.", "observation_tag": "clean"}'),
     )
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -333,7 +325,7 @@ async def test_rapid_retry_dedup_disabled_when_window_is_zero(monkeypatch):
         "_get_llm_adapter",
         lambda: _fake_llm('{"body": "warm.", "observation_tag": "clean"}'),
     )
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -383,7 +375,7 @@ async def test_rapid_retry_dedup_different_upload_does_not_skip(monkeypatch):
         "_get_llm_adapter",
         lambda: _fake_llm('{"body": "warm.", "observation_tag": "clean"}'),
     )
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -454,7 +446,7 @@ async def test_post_glowup_skips_when_no_style_profile(monkeypatch, caplog):
         "_get_llm_adapter",
         lambda: SimpleNamespace(create_message=_create),
     )
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(monkeypatch, style_profile=None)
     _patch_handlers(monkeypatch)
 
@@ -503,7 +495,7 @@ async def test_post_glowup_skips_when_handler_returns_no_images(monkeypatch):
         "_get_llm_adapter",
         lambda: SimpleNamespace(create_message=_create),
     )
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(
         monkeypatch,
         style_profile={

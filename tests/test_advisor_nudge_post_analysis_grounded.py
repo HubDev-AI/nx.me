@@ -46,17 +46,6 @@ def _fake_llm_capture(
     return SimpleNamespace(create_message=_capturing_create), captured
 
 
-def _patch_entitlement(monkeypatch, *, allowed: bool = True):
-    fake_ent = MagicMock()
-    fake_ent.check = AsyncMock(
-        return_value=SimpleNamespace(allowed=allowed, error_code=None)
-    )
-    monkeypatch.setattr(
-        "app.entitlement.service.EntitlementService",
-        MagicMock(return_value=fake_ent),
-    )
-
-
 def _patch_repo(
     monkeypatch,
     *,
@@ -132,7 +121,7 @@ async def test_post_analysis_nudge_prompt_is_vision_grounded(monkeypatch):
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={
@@ -189,7 +178,7 @@ async def test_vision_nudge_persists_body_and_observation_tag(monkeypatch):
         ' "observation_tag": "brighter eyes"}'
     )
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     fake_repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -232,7 +221,7 @@ async def test_vision_nudge_accepts_fenced_json(monkeypatch):
         )
     )
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     fake_repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -263,7 +252,7 @@ async def test_vision_nudge_drops_malformed_json(monkeypatch, caplog):
         response_text="This is plain text not JSON at all."
     )
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     fake_repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -297,7 +286,7 @@ async def test_vision_nudge_skips_when_no_style_profile(monkeypatch):
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     fake_repo = _patch_repo(monkeypatch, style_profile=None)
     _patch_image_fetch(monkeypatch)
 
@@ -319,7 +308,7 @@ async def test_vision_nudge_uses_haiku_model(monkeypatch):
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={
@@ -350,7 +339,7 @@ async def test_vision_nudge_one_image_degenerate_case_still_grounds(monkeypatch)
 
     fake_llm, captured = _fake_llm_capture()
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={

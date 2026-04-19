@@ -1,16 +1,15 @@
 /**
  * usePurchaseFlow — single source of truth for entitlement fetching +
- * credit pack / premium / cancel actions.
+ * credit pack / pro subscription / cancel actions.
  *
  * Used by both `subscription.tsx` and `PaywallModal.tsx` so duplicated
  * purchase logic and state stays in one place.
  *
- * Credit packs use the in-app Stripe Payment Sheet (PR6). Premium
- * subscriptions keep the `Linking.openURL` redirect flow — migrating
- * Stripe Subscriptions to the sheet is a separate, larger lift.
- * Cancel confirmation is driven by `isCancelSheetOpen` / `openCancelSheet` /
- * `confirmCancel` / `dismissCancelSheet`; the consumer screen renders
- * `<CancelSubscriptionSheet>` wired to that state.
+ * Credit packs use the in-app Stripe Payment Sheet. Pro subscriptions keep
+ * the `Linking.openURL` redirect flow. Cancel confirmation is driven by
+ * `isCancelSheetOpen` / `openCancelSheet` / `confirmCancel` /
+ * `dismissCancelSheet`; the consumer screen renders `<CancelSubscriptionSheet>`
+ * wired to that state.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking } from "react-native";
@@ -25,14 +24,14 @@ import {
   createSubscription,
   fetchEntitlement,
   SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED,
-  type CreditPackOption,
   type EntitlementState,
+  type PackOption,
 } from "../entitlement";
 import { parseApiError } from "../errors";
 import { useStripe } from "../stripe-web-shim";
 import { showToast } from "../toast";
 
-/** Sentinel `purchasingId` used while the premium subscribe call is in flight. */
+/** Sentinel `purchasingId` used while the pro subscribe call is in flight. */
 export const PURCHASING_PREMIUM_ID = "__premium__";
 
 const ERROR_LOAD_ENTITLEMENT =
@@ -46,7 +45,7 @@ export interface UsePurchaseFlowReturn {
   isLoading: boolean;
   error: string | null;
   /**
-   * `pack_id` of the credit pack currently being purchased,
+   * `price_id` of the pack currently being purchased,
    * `PURCHASING_PREMIUM_ID` while the subscribe call is in flight,
    * or `null` when no purchase is active.
    */
@@ -55,7 +54,7 @@ export interface UsePurchaseFlowReturn {
   /** True while the confirm-cancel bottom sheet is visible. */
   isCancelSheetOpen: boolean;
   refresh: () => Promise<void>;
-  buyCredits: (pack: CreditPackOption) => Promise<void>;
+  buyCredits: (pack: PackOption) => Promise<void>;
   subscribe: () => Promise<void>;
   /** Open the confirm-cancel bottom sheet (no API call yet). */
   openCancelSheet: () => void;
@@ -69,10 +68,9 @@ interface UsePurchaseFlowOptions {
   /** Auto-load entitlement on mount. Default true. */
   autoLoad?: boolean;
   /**
-   * Fires after a successful credit pack purchase or new premium
-   * subscription with the latest entitlement state. Does NOT fire
-   * for `already_subscribed` responses or cancels — those callers
-   * shouldn't show "Purchase complete!" UX.
+   * Fires after a successful credit pack purchase or new pro subscription
+   * with the latest entitlement state. Does NOT fire for `already_subscribed`
+   * responses or cancels — those callers shouldn't show "Purchase complete!" UX.
    */
   onPurchaseComplete?: (state: EntitlementState) => void;
 }
@@ -99,8 +97,7 @@ export function usePurchaseFlow({
 
   // ---------------------------------------------------------------------
   // Refetch — internal helper used by post-action reloads (success path).
-  // Returns the updated state; throws on failure (caller decides how to
-  // surface it — usually via toast since the user already has data).
+  // Returns the updated state; throws on failure.
   // ---------------------------------------------------------------------
   const refetch = useCallback(async () => {
     const updated = await fetchEntitlement();
@@ -111,9 +108,7 @@ export function usePurchaseFlow({
   // Public `refresh` — fetches latest entitlement state. Toggles
   // `isLoading` (skeleton) only when there's no current data;
   // surfaces errors as page-level `error` on first load and as a
-  // toast on subsequent refreshes. Used for mount, retry, and
-  // pull-to-refresh. Stable identity so callers can put it in
-  // `useEffect` deps without looping.
+  // toast on subsequent refreshes.
   const refresh = useCallback(async () => {
     const hadData = entitlementRef.current !== null;
     if (!hadData) setIsLoading(true);
@@ -139,21 +134,16 @@ export function usePurchaseFlow({
   }, [autoLoad, refresh]);
 
   // ---------------------------------------------------------------------
-  // Buy credits — in-app Stripe Payment Sheet (PR6).
-  // Bootstrap a PaymentIntent on the server, init the sheet, present it,
-  // then refresh entitlement once payment_intent.succeeded lands. User
-  // cancellation is surfaced silently — only real errors raise a toast.
+  // Buy credits — in-app Stripe Payment Sheet.
+  // Bootstrap a PaymentIntent on the server (keyed by price_id), init the
+  // sheet, present it, then refresh entitlement on success.
   // ---------------------------------------------------------------------
   const buyCredits = useCallback(
-    async (pack: CreditPackOption) => {
-      setPurchasingId(pack.pack_id);
+    async (pack: PackOption) => {
+      setPurchasingId(pack.price_id);
       try {
         const intent = await createCreditPurchaseIntent(pack.pack_id);
 
-        // Dev-only sanity check: the publishable key returned by the
-        // backend should match the one compiled into the mobile app.
-        // A mismatch almost always means the two halves are talking to
-        // different Stripe accounts.
         if (__DEV__ && intent.publishable_key !== STRIPE_PUBLISHABLE_KEY) {
           console.warn(
             "[stripe] publishable key mismatch between backend and mobile build",
@@ -181,7 +171,6 @@ export function usePurchaseFlow({
             presentRes.error.code ===
             STRIPE_PAYMENT_SHEET.USER_CANCELED_ERROR_CODE
           ) {
-            // User dismissed the sheet — no toast, no refresh.
             return;
           }
           throw new Error(presentRes.error.message);
@@ -204,7 +193,7 @@ export function usePurchaseFlow({
   );
 
   // ---------------------------------------------------------------------
-  // Subscribe to premium
+  // Subscribe to Pro
   // ---------------------------------------------------------------------
   const subscribe = useCallback(async () => {
     setPurchasingId(PURCHASING_PREMIUM_ID);
@@ -212,9 +201,6 @@ export function usePurchaseFlow({
       const response = await createSubscription();
 
       if (response.status === SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED) {
-        // Not a new purchase — re-sync state and surface an info toast.
-        // We deliberately skip `onPurchaseComplete` so consumers don't
-        // show a misleading "Purchase complete!" banner.
         await refetch();
         showToast({ kind: "info", message: INFO_ALREADY_SUBSCRIBED });
         return;
@@ -230,6 +216,16 @@ export function usePurchaseFlow({
       onPurchaseComplete?.(updated);
     } catch (err) {
       const appError = parseApiError(err);
+      // Backend now raises HTTP 409 ALREADY_SUBSCRIBED instead of a success
+      // payload; treat that as the same already-subscribed path.
+      if (
+        appError.kind === "business" &&
+        appError.errorCode === "ALREADY_SUBSCRIBED"
+      ) {
+        await refetch();
+        showToast({ kind: "info", message: INFO_ALREADY_SUBSCRIBED });
+        return;
+      }
       showToast({ kind: "error", message: appError.message });
     } finally {
       setPurchasingId(null);
@@ -238,8 +234,6 @@ export function usePurchaseFlow({
 
   // ---------------------------------------------------------------------
   // Cancel subscription — sheet-driven confirmation.
-  // `openCancelSheet` just shows the sheet; `confirmCancel` fires the
-  // API call when the user presses the destructive button.
   // ---------------------------------------------------------------------
   const openCancelSheet = useCallback(() => {
     setIsCancelSheetOpen(true);

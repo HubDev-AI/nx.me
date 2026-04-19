@@ -1,7 +1,6 @@
 """User repository — all supabase.table('users') and auth.admin queries in one place.
 
-Follows the same pattern as TierRepository: constructor takes a Client,
-methods are synchronous (callers use run_sync for async handlers).
+Constructor takes a Client; methods are synchronous (callers use run_sync for async handlers).
 """
 
 from __future__ import annotations
@@ -49,7 +48,7 @@ class UserRepository:
             self._sb.table("users")
             .select(
                 "id, username, display_name, email, avatar_storage_key, "
-                "username_changed_at, face_mod_consent_at"
+                "username_changed_at, face_mod_consent_at, stripe_customer_id"
             )
             .eq("id", user_id)
             .maybe_single()
@@ -128,17 +127,6 @@ class UserRepository:
         if exclude_user_id and result.data["id"] == exclude_user_id:
             return None
         return result.data
-
-    def get_trial_analyses_remaining(self, user_id: str) -> int:
-        """Return trial_analyses_remaining for the given user (0 if not found)."""
-        result = (
-            self._sb.table("users")
-            .select("trial_analyses_remaining")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-        return result.data["trial_analyses_remaining"] if result.data else 0
 
     def get_user_post_stats(self, user_id: str) -> dict:
         """Call the user_post_stats RPC to get post_count and total_reactions.
@@ -275,6 +263,23 @@ class UserRepository:
             self._sb.table("users")
             .select("id, username, display_name, email")
             .eq("tiktok_open_id", open_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
+    def find_by_stripe_customer_id(self, stripe_customer_id: str) -> dict | None:
+        """Find a user by their Stripe customer ID, or None.
+
+        Used by dispute + refund webhook handlers to resolve user_id from
+        the Stripe customer object when no user_id metadata is present.
+        """
+        result = (
+            self._sb.table("users")
+            .select("id")
+            .eq("stripe_customer_id", stripe_customer_id)
             .maybe_single()
             .execute()
         )

@@ -83,10 +83,14 @@ def _patch_google_common(monkeypatch, user_id: str, email: str, fake_session) ->
 
 
 def _make_google_session(user_id: str, email: str):
+    from datetime import datetime, timezone
+
     fake_user = MagicMock()
     fake_user.id = user_id
     fake_user.email = email
     fake_user.user_metadata = {}
+    # created_at must be a real datetime so the new-account grant gate works.
+    fake_user.created_at = datetime.now(tz=timezone.utc)
     fake_session = MagicMock()
     fake_session.user = fake_user
     fake_session.session = MagicMock(
@@ -159,10 +163,6 @@ class TestSocialLoginReservationBypass:
         user_repo.upsert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "alice_abc123"}
 
-        tier_repo = SimpleNamespace(
-            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
-        )
-
         from app.api.auth import LoginRequest
 
         result = await social_login(
@@ -171,7 +171,6 @@ class TestSocialLoginReservationBypass:
             supabase=fake_supabase,
             r=_MockRedis(),
             user_repo=user_repo,
-            tier_repo=tier_repo,
         )
 
         # Two availability checks happened: first "reserved", then "available"
@@ -195,10 +194,6 @@ class TestSocialLoginReservationBypass:
         user_repo.upsert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "bob"}
 
-        tier_repo = SimpleNamespace(
-            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
-        )
-
         from app.api.auth import LoginRequest
 
         await social_login(
@@ -207,7 +202,6 @@ class TestSocialLoginReservationBypass:
             supabase=fake_supabase,
             r=_MockRedis(),
             user_repo=user_repo,
-            tier_repo=tier_repo,
         )
 
         user_repo.check_username_availability.assert_called()
@@ -242,10 +236,6 @@ class TestTikTokLoginReservationBypass:
         user_repo.insert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "chloe_abc123"}
 
-        tier_repo = SimpleNamespace(
-            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
-        )
-
         from app.api.auth import TikTokLoginRequest
 
         result = await tiktok_login(
@@ -254,7 +244,6 @@ class TestTikTokLoginReservationBypass:
             supabase=MagicMock(),
             r=_MockRedis(),
             user_repo=user_repo,
-            tier_repo=tier_repo,
         )
 
         assert len(availability_calls) == 2
@@ -272,10 +261,6 @@ class TestTikTokLoginReservationBypass:
         user_repo.insert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "dana"}
 
-        tier_repo = SimpleNamespace(
-            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
-        )
-
         from app.api.auth import TikTokLoginRequest
 
         await tiktok_login(
@@ -284,7 +269,6 @@ class TestTikTokLoginReservationBypass:
             supabase=MagicMock(),
             r=_MockRedis(),
             user_repo=user_repo,
-            tier_repo=tier_repo,
         )
 
         user_repo.check_username_availability.assert_called()

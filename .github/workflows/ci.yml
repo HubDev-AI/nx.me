@@ -19,16 +19,106 @@ jobs:
           --health-retries 5
         ports:
           - 6379:6379
+      # Postgres service mapped to 54322 (Supabase local default) so the
+      # live-DB tests in tests/test_dispute_lifecycle.py + the new
+      # TestLiveDBConcurrency class in tests/test_credit_rpcs_v2.py can
+      # connect without patching their hardcoded DSNs.
+      postgres:
+        # pgvector image bundles the `vector` extension that
+        # migration 0007 (advisor embeddings) installs.
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 54322:5432
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Bootstrap Supabase auth + extensions schemas (CI Postgres only)
+        # Real Supabase ships these via GoTrue + custom extension setup. CI's
+        # bare Postgres needs stubs so:
+        #   - 0003 / 0016: REFERENCES auth.users(id) ON DELETE CASCADE
+        #   - 0013 / 0048 / 0052 / 0053: GRANT / REVOKE on anon, authenticated, service_role
+        #   - 0049 / 0050 / 0051: auth.uid() / auth.role() RLS guards
+        #   - 0050: extensions.uuid_generate_v5 / extensions.uuid_ns_url
+        # The auth.uid() / auth.role() stubs read from the `request.jwt.claims`
+        # GUC the same way real Supabase does, so tests that SET LOCAL the
+        # JWT claims get per-call identity (see test_42501_cross_user_call_rejected).
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 54322 -U postgres -d postgres <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE SCHEMA IF NOT EXISTS extensions;
+
+          CREATE TABLE IF NOT EXISTS auth.users (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              email TEXT,
+              created_at TIMESTAMPTZ DEFAULT now()
+          );
+
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID
+              LANGUAGE sql STABLE AS $body$
+              SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->>'sub', '')::uuid
+              $body$;
+          CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT
+              LANGUAGE sql STABLE AS $body$
+              SELECT COALESCE(current_setting('request.jwt.claims', true)::jsonb->>'role', 'service_role')
+              $body$;
+
+          DO $do$
+          BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
+                  CREATE ROLE anon NOLOGIN;
+              END IF;
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
+                  CREATE ROLE authenticated NOLOGIN;
+              END IF;
+              IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN
+                  CREATE ROLE service_role NOLOGIN;
+              END IF;
+          END
+          $do$;
+          SQL
+          # 0050 calls extensions.uuid_generate_v5; install uuid-ossp under
+          # the `extensions` schema BEFORE the migration's own CREATE EXTENSION
+          # runs (CREATE EXTENSION IF NOT EXISTS skips when already installed).
+          psql -h localhost -p 54322 -U postgres -d postgres -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA extensions'
+      - name: Apply database migrations
+        run: python -m app.migrations.run
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+          REDIS_URL: redis://localhost:6379/0
+          # Dev-placeholder fingerprint secret — 64 hex chars (32 bytes).
+          # Production rotates via SIGNUP_FINGERPRINT_SERVER_SECRET in the
+          # env block; CI only needs a non-empty value to satisfy the
+          # fail-fast settings validator.
+          SIGNUP_FINGERPRINT_SERVER_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          SIGNUP_GRANT_MILLI: 300
+          WEEKLY_FREE_GRANT_MILLI: 100
+          STRIPE_PRICE_CREDITS_PACK_V1: price_ci_test_credits_pack_v1
+          STRIPE_PRICE_PRO_V1: price_ci_test_pro_v1
       - run: pytest --tb=short -q
         env:
           APP_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
           REDIS_URL: redis://localhost:6379/0
+          SIGNUP_FINGERPRINT_SERVER_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          SIGNUP_GRANT_MILLI: 300
+          WEEKLY_FREE_GRANT_MILLI: 100
+          STRIPE_PRICE_CREDITS_PACK_V1: price_ci_test_credits_pack_v1
+          STRIPE_PRICE_PRO_V1: price_ci_test_pro_v1
 
   card-web:
     runs-on: ubuntu-latest

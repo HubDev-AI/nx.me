@@ -2,8 +2,8 @@
 
 This helper consolidates the three historically duplicated detections of
 PostgreSQL SQLSTATE ``23505`` (``unique_violation``) that previously lived in
-``app/api/posts.py``, ``app/advisor/memory_manager.py``, and
-``app/entitlement/trial_grantor.py``. Each call site was slightly different —
+``app/api/posts.py``, ``app/advisor/memory_manager.py``, and the legacy
+trial_grantor module. Each call site was slightly different —
 one only checked ``.code``, one also string-matched ``"unique_violation"``,
 one only string-matched ``"unique" + ("violat" | "duplicat")``.
 
@@ -119,8 +119,8 @@ def test_message_contains_duplicate_key_phrase() -> None:
 
 
 def test_message_contains_unique_and_violat_tokens() -> None:
-    """Less common wording kept for parity with the historic memory_manager
-    implementation — 'unique … violat' anywhere in the message."""
+    """Less common wording kept for parity with the historic memory_manager and
+    legacy trial_grantor implementations — 'unique … violat' anywhere in the message."""
 
     class _Bare(Exception):
         pass

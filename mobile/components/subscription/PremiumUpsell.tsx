@@ -2,7 +2,7 @@
  * PremiumUpsell — RECOMMENDED block on the subscription screen.
  *
  * Pressable card that opens the Stripe Checkout subscribe flow.
- * Reads price + plan name from the backend `PremiumOption` and
+ * Reads price from the backend `ProOption` and
  * formats via `formatPrice`.
  *
  * Billing interval assumption matches `PremiumCard`: hardcoded
@@ -18,7 +18,7 @@ import { PressableScale } from "../ui/PressableScale";
 import { useTheme } from "../../lib/theme-context";
 import { formatPrice } from "../../lib/format-price";
 import { PREMIUM_BENEFITS } from "../../constants/premium-benefits";
-import type { PremiumOption } from "../../lib/entitlement";
+import type { ProOption } from "../../lib/entitlement";
 
 /**
  * Prose form of PREMIUM_BENEFITS — keeps copy in lock-step with
@@ -32,7 +32,7 @@ const PREMIUM_BENEFITS_PROSE = (() => {
   return `${head}, and ${lowercased[lowercased.length - 1]}.`;
 })();
 
-/** Suffix appended to the Premium price (e.g. "/mo"). Monthly-only for now. */
+/** Suffix appended to the Pro price (e.g. "/mo"). Monthly-only for now. */
 const BILLING_INTERVAL_SUFFIX = "/mo";
 const PREMIUM_BADGE_ICON_SIZE = 16;
 const CARD_BORDER_WIDTH = 1.5;
@@ -42,7 +42,7 @@ const PRICE_FONT_SIZE = 16;
 const BUTTON_FONT_SIZE = 16;
 
 interface PremiumUpsellProps {
-  premium: PremiumOption;
+  premium: ProOption;
   isSubscribing: boolean;
   onSubscribe: () => void;
 }
@@ -71,7 +71,7 @@ export function PremiumUpsell({
             ...THEME.shadow.glow(theme.accent),
           },
         ]}
-        accessibilityLabel={`Subscribe to ${premium.name} for ${formattedPrice} per month`}
+        accessibilityLabel={`Subscribe to Pro for ${formattedPrice} per month`}
         accessibilityRole="button"
       >
         <View style={styles.badge}>
@@ -91,7 +91,7 @@ export function PremiumUpsell({
           Get {PREMIUM_BENEFITS_PROSE}
         </Body>
         <Body weight="semibold" color={theme.accent} style={styles.price}>
-          {premium.name} · {formattedPrice}
+          Pro · {formattedPrice}
           {BILLING_INTERVAL_SUFFIX}
         </Body>
 

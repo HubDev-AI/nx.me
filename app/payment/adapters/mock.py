@@ -5,13 +5,34 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from app.payment.ports import PaymentIntentBundle, PriceInfo, WebhookEvent
+from app.payment.ports import (
+    PaymentFetchError,
+    PaymentIntentBundle,
+    PriceInfo,
+    SubscriptionSnapshot,
+    WebhookEvent,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class MockPaymentAdapter:
     """Returns deterministic results. No Stripe calls."""
+
+    def __init__(self) -> None:
+        # In-memory store so tests can pre-populate a canonical response
+        # for ``retrieve_subscription`` calls. Keeps the mock stateful
+        # enough to exercise happy/miss branches without pulling in a
+        # Stripe fixture.
+        self._subscriptions: dict[str, SubscriptionSnapshot] = {}
+
+    def set_subscription(self, snapshot: SubscriptionSnapshot) -> None:
+        """Seed a snapshot retrievable via ``retrieve_subscription``.
+
+        Intended for test setup. The caller keyed the snapshot by its own
+        ``id`` so the adapter can look it up without additional bookkeeping.
+        """
+        self._subscriptions[snapshot.id] = snapshot
 
     async def create_checkout_session(
         self,
@@ -84,4 +105,26 @@ class MockPaymentAdapter:
             event_type=raw.get("type", ""),
             event_id=raw.get("id", ""),
             data=data,
+            created=raw.get("created"),
         )
+
+    async def retrieve_subscription(
+        self,
+        subscription_id: str,
+        timeout: float = 3.0,
+    ) -> SubscriptionSnapshot:
+        """Return a seeded snapshot, or raise ``PaymentFetchError``.
+
+        Callers use ``set_subscription`` to stage fixtures — unknown ids
+        simulate Stripe's "not found" failure mode so tests can exercise
+        the error branch without needing a real network round-trip.
+        """
+        snapshot = self._subscriptions.get(subscription_id)
+        if snapshot is None:
+            raise PaymentFetchError(f"mock has no subscription {subscription_id!r}")
+        logger.info("Mock retrieve subscription: %s", subscription_id)
+        return snapshot
+
+    async def delete_customer(self, customer_id: str) -> None:
+        """No-op for mock; always idempotent."""
+        logger.info("Mock delete customer: %s", customer_id)

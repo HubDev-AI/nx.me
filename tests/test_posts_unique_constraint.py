@@ -116,20 +116,12 @@ def db_conn() -> Iterator[_PgConnection]:
 
 
 def _insert_user(cur) -> str:
-    """Insert a user with a unique username on the default tier; return id.
-
-    ``users.tier_id`` is NOT NULL (migration 0002). We resolve it from the
-    ``tiers`` table at insert time via a SELECT subquery so the test never
-    hardcodes the default tier UUID — SEED_TIERS is the source of truth.
-    """
+    """Insert a user with a unique username; return id."""
     suffix = uuid.uuid4().hex[:12]
     cur.execute(
         """
-        INSERT INTO users (username, display_name, email_verified, tier_id)
-        VALUES (
-            %s, %s, FALSE,
-            (SELECT id FROM tiers WHERE is_default = TRUE LIMIT 1)
-        )
+        INSERT INTO users (username, display_name, email_verified)
+        VALUES (%s, %s, FALSE)
         RETURNING id
         """,
         (f"testuser_{suffix}", f"Test {suffix}"),

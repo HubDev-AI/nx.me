@@ -41,6 +41,12 @@ export const SECURE_STORE_KEYS = {
   ONBOARDING_COMPLETE: "nxme_onboarding_complete",
   /** Canonical location for the current user's username. */
   USERNAME: "nxme_username",
+  /**
+   * Stable per-install UUID sent as `X-Install-UUID` on auth endpoints so
+   * the backend can correlate installs without requiring a logged-in user.
+   * Generated once on first launch using `expo-crypto` and persisted here.
+   */
+  INSTALL_UUID: "nxme_install_uuid",
 } as const;
 
 /** OAuth Client IDs — sourced from env / Expo config extras */

@@ -1,14 +1,9 @@
 /**
- * PaywallModal — full paywall sheet triggered when can_generate=false.
+ * PaywallModal — full paywall sheet triggered when blocked_reason is set.
  *
- * Shows credit packs and premium subscription via the shared
- * `usePurchaseFlow` hook (same source of truth as the subscription
- * screen). Modal UX: scale+fade entry from trigger, swipe-down
- * dismiss, ~50% scrim.
- *
- * Stripe Checkout fallback: opens the hosted checkout page in the
- * browser via `Linking.openURL`. PR6 will swap this for the in-app
- * Stripe Payment Sheet.
+ * Shows a CTA driven by `getPaywallCta()` (pure function), plus pack and
+ * Pro options from `purchase_options`. Modal UX: scale+fade entry from
+ * trigger, swipe-down dismiss, ~50% scrim.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -39,6 +34,7 @@ import {
   PURCHASING_PREMIUM_ID,
   usePurchaseFlow,
 } from "../../lib/hooks/use-purchase-flow";
+import { getPaywallCta } from "../../lib/paywall-cta";
 import { CreditBadge } from "./CreditBadge";
 import { CreditPackCard } from "./CreditPackCard";
 import { PremiumCard } from "./PremiumCard";
@@ -56,8 +52,7 @@ const SHEET_INITIAL_SCALE = 0.95;
 
 /**
  * Spring config used when the swipe-to-dismiss gesture is released below the
- * dismiss threshold and the sheet snaps back to `panY: 0`. Tuned to
- * approximate the legacy Animated.spring feel (tension: 40, friction: 7).
+ * dismiss threshold and the sheet snaps back to `panY: 0`.
  */
 const PAN_RELEASE_SPRING = { damping: 20, stiffness: 150 } as const;
 
@@ -66,10 +61,8 @@ export function PaywallModal({
   onClose,
   onPurchaseComplete,
 }: PaywallModalProps) {
-  // Local UI state — purchase success banner only (errors → toast via hook).
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Shared purchase flow — fetches entitlement, drives buy/subscribe.
   const {
     entitlement,
     isLoading: isFetching,
@@ -79,7 +72,7 @@ export function PaywallModal({
     buyCredits,
     subscribe,
   } = usePurchaseFlow({
-    autoLoad: false, // load on `visible` toggle below
+    autoLoad: false,
     onPurchaseComplete: (state) => {
       setShowSuccess(true);
       onPurchaseComplete?.(state);
@@ -88,9 +81,6 @@ export function PaywallModal({
 
   const isPurchasing = purchasingId !== null;
 
-  // ---------------------------------------------------------------------------
-  // Focus management refs
-  // ---------------------------------------------------------------------------
   const closeButtonRef = useRef<React.ElementRef<typeof Pressable>>(null);
 
   // ---------------------------------------------------------------------------
@@ -112,9 +102,6 @@ export function PaywallModal({
     ],
   }));
 
-  // ---------------------------------------------------------------------------
-  // Open / close animations
-  // ---------------------------------------------------------------------------
   const animateIn = useCallback(() => {
     sheetTranslateY.value = SHEET_OFFSCREEN_OFFSET;
     sheetScale.value = SHEET_INITIAL_SCALE;
@@ -140,8 +127,6 @@ export function PaywallModal({
       sheetScale.value = withTiming(SHEET_INITIAL_SCALE, {
         duration: PAYWALL_ANIMATION.EXIT_DURATION_MS,
       });
-      // Callback fires when the longest leg (sheetTranslateY) finishes so the
-      // caller is only invoked once all three animations have settled.
       sheetTranslateY.value = withTiming(
         SHEET_OFFSCREEN_OFFSET,
         { duration: PAYWALL_ANIMATION.EXIT_DURATION_MS },
@@ -153,26 +138,14 @@ export function PaywallModal({
     [backdropOpacity, sheetTranslateY, sheetScale],
   );
 
-  // ---------------------------------------------------------------------------
-  // Close handler
-  // ---------------------------------------------------------------------------
   const handleClose = useCallback(() => {
-    if (isPurchasing) return; // prevent close during purchase
+    if (isPurchasing) return;
     animateOut(() => {
       setShowSuccess(false);
       onClose();
     });
   }, [isPurchasing, animateOut, onClose]);
 
-  // ---------------------------------------------------------------------------
-  // Swipe-down to dismiss via PanResponder
-  //
-  // TODO(PR-future): migrate to `Gesture.Pan()` once
-  // `react-native-gesture-handler` is added to the project (requires pod
-  // install + native rebuild). Until then, we keep the JS PanResponder and
-  // drive the Reanimated shared value directly — sharedValue.value = x is
-  // safe from the JS thread, no worklet required.
-  // ---------------------------------------------------------------------------
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -195,21 +168,11 @@ export function PaywallModal({
     [panY, handleClose],
   );
 
-  // ---------------------------------------------------------------------------
-  // Fetch entitlement on open + accessibility announcement
-  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (visible) {
       animateIn();
       refresh();
       AccessibilityInfo.announceForAccessibility("Dialog opened");
-      // Move focus to close button so screen readers enter the modal.
-      // Focus restore on close intentionally omitted: React Native does not
-      // expose `AccessibilityInfo.getCurrentlyFocusedElement` in the public
-      // API, and the caller cannot pass a ref to the previously focused
-      // element from outside the modal (the trigger lives in arbitrary
-      // parent screens). Revisit if RN adds a portable way to query or
-      // restore focus.
       closeButtonRef.current?.focus();
     }
   }, [visible, animateIn, refresh]);
@@ -217,15 +180,34 @@ export function PaywallModal({
   // ---------------------------------------------------------------------------
   // Derived state
   // ---------------------------------------------------------------------------
-  const creditBalance = entitlement?.credit_balance ?? 0;
+  const remainingGlowups = entitlement?.remaining_glowups ?? 0;
   const purchaseOptions = entitlement?.purchase_options;
-  const creditPacks = purchaseOptions?.credit_packs ?? [];
-  const hasCreditPacks = creditPacks.length > 0;
-  const premium = purchaseOptions?.premium ?? null;
+  const packOption = purchaseOptions?.pack ?? null;
+  const proOption = purchaseOptions?.pro ?? null;
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  const cta =
+    entitlement != null
+      ? getPaywallCta(
+          entitlement.tier,
+          entitlement.subscription_status,
+          entitlement.blocked_reason,
+        )
+      : null;
+
+  const showPackCard =
+    !isFetching &&
+    !fetchError &&
+    packOption != null &&
+    cta != null &&
+    cta.type !== "no_paywall";
+
+  const showProCard =
+    !isFetching &&
+    !fetchError &&
+    proOption != null &&
+    cta != null &&
+    (cta.type === "subscribe" || cta.type === "update_card");
+
   return (
     <Modal
       visible={visible}
@@ -254,7 +236,7 @@ export function PaywallModal({
 
         {/* Header */}
         <View style={styles.header}>
-          <Heading size="md">Get More Generations</Heading>
+          <Heading size="md">Get More Glow-Ups</Heading>
           <Pressable
             ref={closeButtonRef}
             onPress={handleClose}
@@ -269,15 +251,25 @@ export function PaywallModal({
 
         {/* Credit badge */}
         <View style={styles.badgeRow}>
-          <CreditBadge balance={creditBalance} />
+          <CreditBadge balance={remainingGlowups} />
           {entitlement && (
             <Caption color="secondary">
-              {entitlement.can_generate
+              {entitlement.blocked_reason === "none"
                 ? "You can generate"
                 : "No credits remaining"}
             </Caption>
           )}
         </View>
+
+        {/* CTA label when loaded */}
+        {cta != null && cta.type !== "no_paywall" && (
+          <View style={styles.ctaRow}>
+            <Label>{cta.primary.label}</Label>
+            {cta.type !== "buy_pack" && cta.type !== "contact_support" && (
+              <Caption color="muted">{cta.secondary.label}</Caption>
+            )}
+          </View>
+        )}
 
         {/* Content */}
         <ScrollView
@@ -324,30 +316,25 @@ export function PaywallModal({
             </View>
           )}
 
-          {/* Credit packs */}
-          {!isFetching && !fetchError && hasCreditPacks && (
+          {/* Credit pack */}
+          {showPackCard && packOption != null && (
             <View style={styles.section}>
-              <Label>Credit Packs</Label>
-              <View style={styles.packList}>
-                {creditPacks.map((pack) => (
-                  <CreditPackCard
-                    key={pack.pack_id}
-                    pack={pack}
-                    onPurchase={buyCredits}
-                    isLoading={purchasingId === pack.pack_id}
-                    disabled={isPurchasing && purchasingId !== pack.pack_id}
-                  />
-                ))}
-              </View>
+              <Label>Credit Pack</Label>
+              <CreditPackCard
+                pack={packOption}
+                onPurchase={buyCredits}
+                isLoading={purchasingId === packOption.price_id}
+                disabled={isPurchasing && purchasingId !== packOption.price_id}
+              />
             </View>
           )}
 
-          {/* Premium subscription */}
-          {!isFetching && !fetchError && premium != null && (
+          {/* Pro subscription */}
+          {showProCard && proOption != null && (
             <View style={styles.section}>
-              <Label>Go Premium</Label>
+              <Label>Go Pro</Label>
               <PremiumCard
-                premium={premium}
+                premium={proOption}
                 onSubscribe={subscribe}
                 isLoading={purchasingId === PURCHASING_PREMIUM_ID}
                 disabled={
@@ -357,12 +344,22 @@ export function PaywallModal({
             </View>
           )}
 
+          {/* Contact support state */}
+          {!isFetching && !fetchError && cta?.type === "contact_support" && (
+            <View style={styles.centerState}>
+              <Body color="secondary" style={styles.centerStateText}>
+                Your account needs a quick review. Please contact support.
+              </Body>
+            </View>
+          )}
+
           {/* Empty state — no options available */}
           {!isFetching &&
             !fetchError &&
             entitlement &&
-            !hasCreditPacks &&
-            premium == null && (
+            !showPackCard &&
+            !showProCard &&
+            cta?.type !== "contact_support" && (
               <View style={styles.centerState}>
                 <Body color="secondary" style={styles.centerStateText}>
                   No purchase options available right now.
@@ -420,8 +417,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: THEME.spacing.xl,
-    marginBottom: THEME.spacing.lg,
+    marginBottom: THEME.spacing.sm,
     gap: THEME.spacing.md,
+  },
+  ctaRow: {
+    paddingHorizontal: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
+    gap: THEME.spacing.xs,
   },
   scrollContent: {
     flex: 1,
@@ -432,9 +434,6 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: THEME.spacing.xxl,
-    gap: THEME.spacing.md,
-  },
-  packList: {
     gap: THEME.spacing.md,
   },
   centerState: {

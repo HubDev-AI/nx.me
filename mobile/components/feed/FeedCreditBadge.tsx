@@ -49,13 +49,8 @@ export function FeedCreditBadge() {
   // Don't render anything if not authenticated or data not loaded
   if (!hasSession || !entitlement) return null;
 
-  // Determine which count to display:
-  // - If user has trial analyses remaining, show that
-  // - Otherwise show credit balance
-  const displayCount =
-    entitlement.trial_analyses_remaining > 0
-      ? entitlement.trial_analyses_remaining
-      : entitlement.credit_balance;
+  // Display remaining glow-ups as the credit badge count.
+  const displayCount = entitlement.remaining_glowups;
 
   return (
     <Pressable

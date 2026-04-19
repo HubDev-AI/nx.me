@@ -1,72 +1,81 @@
-# Napkin
+# Napkin Runbook
 
-## Corrections
-| Date | Source | What Went Wrong | What To Do Instead |
-|------|--------|----------------|-------------------|
-| 2026-03-13 | self | Assumed the repo napkin existed; `.claude/napkin.md` was missing | Create the napkin immediately at session start when it does not exist |
-| 2026-03-17 | user | Trusted story-creator agent's stripe version (14.4.0) without verifying via Context7/PyPI — actual latest was 14.4.1 | ALWAYS verify package versions yourself via Context7 + PyPI. Never trust subagent version claims. |
- | 2026-03-17 | self | Used `next.config.ts` — Next.js 14.2.x does not support TypeScript config files | Use `next.config.mjs` for Next.js 14.x; `.ts` config only supported from Next.js 15+ |
- | 2026-03-17 | self | Ran `pytest` directly and hit globally installed plugin import failures unrelated to this repo | Use `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest ...` first in this workspace unless the repo explicitly depends on external pytest plugins |
-| 2026-03-17 | self | Treated the first `X-Forwarded-For` value as trustworthy for auth rate limiting | Behind proxies/load balancers, do not trust raw client-supplied `X-Forwarded-For`; use a trusted proxy strategy or socket IP |
-| 2026-03-17 | self | Nearly repeated stale review findings from an earlier pass without re-checking the current tree | Before writing review docs, reopen the live files and re-validate every high-severity finding against current code, scripts, and docs |
-| 2026-03-17 | self | Assumed the migration runner lived under `app/scripts/` while reviewing migration docs | In this repo the runner is `app/migrations/run.py`; verify actual file paths before citing migration workflow details |
-| 2026-03-17 | self | Treated spec validity as ID coverage only and missed acceptance-detail gaps | When validating backlog/spec docs, also compare each source finding's required branches/status codes/scope against the sprint summary, not just whether the ID appears |
-| 2026-03-20 | self | JWT ES256 validation crashed because `cryptography` package was missing from venv (PyJWT needs it for EC keys). Standalone test worked because system Python had it. | When PyJWT uses non-HS256 algorithms, always verify `cryptography` is installed in the project venv, not just system Python. Also: never use `PyJWKClient` (urllib-based) inside async handlers -- use httpx + PyJWK instead. |
-| 2026-03-24 | self | BottomTabBar icon clipping: overriding `insets` prop in custom tabBar wrapper was insufficient because BottomTabView.renderTabBar reads insets from SafeAreaInsetsContext BEFORE passing them to the tabBar callback | For floating pill tab bars, ALWAYS set `safeAreaInsets={{ top:0, right:0, bottom:0, left:0 }}` on the Tabs/Navigator component AND zero insets in the tabBar wrapper. The navigator-level prop is the primary fix; the wrapper-level override is a safety net. |
+## Curation Rules
+- Re-prioritize on every read.
+- Keep recurring, high-value notes only.
+- Max 10 items per category.
+- Each item includes date + "Do instead".
 
-## User Preferences
-- Follow repo `AGENTS.md` skill instructions before doing substantive work.
-- **After every UI story**: provide manual testing steps before moving to the next story. User tests manually, then signals to continue. If issues found → fix first, then continue. Never auto-advance past a UI story.
-- **Always use Context7** (`mcp__context7__resolve-library-id` + `mcp__context7__query-docs`) to get the latest API/usage for any package before writing code — never guess at APIs.
-- **No magic numbers or strings** in code — all constants go in named config variables, enums, or env-backed config files.
-- **All env-sensitive values in env/config** — connection strings, API keys, feature flags, limits (e.g. `FREE_TRIAL_ANALYSES`), timeouts, URLs — never hardcoded.
-- **No code duplication** — before writing a component, hook, utility, or service, check if one already exists. Reuse and extend, don't duplicate.
-- **No duplicate components or hooks** — shared UI components and hooks live in a single shared location; feature code imports from there.
+## Execution & Validation (Highest Priority)
+1. **[2026-03-17] Never publish review findings without re-reading the live tree**
+   Do instead: before writing a review doc, reopen current files and re-validate every high-severity finding against HEAD.
+2. **[2026-03-17] Don't trust subagent package-version claims**
+   Do instead: verify every package version via Context7 + PyPI before writing or committing code.
+3. **[2026-03-17] Spec validation ≠ ID coverage**
+   Do instead: for every source finding, check required branches/status codes/scope against the sprint summary, not just whether the ID appears.
+4. **[2026-04-18] Negative-delta REPLACE paths need explicit coverage**
+   Do instead: credits-ledger tests must cover negative deltas and backfill-script smoke, not only positive grants.
+5. **[2026-04-19] Delete-account must sweep every new surface**
+   Do instead: for every new user-owned table / device key / Redis key / blob prefix, wire it into `delete_account` in the same PR; never ship silent remnants.
+6. **[2026-04-19] Verification before claiming done**
+   Do instead: run `make format && make lint && make test` (+ `cd mobile && npx expo lint` for mobile); report pass/fail. For UI, screenshot the sim.
 
-## Patterns That Work
-- Read only the specific skill files that apply, then proceed with the smallest useful action.
-- ChatGPT share pages can embed the full conversation in the first `window.__reactRouterContext.streamController.enqueue(...)` payload; `linear_conversation` is enough to reconstruct visible turns.
-- When code-review-graph MCP tools are unavailable but `.code-review-graph/graph.db` exists, query it directly with `sqlite3` for node/risk/community context before falling back to broad file reads.
+## Shell & Command Reliability
+1. **[2026-03-17] Global pytest plugins break raw `pytest`**
+   Do instead: run `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest ...` unless repo explicitly depends on external plugins.
+2. **[2026-04-19] This repo's pytest suite depends on `pytest-cov` from `pytest.ini`**
+   Do instead: for nxme.ai, do NOT set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` on the full suite; run tests with the repo's normal plugin loading, and force `APP_ENV=test` if local `.env` is development-flavored.
+3. **[2026-04-19] Mobile Jest hits Watchman permission errors in sandbox**
+   Do instead: run `cd mobile && npm test -- --runInBand --watchman=false` in Codex sandbox sessions.
+2. **[2026-03-17] code-review-graph MCP sometimes unavailable but DB is**
+   Do instead: when MCP tools fail, query `.code-review-graph/graph.db` directly via `sqlite3` for nodes/risk/community.
+3. **[2026-03-20] `cryptography` absent in project venv breaks PyJWT ES256 silently**
+   Do instead: verify `cryptography` is in the project venv (not system Python) for any non-HS256 JWT algo. Never use `PyJWKClient` inside async handlers — use httpx + PyJWK.
+4. **[2026-04-19] Never push directly to dev/main**
+   Do instead: feature branch → PR → merge; after merge, pull origin/dev and clean up worktree before declaring done.
+5. **[2026-04-19] Always `uv` for Python packages**
+   Do instead: `uv add <pkg>`; never `pip`/`pip3`.
 
-## Patterns That Don't Work
-- Proceeding before checking for required session skills creates avoidable cleanup.
+## Domain Behavior Guardrails
+1. **[2026-04-19] Payments is credits-only with milli-credit ledger**
+   Do instead: no tiers, no trial counter, no `usage_events`, no legacy credit RPCs — use the milli-credit ledger. Device-fingerprint exception is the only hard-reset override. See `docs/brainstorms/2026-04-19-payments-credits-only-requirements.md`.
+2. **[2026-04-19] Mobile ⇄ backend API shapes must stay aligned**
+   Do instead: when changing a backend response, update the matching mobile port + test in the same PR. Recent P0×2 on this branch came from shape drift.
+3. **[2026-04-18] Pre-launch — destructive DB changes allowed**
+   Do instead: delete tables in place, no migrations/backfills/deprecation shims; flip to post-launch safety rules only when launch gate trips.
+4. **[2026-04-16] Feature gating only via the capabilities module**
+   Do instead: mobile uses `useCapabilities()`, backend uses `Depends(require_app_feature("..."))`; never scatter `if features.X` checks.
+5. **[2026-03-17] Do not trust raw `X-Forwarded-For` for auth rate-limit**
+   Do instead: behind proxies/LBs, use a trusted-proxy strategy or socket IP; the first XFF hop is client-controlled.
+6. **[2026-03-24] Floating pill tab bar needs navigator-level zero insets**
+   Do instead: set `safeAreaInsets={{top:0,right:0,bottom:0,left:0}}` on `Tabs`/Navigator AND zero insets in the tabBar wrapper. Navigator prop is the primary fix; wrapper override is the safety net.
+7. **[2026-03-16] Multi-step DB writes require explicit transactions**
+   Do instead: migrations = SQL + `_schema_migrations` INSERT in one txn; services = wrap multi-row ops (`conn.autocommit=False` → `commit()`/`rollback()`). Single-row ops can stay auto-commit.
+8. **[2026-03-17] Migration runner lives at `app/migrations/run.py`**
+   Do instead: cite that path (not `app/scripts/`) whenever documenting the migration workflow.
+9. **[2026-03-17] Auth providers gated by `AUTH_PROVIDER_*_ENABLED`**
+   Do instead: mobile fetches `GET /auth/providers`; disabled provider → 403 + hidden button. TikTok uses native SDK + server code exchange; requires a dev build.
+10. **[2026-03-17] card-web is Next.js 14 — TS config unsupported**
+    Do instead: use `next.config.mjs` in card-web; `.ts` config is only Next.js 15+.
 
-## DB Transaction Pattern
-- **Always use transactions for multi-step DB writes** — if any step fails, nothing is committed
-- Migration runner: each migration SQL + `_schema_migrations` INSERT in one transaction (`conn.autocommit = False` → `conn.commit()` or `conn.rollback()`)
-- Service layer: wrap multi-step operations (create user + grant credits, reserve + commit credit, etc.) in explicit transactions
-- Single-read queries or single-row INSERTs don't need explicit transaction wrappers (auto-commit is fine)
-
-## Domain Notes
-- This repo defines skills in `AGENTS.md`; `napkin` is mandatory every session.
-- **CRITICAL: Feature specs are PRIMARY source for implementation:**
-  - `docs/generation-spec.md` — for ANY story touching generation (4-2, 4-3, etc.). Contains model selection, parameters, prompts, scoring, retry, cost, module architecture. 17 sections. READ THIS FIRST for generation stories.
-  - `docs/advisor-spec.md` — for ANY story touching advisor (7-1, 7-2, 7-3, 7-4). Contains SOUL.md integration, memory system, context assembly, nudges, cost, pluggable design. 17 sections. READ THIS FIRST for advisor stories.
-  - These specs override architecture.md for implementation details. Architecture.md is the system overview; these specs are the engineering blueprints.
-- **Advisor persona**: Ada (she/her) — personal style and self-improvement advisor
-- **Generation spec**: `docs/generation-spec.md` — single source of truth for all AI generation behavior
-- **Primary model**: Flux PuLID `fal-ai/flux-pulid` (id_weight=0.85). NO post-processing. ~$0.035/image.
-- **Fallbacks**: Flux Dev img2img + IP-Adapter → InstantID (SDXL). Only on model failure.
-- **NXME is NOT a beauty filter**: Never smooth skin, remove freckles, or retouch. Styling only.
-- **Identity**: 3 layers — model conditioning (id_weight) → ArcFace post-check → prompt guidance
-- **Keyword allowlist blocks skin terms**: "clear skin", "reduced blemishes" etc NOT in allowlist
-- **High modularity required** — adapters for all external services (Rekognition, MediaPipe, fal.ai, Anthropic, Stripe, Supabase Storage), pipeline steps composable in `config/pipelines.py`, all LLM prompts in `prompts/*.txt` files loaded at runtime. Never inline prompts or call providers directly from services.
-- Amendment A-3 defines the full adapter pattern — read `docs/amendments.md#a-3` before implementing any service story.
-- Amendment A-4 defines the DB-driven tier system — no tier names in code, `user.tier_id: UUID` only, tiers seeded via migration, admin CRUD API at `/admin/tiers`.
-- Amendment A-5 defines usage tracking (`usage_events` table), `EntitlementResult`, error codes (TIER_LIMIT_DAILY etc.), and `require_entitlement()` / `require_feature()` FastAPI dependencies. **Read A-5 before implementing any story that touches generation, nudges, or advisor chat.**
-
-## Auth Provider Patterns
-
-- **TikTok uses native SDK + server code exchange**: `react-native-tiktok` (Expo plugin) handles auth natively on iOS/Android → returns `authCode` (+`codeVerifier` on Android). Backend exchanges code via TikTok API → creates Supabase user with synthetic email + HMAC-derived password. No web browser flow, no HTTPS redirect URI hassle.
-- **Auth provider flags**: `AUTH_PROVIDER_{GOOGLE,APPLE,EMAIL,TIKTOK}_ENABLED` in config. When disabled: API returns 403, mobile hides the button. Mobile fetches enabled providers from `GET /auth/providers`.
-- **Login/signup is one screen**: `(auth)/login.tsx` is the unified auth screen. `(auth)/signup.tsx` is a redirect. Social auth handles both login and signup in a single flow (backend creates account on first login).
-- **TikTok native SDK requires dev build**: Won't work in Expo Go or web. Use `npx expo run:ios` or `npx expo run:android` to test.
-
-## Story Creator Patterns
-
-- **A-4 vs AC-3 tension**: AC-3 requires FREE_TRIAL_ANALYSES, IDENTITY_SIMILARITY_THRESHOLD, MAX_CONCURRENT_GENERATIONS_PER_USER in config module. A-4 says these are DB-driven. Resolution: keep them in config as global defaults/ceilings; per-tier values in DB take precedence in EntitlementService, but config values serve as circuit-breaker / non-tier paths (e.g., stuck-job watchdog).
-- **Circular FK pattern**: credit_reservations <-> glow_up_jobs. Create credit_reservations without FK first, create glow_up_jobs with FK to credit_reservations, then ALTER TABLE credit_reservations ADD CONSTRAINT FK.
-- **app/config.py vs app/config/ directory**: Two separate things. `app/config.py` = runtime Settings singleton. `app/config/` directory = seed-only data (e.g., tiers.py with SEED_TIERS). Never import from `app/config/tiers.py` at runtime.
-- **.env.example is blocked by LaiM hooks** — get env var names from local-dev.md instead (it has the full env var table).
-- **pydantic-settings latest stable**: 2.13.1 as of 2026-03-16.
-- **users.tier_id requires tiers table first**: In migrations, 0001_initial.sql creates users WITHOUT tier_id. 0002_tiers.sql creates tiers table, then ALTER TABLE users ADD COLUMN tier_id. 0004_seed_tiers.sql seeds tiers, then sets tier_id NOT NULL.
+## User Directives
+1. **[2026-04-19] No magic strings/numbers — ever**
+   Do instead: every literal goes into a named constant, config module, or env var; reject inline values in review.
+2. **[2026-04-19] No env fallbacks**
+   Do instead: fail fast if a required env var is missing; do not silently substitute defaults.
+3. **[2026-04-19] Reuse before writing**
+   Do instead: before creating a component/hook/utility, grep for an existing one and extend it; shared UI lives in one shared location.
+4. **[2026-04-19] Cursor-based infinite scroll only**
+   Do instead: `next_cursor` API + infinite scroll UI; no load-more buttons, no offset/page.
+5. **[2026-04-19] Every UI story pauses for manual test**
+   Do instead: after implementing a UI story, give exact runnable manual-test steps and wait for user signal before advancing. Issues found → fix first.
+6. **[2026-04-19] Context7 before using any library**
+   Do instead: `mcp__context7__resolve-library-id` + `mcp__context7__query-docs` for current API; never guess or rely on training cutoff.
+7. **[2026-04-19] Female-first copy and targeting**
+   Do instead: write all user-facing copy, nudges, and Ada prompts for a majority-female user base; no male/beard-coded examples.
+8. **[2026-04-19] Guest mode is first-class except for account mutations**
+   Do instead: test guest paths (via `X-Guest-Token`) before declaring any non-account surface done.
+9. **[2026-04-19] Disabled UI buttons are a bug**
+   Do instead: cancel/retry/close/back must stay CLICKABLE whenever the action is available; never disable, never hide.
+10. **[2026-04-19] UI work must route through a UI/UX skill or design agent**
+    Do instead: do not hand-tune UI from instinct; invoke a design skill first, then implement.

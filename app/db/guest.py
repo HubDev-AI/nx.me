@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 from supabase import Client
 
 from app.constants.tiers import TIER_ID_TRIAL
+from app.entitlement.fingerprint import compute_deterministic_hash, get_primary_secret
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,9 @@ def is_valid_guest_token_format(token: str) -> bool:
     return bool(_GUEST_TOKEN_RE.match(token))
 
 
-def create_guest_user(supabase: Client) -> tuple[UUID, str]:
+def create_guest_user(
+    supabase: Client, x_install_uuid: str | None = None
+) -> tuple[UUID, str]:
     """Create an ephemeral guest user row and return (user_id, token).
 
     The user is inserted with:
@@ -45,6 +48,8 @@ def create_guest_user(supabase: Client) -> tuple[UUID, str]:
       - username="guest-<short-id>" (must be unique; collision-resistant)
       - display_name="Guest"
       - email=None (guest users have no email)
+      - guest_install_uuid_hash=HMAC-SHA256(server_secret, x_install_uuid)
+        when x_install_uuid is provided; NULL otherwise (pre-rollout / web)
 
     Returns (user_id, guest_token). Caller stores the token in SecureStore
     and sends it via X-Guest-Token on subsequent requests.
@@ -57,7 +62,7 @@ def create_guest_user(supabase: Client) -> tuple[UUID, str]:
 
     now = datetime.now(tz=timezone.utc).isoformat()
 
-    user_row = {
+    user_row: dict = {
         "id": str(user_id),
         "username": f"guest-{username_suffix}",
         "display_name": "Guest",
@@ -68,8 +73,19 @@ def create_guest_user(supabase: Client) -> tuple[UUID, str]:
         "created_at": now,
         "updated_at": now,
     }
+
+    if x_install_uuid is not None:
+        # Bind this guest to the install UUID so a later merge_guest_ledger
+        # call from a different device is rejected (security review HIGH).
+        server_secret = get_primary_secret()
+        uuid_hash = compute_deterministic_hash(x_install_uuid, server_secret)
+        # Supabase sends BYTEA columns as hex strings prefixed with \x
+        user_row["guest_install_uuid_hash"] = f"\\x{uuid_hash.hex()}"
+
     supabase.table("users").insert(user_row).execute()
-    logger.info("Created guest user %s", user_id)
+    logger.info(
+        "Created guest user %s (uuid_bound=%s)", user_id, x_install_uuid is not None
+    )
     return user_id, token
 
 

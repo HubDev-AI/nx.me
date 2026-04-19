@@ -34,21 +34,22 @@ jest.mock("../toast", () => ({
 }));
 
 const PACK = {
-  pack_id: "10_credits",
-  credits: 10,
+  pack_id: "credits_pack_v1",
   price_id: "price_10",
   amount_cents: 499,
   currency: "usd",
+  milli_credits: 10_000,
 };
 
 const ENTITLEMENT = {
-  tier: "TRIAL",
-  trial_analyses_remaining: 0,
-  trial_analyses_limit: 2,
-  credit_balance: 10,
-  can_generate: true,
-  subscription_status: null,
-  billing_period_end: null,
+  tier: "Free" as const,
+  remaining_glowups: 0,
+  approx_remaining_ada: 0,
+  subscription_status: "none" as const,
+  period_end: null,
+  grace_end: null,
+  blocked_reason: "none" as const,
+  plan_version_id: "550e8400-e29b-41d4-a716-446655440000",
   purchase_options: null,
 };
 
@@ -83,7 +84,7 @@ describe("usePurchaseFlow.buyCredits", () => {
       await result.current.buyCredits(PACK);
     });
 
-    expect(mockCreateIntent).toHaveBeenCalledWith("10_credits");
+    expect(mockCreateIntent).toHaveBeenCalledWith("credits_pack_v1");
     expect(mockInitPaymentSheet).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentIntentClientSecret: "pi_1_secret",

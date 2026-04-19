@@ -182,6 +182,8 @@ class TestAuthSessionIsolation:
 
     @staticmethod
     def _session_response(*, user_id: str, email: str):
+        from datetime import datetime, timezone
+
         session = SimpleNamespace(
             access_token="at-123",
             refresh_token="rt-456",
@@ -191,6 +193,8 @@ class TestAuthSessionIsolation:
             id=user_id,
             email=email,
             user_metadata={"full_name": "Alice Example"},
+            # created_at must be recent so the new-account grant gate fires.
+            created_at=datetime.now(tz=timezone.utc),
         )
         return SimpleNamespace(session=session, user=user)
 
@@ -224,9 +228,6 @@ class TestAuthSessionIsolation:
         user_repo.check_username_availability.return_value = {"available": True}
         user_repo.upsert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "alice"}
-        tier_repo = SimpleNamespace(
-            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
-        )
 
         result = await social_login(
             request=MagicMock(),
@@ -234,7 +235,6 @@ class TestAuthSessionIsolation:
             supabase=shared_supabase,
             r=MockRedis(),
             user_repo=user_repo,
-            tier_repo=tier_repo,
         )
 
         assert result.username == "alice"

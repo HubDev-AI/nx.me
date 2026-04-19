@@ -43,12 +43,21 @@ _USER_ID = "u-1"
 _USERNAME = "alice"
 
 
-def _make_user_repo(user_exists: bool = True) -> MagicMock:
+def _make_user_repo(
+    user_exists: bool = True, stripe_customer_id: str | None = None
+) -> MagicMock:
     """Build a UserRepository mock with happy-path defaults."""
     repo = MagicMock()
-    repo.get_profile_by_id.return_value = (
-        {"id": _USER_ID, "username": _USERNAME} if user_exists else None
+    profile = (
+        {
+            "id": _USER_ID,
+            "username": _USERNAME,
+            "stripe_customer_id": stripe_customer_id,
+        }
+        if user_exists
+        else None
     )
+    repo.get_profile_by_id.return_value = profile
     repo.get_active_reservations.return_value = []
     repo.list_user_storage_keys.return_value = {
         "raw-selfies": ["a.jpg"],
@@ -93,7 +102,7 @@ class _FakeRedisPipeline:
 
 
 def _make_deps() -> SimpleNamespace:
-    """Build image/orphan/ledger/redis/arq mocks with safe defaults."""
+    """Build image/orphan/ledger/redis/arq/payment/dlq mocks with safe defaults."""
     image_repo = MagicMock()
     image_repo.remove.return_value = None
     orphan_repo = MagicMock()
@@ -110,6 +119,14 @@ def _make_deps() -> SimpleNamespace:
 
     arq_pool = MagicMock()
     arq_pool.enqueue_job = AsyncMock(return_value=None)
+    # job() returns None by default (no queued job to abort)
+    arq_pool.job = AsyncMock(return_value=None)
+
+    payment = MagicMock()
+    payment.delete_customer = AsyncMock(return_value=None)
+
+    dlq_repo = MagicMock()
+    dlq_repo.record.return_value = None
 
     return SimpleNamespace(
         image_repo=image_repo,
@@ -117,6 +134,8 @@ def _make_deps() -> SimpleNamespace:
         ledger=ledger,
         redis_client=redis_client,
         arq_pool=arq_pool,
+        payment=payment,
+        dlq_repo=dlq_repo,
     )
 
 
@@ -173,6 +192,8 @@ class TestHardDeleteAccount:
             ledger=deps.ledger,
             redis_client=deps.redis_client,
             arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -199,6 +220,8 @@ class TestHardDeleteAccount:
             ledger=deps.ledger,
             redis_client=deps.redis_client,
             arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
         )
 
         user_repo.insert_username_reservation.assert_called_once()
@@ -247,6 +270,8 @@ class TestHardDeleteAccount:
             ledger=deps.ledger,
             redis_client=deps.redis_client,
             arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -284,6 +309,8 @@ class TestHardDeleteAccount:
             ledger=deps.ledger,
             redis_client=deps.redis_client,
             arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -311,6 +338,8 @@ class TestHardDeleteAccount:
             ledger=deps.ledger,
             redis_client=deps.redis_client,
             arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -370,6 +399,8 @@ class TestHardDeleteAccount:
             ledger=deps.ledger,
             redis_client=deps.redis_client,
             arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
         )
 
         assert response.status_code == status.HTTP_204_NO_CONTENT

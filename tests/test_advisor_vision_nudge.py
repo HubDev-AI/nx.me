@@ -65,17 +65,6 @@ def _fake_llm(response_text: str):
     return SimpleNamespace(create_message=_create), captured
 
 
-def _patch_entitlement(monkeypatch, *, allowed: bool = True):
-    ent = MagicMock()
-    ent.check = AsyncMock(
-        return_value=SimpleNamespace(allowed=allowed, error_code=None)
-    )
-    monkeypatch.setattr(
-        "app.entitlement.service.EntitlementService",
-        MagicMock(return_value=ent),
-    )
-
-
 def _patch_repo(
     monkeypatch,
     *,
@@ -148,7 +137,7 @@ async def test_first_glowup_generates_persisted_nudge(monkeypatch):
         ' "observation_tag": "brighter features"}'
     )
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: llm)
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(
         monkeypatch,
         style_profile={
@@ -226,7 +215,7 @@ async def test_two_back_to_back_glowups_have_low_overlap(monkeypatch):
         "_get_llm_adapter",
         lambda: SimpleNamespace(create_message=_create),
     )
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={
@@ -275,7 +264,7 @@ async def test_recent_context_with_null_tag_renders_as_no_tag(monkeypatch):
 
     llm, captured = _fake_llm('{"body": "warm sentence.", "observation_tag": "x y"}')
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: llm)
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={
@@ -350,7 +339,7 @@ async def test_worker_user_id_is_authoritative_over_llm_input(monkeypatch):
 
     llm, _captured = _fake_llm('{"body": "warm.", "observation_tag": "clean"}')
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: llm)
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={
@@ -397,7 +386,7 @@ async def test_vision_nudge_handlers_called_with_frozen_context(monkeypatch):
 
     llm, _captured = _fake_llm('{"body": "warm.", "observation_tag": "clean"}')
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: llm)
-    _patch_entitlement(monkeypatch)
+
     _patch_repo(
         monkeypatch,
         style_profile={
@@ -435,7 +424,7 @@ async def test_invalid_json_emits_metric_and_no_persistence(monkeypatch, caplog)
 
     llm, _captured = _fake_llm("<<< not JSON >>>")
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: llm)
-    _patch_entitlement(monkeypatch)
+
     repo = _patch_repo(
         monkeypatch,
         style_profile={

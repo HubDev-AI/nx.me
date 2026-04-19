@@ -297,13 +297,6 @@ class TestRepoFactories:
         ledger = get_credit_ledger(request)
         assert ledger is not None
 
-    def test_get_tier_repo(self):
-        from app.api.deps import get_tier_repo
-
-        request = MagicMock()
-        repo = get_tier_repo(request)
-        assert repo is not None
-
 
 # ---------------------------------------------------------------------------
 # Adapter factories

@@ -1,4 +1,4 @@
-.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-ios-device mobile-android mobile-android-device mobile-start mobile-lint card-web-start card-web-lint
+.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-ios-device mobile-android mobile-android-device mobile-start mobile-lint card-web-start card-web-lint stripe-dev stripe-bootstrap
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv app/.env
@@ -90,3 +90,12 @@ app/.env:
 
 card-web/node_modules:
 	cd card-web && npm install
+
+# ── Stripe dev tooling ────────────────────────────────────────────────────────
+stripe-dev:
+	@echo "Starting Stripe CLI listener (forwarding to /webhooks/stripe) — Ctrl+C to stop"
+	@command -v stripe >/dev/null || { echo "stripe CLI not installed: brew install stripe/stripe-cli/stripe"; exit 1; }
+	stripe listen --forward-to localhost:8000/webhooks/stripe --skip-verify
+
+stripe-bootstrap: app/.env
+	@set -a && . ./app/.env && set +a && uv run python -m app.services.stripe_dev_bootstrap

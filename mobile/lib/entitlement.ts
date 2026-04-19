@@ -1,8 +1,10 @@
 /**
  * Entitlement API client and types.
  *
- * Matches the backend EntitlementResponse, CreditPackOption,
- * PremiumOption, and PurchaseOptions schemas from app/api/entitlement.py.
+ * Matches the backend EntitlementResponse and PurchaseOptions schemas
+ * from the credits-only payments rebuild (Unit 7 / Unit 12).
+ *
+ * /v1/entitlement returns the new shape after backend Unit 7 lands.
  */
 import { apiFetch } from "./api";
 import { ENTITLEMENT_ENDPOINTS } from "../constants/config";
@@ -11,44 +13,46 @@ import { ENTITLEMENT_ENDPOINTS } from "../constants/config";
 // Response types (mirror backend Pydantic models)
 // ---------------------------------------------------------------------------
 
-export interface CreditPackOption {
+/** Single credit pack purchase option returned by the backend. */
+export interface PackOption {
   pack_id: string;
-  credits: number;
   price_id: string;
-  /** Stripe amount in the smallest currency unit (e.g. cents). */
   amount_cents: number;
   /** ISO 4217 currency code, lowercase (e.g. "usd"). */
   currency: string;
+  /** Milli-credits granted on purchase (divide by 1000 for display credits). */
+  milli_credits: number;
 }
 
-export interface PremiumOption {
+/** Pro subscription purchase option returned by the backend. */
+export interface ProOption {
   price_id: string;
-  name: string;
-  /** Stripe amount in the smallest currency unit (e.g. cents). */
   amount_cents: number;
   /** ISO 4217 currency code, lowercase (e.g. "usd"). */
   currency: string;
 }
 
 export interface PurchaseOptions {
-  credit_packs: CreditPackOption[];
-  premium: PremiumOption | null;
+  pack: PackOption;
+  pro: ProOption;
 }
 
 export interface EntitlementState {
-  tier: string;
-  trial_analyses_remaining: number;
-  /** Total trial analyses granted on signup (e.g. 3). */
-  trial_analyses_limit: number;
-  credit_balance: number;
-  can_generate: boolean;
-  subscription_status: string | null;
-  billing_period_end: string | null;
+  tier: "Free" | "Pro";
+  remaining_glowups: number;
+  approx_remaining_ada: number;
+  subscription_status: "active" | "grace" | "canceled" | "none" | "locked";
+  /** ISO datetime string, null when no active subscription. */
+  period_end: string | null;
+  /** ISO datetime string for grace period end, null when not in grace. */
+  grace_end: string | null;
+  blocked_reason:
+    | "insufficient_credits"
+    | "subscription_locked_by_dispute"
+    | "none";
+  /** UUID of the plan version backing this entitlement. */
+  plan_version_id: string;
   purchase_options: PurchaseOptions | null;
-}
-
-export interface CheckoutResponse {
-  checkout_url: string;
 }
 
 export interface CreditPurchaseIntentResponse {
@@ -76,50 +80,31 @@ export const SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED = "already_subscribed";
 // API calls
 // ---------------------------------------------------------------------------
 
-/** Fetch current user entitlement snapshot (includes purchase_options when can_generate=false). */
+/** Fetch current user entitlement snapshot. */
 export async function fetchEntitlement(): Promise<EntitlementState> {
   return apiFetch<EntitlementState>(ENTITLEMENT_ENDPOINTS.GET);
-}
-
-/**
- * Create a Stripe Checkout session for a credit pack purchase.
- *
- * @deprecated Prefer `createCreditPurchaseIntent` — credit packs use the
- * in-app Payment Sheet since PR6. This function is retained for
- * back-compat while older builds remain in the field and will be
- * removed in a follow-up PR.
- */
-export async function purchaseCredits(
-  creditPackId: string,
-): Promise<CheckoutResponse> {
-  return apiFetch<CheckoutResponse>(ENTITLEMENT_ENDPOINTS.PURCHASE_CREDITS, {
-    method: "POST",
-    body: JSON.stringify({
-      credit_pack_id: creditPackId,
-      success_url: "https://nxme.ai/payment/success",
-      cancel_url: "https://nxme.ai/payment/cancel",
-    }),
-  });
 }
 
 /**
  * Create a Stripe PaymentIntent bundle for the in-app Payment Sheet.
  * The returned secrets bootstrap `initPaymentSheet` + `presentPaymentSheet`
  * from `@stripe/stripe-react-native`.
+ *
+ * @param packId  The credit pack ID from `PurchaseOptions.pack.pack_id`.
  */
 export async function createCreditPurchaseIntent(
-  creditPackId: string,
+  packId: string,
 ): Promise<CreditPurchaseIntentResponse> {
   return apiFetch<CreditPurchaseIntentResponse>(
     ENTITLEMENT_ENDPOINTS.PURCHASE_CREDITS_INTENT,
     {
       method: "POST",
-      body: JSON.stringify({ credit_pack_id: creditPackId }),
+      body: JSON.stringify({ credit_pack_id: packId }),
     },
   );
 }
 
-/** Create a Stripe checkout session for Premium subscription. */
+/** Create a Stripe checkout session for Pro subscription. */
 export async function createSubscription(): Promise<SubscriptionResponse> {
   return apiFetch<SubscriptionResponse>(ENTITLEMENT_ENDPOINTS.SUBSCRIBE, {
     method: "POST",
@@ -130,7 +115,7 @@ export async function createSubscription(): Promise<SubscriptionResponse> {
   });
 }
 
-/** Cancel an active premium subscription (remains active until billing period end). */
+/** Cancel an active Pro subscription (remains active until period_end). */
 export async function cancelSubscription(): Promise<CancelSubscriptionResponse> {
   return apiFetch<CancelSubscriptionResponse>(ENTITLEMENT_ENDPOINTS.SUBSCRIBE, {
     method: "DELETE",

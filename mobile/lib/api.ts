@@ -7,8 +7,20 @@ import {
   clearAllTokens,
 } from "./auth";
 import { getOrCreateGuestToken, getStoredGuestToken } from "./guest-session";
+import { getOrCreateInstallUuid } from "./install-uuid";
 import { getAuthRequired } from "./features-state";
 import { deleteItem } from "./secure-storage";
+
+/**
+ * Auth endpoint paths that receive the `X-Install-UUID` header.
+ * Kept as a Set for O(1) lookup on every request.
+ */
+const INSTALL_UUID_PATHS = new Set<string>([
+  AUTH_ENDPOINTS.REGISTER,
+  AUTH_ENDPOINTS.EMAIL_LOGIN,
+  AUTH_ENDPOINTS.SOCIAL_LOGIN,
+  AUTH_ENDPOINTS.TIKTOK_LOGIN,
+]);
 
 type RequestOptions = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -168,6 +180,18 @@ export async function apiFetch<T = unknown>(
     headers["Authorization"] = `Bearer ${jwt}`;
   } else if (guestToken) {
     headers["X-Guest-Token"] = guestToken;
+  }
+
+  // Attach stable install UUID on auth endpoints so the backend can
+  // correlate installs across register / login flows without requiring
+  // a logged-in user. Errors are swallowed — a missing header is
+  // non-fatal for auth calls.
+  if (INSTALL_UUID_PATHS.has(path)) {
+    try {
+      headers["X-Install-UUID"] = await getOrCreateInstallUuid();
+    } catch {
+      // Non-fatal — proceed without the header
+    }
   }
 
   const url = `${API_BASE_URL}${path}`;

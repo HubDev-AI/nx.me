@@ -883,16 +883,12 @@ class TestDeleteGlowupLiveDB:
         """
         cur = db_conn.cursor()
 
-        # Insert minimum-shape rows (follows test_posts_unique_constraint's
-        # approach exactly — SEED_TIERS is source of truth).
+        # Insert minimum-shape rows.
         suffix = uuid.uuid4().hex[:12]
         cur.execute(
             """
-            INSERT INTO users (username, display_name, email_verified, tier_id)
-            VALUES (
-                %s, %s, FALSE,
-                (SELECT id FROM tiers WHERE is_default = TRUE LIMIT 1)
-            )
+            INSERT INTO users (username, display_name, email_verified)
+            VALUES (%s, %s, FALSE)
             RETURNING id
             """,
             (f"testuser_{suffix}", f"Test {suffix}"),

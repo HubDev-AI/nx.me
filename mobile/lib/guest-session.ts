@@ -1,4 +1,5 @@
 import { deleteItem, getItem, setItem } from "./secure-storage";
+import { getOrCreateInstallUuid } from "./install-uuid";
 import {
   API_BASE_URL,
   AUTH_ENDPOINTS,
@@ -25,9 +26,20 @@ export async function getOrCreateGuestToken(): Promise<string> {
   const existing = await getItem(SECURE_STORE_KEYS.GUEST_TOKEN);
   if (existing) return existing;
 
+  // Bind the guest row to this device via X-Install-UUID so the backend
+  // can later verify ownership at merge_guest_ledger time. Failure to
+  // resolve the install UUID is non-fatal — backend tolerates a missing
+  // header but loses the binding (documented residual risk).
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  try {
+    headers["X-Install-UUID"] = await getOrCreateInstallUuid();
+  } catch {
+    // Non-fatal — proceed unbound.
+  }
+
   const resp = await fetch(`${API_BASE_URL}${AUTH_ENDPOINTS.GUEST}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({}),
   });
   if (!resp.ok) {

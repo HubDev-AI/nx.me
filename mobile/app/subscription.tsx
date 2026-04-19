@@ -43,8 +43,7 @@ import {
   SubscriptionErrorState,
 } from "../components/subscription/SubscriptionStates";
 
-const TIER_PREMIUM = "PREMIUM";
-const TIER_FREE = "FREE";
+const TIER_PRO = "Pro";
 
 const ENTRANCE_DELAY_PLAN_MS = 0;
 const ENTRANCE_DELAY_PREMIUM_MS = 60;
@@ -54,8 +53,6 @@ const ENTRANCE_DURATION_MS = 240;
 const HEADER_TITLE_FONT_SIZE = 20;
 const PAGE_OVERLAY_OPACITY = 0.88;
 
-const HINT_TRIAL_AVAILABLE =
-  "Use your free trial analyses first. Purchase options will appear when your trial ends.";
 const HINT_LOADING = "Purchase options are loading. Pull down to refresh.";
 const ERROR_LOAD = "We couldn't load your subscription info. Try again.";
 
@@ -89,18 +86,15 @@ export default function SubscriptionScreen() {
     }
   }, [refresh]);
 
-  const tier = entitlement?.tier?.toUpperCase() ?? TIER_FREE;
-  const isPremium = tier === TIER_PREMIUM;
-  const trialRemaining = entitlement?.trial_analyses_remaining ?? 0;
+  const tier = entitlement?.tier ?? "Free";
+  const isPro = tier === TIER_PRO;
   const purchaseOptions = entitlement?.purchase_options;
-  const creditPacks = purchaseOptions?.credit_packs ?? [];
-  const premium = purchaseOptions?.premium ?? null;
+  const packOption = purchaseOptions?.pack ?? null;
+  const proOption = purchaseOptions?.pro ?? null;
 
   const isSubscribing = purchasingId === PURCHASING_PREMIUM_ID;
-  const showHint =
-    !isPremium && premium == null && creditPacks.length === 0;
-  const hintMessage =
-    tier === TIER_FREE && trialRemaining > 0 ? HINT_TRIAL_AVAILABLE : HINT_LOADING;
+  const showHint = !isPro && proOption == null && packOption == null;
+  const hintMessage = HINT_LOADING;
 
   return (
     <View style={styles.container}>
@@ -158,7 +152,7 @@ export default function SubscriptionScreen() {
             />
           </Animated.View>
 
-          {!isPremium && premium != null && (
+          {!isPro && proOption != null && (
             <Animated.View
               entering={fadeInDown(
                 ENTRANCE_DELAY_PREMIUM_MS,
@@ -166,14 +160,14 @@ export default function SubscriptionScreen() {
               )}
             >
               <PremiumUpsell
-                premium={premium}
+                premium={proOption}
                 isSubscribing={isSubscribing}
                 onSubscribe={subscribe}
               />
             </Animated.View>
           )}
 
-          {!isPremium && creditPacks.length > 0 && (
+          {packOption != null && (
             <Animated.View
               entering={fadeInDown(
                 ENTRANCE_DELAY_PACKS_MS,
@@ -181,7 +175,7 @@ export default function SubscriptionScreen() {
               )}
             >
               <CreditPackGrid
-                packs={creditPacks}
+                pack={packOption}
                 purchasingId={purchasingId}
                 onBuy={buyCredits}
               />
@@ -208,7 +202,7 @@ export default function SubscriptionScreen() {
       <CancelSubscriptionSheet
         visible={isCancelSheetOpen}
         isCancelling={isCancelling}
-        billingPeriodEnd={entitlement?.billing_period_end ?? null}
+        billingPeriodEnd={entitlement?.period_end ?? null}
         onConfirm={confirmCancel}
         onDismiss={dismissCancelSheet}
       />

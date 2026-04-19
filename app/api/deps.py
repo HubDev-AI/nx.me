@@ -17,11 +17,6 @@ import redis.asyncio as aioredis
 
 from app.api.middleware.auth import UserClaims, validate_jwt
 from app.db.async_helpers import run_sync
-from app.entitlement.models import (
-    ENTITLEMENT_ERROR_MESSAGES,
-    EntitlementResult,
-    PAYMENT_REQUIRED_CODES,
-)
 
 if TYPE_CHECKING:
     from arq import ArqRedis
@@ -30,19 +25,21 @@ if TYPE_CHECKING:
     from app.advisor.llm_port import LLMPort
     from app.entitlement.ledger import CreditLedger
     from app.entitlement.service import EntitlementService
-    from app.entitlement.tier_repo import TierRepository
     from app.payment.ports import PaymentPort
     from app.repositories.advisor_repo import AdvisorRepository
     from app.repositories.block_repo import BlockRepository
     from app.repositories.feed_repo import FeedRepository
     from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
+    from app.repositories.guest_merge_repo import GuestMergeRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
     from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
     from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
     from app.repositories.post_repo import PostRepository
+    from app.repositories.plan_version_repo import PlanVersionRepository
     from app.repositories.subscription_repo import SubscriptionRepository
     from app.repositories.upload_repo import UploadRepository
+    from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
     from app.repositories.user_repo import UserRepository
     from app.services.glowup_service import GlowupService
     from app.services.upload_service import UploadService
@@ -59,11 +56,6 @@ _TRUSTED_PROXY_NETWORKS = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Request helpers
-# ---------------------------------------------------------------------------
-
-
 def _is_trusted_proxy_host(host: str) -> bool:
     try:
         ip = ipaddress.ip_address(host)
@@ -73,10 +65,6 @@ def _is_trusted_proxy_host(host: str) -> bool:
 
 
 def _get_forwarded_ip(forwarded_for: str) -> str | None:
-    # Walk right-to-left and skip entries that are themselves trusted proxies;
-    # the first public IP we encounter is the real client. This prevents an
-    # attacker-controlled leftmost entry from winning, and stops CDN/LB hop
-    # addresses from being attributed as the client.
     for candidate in reversed([part.strip() for part in forwarded_for.split(",")]):
         if not candidate:
             continue
@@ -238,11 +226,6 @@ def require_admin(
         )
 
 
-# ---------------------------------------------------------------------------
-# Entitlement (A-5)
-# ---------------------------------------------------------------------------
-
-
 def get_user_repo(request: Request) -> "UserRepository":
     """Return a UserRepository wired to the app's Supabase client."""
     from app.repositories.user_repo import UserRepository
@@ -345,6 +328,13 @@ def get_subscription_repo(request: Request) -> "SubscriptionRepository":
     return SubscriptionRepository(request.app.state.supabase)
 
 
+def get_plan_version_repo(request: Request) -> "PlanVersionRepository":
+    """Return a PlanVersionRepository wired to the app's Supabase client."""
+    from app.repositories.plan_version_repo import PlanVersionRepository
+
+    return PlanVersionRepository(request.app.state.supabase)
+
+
 def get_credit_ledger(request: Request) -> "CreditLedger":
     """Return a CreditLedger wired to the app's Supabase client."""
     from app.entitlement.ledger import CreditLedger
@@ -359,13 +349,6 @@ def get_advisor_repo(request: Request) -> "AdvisorRepository":
     return AdvisorRepository(request.app.state.supabase)
 
 
-def get_tier_repo(request: Request) -> "TierRepository":
-    """Return a TierRepository wired to the app's Supabase + Redis clients."""
-    from app.entitlement.tier_repo import TierRepository
-
-    return TierRepository(request.app.state.supabase, request.app.state.redis)
-
-
 def get_entitlement_service(
     request: Request,
 ) -> "EntitlementService":
@@ -378,17 +361,25 @@ def get_entitlement_service(
     )
 
 
-_ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
+def get_payment_adapter(request=None) -> "PaymentPort":
+    """Return the configured payment adapter (Stripe or mock).
 
-
-def get_payment_adapter() -> "PaymentPort":
-    """Return the configured payment adapter (Stripe or mock)."""
+    When resolved as a FastAPI ``Depends`` (inside a route) ``request`` is
+    injected automatically and its ``app.state.supabase`` is forwarded to
+    ``StripePaymentAdapter`` so the adapter's lazy ``stripe_customer_id``
+    cache can hit/miss the ``users`` table. Direct calls from contexts
+    without a ``Request`` (e.g. the Stripe webhook handler's raw
+    ``get_payment_adapter()`` invocation, or unit tests) pass ``None`` and
+    the adapter falls back to its legacy ``Customer.search`` path — the
+    cache is advisory, not required for correctness.
+    """
     from app.config import settings
 
     if settings.ADAPTER__PAYMENT_ADAPTER == "stripe":
         from app.payment.adapters.stripe_adapter import StripePaymentAdapter
 
-        return StripePaymentAdapter()
+        supabase_client = request.app.state.supabase if request is not None else None
+        return StripePaymentAdapter(supabase_client=supabase_client)
     from app.payment.adapters.mock import MockPaymentAdapter
 
     return MockPaymentAdapter()
@@ -442,61 +433,14 @@ def get_embedding_adapter() -> "EmbeddingPort":
     )
 
 
-def require_entitlement(action: str):
-    """FastAPI dependency: check entitlement before route execution (A-5).
-
-    Usage:
-        @router.post("/generations")
-        async def create_generation(
-            _: None = Depends(require_entitlement("generation")),
-            claims: UserClaims = Depends(get_current_user),
-        ): ...
-    """
-
-    async def _check(
-        claims: UserClaims = Depends(get_current_user),
-        svc: "EntitlementService" = Depends(get_entitlement_service),
-    ) -> None:
-        from uuid import UUID
-
-        user_id = UUID(claims["sub"])
-        result: EntitlementResult = await svc.check(user_id, action)
-        if not result.allowed:
-            status_code = 402 if result.error_code in PAYMENT_REQUIRED_CODES else 429
-            headers: dict[str, str] | None = None
-            if status_code == 429 and result.reset_in_seconds is not None:
-                headers = {"Retry-After": str(result.reset_in_seconds)}
-            raise HTTPException(
-                status_code=status_code,
-                detail={
-                    "error": {
-                        "code": result.error_code,
-                        "message": _ERROR_MESSAGES.get(
-                            result.error_code, "Entitlement check failed"
-                        ),
-                        "detail": {
-                            "limit": result.limit,
-                            "used": result.used,
-                            "retry_after": result.retry_after.isoformat()
-                            if result.retry_after
-                            else None,
-                            "reset_in_seconds": result.reset_in_seconds,
-                            "upgrade_available": result.upgrade_available,
-                        },
-                    }
-                },
-                headers=headers,
-            )
-
-    return _check
-
-
 def require_feature(feature: str):
-    """FastAPI dependency: check feature flag on user's tier (A-5).
+    """FastAPI dependency: Ada/feature gate (credits-only engine, Unit 7).
 
-    When ``FEATURE_PREMIUM_BYPASS`` is enabled (dev/staging only), this
-    dependency short-circuits and allows every caller through — useful for
-    exercising premium routes as a guest during local testing.
+    The credits-only engine is ledger-gated, not tier-gated. This
+    dependency is a no-op stub — ``ADVISOR_ENABLED`` and credit-ledger
+    checks inside the service layer enforce access. The stub is kept so
+    route signatures that already declare ``Depends(require_feature(...))``
+    continue to compile without change.
 
     Usage:
         @router.post("/advisor/messages")
@@ -505,33 +449,8 @@ def require_feature(feature: str):
         ): ...
     """
 
-    async def _check(
-        # Mirrors the route's own auth dep on purpose. FastAPI dedupes
-        # `Depends(...)` per request, so this resolves once per call — the
-        # repetition just lets `_check` access claims without forcing every
-        # route to plumb them in.
-        claims: UserClaims = Depends(get_user_or_guest),
-        svc: "EntitlementService" = Depends(get_entitlement_service),
-    ) -> None:
-        from uuid import UUID
-
-        from app.config import settings
-
-        if settings.FEATURE_PREMIUM_BYPASS:
-            return
-
-        user_id = UUID(claims["sub"])
-        if not await svc.has_feature(user_id, feature):
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": {
-                        "code": "TIER_FEATURE_LOCKED",
-                        "message": f"Feature '{feature}' is not available on your current plan",
-                        "detail": {"upgrade_available": True},
-                    }
-                },
-            )
+    async def _check() -> None:
+        return
 
     return _check
 
@@ -565,3 +484,17 @@ def require_app_feature(feature: str):
             )
 
     return _check
+
+
+def get_guest_merge_repo(request: Request) -> "GuestMergeRepository":
+    """Return a GuestMergeRepository wired to the app's Supabase client."""
+    from app.repositories.guest_merge_repo import GuestMergeRepository
+
+    return GuestMergeRepository(request.app.state.supabase)
+
+
+def get_stripe_customer_dlq_repo(request: Request) -> "StripeCustomerDLQRepository":
+    """Return a StripeCustomerDLQRepository wired to the app's Supabase client."""
+    from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
+
+    return StripeCustomerDLQRepository(request.app.state.supabase)
