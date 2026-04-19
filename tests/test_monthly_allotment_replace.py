@@ -237,6 +237,44 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         self.assertEqual(self.db.non_pack_balance(self.user_id), 3000)
         self.assertEqual(self.db.balance(self.user_id), 3000 + 1250)
 
+    def test_negative_delta_when_prior_balance_exceeds_allotment(self) -> None:
+        """REPLACE writes a negative delta when prior non-pack balance exceeds
+        the new monthly_allotment (e.g. user accumulated grants/refunds above
+        the monthly cap; a renewal must clamp the non-pack balance down to
+        the allotment, leaving pack credits untouched).
+
+        Prior non-pack: 5000. Allotment: 3000. Expected:
+          - delta = 3000 - 5000 = -2000 (negative)
+          - metadata.discarded_milli = 5000
+          - non-pack balance lands at 3000
+          - pack balance untouched
+        """
+        self.db.insert(self.user_id, 5000, "signup_grant")
+        self.db.insert(self.user_id, 750, "credit_pack_purchase")
+
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
+
+        alloc_entries = [
+            r
+            for r in self.db.rows_for(self.user_id)
+            if r["type"] == "monthly_allotment"
+        ]
+        self.assertEqual(len(alloc_entries), 1)
+        entry = alloc_entries[0]
+        self.assertEqual(entry["delta"], -2000, "3000 allotment - 5000 prior = -2000")
+        self.assertEqual(entry["metadata"]["discarded_milli"], 5000)
+
+        self.assertEqual(self.db.non_pack_balance(self.user_id), 3000)
+        pack_total = sum(
+            r["delta"]
+            for r in self.db.rows_for(self.user_id)
+            if r["type"] == "credit_pack_purchase"
+        )
+        self.assertEqual(
+            pack_total, 750, "pack rows untouched by negative-delta REPLACE"
+        )
+        self.assertEqual(self.db.balance(self.user_id), 3000 + 750)
+
     # -- Error path ----------------------------------------------------
     def test_unknown_plan_version_raises(self) -> None:
         with self.assertRaises(RuntimeError):
