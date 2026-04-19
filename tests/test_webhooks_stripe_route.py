@@ -75,7 +75,9 @@ def _make_good_event(event_type: str = "customer.subscription.created") -> dict:
     }
 
 
-def _post_event(client: TestClient, payload: dict, extra_headers: dict | None = None) -> object:
+def _post_event(
+    client: TestClient, payload: dict, extra_headers: dict | None = None
+) -> object:
     """POST a webhook payload to /webhooks/stripe."""
     headers = {"content-type": "application/json", "stripe-signature": "mock_sig"}
     if extra_headers:
@@ -161,7 +163,11 @@ def bad_sig_client():
 
 class TestInvalidSignature:
     def test_returns_400(self, bad_sig_client):
-        payload = {"id": "evt_bad", "type": "customer.subscription.created", "created": _NOW_TS}
+        payload = {
+            "id": "evt_bad",
+            "type": "customer.subscription.created",
+            "created": _NOW_TS,
+        }
         resp = bad_sig_client.post(
             "/webhooks/stripe",
             content=json.dumps(payload),
@@ -170,7 +176,11 @@ class TestInvalidSignature:
         assert resp.status_code == 400
 
     def test_returns_error_code(self, bad_sig_client):
-        payload = {"id": "evt_bad2", "type": "customer.subscription.created", "created": _NOW_TS}
+        payload = {
+            "id": "evt_bad2",
+            "type": "customer.subscription.created",
+            "created": _NOW_TS,
+        }
         resp = bad_sig_client.post(
             "/webhooks/stripe",
             content=json.dumps(payload),
@@ -191,7 +201,11 @@ class TestInvalidSignature:
 
         app.dependency_overrides[gsr] = lambda: mock_sub
 
-        payload = {"id": "evt_nodb", "type": "customer.subscription.created", "created": _NOW_TS}
+        payload = {
+            "id": "evt_nodb",
+            "type": "customer.subscription.created",
+            "created": _NOW_TS,
+        }
         bad_sig_client.post(
             "/webhooks/stripe",
             content=json.dumps(payload),
@@ -320,7 +334,9 @@ class TestInstallUUIDHeaderScrubbed:
             r for r in caplog.records if r.name == "app.api.middleware.logging"
         ]
         if middleware_records:
-            any_redacted = any("[REDACTED]" in r.getMessage() for r in middleware_records)
+            any_redacted = any(
+                "[REDACTED]" in r.getMessage() for r in middleware_records
+            )
             assert any_redacted, "Expected [REDACTED] in middleware log but not found"
 
 

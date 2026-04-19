@@ -26,7 +26,9 @@ class WebhookEvent:
     event_type: str  # e.g. "checkout.session.completed"
     event_id: str  # provider event ID for idempotency
     data: dict  # the full event payload (provider-specific)
-    created: int | None = None  # unix timestamp of event creation (for stale-event check)
+    created: int | None = (
+        None  # unix timestamp of event creation (for stale-event check)
+    )
 
 
 @dataclass(frozen=True)
