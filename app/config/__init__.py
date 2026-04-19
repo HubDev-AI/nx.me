@@ -338,6 +338,15 @@ class Settings(BaseSettings):
     ORPHAN_RECLAIM_MAX_ATTEMPTS: int = 5
     ORPHAN_RECLAIM_BATCH_SIZE: int = 100
 
+    # Orphan-analysis reclaim — nightly cron in
+    # app/workers/orphan_analysis_reclaim.py (migration 0047). Rows hitting
+    # MAX_ATTEMPTS are left in the DLQ for operator review; BATCH_SIZE caps
+    # DB reads per run. Kept separate from ORPHAN_RECLAIM_* so the two
+    # sweepers can be tuned independently (different surface, different
+    # delete cost — blobs hit object storage, analyses hit Postgres).
+    ORPHAN_ANALYSIS_RECLAIM_MAX_ATTEMPTS: int = 5
+    ORPHAN_ANALYSIS_RECLAIM_BATCH_SIZE: int = 100
+
     # Reconcile/retention cron mutex — reconcile holds a Redis lock so the
     # retention cron (scheduled 30 min later) skips if reconcile is still
     # running. 1800s = 30 min, matching the cron-spacing budget.
