@@ -20,7 +20,10 @@ import hashlib
 import hmac
 import logging
 from datetime import date, datetime, timedelta, timezone
-from typing import Annotated, Literal, NoReturn
+from typing import TYPE_CHECKING, Annotated, Literal, NoReturn
+
+if TYPE_CHECKING:
+    from app.payment.ports import PaymentPort
 from uuid import UUID, uuid4
 
 from arq import ArqRedis
@@ -39,7 +42,9 @@ from app.api.deps import (
     get_guest_merge_repo,
     get_image_repo,
     get_orphaned_storage_repo,
+    get_payment_adapter,
     get_redis,
+    get_stripe_customer_dlq_repo,
     get_supabase,
     get_tier_repo,
     get_user_repo,
@@ -51,6 +56,7 @@ from app.db.async_helpers import run_sync
 from app.repositories.guest_merge_repo import GuestMergeRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
+from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
 from app.repositories.user_repo import UserRepository
 from app.services.disposable_email import is_disposable_email
 from app.services.rate_limiter import (
@@ -1513,6 +1519,12 @@ async def logout(
 # "unknown task" in ARQ. Large-user deletion paths are exercised via test only.
 _INLINE_BLOB_WIPE_THRESHOLD = 500
 
+# Known per-user ARQ job_id prefixes drained on account deletion (Unit 11).
+# Each prefix is combined with the user_id as ``f"{prefix}:{user_id}"`` to form
+# the job_id used at enqueue time. Extend this tuple when new per-user ARQ
+# jobs are introduced so they are always cancelled on delete.
+_USER_SCOPED_JOB_PREFIXES = ("delete_account", "weekly_free_grant")
+
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_account(
@@ -1523,18 +1535,23 @@ async def delete_account(
     ledger: CreditLedger = Depends(get_credit_ledger),
     redis_client: aioredis.Redis = Depends(get_redis),
     arq_pool: ArqRedis = Depends(get_arq_pool),
+    payment: "PaymentPort" = Depends(get_payment_adapter),
+    dlq_repo: StripeCustomerDLQRepository = Depends(get_stripe_customer_dlq_repo),
 ) -> Response:
     """Permanently delete the authenticated user and every owned artifact.
 
     Ordering (do NOT re-order — see docs/plans/delete-account-hard-reset):
-    1. Fetch the user. Missing → idempotent 204.
-    2. Release active credit reservations.
-    3. Enumerate owned blob keys (before CASCADE kills enumeration).
-    4. Delete the Supabase auth identity FIRST — failure is retry-safe.
-    5. Wipe blobs (inline for small users, ARQ for large ones; DLQ on failure).
-    6. Hard-delete the users row — CASCADE fans out the rest.
-    7. Insert the username reservation (only if step 6 actually deleted a row).
-    8. Redis cleanup via scan_iter (never KEYS).
+    1.   Fetch the user. Missing → idempotent 204.
+    1.5. Drain in-flight credit reservations via credit_release RPC (Unit 11).
+    1.6. Abort known per-user ARQ jobs (Unit 11).
+    2.   Release active credit reservations (legacy ledger.release path).
+    3.   Enumerate owned blob keys (before CASCADE kills enumeration).
+    3.5. Delete Stripe customer; on failure write to stripe_customer_dlq (Unit 11).
+    4.   Delete the Supabase auth identity FIRST — failure is retry-safe.
+    5.   Wipe blobs (inline for small users, ARQ for large ones; DLQ on failure).
+    6.   Hard-delete the users row — CASCADE fans out the rest.
+    7.   Insert the username reservation (only if step 6 actually deleted a row).
+    8.   Redis cleanup via scan_iter (never KEYS).
 
     Idempotent: a second call on a user that's already gone returns 204.
     """
@@ -1555,8 +1572,13 @@ async def delete_account(
     if not user:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     username: str = user["username"]
+    stripe_customer_id: str | None = user.get("stripe_customer_id")
 
-    # 1. Release active credit reservations ---------------------------------
+    # Step 1.5 — drain in-flight reservations (Unit 11) ----------------------
+    # Best-effort: call credit_release (via ledger.release) for every reserved
+    # reservation. Failures per-row are logged and skipped — a single bad row
+    # must not abort the overall delete. Enumeration failure is also best-effort
+    # (warn + continue) since reservations are eventually expired by the DB.
     try:
         active_reservations = await run_sync(user_repo.get_active_reservations, user_id)
         for res in active_reservations:
@@ -1564,14 +1586,29 @@ async def delete_account(
                 await run_sync(ledger.release, UUID(res["id"]))
             except Exception as release_exc:  # noqa: BLE001
                 logger.warning(
-                    "Failed to release reservation %s: %s", res["id"], release_exc
+                    "delete_account: failed to credit_release reservation %s: %s",
+                    res["id"],
+                    release_exc,
                 )
-    except Exception as exc:
-        logger.error("Failed to release reservations for %s: %s", user_id, exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Account deletion failed — could not release credit reservations.",
-        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "delete_account: failed to enumerate reservations for drain (user=%s): %s",
+            user_id,
+            exc,
+        )
+
+    # Step 1.6 — drain scheduled ARQ jobs (Unit 11) --------------------------
+    # Best-effort: abort known per-user ARQ jobs so they don't fire post-delete.
+    for prefix in _USER_SCOPED_JOB_PREFIXES:
+        job_id = f"{prefix}:{user_id}"
+        try:
+            job = await arq_pool.job(job_id)
+            if job is not None:
+                await job.abort()
+        except Exception as abort_exc:  # noqa: BLE001
+            logger.warning(
+                "delete_account: failed to abort ARQ job %s: %s", job_id, abort_exc
+            )
 
     # 2. Collect blob keys BEFORE cascade makes enumeration impossible. -----
     # Fail fast if enumeration fails — otherwise we'd hard-delete the auth
@@ -1637,6 +1674,27 @@ async def delete_account(
                 "delete_account: ARQ job delete_account:%s was deduped "
                 "(already enqueued within last 24h) — previous wipe snapshot will run",
                 user_id,
+            )
+
+    # Step 3.5 — delete Stripe customer (Unit 11) ----------------------------
+    # Best-effort: on failure write to DLQ for nightly reconciliation.
+    # Never fails the overall delete — auth identity is already gone.
+    if stripe_customer_id:
+        try:
+            await payment.delete_customer(stripe_customer_id)
+        except Exception as stripe_exc:  # noqa: BLE001
+            logger.warning(
+                "delete_account: delete_customer failed for user=%s customer=%s: %s — "
+                "writing to stripe_customer_dlq",
+                user_id,
+                stripe_customer_id,
+                stripe_exc,
+            )
+            await run_sync(
+                dlq_repo.record,
+                stripe_customer_id,
+                "delete_account",
+                str(stripe_exc),
             )
 
     # 5. Hard-delete the user row. CASCADE fans out everything owned. -------

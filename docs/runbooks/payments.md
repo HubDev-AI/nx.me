@@ -318,3 +318,110 @@ indicate missed or duplicate webhook deliveries. Investigate the
 `stripe_webhook_events` dedup table for gaps.
 
 Perform this check on the 1st business day of each month.
+
+---
+
+## 10. Delete-account ordering with payments (Unit 11)
+
+The `DELETE /auth/account` handler runs these payment-related steps in strict order:
+
+| Step | When | Action |
+|------|------|--------|
+| **1.5** | Before auth-delete | Drain in-flight `credit_reservations` via `credit_release` RPC (best-effort per row; enumeration failure is logged + skipped) |
+| **1.6** | Before auth-delete | Abort known per-user ARQ jobs (`delete_account:{uid}`, `weekly_free_grant:{uid}`) — best-effort |
+| **3.5** | After auth-delete, before users-row DELETE | Call `PaymentPort.delete_customer(stripe_customer_id)` with ~3 s timeout; on any failure write to `stripe_customer_dlq` and continue |
+
+**Invariants:**
+- Steps 1.5 and 1.6 are always best-effort: a failure in either step does **not** abort the delete.
+- Step 3.5 is best-effort **after** the Supabase auth identity is gone — the overall delete returns 204 regardless of the Stripe outcome.
+- Users without a `stripe_customer_id` skip step 3.5 entirely.
+
+**Retry path:** If step 3.5 fails, the `stripe_customer_dlq_reconciler` cron retries nightly at 04:00 UTC (see section 11 below).
+
+---
+
+## 11. Stripe customer DLQ sweeper
+
+**Worker:** `app/workers/stripe_customer_dlq_reconciler.py`
+**Cron:** daily 04:00 UTC
+**Table:** `stripe_customer_dlq`
+
+### What it does
+
+Iterates up to 100 DLQ rows ordered by `(attempts ASC, inserted_at ASC)` and calls `PaymentPort.delete_customer` for each:
+- **success** → deletes the row
+- **`resource_missing`** → treats as success (customer already gone) → deletes the row
+- **any other failure** → increments `attempts`; emits `WARNING` when `attempts > 5`
+
+### Inspect the table
+
+```sql
+-- View all pending DLQ rows
+SELECT customer_id, reason, attempts, last_error, inserted_at, updated_at
+FROM stripe_customer_dlq
+ORDER BY attempts DESC, inserted_at;
+
+-- Count rows above the warning threshold (attempts > 5)
+SELECT count(*) FROM stripe_customer_dlq WHERE attempts > 5;
+```
+
+### Manual drain (one-off)
+
+```python
+# Run from a Python shell with app environment loaded
+import asyncio
+from app.db.client import get_supabase_service
+from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
+from app.payment.adapters.stripe_adapter import StripePaymentAdapter
+
+async def drain():
+    sb = get_supabase_service()
+    repo = StripeCustomerDLQRepository(sb)
+    payment = StripePaymentAdapter()
+    for row in repo.list_drainable(100):
+        cid = row["customer_id"]
+        try:
+            await payment.delete_customer(cid)
+            repo.delete(cid)
+            print(f"deleted {cid}")
+        except Exception as e:
+            print(f"FAILED {cid}: {e}")
+
+asyncio.run(drain())
+```
+
+### Escalation
+
+If rows stay above `attempts > 5` after multiple days: the Stripe customer may have been detached from its account in the Stripe dashboard, or the API key may lack permission. Investigate via `last_error` column and the Stripe dashboard.
+
+---
+
+## 12. processed_webhook_events 30-day purge
+
+**Worker:** `app/workers/purge_old_webhook_events.py`
+**Cron:** daily 03:45 UTC
+**Table:** `processed_webhook_events`
+
+### Purpose
+
+Stripe webhook idempotency keys are kept in `processed_webhook_events` to deduplicate replay attempts within the delivery window. Rows older than **30 days** are outside any reasonable Stripe retry window and constitute unnecessary PII/event retention.
+
+The worker issues a single `DELETE ... WHERE inserted_at < now() - 30 days` — the `inserted_at` index from migration 0001 makes this index-driven with no sequential scan.
+
+### Retention constant
+
+```python
+# app/workers/purge_old_webhook_events.py
+_WEBHOOK_EVENT_RETENTION_DAYS = 30
+```
+
+Changing this value requires only a code edit + redeploy (no migration). If Stripe extends its retry window beyond 30 days, increase accordingly.
+
+### Verify purge ran
+
+```sql
+-- Confirm no rows older than 30 days remain
+SELECT count(*) FROM processed_webhook_events
+WHERE inserted_at < now() - interval '30 days';
+-- Expected: 0 after nightly purge completes
+```

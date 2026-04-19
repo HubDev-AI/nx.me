@@ -42,6 +42,16 @@ from app.workers.weekly_free_grant import (
     WEEKLY_FREE_GRANT_CRON_WEEKDAY,
     run_weekly_free_grant,
 )
+from app.workers.purge_old_webhook_events import (
+    WEBHOOK_EVENT_PURGE_CRON_HOUR,
+    WEBHOOK_EVENT_PURGE_CRON_MINUTE,
+    purge_old_webhook_events,
+)
+from app.workers.stripe_customer_dlq_reconciler import (
+    STRIPE_CUSTOMER_DLQ_CRON_HOUR,
+    STRIPE_CUSTOMER_DLQ_CRON_MINUTE,
+    reconcile_stripe_customer_dlq,
+)
 
 configure_logging()
 
@@ -55,6 +65,11 @@ async def startup(ctx: dict) -> None:
     ctx["supabase"] = get_supabase_service()
     ctx["image_repo"] = ImageRepository(ctx["supabase"])
     ctx["orphan_repo"] = OrphanedStorageKeyRepository(ctx["supabase"])
+
+    # Payment adapter — used by reconcile_stripe_customer_dlq (Unit 11).
+    from app.api.deps import get_payment_adapter
+
+    ctx["payment"] = get_payment_adapter()
     ctx["redis"] = aioredis.from_url(
         settings.REDIS_URL,
         decode_responses=True,
@@ -139,6 +154,8 @@ class WorkerSettings:
         wipe_deleted_user_blobs,
         run_weekly_free_grant,
         run_fingerprint_purge,
+        purge_old_webhook_events,
+        reconcile_stripe_customer_dlq,
     ]
 
     on_startup = startup
@@ -165,6 +182,18 @@ class WorkerSettings:
             run_fingerprint_purge,
             hour=FINGERPRINT_PURGE_CRON_HOUR,
             minute=FINGERPRINT_PURGE_CRON_MINUTE,
+        ),
+        # Unit 11: webhook event purge — daily 03:45 UTC (PII retention cap)
+        cron(
+            purge_old_webhook_events,
+            hour=WEBHOOK_EVENT_PURGE_CRON_HOUR,
+            minute=WEBHOOK_EVENT_PURGE_CRON_MINUTE,
+        ),
+        # Unit 11: Stripe customer DLQ reconciler — daily 04:00 UTC
+        cron(
+            reconcile_stripe_customer_dlq,
+            hour=STRIPE_CUSTOMER_DLQ_CRON_HOUR,
+            minute=STRIPE_CUSTOMER_DLQ_CRON_MINUTE,
         ),
     ]
 

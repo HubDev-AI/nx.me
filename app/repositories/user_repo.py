@@ -49,7 +49,7 @@ class UserRepository:
             self._sb.table("users")
             .select(
                 "id, username, display_name, email, avatar_storage_key, "
-                "username_changed_at, face_mod_consent_at"
+                "username_changed_at, face_mod_consent_at, stripe_customer_id"
             )
             .eq("id", user_id)
             .maybe_single()

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from app.repositories.plan_version_repo import PlanVersionRepository
     from app.repositories.subscription_repo import SubscriptionRepository
     from app.repositories.upload_repo import UploadRepository
+    from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
     from app.repositories.user_repo import UserRepository
     from app.services.glowup_service import GlowupService
     from app.services.upload_service import UploadService
@@ -503,3 +504,10 @@ def get_guest_merge_repo(request: Request) -> "GuestMergeRepository":
     from app.repositories.guest_merge_repo import GuestMergeRepository
 
     return GuestMergeRepository(request.app.state.supabase)
+
+
+def get_stripe_customer_dlq_repo(request: Request) -> "StripeCustomerDLQRepository":
+    """Return a StripeCustomerDLQRepository wired to the app's Supabase client."""
+    from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
+
+    return StripeCustomerDLQRepository(request.app.state.supabase)
