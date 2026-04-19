@@ -53,7 +53,7 @@ async def _build_purchase_options(payment: PaymentPort) -> PurchaseOptions:
         pack_price = await payment.get_price(pack_price_id)
         pack = PackOption(
             pack_id="credits_pack_v1",
-            milli_credits=100,
+            milli_credits=settings.CREDIT_PACK_V1_CREDITS_MILLI,
             price_id=pack_price_id,
             amount_cents=pack_price.amount_cents,
             currency=pack_price.currency,
