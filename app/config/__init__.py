@@ -288,6 +288,24 @@ class Settings(BaseSettings):
     STRIPE_PRICE_CREDITS_25: str = ""
     STRIPE_PRICE_CREDITS_50: str = ""
 
+    # ── Payments — Credits engine (plan 2026-04-19-002) ────────────────────
+    # Server-side HMAC key used to derive `signup_grants_issued.deterministic_hash`
+    # from the mobile-generated installation UUID. Required; fail-fast if
+    # missing or blank at call time (per feedback_no_env_fallbacks). Stored
+    # as a comma-separated list so secrets can be rotated without downtime —
+    # primary first, optional secondary second. Lookups probe primary then
+    # secondary during a rotation window; writes always use primary. See
+    # `app/entitlement/fingerprint.py::get_server_secrets` + the runbook.
+    SIGNUP_FINGERPRINT_SERVER_SECRET: str
+
+    # Signup credit grant — milli-credits issued on first registration per
+    # device fingerprint. 300 milli = 3 glow-ups at 100 milli/glow-up.
+    SIGNUP_GRANT_MILLI: int = 300
+
+    # Weekly free grant for authenticated Free users (guests never receive it).
+    # 100 milli = 1 glow-up. Scheduled ARQ worker delivers it on a 7-day cadence.
+    WEEKLY_FREE_GRANT_MILLI: int = 100
+
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3  # max attempts per device fingerprint
     REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours
