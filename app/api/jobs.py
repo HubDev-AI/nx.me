@@ -509,25 +509,31 @@ async def delete_job(
     dies with them.
 
     Cascade chain (reverse-chronological in effect):
-      1. Rate-limit gate (per-caller, 10/min).
-      2. Status gate: ``completed | failed | cancelled`` only. In-flight
+      1. Fetch job + owner check. Missing job, wrong owner, or already-
+         deleted → idempotent 204 BEFORE the rate limiter runs. A buggy
+         client looping DELETE on stale job IDs (all 204) cannot burn the
+         user's own budget — only real destructive work consumes it.
+      2. Rate-limit gate (per-caller, 10/min) — AFTER the owner check so
+         no-op 204 responses do not count. See ``check_delete_glowup_
+         rate_limit`` for the "real deletes only" semantic.
+      3. Status gate: ``completed | failed | cancelled`` only. In-flight
          jobs must be cancelled first via ``POST /jobs/{id}/cancel``.
-      3. Enumerate ``(bucket, key)`` for every blob this job owns —
+      4. Enumerate ``(bucket, key)`` for every blob this job owns —
          raw-selfies, generated-images, and (if a live post exists)
          post-images. ``JobRepository.enumerate_blob_keys_for_delete``
          does the post lookup internally to keep this handler tidy.
-      4. Ref-count the shared ``glowup_analyses`` row via peer jobs.
+      5. Ref-count the shared ``glowup_analyses`` row via peer jobs.
          Cancelled peers do not count; any other peer keeps the analysis
          alive for re-generation. Only glow-up sources are considered —
          future ``makeup_session`` source_types route elsewhere.
-      5. Issue the single ``DELETE FROM jobs`` — FK cascade wipes posts,
+      6. Issue the single ``DELETE FROM jobs`` — FK cascade wipes posts,
          reactions, comments, reports, credit_reservations,
          prompt_experiments.
-      6. If peers=0 and source is a glowup, delete the analysis row.
-      7. Inline blob wipe per key — on exception, record to
+      7. If peers=0 and source is a glowup, delete the analysis row.
+      8. Inline blob wipe per key — on exception, record to
          ``orphaned_storage_keys`` with ``reason=DELETE_GLOWUP_REASON``
          (nightly reclaim worker drains it).
-      8. Emit ``events.glowup_delete`` (swallow-wrapped like glowup_save).
+      9. Emit ``events.glowup_delete`` (swallow-wrapped like glowup_save).
 
     Response posture — **intentional divergence from sibling /jobs
     endpoints**: missing job + wrong-owner + already-deleted all return
@@ -537,10 +543,33 @@ async def delete_job(
     must not surface 404 on the second call, or clients cannot tell
     success from "never existed". GET/cancel/refund/save return 404 on
     wrong-owner; DELETE here deliberately does not.
+
+    Rate-limit semantic: the limiter only gates the destructive path.
+    No-op 204s (missing job, wrong owner, already deleted) do NOT
+    consume budget, so a stolen token looping stale IDs cannot DoS the
+    real owner out of their own 10/min budget. Security posture is
+    unchanged — the 204 response shape is identical in all three no-op
+    cases whether or not the limiter ran.
     """
     user_id_str: str = claims["sub"]
+    job_id_str = str(job_id)
 
-    # 1. Rate-limit gate (before any DB work so a sweep can't wedge DLQ).
+    # 1a. Fetch job. Missing → idempotent 204 (mirrors delete_account).
+    # Runs BEFORE the rate limiter so no-op 204s don't burn budget —
+    # see docstring "Rate-limit semantic".
+    job = await run_sync(job_repo.get_by_id, job_id_str)
+    if not job:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 1b. Wrong owner → 204 (see docstring for the divergence rationale).
+    # Also precedes the rate limiter so a stolen-token sweep on another
+    # user's IDs does not consume the real owner's budget.
+    if job.get("user_id") != user_id_str:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 2. Rate-limit gate — only reached after we know we're about to do
+    # real destructive work. See docstring and the helper docstring for
+    # why this sits after the owner check rather than at the top.
     allowed, retry_after = await check_delete_glowup_rate_limit(
         user_id_str, redis_client
     )
@@ -551,18 +580,7 @@ async def delete_job(
             headers={"Retry-After": str(retry_after)},
         )
 
-    job_id_str = str(job_id)
-
-    # 2a. Fetch job. Missing → idempotent 204 (mirrors delete_account).
-    job = await run_sync(job_repo.get_by_id, job_id_str)
-    if not job:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    # 2b. Wrong owner → 204 (see docstring for the divergence rationale).
-    if job.get("user_id") != user_id_str:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    # 2c. Status gate. Non-terminal statuses must be cancelled first so
+    # 3. Status gate. Non-terminal statuses must be cancelled first so
     # the DB DELETE does not race the ARQ worker writing back results.
     job_status = job.get("status")
     if job_status not in _DELETABLE_JOB_STATUSES:
@@ -579,13 +597,13 @@ async def delete_job(
             },
         )
 
-    # 3. Enumerate blob keys BEFORE cascade. If this step is skipped or
+    # 4. Enumerate blob keys BEFORE cascade. If this step is skipped or
     # reordered after the DELETE, the post-images keys (denormalized on
     # ``posts.before_image_url``/``after_image_url``) vanish with the
     # cascaded row and the blobs orphan silently.
     blob_keys = await run_sync(job_repo.enumerate_blob_keys_for_delete, job_id_str)
 
-    # 4. Ref-count peer jobs sharing this source_id. Only relevant for
+    # 5. Ref-count peer jobs sharing this source_id. Only relevant for
     # ``glowup_analysis`` source_type — other polymorphic sources own
     # their own lifecycle and must not be touched by this endpoint.
     source_type = job.get("source_type")
@@ -601,10 +619,10 @@ async def delete_job(
         if peer_count == 0:
             delete_analysis = True
 
-    # 5. DB cascade. Single DELETE fans out via FK cascade.
+    # 6. DB cascade. Single DELETE fans out via FK cascade.
     await run_sync(job_repo.delete_by_id, job_id_str)
 
-    # 6. Analysis row — no FK cascade, explicit delete after we know the
+    # 7. Analysis row — no FK cascade, explicit delete after we know the
     # jobs row is gone.
     if delete_analysis:
         try:
@@ -622,7 +640,7 @@ async def delete_job(
             )
             await run_sync(orphan_analyses_repo.record, source_id, DELETE_GLOWUP_REASON)
 
-    # 7. Inline blob wipe. Per-key so a single failing key lands in the
+    # 8. Inline blob wipe. Per-key so a single failing key lands in the
     # DLQ alone — batching the whole list would force us to DLQ every
     # key on a single storage blip. Shared helper keeps retention +
     # delete_job in lock-step on the wipe-or-DLQ contract.
@@ -631,7 +649,7 @@ async def delete_job(
             image_repo, orphan_repo, bucket, key, DELETE_GLOWUP_REASON
         )
 
-    # 8. Emit analytics (swallow-wrapped — analytics failure must not fail
+    # 9. Emit analytics (swallow-wrapped — analytics failure must not fail
     # a destructive path that already committed).
     try:
         events.glowup_delete(job_id=job_id_str, user_id=user_id_str)

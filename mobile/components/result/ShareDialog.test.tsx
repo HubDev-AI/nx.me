@@ -12,7 +12,8 @@
  *   - `react-native-safe-area-context` — component reads `insets.bottom`.
  *   - `expo-haptics` — fire-and-forget; silence it.
  */
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
+import { Modal } from "react-native";
 
 import { ShareDialog, type ShareDialogJob } from "./ShareDialog";
 import type { Capabilities } from "../../lib/capabilities";
@@ -23,6 +24,15 @@ import type { Capabilities } from "../../lib/capabilities";
 // `react-native-reanimated/mock` still pulls in react-native-worklets
 // which blows up under jest-expo without a native runtime. This stub
 // covers only what ShareDialog imports.
+//
+// `withTiming` defers its completion callback via setTimeout when
+// `mockReanimatedCtl.duration > 0` so tests can simulate the
+// exit-animation race: `jest.useFakeTimers()` +
+// `jest.advanceTimersByTime(duration)` drains the completion at the
+// right moment. The controller name is `mock`-prefixed so Jest's
+// hoisting rule allows it inside the `jest.mock` factory closure.
+// Defaulting duration to 0 keeps existing tests' semantics unchanged.
+const mockReanimatedCtl = { duration: 0 };
 jest.mock("react-native-reanimated", () => {
   const ReactMock = require("react");
   const RN = require("react-native");
@@ -44,7 +54,13 @@ jest.mock("react-native-reanimated", () => {
       _config?: unknown,
       callback?: (finished: boolean) => void,
     ) => {
-      if (typeof callback === "function") callback(true);
+      if (typeof callback === "function") {
+        if (mockReanimatedCtl.duration <= 0) {
+          callback(true);
+        } else {
+          setTimeout(() => callback(true), mockReanimatedCtl.duration);
+        }
+      }
       return toValue;
     },
   };
@@ -385,5 +401,130 @@ describe("ShareDialog — handler wiring", () => {
     expect(queryByText("Couldn't publish — try again.")).not.toBeNull();
     // Panel stays open so the user can retry.
     expect(queryByText).toBeTruthy();
+  });
+});
+
+// ---------- Exit-animation race (P3c) ----------
+
+describe("ShareDialog — exit-animation race", () => {
+  // Reviewer P3c: rapid re-open during the exit animation window used
+  // to unmount the now-open dialog because the stale exit's completion
+  // callback unconditionally ran `setMounted(false)` + `setMode("rows")`.
+  // The `isClosingRef` gate now makes the stale callback a no-op.
+  //
+  // `jest.useFakeTimers()` + the per-test `mockReanimatedCtl.duration`
+  // knob together let us advance through the deferred withTiming
+  // completion at the exact moment the race closes.
+  const EXIT_DURATION_MS = 200;
+
+  beforeEach(() => {
+    setCaps({ canPublishGlowup: true, canEditProfile: true });
+    mockReanimatedCtl.duration = EXIT_DURATION_MS;
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    mockReanimatedCtl.duration = 0;
+  });
+
+  it("re-open during the exit window keeps the dialog mounted with rows visible (no flicker)", () => {
+    const { getByTestId, queryByTestId, rerender } = render(
+      <ShareDialog
+        visible
+        onClose={jest.fn()}
+        job={makeJob()}
+        onSave={jest.fn()}
+        onShare={jest.fn()}
+        onPublish={jest.fn()}
+        saveState="pending"
+      />,
+    );
+
+    // Dialog opens — rows view live.
+    expect(queryByTestId("share-dialog-row-share")).not.toBeNull();
+
+    // Parent flips visible=false — exit animation starts; stale
+    // completion callback is scheduled but NOT yet fired.
+    rerender(
+      <ShareDialog
+        visible={false}
+        onClose={jest.fn()}
+        job={makeJob()}
+        onSave={jest.fn()}
+        onShare={jest.fn()}
+        onPublish={jest.fn()}
+        saveState="pending"
+      />,
+    );
+
+    // Before the exit completes, parent re-opens the dialog.
+    rerender(
+      <ShareDialog
+        visible
+        onClose={jest.fn()}
+        job={makeJob()}
+        onSave={jest.fn()}
+        onShare={jest.fn()}
+        onPublish={jest.fn()}
+        saveState="pending"
+      />,
+    );
+
+    // Now drain the stale exit-completion — without the guard this
+    // would setMounted(false) and unmount the dialog. With the guard,
+    // the callback no-ops (isClosingRef.current is already false because
+    // the re-open cleared it).
+    act(() => {
+      jest.advanceTimersByTime(EXIT_DURATION_MS);
+    });
+
+    // Dialog still mounted; rows view still live — the Share row is
+    // the stable proxy that's always present in the rows layout.
+    expect(getByTestId("share-dialog-row-share")).toBeTruthy();
+    expect(queryByTestId("share-dialog-row-share")).not.toBeNull();
+  });
+
+  it("clean close (no re-open): exit completion flips the Modal's visible prop to false", () => {
+    // Regression guard: the ref gate must not break the normal close
+    // path. Without a re-open, the completion callback still flips
+    // `mounted` → false. React Native's Modal keeps its children in
+    // the test tree regardless of `visible`, so we assert on the
+    // Modal's `visible` prop directly via UNSAFE_getByType.
+    const { UNSAFE_getByType, rerender } = render(
+      <ShareDialog
+        visible
+        onClose={jest.fn()}
+        job={makeJob()}
+        onSave={jest.fn()}
+        onShare={jest.fn()}
+        onPublish={jest.fn()}
+        saveState="pending"
+      />,
+    );
+
+    // Initial render — Modal visible=true (mounted tracks the prop).
+    expect(UNSAFE_getByType(Modal).props.visible).toBe(true);
+
+    rerender(
+      <ShareDialog
+        visible={false}
+        onClose={jest.fn()}
+        job={makeJob()}
+        onSave={jest.fn()}
+        onShare={jest.fn()}
+        onPublish={jest.fn()}
+        saveState="pending"
+      />,
+    );
+
+    // Drain the exit completion — without a re-open the callback fires
+    // the `setMounted(false)` branch.
+    act(() => {
+      jest.advanceTimersByTime(EXIT_DURATION_MS);
+    });
+
+    // Modal now sees visible=false via the internal `mounted` state.
+    expect(UNSAFE_getByType(Modal).props.visible).toBe(false);
   });
 });

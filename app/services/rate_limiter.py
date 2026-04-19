@@ -178,6 +178,15 @@ async def check_delete_glowup_rate_limit(
     Mirrors :func:`check_delete_account_rate_limit` — same INCR + EXPIRE NX
     pattern, separate key namespace and separate constants so the two
     limits don't share a counter. Key: ``delete_glowup_rate:{user_id}``.
+
+    **Call-site contract (real deletes only):** this function INCRements
+    the counter on every call, so ``app/api/jobs.py::delete_job`` invokes
+    it AFTER the fetch + owner check — only when the request is about to
+    do real destructive work. No-op 204s (missing job, wrong owner,
+    already deleted) must bypass this helper; otherwise a stolen token
+    looping stale IDs could DoS the real owner out of their own budget
+    via the idempotent-204 path. Budget applies to "actual deletes", not
+    "DELETE requests".
     """
     key = f"delete_glowup_rate:{user_id}"
     pipe = r.pipeline()

@@ -44,6 +44,7 @@ from app.services.public_url import (
     build_avatar_url,
     publish_post_images,
 )
+from app.utils.db_errors import is_unique_violation
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +53,6 @@ router = APIRouter(
     dependencies=[Depends(require_app_feature("social_enabled"))],
 )
 
-# Postgres SQLSTATE for unique_violation. Raised by migration 0046's partial
-# UNIQUE index ``idx_posts_live_glow_up_job_id`` when two INSERTs race for
-# the same live (is_deleted=FALSE AND is_hidden=FALSE) glow_up_job_id.
-# Surface as caller-idempotency: return the existing live post instead of 500.
-_PG_UNIQUE_VIOLATION_SQLSTATE = "23505"
-
 # Reason string recorded in ``orphaned_storage_keys`` for post-images blobs
 # we uploaded to the PUBLIC bucket but have not yet committed via
 # ``post_repo.insert_post``. Server-side constant only, never user-derived.
@@ -65,23 +60,6 @@ _PG_UNIQUE_VIOLATION_SQLSTATE = "23505"
 # on any failure path (TOCTOU 409, exhausted retry, unexpected 5xx) the DLQ
 # row survives and the nightly reclaim worker drains it.
 PUBLISH_PENDING_REASON = "publish_pending"
-
-
-def _is_unique_violation(exc: Exception) -> bool:
-    """Return True iff ``exc`` is a PostgREST unique_violation.
-
-    Supabase's ``postgrest.exceptions.APIError`` exposes ``.code`` with the
-    Postgres SQLSTATE. Mirrors the pattern used in
-    ``app/advisor/memory_manager.py::_is_unique_violation`` and
-    ``app/entitlement/trial_grantor.py`` so we don't import a moving PostgREST
-    module. Falls back to string-match for clients whose wrapper drops ``.code``.
-    """
-    if getattr(exc, "code", None) == _PG_UNIQUE_VIOLATION_SQLSTATE:
-        return True
-    message = str(exc).lower()
-    return _PG_UNIQUE_VIOLATION_SQLSTATE in message or (
-        "unique" in message and ("violat" in message or "duplicat" in message)
-    )
 
 
 # M-3: Comment rate limit constants moved to app/config/__init__.py
@@ -295,7 +273,7 @@ async def create_post(
         post = await run_sync(post_repo.insert_post, insert_row)
         response_status = status.HTTP_201_CREATED
     except Exception as exc:
-        if not _is_unique_violation(exc):
+        if not is_unique_violation(exc):
             raise
 
         existing = await run_sync(post_repo.get_by_glow_up_job_id, body.glow_up_job_id)
@@ -315,7 +293,7 @@ async def create_post(
                 post = await run_sync(post_repo.insert_post, insert_row)
                 response_status = status.HTTP_201_CREATED
             except Exception as retry_exc:
-                if not _is_unique_violation(retry_exc):
+                if not is_unique_violation(retry_exc):
                     raise
                 retry_existing = await run_sync(
                     post_repo.get_by_glow_up_job_id, body.glow_up_job_id

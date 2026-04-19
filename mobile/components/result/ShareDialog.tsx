@@ -31,7 +31,7 @@
  * `TODO(writer-review)` markers. Per plan §Unit 7 and
  * `feedback_female_user_targeting`, writer review blocks merge.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -216,6 +216,14 @@ export function ShareDialog({
   const [mounted, setMounted] = useState(visible);
   const [mode, setMode] = useState<Mode>("rows");
 
+  // Exit-animation race guard. A rapid re-open during the EXIT_DURATION_MS
+  // window would otherwise fire the stale completion callback (enqueued
+  // when the previous `visible=false` ran) and unmount the now-open
+  // dialog — a visible flicker. Flipped to `true` when the exit animation
+  // starts and back to `false` when a new open fires; the completion
+  // callback checks the ref and no-ops when the dialog has been re-opened.
+  const isClosingRef = useRef(false);
+
   const backdropOpacity = useSharedValue(0);
   const sheetTranslateY = useSharedValue(SHEET_OFFSCREEN_Y);
 
@@ -227,8 +235,27 @@ export function ShareDialog({
     transform: [{ translateY: sheetTranslateY.value }],
   }));
 
+  /**
+   * JS-thread tail for the exit animation. Runs the state resets only if
+   * the dialog wasn't re-opened during the exit window — the `isClosingRef`
+   * gate is the single source of truth for "should the stale exit
+   * complete". A separate named callback keeps the `runOnJS` jump
+   * unambiguous.
+   */
+  const handleExitComplete = useCallback(() => {
+    if (!isClosingRef.current) return;
+    isClosingRef.current = false;
+    setMounted(false);
+    setMode("rows");
+  }, []);
+
   useEffect(() => {
     if (visible) {
+      // Re-opening during a still-running exit animation — clear the
+      // closing gate so any pending completion callback no-ops when it
+      // finally fires. The animated values snap forward to the open
+      // pose via withSpring below.
+      isClosingRef.current = false;
       setMounted(true);
       backdropOpacity.value = withTiming(SCRIM_OPACITY, {
         duration: ENTER_DURATION_MS,
@@ -238,6 +265,7 @@ export function ShareDialog({
         stiffness: THEME.animation.press.stiffness,
       });
     } else {
+      isClosingRef.current = true;
       backdropOpacity.value = withTiming(0, { duration: EXIT_DURATION_MS });
       sheetTranslateY.value = withTiming(
         SHEET_OFFSCREEN_Y,
@@ -248,13 +276,14 @@ export function ShareDialog({
             // completes so the user doesn't see the confirm panel flicker
             // back to the rows view while the sheet is sliding away.
             // Guarantees a re-open always starts from the rows view.
-            runOnJS(setMounted)(false);
-            runOnJS(setMode)("rows");
+            // The JS tail re-checks `isClosingRef` before running state
+            // resets, so a rapid re-open won't unmount the live dialog.
+            runOnJS(handleExitComplete)();
           }
         },
       );
     }
-  }, [visible, backdropOpacity, sheetTranslateY]);
+  }, [visible, backdropOpacity, sheetTranslateY, handleExitComplete]);
 
   // ---- Row visibility --------------------------------------------------
 

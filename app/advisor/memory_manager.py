@@ -27,6 +27,7 @@ from app.advisor.models import MemoryType
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
+from app.utils.db_errors import is_unique_violation
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +226,7 @@ class MemoryManager:
         try:
             created = self._repo.insert_memory(row)
         except Exception as exc:
-            if _is_unique_violation(exc):
+            if is_unique_violation(exc):
                 winner = self._repo.find_memory_by_content_hash(
                     user_id=str(user_id),
                     memory_type=memory_type.value,
@@ -481,18 +482,3 @@ def _content_fingerprint(content: Any) -> str:
     """
     canonical = json.dumps(content, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-def _is_unique_violation(exc: Exception) -> bool:
-    """Heuristic match for a unique-constraint violation from Supabase/PostgREST.
-
-    The supabase-py client surfaces PostgREST errors as ``APIError`` with a
-    ``code`` attribute carrying Postgres's SQLSTATE (``23505`` for
-    ``unique_violation``). Kept as a string check so we do not import
-    PostgREST's error module (it moves between client versions).
-    """
-    code = getattr(exc, "code", None)
-    if code == "23505":
-        return True
-    message = str(exc).lower()
-    return "unique" in message and ("violat" in message or "duplicat" in message)

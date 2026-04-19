@@ -73,7 +73,6 @@ import {
   RESULT_WAITING_TITLE,
 } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
-import { useAppMutation } from "../../lib/hooks/use-app-mutation";
 import { useRefundToast } from "../../lib/hooks/use-refund-toast";
 import { showToast } from "../../lib/toast";
 import { useAuth } from "../../lib/auth-context";
@@ -260,28 +259,47 @@ export default function ResultScreen() {
   // screen + a profile pending cell observe the same job.
   useRefundToast(result);
 
-  // Save mutation — copy matches the "Save on profile" button label.
-  // Routed through `useAppMutation` so success-toast + state-reset logic
-  // stays in one place; the dialog's auto-save path below reuses this
-  // mutation via `mutateAsync` to avoid a second code path.
-  const saveMutation = useAppMutation<{ saved_at: string }, void>({
-    mutationKey: ["job.save", jobId],
-    mutationFn: () => saveJob(jobId as string),
-    onSuccess: () => {
-      setSaveState("saved");
-      showToast({ kind: "success", message: "Saved on your profile." });
+  // Unified save-path wrapper. Both the primary "Save on profile" button
+  // (`handleSave` below) and the dialog's Save row (via
+  // `useShareDialog.handleSave`) / Share-path blocking auto-save
+  // (`useShareDialog.handleShare`) funnel through this single helper.
+  //
+  // One codepath for every save surface: one POST per tap, one shared
+  // invalidation of the `["job", jobId]` query (so the next render sees
+  // the fresh `saved_at` without waiting for the next 2s poll), and
+  // consistent error surfacing upstream. Callers handle their own
+  // success/error UX (toasts, state flips) because the two entry points
+  // differ — the primary button shows a toast, the dialog auto-save on
+  // the Share path intentionally suppresses it.
+  const saveJobFn = useCallback(
+    async (id: string) => {
+      const response = await saveJob(id);
+      // Invalidate the job query so the next render picks up the new
+      // `saved_at` from the cache instead of the stale snapshot the
+      // current render is still holding. Without this the outline
+      // "Save on profile" button and the dialog's Save row would rely
+      // purely on `saveState` drift until the next 2s poll lands.
+      queryClient.invalidateQueries({ queryKey: ["job", id] });
+      return response;
     },
-    onError: () => {
-      setSaveState("pending");
-      showToast({ kind: "error", message: "Couldn't save on profile. Try again." });
-    },
-  });
+    [queryClient],
+  );
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (saveState !== "pending") return;
     setSaveState("saving");
-    saveMutation.mutate();
-  }, [saveState, saveMutation]);
+    try {
+      await saveJobFn(jobId as string);
+      setSaveState("saved");
+      showToast({ kind: "success", message: "Saved on your profile." });
+    } catch {
+      setSaveState("pending");
+      showToast({
+        kind: "error",
+        message: "Couldn't save on profile. Try again.",
+      });
+    }
+  }, [saveState, saveJobFn, jobId]);
 
   // ---- ShareDialog handlers -------------------------------------------
   //
@@ -350,6 +368,7 @@ export default function ResultScreen() {
     generateAndShare,
     getImageUrls: getShareImageUrls,
     onDialogClose: closeShareDialog,
+    saveJobFn,
     onSaveSuccess: handleDialogSaveSuccess,
     onPublishSuccess: handleDialogPublishSuccess,
   });
@@ -666,7 +685,9 @@ export default function ResultScreen() {
 
                 <Animated.View entering={FadeIn.duration(300).delay(400)}>
                   <ResultActions
-                    onSave={handleSave}
+                    onSave={() => {
+                      void handleSave();
+                    }}
                     onOpenShareDialog={handleOpenShareDialog}
                     onTryAnother={handleTryAgain}
                     saveState={saveState}

@@ -28,6 +28,15 @@
  *     result screen can pass through its already-cached `jobQuery.data`
  *     while profile does its own `GET /v1/jobs/{id}` (the /history list
  *     row doesn't carry image URLs).
+ *   - `saveJobFn` is a parent-supplied callback for the same reason
+ *     (P3d unification): standalone Save (`handleSave`) and the blocking
+ *     auto-save on Share (`handleShare`) both route through it, so each
+ *     screen can layer its own mutation / cache-invalidation behaviour
+ *     (result: `queryClient.invalidateQueries(["job", id])`; profile:
+ *     `refresh(profile.username)` via `onSaveSuccess`) without the hook
+ *     hitting `saveJob` behind the cache. Every save surface shares one
+ *     codepath — no silent divergence between dialog-initiated and
+ *     primary-button saves.
  *   - Error messages route through `parseApiError` (the project
  *     standard in `mobile/lib/errors.ts`). This is a minor behavior
  *     change on profile: server-side `detail` strings now flatten to the
@@ -37,10 +46,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
-import { saveJob } from "../../lib/analysis";
 import { parseApiError } from "../../lib/errors";
 import { showToast } from "../../lib/toast";
 import { UNIVERSAL_LINK_ORIGIN } from "../../constants/config";
+import type { JobSaveResponse } from "../../lib/analysis";
 import type { SaveState } from "./ResultActions";
 import type { ShareDialogJob } from "./ShareDialog";
 
@@ -179,6 +188,19 @@ export interface UseShareDialogOptions {
    */
   onDialogClose: () => void;
   /**
+   * Persists the job to the viewer's profile. Parent-supplied so each
+   * screen can route the call through its own TanStack Query mutation
+   * (and its cache-invalidation side effects) instead of the hook
+   * firing the raw `saveJob` endpoint behind the query cache's back.
+   *
+   * Single save codepath: standalone Save (`handleSave`) and the
+   * blocking auto-save on the Share path (`handleShare`) both go
+   * through this opt so every save surface benefits from the same
+   * invalidation behaviour. The response shape matches `saveJob`'s —
+   * the hook only reads `saved_at`.
+   */
+  saveJobFn: (jobId: string) => Promise<JobSaveResponse>;
+  /**
    * Fires after a successful save (either standalone Save or
    * auto-save-then-share). Receives the fresh `saved_at` timestamp so
    * the parent can merge it into its job snapshot.
@@ -227,6 +249,7 @@ export function useShareDialog(
     generateAndShare,
     getImageUrls,
     onDialogClose,
+    saveJobFn,
     onSaveSuccess,
     onPublishSuccess,
   } = opts;
@@ -263,27 +286,23 @@ export function useShareDialog(
 
   // ---- Save -----------------------------------------------------------
   //
-  // POST /v1/jobs/{id}/save. On success fire `onSaveSuccess(saved_at)`
-  // so the parent can merge the fresh timestamp into its job snapshot
-  // (otherwise the Save row wouldn't disappear on the next render —
-  // ShareDialog gates it on `job.saved_at === null`).
+  // POST /v1/jobs/{id}/save via parent-supplied `saveJobFn`. On success
+  // fire `onSaveSuccess(saved_at)` so the parent can merge the fresh
+  // timestamp into its job snapshot (otherwise the Save row wouldn't
+  // disappear on the next render — ShareDialog gates it on
+  // `job.saved_at === null`).
   //
-  // Note: on the result screen the primary-row Save button and this
-  // dialog Save share an observable job (`jobQuery`), but they track
-  // their own local `saveState`. If the user taps the primary-row
-  // Save and opens the dialog before the next 2s poll, the dialog's
-  // Save row is still visible (gated on `job.saved_at === null`) and
-  // this handler will fire a second `POST /v1/jobs/{id}/save`. The
-  // backend endpoint is idempotent, so the net effect is one extra
-  // request + one extra success toast — an acceptable degradation
-  // until the result screen optimistically patches `jobQuery.data`
-  // after mutate.
+  // `saveJobFn` is parent-supplied so the screen can route the call
+  // through its own mutation/cache-invalidation wrapper instead of the
+  // hook hitting the raw endpoint behind the query cache's back. Both
+  // this standalone Save and the blocking auto-save on Share (below)
+  // funnel through the same opt — one save codepath.
   const handleSave = useCallback(async () => {
     if (!job) return;
     if (saveState !== "pending") return;
     setSaveState("saving");
     try {
-      const { saved_at } = await saveJob(job.id);
+      const { saved_at } = await saveJobFn(job.id);
       setSaveState("saved");
       onSaveSuccess?.(saved_at);
       showToast({ kind: "success", message: SAVE_SUCCESS_MESSAGE });
@@ -292,7 +311,7 @@ export function useShareDialog(
       const app = parseApiError(err);
       showToast({ kind: "error", message: app.message });
     }
-  }, [job, saveState, onSaveSuccess]);
+  }, [job, saveState, saveJobFn, onSaveSuccess]);
 
   // Re-entry guard for `handleShare` — mirrors `isPublishing` but lives
   // in a ref so the in-flight flag doesn't churn a re-render. A rapid
@@ -318,12 +337,14 @@ export function useShareDialog(
       // Step 1 — block on auto-save when the job isn't saved yet (R8).
       // Wrapped in `raceWithTimeout` so a slow network can't hang the
       // Share row forever; on either failure or timeout we MUST abort
-      // and never open the native sheet.
+      // and never open the native sheet. Routes through `saveJobFn`
+      // so the Share auto-save benefits from the same invalidation
+      // wiring as the standalone Save path.
       if (job.saved_at === null) {
         setSaveState("saving");
         try {
           const { saved_at } = await raceWithTimeout(
-            saveJob(job.id),
+            saveJobFn(job.id),
             SAVE_TIMEOUT_MS,
           );
           setSaveState("saved");
@@ -395,7 +416,15 @@ export function useShareDialog(
       // auto-save would wedge the Share row until the next remount.
       isSharingRef.current = false;
     }
-  }, [job, username, generateAndShare, getImageUrls, onDialogClose, onSaveSuccess]);
+  }, [
+    job,
+    username,
+    generateAndShare,
+    getImageUrls,
+    onDialogClose,
+    saveJobFn,
+    onSaveSuccess,
+  ]);
 
   // ---- Publish --------------------------------------------------------
   //

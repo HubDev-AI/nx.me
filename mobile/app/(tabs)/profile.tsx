@@ -47,7 +47,7 @@ import {
 } from "../../components/result/ShareDialog";
 import { useShareComposite } from "../../components/result/ShareComposite";
 import { useShareDialog } from "../../components/result/useShareDialog";
-import { type JobResult } from "../../lib/analysis";
+import { saveJob, type JobResult } from "../../lib/analysis";
 import type { GlowUpItem, UpdateProfilePayload } from "../../components/profile/types";
 
 /** Status values that surface as a dismissable errored cell on the grid. */
@@ -400,6 +400,24 @@ export default function ProfileScreen() {
     };
   }, [dialogJob]);
 
+  // Unified save-path wrapper — matches the shape on the result screen
+  // so every dialog-initiated save (standalone + Share auto-save) goes
+  // through the same helper. Profile has no primary save button today;
+  // this still routes dialog-initiated saves through a single codepath
+  // so if profile ever gains an inline Save affordance it can call the
+  // same helper without re-diverging from the hook.
+  //
+  // `useProfile()` is not React Query-backed, so there's no
+  // query-cache invalidation to fire here — the `onSaveSuccess`
+  // callback already kicks off `refresh(profile.username)` via
+  // `refreshProfileAfterMutation`. This wrapper stays thin
+  // intentionally: it exists purely so the hook's save codepath is
+  // unified with the result screen.
+  const saveJobFn = useCallback(
+    (id: string) => saveJob(id),
+    [],
+  );
+
   const {
     saveState: dialogSaveState,
     isPublishing,
@@ -414,6 +432,7 @@ export default function ProfileScreen() {
     generateAndShare,
     getImageUrls: getShareImageUrls,
     onDialogClose: handleCloseDialog,
+    saveJobFn,
     onSaveSuccess: handleDialogSaveSuccess,
     onPublishSuccess: handleDialogPublishSuccess,
   });

@@ -4,11 +4,15 @@
  * Covers the R5/R8 blocking-auto-save invariant: a failed save on the
  * Share path MUST abort the native-share hand-off. Also verifies the
  * re-entry guard on Publish, the image-url timeout branch, and the
- * onSaveSuccess / onPublishSuccess patch contracts.
+ * onSaveSuccess / onPublishSuccess patch contracts, plus the
+ * `opts.saveJobFn` contract so the hook never calls `saveJob` directly
+ * (one save codepath across the result + profile screens).
  *
- * Mocks: `apiFetch`, `saveJob`, `parseApiError`, `showToast`. `apiFetch`
- * mirrors the `useSocialAuth.test.ts` pattern (import and cast). No
- * JSX is rendered — `renderHook` drives the hook directly.
+ * Mocks: `apiFetch`, `parseApiError`, `showToast`. The save path is
+ * tested through the parent-supplied `saveJobFn` jest mock so the
+ * invariant "hook only calls opts.saveJobFn" is asserted directly.
+ * `apiFetch` mirrors the `useSocialAuth.test.ts` pattern (import and
+ * cast). No JSX is rendered — `renderHook` drives the hook directly.
  */
 import { act, renderHook } from "@testing-library/react-native";
 
@@ -17,10 +21,6 @@ import type { ShareDialogJob } from "./ShareDialog";
 
 jest.mock("../../lib/api", () => ({
   apiFetch: jest.fn(),
-}));
-
-jest.mock("../../lib/analysis", () => ({
-  saveJob: jest.fn(),
 }));
 
 jest.mock("../../lib/errors", () => ({
@@ -40,9 +40,6 @@ jest.mock("../../lib/toast", () => ({
 // module surface. Safe because jest hoists the mocks above imports.
 const { apiFetch } = require("../../lib/api") as {
   apiFetch: jest.Mock;
-};
-const { saveJob } = require("../../lib/analysis") as {
-  saveJob: jest.Mock;
 };
 const { showToast } = require("../../lib/toast") as {
   showToast: jest.Mock;
@@ -66,6 +63,7 @@ interface SetupArgs {
   imageUrls?: { before: string | null; after: string | null };
   imageUrlsThrows?: unknown;
   generateAndShareImpl?: jest.Mock;
+  saveJobFnImpl?: jest.Mock;
 }
 
 function setup(args: SetupArgs = {}) {
@@ -83,6 +81,9 @@ function setup(args: SetupArgs = {}) {
     return images;
   });
   const generateAndShare = args.generateAndShareImpl ?? jest.fn();
+  const saveJobFn =
+    args.saveJobFnImpl ??
+    jest.fn(async (_id: string) => ({ saved_at: "2026-04-18T12:00:00Z" }));
   const onDialogClose = jest.fn();
   const onSaveSuccess = jest.fn();
   const onPublishSuccess = jest.fn();
@@ -94,6 +95,7 @@ function setup(args: SetupArgs = {}) {
       generateAndShare,
       getImageUrls,
       onDialogClose,
+      saveJobFn,
       onSaveSuccess,
       onPublishSuccess,
     }),
@@ -103,6 +105,7 @@ function setup(args: SetupArgs = {}) {
     result,
     getImageUrls,
     generateAndShare,
+    saveJobFn,
     onDialogClose,
     onSaveSuccess,
     onPublishSuccess,
@@ -116,15 +119,19 @@ beforeEach(() => {
 // ---------- handleSave ----------
 
 describe("useShareDialog — handleSave", () => {
-  it("happy path: POSTs save, flips saveState, fires onSaveSuccess with saved_at, toasts success", async () => {
-    saveJob.mockResolvedValue({ saved_at: "2026-04-18T12:00:00Z" });
-    const { result, onSaveSuccess } = setup();
+  it("happy path: calls opts.saveJobFn with the job id, flips saveState, fires onSaveSuccess with saved_at, toasts success", async () => {
+    const saveJobFnImpl = jest.fn(async (_id: string) => ({
+      saved_at: "2026-04-18T12:00:00Z",
+    }));
+    const { result, saveJobFn, onSaveSuccess } = setup({ saveJobFnImpl });
 
     await act(async () => {
       await result.current.handleSave();
     });
 
-    expect(saveJob).toHaveBeenCalledWith("job-1");
+    // Unified save codepath: hook MUST route through opts.saveJobFn,
+    // not a direct saveJob import. Asserts the P3d invariant directly.
+    expect(saveJobFn).toHaveBeenCalledWith("job-1");
     expect(result.current.saveState).toBe("saved");
     expect(onSaveSuccess).toHaveBeenCalledWith("2026-04-18T12:00:00Z");
     expect(showToast).toHaveBeenCalledWith(
@@ -133,8 +140,10 @@ describe("useShareDialog — handleSave", () => {
   });
 
   it("error path: resets saveState, toasts error, does NOT fire onSaveSuccess", async () => {
-    saveJob.mockRejectedValue(new Error("save-failed"));
-    const { result, onSaveSuccess } = setup();
+    const saveJobFnImpl = jest.fn(async (_id: string) => {
+      throw new Error("save-failed");
+    });
+    const { result, onSaveSuccess } = setup({ saveJobFnImpl });
 
     await act(async () => {
       await result.current.handleSave();
@@ -148,31 +157,88 @@ describe("useShareDialog — handleSave", () => {
   });
 
   it("no-op when saveState is not pending (double-submit guard)", async () => {
-    saveJob.mockResolvedValue({ saved_at: "2026-04-18T12:00:00Z" });
-    const { result } = setup();
+    const { result, saveJobFn } = setup();
 
     // First save locks the state to "saved".
     await act(async () => {
       await result.current.handleSave();
     });
     expect(result.current.saveState).toBe("saved");
-    saveJob.mockClear();
+    saveJobFn.mockClear();
 
     // Second save must be a no-op.
     await act(async () => {
       await result.current.handleSave();
     });
-    expect(saveJob).not.toHaveBeenCalled();
+    expect(saveJobFn).not.toHaveBeenCalled();
   });
 
   it("no-op when job is null", async () => {
-    const { result } = setup({ job: null });
+    const { result, saveJobFn } = setup({ job: null });
 
     await act(async () => {
       await result.current.handleSave();
     });
 
-    expect(saveJob).not.toHaveBeenCalled();
+    expect(saveJobFn).not.toHaveBeenCalled();
+  });
+});
+
+// ---------- opts.saveJobFn contract (P3d unification) ----------
+
+describe("useShareDialog — saveJobFn contract", () => {
+  // Explicit assertions that the hook routes every save through
+  // `opts.saveJobFn` and never calls `saveJob` from `lib/analysis`
+  // directly. This is the P3d invariant: one save codepath across the
+  // result + profile screens, wired so each screen can layer its own
+  // mutation / cache-invalidation behaviour without the hook going
+  // around it.
+  it("calls opts.saveJobFn(job.id) on standalone handleSave", async () => {
+    const saveJobFnImpl = jest.fn(async (_id: string) => ({
+      saved_at: "2026-04-19T00:00:00Z",
+    }));
+    const { result, saveJobFn } = setup({ saveJobFnImpl });
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(saveJobFn).toHaveBeenCalledTimes(1);
+    expect(saveJobFn).toHaveBeenCalledWith("job-1");
+  });
+
+  it("calls opts.saveJobFn(job.id) on the Share blocking auto-save branch (R5/R8)", async () => {
+    const saveJobFnImpl = jest.fn(async (_id: string) => ({
+      saved_at: "2026-04-19T00:00:00Z",
+    }));
+    const { result, saveJobFn } = setup({ saveJobFnImpl });
+
+    await act(async () => {
+      await result.current.handleShare();
+    });
+
+    expect(saveJobFn).toHaveBeenCalledTimes(1);
+    expect(saveJobFn).toHaveBeenCalledWith("job-1");
+  });
+
+  it("propagates saved_at to onSaveSuccess so the parent can merge the timestamp", async () => {
+    // Integration-style assertion: on success, the hook fires the
+    // onSaveSuccess callback with the exact timestamp that saveJobFn
+    // resolved with. Parents (result screen + profile long-press) rely
+    // on this to merge `saved_at` into their job snapshot so the Save
+    // row disappears on the next render.
+    const SAVED_AT = "2026-04-19T13:30:00Z";
+    const saveJobFnImpl = jest.fn(async (_id: string) => ({
+      saved_at: SAVED_AT,
+    }));
+    const { result, onSaveSuccess } = setup({ saveJobFnImpl });
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(onSaveSuccess).toHaveBeenCalledTimes(1);
+    expect(onSaveSuccess).toHaveBeenCalledWith(SAVED_AT);
   });
 });
 
@@ -180,7 +246,7 @@ describe("useShareDialog — handleSave", () => {
 
 describe("useShareDialog — handleShare (R5/R8)", () => {
   it("already-saved job: skips auto-save, closes dialog before sharing, passes hash URL", async () => {
-    const { result, generateAndShare, onDialogClose } = setup({
+    const { result, generateAndShare, onDialogClose, saveJobFn } = setup({
       job: makeJob({
         saved_at: "2026-04-17T00:00:00Z",
         post_id: "post-xyz",
@@ -192,7 +258,7 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
       await result.current.handleShare();
     });
 
-    expect(saveJob).not.toHaveBeenCalled();
+    expect(saveJobFn).not.toHaveBeenCalled();
     // Close-before-share ordering matters for the modal scrim UX.
     expect(onDialogClose).toHaveBeenCalledTimes(1);
     expect(generateAndShare).toHaveBeenCalledWith(
@@ -203,15 +269,21 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
     );
   });
 
-  it("unsaved job: saves first, then shares (blocking auto-save)", async () => {
-    saveJob.mockResolvedValue({ saved_at: "2026-04-18T12:00:00Z" });
-    const { result, generateAndShare, onSaveSuccess } = setup();
+  it("unsaved job: saves first via saveJobFn, then shares (blocking auto-save)", async () => {
+    const saveJobFnImpl = jest.fn(async (_id: string) => ({
+      saved_at: "2026-04-18T12:00:00Z",
+    }));
+    const { result, generateAndShare, saveJobFn, onSaveSuccess } = setup({
+      saveJobFnImpl,
+    });
 
     await act(async () => {
       await result.current.handleShare();
     });
 
-    expect(saveJob).toHaveBeenCalledWith("job-1");
+    // Same unified save codepath as standalone Save — asserts the
+    // auto-save branch also routes through opts.saveJobFn.
+    expect(saveJobFn).toHaveBeenCalledWith("job-1");
     expect(onSaveSuccess).toHaveBeenCalledWith("2026-04-18T12:00:00Z");
     expect(generateAndShare).toHaveBeenCalledTimes(1);
     // Save-toast does NOT fire on Share path — user only asked to
@@ -221,14 +293,18 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
   });
 
   it("save failure on Share path: share is NOT called, error toasted, dialog stays open", async () => {
-    saveJob.mockRejectedValue(new Error("save-failed"));
-    const { result, generateAndShare, onDialogClose } = setup();
+    const saveJobFnImpl = jest.fn(async (_id: string) => {
+      throw new Error("save-failed");
+    });
+    const { result, generateAndShare, onDialogClose, saveJobFn } = setup({
+      saveJobFnImpl,
+    });
 
     await act(async () => {
       await result.current.handleShare();
     });
 
-    expect(saveJob).toHaveBeenCalledWith("job-1");
+    expect(saveJobFn).toHaveBeenCalledWith("job-1");
     // R5/R8: save failure MUST abort the native share.
     expect(generateAndShare).not.toHaveBeenCalled();
     expect(onDialogClose).not.toHaveBeenCalled();
@@ -289,16 +365,16 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
 
   it("re-entry guard: second tap while auto-save is in flight is a no-op", async () => {
     // Unsaved job — first Share tap enters the blocking-auto-save branch.
-    // Hold `saveJob` open so the second tap lands while the first is in
-    // flight. Without the ref guard this would fire saveJob twice.
+    // Hold `saveJobFn` open so the second tap lands while the first is in
+    // flight. Without the ref guard this would fire saveJobFn twice.
     let resolveFirst: ((value: { saved_at: string }) => void) | null = null;
-    saveJob.mockImplementation(
+    const saveJobFnImpl = jest.fn(
       () =>
-        new Promise((resolve) => {
+        new Promise<{ saved_at: string }>((resolve) => {
           resolveFirst = resolve;
         }),
     );
-    const { result, generateAndShare } = setup();
+    const { result, generateAndShare, saveJobFn } = setup({ saveJobFnImpl });
 
     // First tap — enters auto-save and parks.
     await act(async () => {
@@ -306,13 +382,13 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
       // Let setState / initial await queue drain.
       await Promise.resolve();
     });
-    expect(saveJob).toHaveBeenCalledTimes(1);
+    expect(saveJobFn).toHaveBeenCalledTimes(1);
 
     // Second tap while first is pending — guard rejects it.
     await act(async () => {
       await result.current.handleShare();
     });
-    expect(saveJob).toHaveBeenCalledTimes(1);
+    expect(saveJobFn).toHaveBeenCalledTimes(1);
     expect(generateAndShare).not.toHaveBeenCalled();
 
     // Cleanup — resolve the first save so the act queue drains and the
@@ -328,8 +404,12 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
     // keep this deterministic; only this test flips them on.
     jest.useFakeTimers();
     try {
-      saveJob.mockImplementation(() => new Promise(() => {}));
-      const { result, generateAndShare, onDialogClose } = setup();
+      const saveJobFnImpl = jest.fn(
+        () => new Promise<{ saved_at: string }>(() => {}),
+      );
+      const { result, generateAndShare, onDialogClose } = setup({
+        saveJobFnImpl,
+      });
 
       let sharePromise!: Promise<void>;
       await act(async () => {
@@ -504,6 +584,9 @@ function renderHookWithJob(initial: ShareDialogJob | null) {
           after: "https://cdn/after.jpg",
         })),
         onDialogClose: jest.fn(),
+        saveJobFn: jest.fn(async () => ({
+          saved_at: "2026-04-18T12:00:00Z",
+        })),
       }),
     { initialProps: { job: initial } },
   );

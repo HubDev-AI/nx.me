@@ -23,6 +23,7 @@ from uuid import UUID
 from supabase import Client
 
 from app.config import settings
+from app.utils.db_errors import is_unique_violation
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +50,11 @@ class TrialGrantor:
                 settings.FREE_TRIAL_ANALYSES,
             )
         except Exception as exc:
-            # Check for PostgreSQL unique violation (23505) via structured error code.
-            # Supabase PostgREST wraps PG errors in APIError with a .code attribute.
-            pg_code = getattr(exc, "code", None)
-            if pg_code == "23505":
-                logger.info(
-                    "trial_grant already applied for user %s — skipping", user_id_str
-                )
-                return
-
-            # Fallback: some Supabase client versions embed the code in the message
-            exc_str = str(exc).lower()
-            if "23505" in exc_str or "unique_violation" in exc_str:
+            # Idempotency: unique_violation means the trial was already
+            # granted (another concurrent call or a retry). Centralised
+            # detection lives in ``app.utils.db_errors`` so drift between
+            # Supabase/PostgREST/psycopg wrapper versions is a one-file fix.
+            if is_unique_violation(exc):
                 logger.info(
                     "trial_grant already applied for user %s — skipping", user_id_str
                 )

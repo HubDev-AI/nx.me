@@ -615,7 +615,14 @@ class TestDeleteGlowupCascade:
 
     @pytest.mark.asyncio
     async def test_error_l_rate_limit_exceeded_429_with_retry_after(self, monkeypatch):
-        """L: rate-limit exceeded → 429 with Retry-After header."""
+        """L: rate-limit exceeded → 429 with Retry-After header.
+
+        P3a semantic: the limiter runs AFTER the fetch + owner check so a
+        looping stale-ID sweep doesn't burn the real owner's budget. So
+        ``get_by_id`` *is* called here (we need the job to decide if this
+        is real destructive work); the load-bearing invariants are that
+        the 429 fires, Retry-After is set, and no cascade/DB work runs.
+        """
         monkeypatch.setattr("app.api.jobs.run_sync", _passthrough_run_sync)
 
         job = _make_job()
@@ -637,9 +644,93 @@ class TestDeleteGlowupCascade:
         headers = exc_info.value.headers or {}
         assert "Retry-After" in headers
 
-        # Rate limit must short-circuit before any enumeration / cascade work.
-        deps.job_repo.get_by_id.assert_not_called()
+        # Rate limit must short-circuit before cascade / blob wipe work.
+        # ``get_by_id`` is now allowed (P3a moved the limiter below it);
+        # the important invariants are no DB delete and no blob wipes.
         deps.job_repo.delete_by_id.assert_not_called()
+        deps.image_repo.remove.assert_not_called()
+        deps.job_repo.enumerate_blob_keys_for_delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_p3a_wrong_owner_does_not_consume_rate_limit(self, monkeypatch):
+        """P3a: wrong-owner 204 bypasses the limiter entirely.
+
+        A stolen-token sweep hammering someone else's stale job IDs must
+        not grind the real owner's 10/min budget to zero. The limiter is
+        checked only when we're about to do real destructive work.
+        """
+        monkeypatch.setattr("app.api.jobs.run_sync", _passthrough_run_sync)
+
+        job = _make_job(user_id=_USER_ID)
+        deps = _make_deps(job=job, post=None)
+
+        response = await delete_job(
+            job_id=uuid.UUID(_JOB_ID),
+            claims=_make_claims(user_id=_OTHER_USER_ID),
+            redis_client=deps.redis_client,
+            job_repo=deps.job_repo,
+            image_repo=deps.image_repo,
+            orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        # Limiter INCRements every call, so the cleanest proof of "no
+        # budget consumed" is "the limiter was never invoked at all".
+        deps.redis_client.pipeline.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_p3a_missing_job_does_not_consume_rate_limit(self, monkeypatch):
+        """P3a: missing-job 204 bypasses the limiter entirely.
+
+        Matches the wrong-owner case — idempotent no-op 204 must not
+        charge the caller's budget. Otherwise a client retrying after a
+        flaky network could silently exhaust itself on already-deleted
+        IDs and 429 on the next real delete.
+        """
+        monkeypatch.setattr("app.api.jobs.run_sync", _passthrough_run_sync)
+
+        deps = _make_deps(job=None, post=None)
+
+        response = await delete_job(
+            job_id=uuid.UUID(_JOB_ID),
+            claims=_make_claims(),
+            redis_client=deps.redis_client,
+            job_repo=deps.job_repo,
+            image_repo=deps.image_repo,
+            orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        deps.redis_client.pipeline.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_p3a_real_owned_delete_still_consumes_rate_limit(self, monkeypatch):
+        """P3a: a real owned delete DOES hit the limiter.
+
+        Complement to the two no-op tests above — proves the limiter
+        isn't accidentally bypassed on the destructive path. Equivalent
+        to the 11th-real-delete-429 scenario at the unit level.
+        """
+        monkeypatch.setattr("app.api.jobs.run_sync", _passthrough_run_sync)
+
+        job = _make_job()
+        deps = _make_deps(job=job, post=None)
+
+        response = await delete_job(
+            job_id=uuid.UUID(_JOB_ID),
+            claims=_make_claims(),
+            redis_client=deps.redis_client,
+            job_repo=deps.job_repo,
+            image_repo=deps.image_repo,
+            orphan_repo=deps.orphan_repo,
+            orphan_analyses_repo=deps.orphan_analyses_repo,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        # Real destructive work → the limiter pipeline ran exactly once.
+        assert deps.redis_client.pipeline.call_count == 1
 
     @pytest.mark.asyncio
     async def test_enumeration_runs_before_db_delete(self, monkeypatch):
