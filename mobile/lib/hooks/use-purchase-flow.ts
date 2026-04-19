@@ -216,6 +216,16 @@ export function usePurchaseFlow({
       onPurchaseComplete?.(updated);
     } catch (err) {
       const appError = parseApiError(err);
+      // Backend now raises HTTP 409 ALREADY_SUBSCRIBED instead of a success
+      // payload; treat that as the same already-subscribed path.
+      if (
+        appError.kind === "business" &&
+        appError.errorCode === "ALREADY_SUBSCRIBED"
+      ) {
+        await refetch();
+        showToast({ kind: "info", message: INFO_ALREADY_SUBSCRIBED });
+        return;
+      }
       showToast({ kind: "error", message: appError.message });
     } finally {
       setPurchasingId(null);

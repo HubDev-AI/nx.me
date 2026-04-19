@@ -73,6 +73,12 @@ SIGNUP_FINGERPRINT_SERVER_SECRET=local-dev-signup-fingerprint-secret-change-in-p
 SIGNUP_GRANT_MILLI=300
 # Weekly free grant for authenticated Free-tier users; 100 milli = 1 glow-up.
 WEEKLY_FREE_GRANT_MILLI=100
+
+# ── Stripe price IDs (dev placeholders) ──────────────────────────────────────
+# Required by app/config/__init__.py (no defaults). Run `make stripe-bootstrap`
+# to seed real Stripe Products/Prices and overwrite these with live values.
+STRIPE_PRICE_CREDITS_PACK_V1=price_local_dev_credits_pack_v1
+STRIPE_PRICE_PRO_V1=price_local_dev_pro_v1
 EOF
 
 echo ".env generated with local Supabase defaults."

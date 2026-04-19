@@ -55,6 +55,8 @@ jobs:
           SIGNUP_FINGERPRINT_SERVER_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           SIGNUP_GRANT_MILLI: 300
           WEEKLY_FREE_GRANT_MILLI: 100
+          STRIPE_PRICE_CREDITS_PACK_V1: price_ci_test_credits_pack_v1
+          STRIPE_PRICE_PRO_V1: price_ci_test_pro_v1
       - run: pytest --tb=short -q
         env:
           APP_ENV: test
@@ -63,6 +65,8 @@ jobs:
           SIGNUP_FINGERPRINT_SERVER_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           SIGNUP_GRANT_MILLI: 300
           WEEKLY_FREE_GRANT_MILLI: 100
+          STRIPE_PRICE_CREDITS_PACK_V1: price_ci_test_credits_pack_v1
+          STRIPE_PRICE_PRO_V1: price_ci_test_pro_v1
 
   card-web:
     runs-on: ubuntu-latest
