@@ -1,4 +1,4 @@
-.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-android mobile-start mobile-lint card-web-start card-web-lint
+.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-ios-device mobile-android mobile-android-device mobile-start mobile-lint card-web-start card-web-lint
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv app/.env
@@ -29,11 +29,11 @@ reset:
 	@echo "Reset complete. Run 'make up' to start fresh."
 
 # ── Wipe all test data (no restart needed) ───────────────────────────────────
-nuke:
-	.venv/bin/python scripts/nuke-data.py
+nuke: app/.env
+	@set -a && . ./app/.env && set +a && .venv/bin/python scripts/nuke-data.py
 
-nuke-keep:
-	.venv/bin/python scripts/nuke-data.py --keep-demo
+nuke-keep: app/.env
+	@set -a && . ./app/.env && set +a && .venv/bin/python scripts/nuke-data.py --keep-demo
 
 # ── Run DB migrations ─────────────────────────────────────────────────────────
 migrate: app/.env
@@ -58,8 +58,14 @@ format:
 mobile-ios:
 	cd mobile && npx expo run:ios
 
+mobile-ios-device:
+	cd mobile && npx expo run:ios --device
+
 mobile-android:
 	cd mobile && npx expo run:android
+
+mobile-android-device:
+	cd mobile && npx expo run:android --device
 
 mobile-start:
 	cd mobile && npx expo start

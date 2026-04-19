@@ -12,12 +12,11 @@ Why mock-based and not live-DB:
   - ``publish_post_images`` performs real storage downloads/uploads on
     every request. A live-DB test would require seeding real image blobs
     and a running Supabase Storage — excess scaffolding for a logic test.
-  - ``job_repo.get_jobs_for_post`` returns a dict whose ``select`` list
-    omits ``original_image_id``/``generated_image_id``, but the endpoint
-    reads them. A live-DB happy-path would die on that pre-existing gap
-    (outside this unit's Files list) before reaching the idempotency
-    branch. Mock-override sidesteps the gap without touching unrelated
-    code.
+  - The ``select`` list in ``job_repo.get_jobs_for_post`` now includes
+    ``original_image_id`` and ``generated_image_id`` (required by the
+    endpoint to copy blobs from the private buckets to the public post
+    bucket). The mock row below still sets them explicitly so this file
+    stays self-contained.
 
 DB-level partial-uniqueness behaviour is covered in
 ``tests/test_posts_unique_constraint.py`` (Unit 1) against a real

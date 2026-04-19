@@ -180,6 +180,20 @@ async def create_post(
                 }
             },
         )
+    # ``original_image_id`` is nullable in the schema. Guard the same way
+    # as ``generated_image_id`` — otherwise a completed job with a null
+    # original would pass through to ``image_repo.get_by_id_with_fields
+    # (None, ...)`` and insert ``before_image_id=NULL`` into the post.
+    if not job_data.get("original_image_id"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "NO_ORIGINAL_IMAGE",
+                    "message": "Job has no original image.",
+                }
+            },
+        )
 
     # Get image storage keys from private buckets
     before_img_data = await run_sync(

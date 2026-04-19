@@ -217,17 +217,42 @@ export default function SettingsScreen() {
               });
               await wipeLocalDeviceState();
               setSessionMode("anon");
-              router.replace("/(auth)/login");
+              // Release usePreventRemove BEFORE navigating and defer the
+              // replace to the next tick. usePreventRemove keeps its
+              // beforeRemove predicate in a ref that is updated by a
+              // post-render useEffect — a synchronous router.replace
+              // here races that effect and is silently blocked by the
+              // still-registered listener, leaving the overlay on-screen
+              // forever despite the server's 204. setTimeout(0) yields
+              // to React's commit phase so the hook's cleanup runs
+              // first. Same treatment on the timeout branch below.
+              setIsDeleting(false);
+              setTimeout(() => {
+                router.replace("/(auth)/login");
+              }, 0);
             } catch (err) {
               const isTimeout =
                 err instanceof Error && err.message === TIMEOUT_SENTINEL;
               if (isTimeout) {
                 // Force the device into a logged-out state so the user can
                 // retry from login. Orphan-reconcile on the server side
-                // will catch any partial-failure state.
-                await wipeLocalDeviceState();
+                // will catch any partial-failure state. Swallow any wipe
+                // error — the navigation + overlay release must run even
+                // if local cleanup fails, or the user stays trapped on the
+                // spinner the fix was supposed to clear.
+                try {
+                  await wipeLocalDeviceState();
+                } catch (wipeErr) {
+                  // Best-effort — the user is already being logged out.
+                  // Logging keeps the failure diagnosable; we do not
+                  // surface a second toast on top of the timeout toast.
+                  console.warn("wipeLocalDeviceState failed on timeout:", wipeErr);
+                }
                 setSessionMode("anon");
-                router.replace("/(auth)/login");
+                setIsDeleting(false);
+                setTimeout(() => {
+                  router.replace("/(auth)/login");
+                }, 0);
                 showToast({ kind: "info", message: DELETE_TIMEOUT_TOAST });
               } else {
                 const appError = parseApiError(err);
@@ -235,8 +260,8 @@ export default function SettingsScreen() {
                 setIsDeleting(false);
               }
             }
-            // No finally { setIsDeleting(false) } — on success / timeout the
-            // screen unmounts via router.replace before the next tick.
+            // No finally { setIsDeleting(false) } — the success / timeout
+            // branches already flip it synchronously before navigation.
           },
         },
       ],

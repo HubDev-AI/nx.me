@@ -44,6 +44,10 @@ import Animated, {
 import { Ionicons } from "@expo/vector-icons";
 
 import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
+import {
+  GlowupOverflowMenu,
+  OVERFLOW_MENU_EXIT_DURATION_MS,
+} from "../../components/result/GlowupOverflowMenu";
 import { ResultActions, type SaveState } from "../../components/result/ResultActions";
 import { useShareComposite } from "../../components/result/ShareComposite";
 import { ShareDialog } from "../../components/result/ShareDialog";
@@ -135,6 +139,10 @@ export default function ResultScreen() {
   // screen and the profile long-press path stay in lockstep on the
   // R5/R8 blocking-auto-save invariant.
   const [shareDialogVisible, setShareDialogVisible] = useState(false);
+  // Overflow menu visibility — opened by the header ellipsis. Delete
+  // confirm still uses Alert.alert, raised after the menu's exit animation
+  // completes so the stacked Modal + Alert doesn't race on iOS.
+  const [overflowMenuVisible, setOverflowMenuVisible] = useState(false);
   /**
    * Client-side mirror of `post_id` + `share_hash`. Populated from either
    * the latest `GET /v1/jobs/{id}` poll (backend Unit 3) or the
@@ -424,6 +432,46 @@ export default function ResultScreen() {
     );
   }, [runDelete]);
 
+  // Ellipsis taps open the overflow menu instead of firing the destructive
+  // confirm directly. The menu row then chains to `handleDeletePress`.
+  const handleOpenOverflowMenu = useCallback(() => {
+    setOverflowMenuVisible(true);
+  }, []);
+
+  const handleCloseOverflowMenu = useCallback(() => {
+    setOverflowMenuVisible(false);
+  }, []);
+
+  // Stacked Modal + Alert races on iOS — close the menu first and defer
+  // the native destructive confirm until after the sheet's exit animation
+  // completes, or Alert buttons can swallow the first tap. The timer
+  // handle is tracked in a ref so:
+  //   (a) a rapid double-tap on Delete cancels the pending alert before
+  //       scheduling a fresh one (prevents two stacked Alert.alerts), and
+  //   (b) the unmount cleanup below cancels any in-flight defer so an
+  //       orphan timer can't raise Alert.alert on a navigated-away screen
+  //       and silently run runDelete via the captured jobId closure.
+  const menuDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleMenuDelete = useCallback(() => {
+    setOverflowMenuVisible(false);
+    if (menuDeleteTimerRef.current) {
+      clearTimeout(menuDeleteTimerRef.current);
+    }
+    menuDeleteTimerRef.current = setTimeout(() => {
+      menuDeleteTimerRef.current = null;
+      handleDeletePress();
+    }, OVERFLOW_MENU_EXIT_DURATION_MS);
+  }, [handleDeletePress]);
+
+  useEffect(() => {
+    return () => {
+      if (menuDeleteTimerRef.current) {
+        clearTimeout(menuDeleteTimerRef.current);
+        menuDeleteTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Post-result navigation targets. Kept distinct so copy can match the
   // user's mental model at each state: "Try Again" = start a new attempt
   // from the upload screen; "Go to Profile" = leave this screen and pick
@@ -587,7 +635,7 @@ export default function ResultScreen() {
             on this screen, so we render directly into the custom header. */}
         {isSuccess ? (
           <Pressable
-            onPress={handleDeletePress}
+            onPress={handleOpenOverflowMenu}
             style={styles.headerOverflow}
             accessibilityLabel={HEADER_OVERFLOW_LABEL}
             accessibilityRole="button"
@@ -749,6 +797,12 @@ export default function ResultScreen() {
           publishError={publishError}
         />
       ) : null}
+
+      <GlowupOverflowMenu
+        visible={overflowMenuVisible}
+        onClose={handleCloseOverflowMenu}
+        onDelete={handleMenuDelete}
+      />
     </View>
   );
 }

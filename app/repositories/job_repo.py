@@ -140,10 +140,20 @@ class JobRepository:
         return result.data
 
     def get_jobs_for_post(self, job_id: str) -> dict | None:
-        """Fetch job fields needed for post creation. Returns None if not found."""
+        """Fetch job fields needed for post creation. Returns None if not found.
+
+        Must include ``original_image_id`` and ``generated_image_id`` because
+        ``api/posts.py::create_post`` reads both to copy blobs from the
+        private ``raw-selfies`` / ``generated-images`` buckets to the public
+        post bucket. Omitting them surfaces as a spurious
+        ``NO_GENERATED_IMAGE`` 422 on every publish.
+        """
         result = (
             self._sb.table("jobs")
-            .select("id, user_id, status, before_image_url, after_image_url")
+            .select(
+                "id, user_id, status, before_image_url, after_image_url,"
+                " original_image_id, generated_image_id"
+            )
             .eq("id", job_id)
             .maybe_single()
             .execute()
