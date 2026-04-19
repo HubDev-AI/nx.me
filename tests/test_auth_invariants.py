@@ -109,6 +109,7 @@ def _settings_kwargs(**overrides: object) -> dict[str, object]:
         "SECRET_KEY": "x" * 64,
         "ADMIN_API_KEY": "y" * 32,
         "FEATURE_AUTH_REQUIRED": True,
+        "SIGNUP_FINGERPRINT_SERVER_SECRET": "z" * 64,
     }
     base.update(overrides)
     return base
