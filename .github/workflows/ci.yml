@@ -24,7 +24,9 @@ jobs:
       # TestLiveDBConcurrency class in tests/test_credit_rpcs_v2.py can
       # connect without patching their hardcoded DSNs.
       postgres:
-        image: postgres:17
+        # pgvector image bundles the `vector` extension that
+        # migration 0007 (advisor embeddings) installs.
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
