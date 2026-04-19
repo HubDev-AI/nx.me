@@ -37,6 +37,9 @@ related_prs:
   - "HubDev-AI/nx.me#167"
 related_docs:
   - docs/solutions/best-practices/account-delete-hard-reset-invariant-2026-04-18.md
+  - docs/solutions/best-practices/orphan-dlq-symmetry-2026-04-19.md
+  - docs/solutions/best-practices/partial-unique-index-for-republish-after-soft-delete-2026-04-19.md
+  - docs/solutions/best-practices/blocking-auto-save-for-durable-share-urls-2026-04-19.md
 ---
 
 # Enumerate-before-cascade with CAS: the bulk-delete invariants
