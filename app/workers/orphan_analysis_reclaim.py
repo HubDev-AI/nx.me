@@ -16,9 +16,11 @@ DLQ-sweeper patterns should surface both workers. Divergences:
   so the only retry blockers are transient DB issues or RLS — both
   resolve naturally or hit ``MAX_ATTEMPTS``. See
   ``JobRepository.delete_analysis_by_id`` docstring.
-- ``OrphanedAnalysesRepository.list_pending(limit)`` does NOT accept a
-  ``max_attempts`` filter (unlike its blob sibling). We filter client
-  side in this worker so the repo stays narrow.
+- ``OrphanedAnalysesRepository.list_pending(limit, max_attempts)``
+  filters exhausted rows DB-side (aligned with its blob sibling) to
+  avoid oldest-first ORDER BY pinning exhausted rows at the head of
+  the batch forever. The client-side ``if attempts >= MAX`` guard
+  stays as defence-in-depth.
 - ``delete`` / ``mark_attempt`` are keyed on ``analysis_id``, not on the
   surrogate row id — per the repo's docstring, callers already hold the
   analysis id so a PK lookup adds nothing.
@@ -55,11 +57,12 @@ async def reclaim_orphaned_analyses(ctx: dict) -> None:
     max_attempts = settings.ORPHAN_ANALYSIS_RECLAIM_MAX_ATTEMPTS
     batch_size = settings.ORPHAN_ANALYSIS_RECLAIM_BATCH_SIZE
 
-    # list_pending here does NOT filter by attempts (repo divergence from
-    # OrphanedStorageKeyRepository — do not "fix" into an exception). We
-    # filter client-side. In steady state the exhausted slice is tiny; a
-    # pathological backlog self-corrects across nights.
-    pending = orphan_repo.list_pending(limit=batch_size)
+    # DB-side attempts filter keeps the oldest-first ORDER BY from
+    # pinning exhausted rows at the head of the batch. Aligned with
+    # OrphanedStorageKeyRepository.list_pending's signature. The
+    # client-side guard below stays as defence-in-depth (a test forces
+    # list_pending to return an exhausted row to verify the skip).
+    pending = orphan_repo.list_pending(limit=batch_size, max_attempts=max_attempts)
 
     reclaimed = 0
     failed = 0

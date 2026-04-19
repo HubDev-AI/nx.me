@@ -31,10 +31,19 @@ GENERATED_IMAGES_BUCKET = "generated-images"
 
 @dataclass(frozen=True)
 class PublishedImageURLs:
-    """Public CDN URLs for a published post's before/after images."""
+    """Public CDN URLs + storage keys for a published post's before/after.
+
+    ``before_key``/``after_key`` are the storage keys inside
+    :data:`PUBLIC_BUCKET` (derivation matches :func:`publish_post_images`).
+    Callers need them to reach :meth:`OrphanedStorageKeyRepository.record`
+    on partial-failure paths that must not orphan CDN-reachable blobs
+    (see ``POST /v1/posts`` publish-pending pre-record).
+    """
 
     before_url: str
     after_url: str
+    before_key: str
+    after_key: str
 
 
 def publish_post_images(
@@ -49,7 +58,7 @@ def publish_post_images(
     Each ``image`` dict must contain ``storage_key`` and ``bucket`` fields
     (as stored in the ``images`` table).
 
-    Returns the public CDN URLs for both images.
+    Returns the public CDN URLs and storage keys for both images.
 
     Raises ``RuntimeError`` if any copy operation fails.
     """
@@ -76,6 +85,8 @@ def publish_post_images(
     return PublishedImageURLs(
         before_url=get_public_url(before_public_key),
         after_url=get_public_url(after_public_key),
+        before_key=before_public_key,
+        after_key=after_public_key,
     )
 
 

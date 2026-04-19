@@ -34,7 +34,7 @@
  *     generic status-bucket copy, trading verbatim backend messages for
  *     consistency across the app.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../lib/api";
 import { saveJob } from "../../lib/analysis";
@@ -59,12 +59,61 @@ const SAVE_SUCCESS_MESSAGE = "Saved on your profile.";
 const SHARE_COMPOSITE_TIMEOUT_MESSAGE =
   "Images didn't finish loading. Try again in a moment.";
 
+/**
+ * Toast copy for the Share-path blocking-auto-save timeout. Distinct
+ * from the composite-timeout copy because the failure mode is
+ * different: this one is a stalled network saving the job, not a slow
+ * image fetch for the share composite.
+ */
+const SAVE_TIMEOUT_MESSAGE = "Save timed out — try again.";
+
+/**
+ * Upper bound on how long `handleShare` will block waiting for the
+ * auto-save (POST /v1/jobs/{id}/save) before giving up. Keeps the
+ * Share row from hanging indefinitely on a slow network. Chosen at 15s
+ * to comfortably exceed the p99 save latency while still giving the
+ * user a timely error affordance.
+ */
+const SAVE_TIMEOUT_MS = 15_000;
+
 /** Prose shared alongside the image when a live hash URL exists. */
 const SHARE_MESSAGE_WITH_URL = (url: string): string =>
   `My NXME glow-up — ${url}`;
 
 /** Hash-URL builder — `/{username}/glow-up/{share_hash}` per R5. */
 const HASH_URL_SEGMENT = "glow-up";
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+/** Sentinel thrown from the `handleShare` save-timeout race. */
+class SaveTimeoutError extends Error {
+  constructor() {
+    super("save timeout");
+    this.name = "SaveTimeoutError";
+  }
+}
+
+/**
+ * Race `promise` against a timer for `timeoutMs`. Resolves with the
+ * promise's value if it settles first; rejects with `SaveTimeoutError`
+ * if the timer fires first. The timer is always cleared in the
+ * resolve branch so a late win can't surface a stray error after the
+ * share sheet has already opened.
+ */
+function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new SaveTimeoutError()), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timerId !== undefined) clearTimeout(timerId);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -245,75 +294,106 @@ export function useShareDialog(
     }
   }, [job, saveState, onSaveSuccess]);
 
+  // Re-entry guard for `handleShare` — mirrors `isPublishing` but lives
+  // in a ref so the in-flight flag doesn't churn a re-render. A rapid
+  // double-tap on Share during the blocking auto-save (Step 1 below)
+  // must not fire `saveJob` twice; the ref is set before the first
+  // async hop and cleared in the trailing finally so every exit path
+  // (success, abort, thrown) releases it.
+  const isSharingRef = useRef<boolean>(false);
+
   // ---- Share ----------------------------------------------------------
   //
   // R5/R8 critical path. Auto-save is BLOCKING: on failure we surface a
   // toast and do NOT open the native sheet (otherwise we'd leak a
-  // card-web URL that retention will purge within days).
+  // card-web URL that retention will purge within days). The auto-save
+  // is additionally raced against SAVE_TIMEOUT_MS so a stalled network
+  // can't hang the Share row indefinitely — timeout surfaces the same
+  // "abort share" branch as a save-failure.
   const handleShare = useCallback(async () => {
     if (!job) return;
+    if (isSharingRef.current) return; // Re-entry guard — no double-submit.
+    isSharingRef.current = true;
+    try {
+      // Step 1 — block on auto-save when the job isn't saved yet (R8).
+      // Wrapped in `raceWithTimeout` so a slow network can't hang the
+      // Share row forever; on either failure or timeout we MUST abort
+      // and never open the native sheet.
+      if (job.saved_at === null) {
+        setSaveState("saving");
+        try {
+          const { saved_at } = await raceWithTimeout(
+            saveJob(job.id),
+            SAVE_TIMEOUT_MS,
+          );
+          setSaveState("saved");
+          onSaveSuccess?.(saved_at);
+        } catch (err) {
+          setSaveState("pending");
+          // Timeout uses its own copy; other failures flow through the
+          // project-standard error bucket so server-side `detail`
+          // strings get normalised consistently with the rest of the app.
+          if (err instanceof SaveTimeoutError) {
+            showToast({ kind: "error", message: SAVE_TIMEOUT_MESSAGE });
+          } else {
+            const app = parseApiError(err);
+            showToast({ kind: "error", message: app.message });
+          }
+          return; // Abort — do NOT open the sheet on save failure/timeout.
+        }
+      }
 
-    // Step 1 — block on auto-save when the job isn't saved yet (R8).
-    // On failure we MUST abort; never open the native sheet.
-    if (job.saved_at === null) {
-      setSaveState("saving");
+      // Step 2 — fetch image URLs. Parent decides whether this reads from
+      // a cached query (result) or fires a fresh GET (profile).
+      let images: ImageUrlPair;
       try {
-        const { saved_at } = await saveJob(job.id);
-        setSaveState("saved");
-        onSaveSuccess?.(saved_at);
+        images = await getImageUrls();
       } catch (err) {
-        setSaveState("pending");
         const app = parseApiError(err);
         showToast({ kind: "error", message: app.message });
-        return; // Abort — do NOT open the sheet on save failure.
+        return;
       }
-    }
+      if (!images.before || !images.after) {
+        showToast({ kind: "error", message: SHARE_COMPOSITE_TIMEOUT_MESSAGE });
+        return;
+      }
 
-    // Step 2 — fetch image URLs. Parent decides whether this reads from
-    // a cached query (result) or fires a fresh GET (profile).
-    let images: ImageUrlPair;
-    try {
-      images = await getImageUrls();
-    } catch (err) {
-      const app = parseApiError(err);
-      showToast({ kind: "error", message: app.message });
-      return;
-    }
-    if (!images.before || !images.after) {
-      showToast({ kind: "error", message: SHARE_COMPOSITE_TIMEOUT_MESSAGE });
-      return;
-    }
+      // Step 3 — build the share URL. Only when a live post exists AND we
+      // know the viewer's username. Bare `/{username}` is forbidden per R5.
+      const shareUrl =
+        job.post_id && job.share_hash && username
+          ? `${UNIVERSAL_LINK_ORIGIN}/${username}/${HASH_URL_SEGMENT}/${job.share_hash}`
+          : undefined;
 
-    // Step 3 — build the share URL. Only when a live post exists AND we
-    // know the viewer's username. Bare `/{username}` is forbidden per R5.
-    const shareUrl =
-      job.post_id && job.share_hash && username
-        ? `${UNIVERSAL_LINK_ORIGIN}/${username}/${HASH_URL_SEGMENT}/${job.share_hash}`
-        : undefined;
+      // Step 4 — close dialog BEFORE the native sheet so the modal scrim
+      // doesn't stack under the picker. This is a behavior change on the
+      // result screen (previously closed after), intentionally adopted
+      // from profile for UX consistency.
+      onDialogClose();
 
-    // Step 4 — close dialog BEFORE the native sheet so the modal scrim
-    // doesn't stack under the picker. This is a behavior change on the
-    // result screen (previously closed after), intentionally adopted
-    // from profile for UX consistency.
-    onDialogClose();
-
-    try {
-      await generateAndShare({
-        beforeUrl: images.before,
-        afterUrl: images.after,
-        rightLabel: SHARE_RIGHT_LABEL,
-        shareUrl,
-        shareMessage: shareUrl ? SHARE_MESSAGE_WITH_URL(shareUrl) : undefined,
-      });
-    } catch (err) {
-      // Only surface the image-load timeout — user-cancelled native
-      // sheet throws too, and that's not an error worth toasting.
-      if (err instanceof Error && err.message.includes("timeout")) {
-        showToast({
-          kind: "error",
-          message: SHARE_COMPOSITE_TIMEOUT_MESSAGE,
+      try {
+        await generateAndShare({
+          beforeUrl: images.before,
+          afterUrl: images.after,
+          rightLabel: SHARE_RIGHT_LABEL,
+          shareUrl,
+          shareMessage: shareUrl ? SHARE_MESSAGE_WITH_URL(shareUrl) : undefined,
         });
+      } catch (err) {
+        // Only surface the image-load timeout — user-cancelled native
+        // sheet throws too, and that's not an error worth toasting.
+        if (err instanceof Error && err.message.includes("timeout")) {
+          showToast({
+            kind: "error",
+            message: SHARE_COMPOSITE_TIMEOUT_MESSAGE,
+          });
+        }
       }
+    } finally {
+      // Always release the re-entry guard — the inner early-returns above
+      // don't reset it, so without this trailing finally a failed
+      // auto-save would wedge the Share row until the next remount.
+      isSharingRef.current = false;
     }
   }, [job, username, generateAndShare, getImageUrls, onDialogClose, onSaveSuccess]);
 

@@ -286,6 +286,77 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
       expect.objectContaining({ kind: "error", message: "network down" }),
     );
   });
+
+  it("re-entry guard: second tap while auto-save is in flight is a no-op", async () => {
+    // Unsaved job — first Share tap enters the blocking-auto-save branch.
+    // Hold `saveJob` open so the second tap lands while the first is in
+    // flight. Without the ref guard this would fire saveJob twice.
+    let resolveFirst: ((value: { saved_at: string }) => void) | null = null;
+    saveJob.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const { result, generateAndShare } = setup();
+
+    // First tap — enters auto-save and parks.
+    await act(async () => {
+      void result.current.handleShare();
+      // Let setState / initial await queue drain.
+      await Promise.resolve();
+    });
+    expect(saveJob).toHaveBeenCalledTimes(1);
+
+    // Second tap while first is pending — guard rejects it.
+    await act(async () => {
+      await result.current.handleShare();
+    });
+    expect(saveJob).toHaveBeenCalledTimes(1);
+    expect(generateAndShare).not.toHaveBeenCalled();
+
+    // Cleanup — resolve the first save so the act queue drains and the
+    // finally releases the guard.
+    await act(async () => {
+      resolveFirst?.({ saved_at: "2026-04-18T12:00:00Z" });
+      await Promise.resolve();
+    });
+  });
+
+  it("save timeout: toasts timeout message, does NOT open the share sheet", async () => {
+    // Never-resolving save → raceWithTimeout fires its timer. Fake timers
+    // keep this deterministic; only this test flips them on.
+    jest.useFakeTimers();
+    try {
+      saveJob.mockImplementation(() => new Promise(() => {}));
+      const { result, generateAndShare, onDialogClose } = setup();
+
+      let sharePromise!: Promise<void>;
+      await act(async () => {
+        sharePromise = result.current.handleShare();
+        // Flush the initial setState + await so the race is armed.
+        await Promise.resolve();
+      });
+
+      // Advance past the 15s timeout window.
+      await act(async () => {
+        jest.advanceTimersByTime(15_000);
+        await sharePromise;
+      });
+
+      expect(generateAndShare).not.toHaveBeenCalled();
+      expect(onDialogClose).not.toHaveBeenCalled();
+      expect(result.current.saveState).toBe("pending");
+      expect(showToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "error",
+          message: expect.stringContaining("Save timed out"),
+        }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
 
 // ---------- handlePublish ----------

@@ -45,6 +45,7 @@ from app.repositories.job_repo import JobRepository, SOURCE_TYPE_GLOWUP
 from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.post_repo import PostRepository
+from app.services.blob_cleanup import wipe_blob_or_record_orphan
 from app.services.rate_limiter import check_delete_glowup_rate_limit
 
 logger = logging.getLogger(__name__)
@@ -623,29 +624,12 @@ async def delete_job(
 
     # 7. Inline blob wipe. Per-key so a single failing key lands in the
     # DLQ alone — batching the whole list would force us to DLQ every
-    # key on a single storage blip.
+    # key on a single storage blip. Shared helper keeps retention +
+    # delete_job in lock-step on the wipe-or-DLQ contract.
     for bucket, key in blob_keys:
-        try:
-            await run_sync(image_repo.remove, bucket, [key])
-        except Exception as exc:  # noqa: BLE001 — wide net on purpose
-            logger.warning(
-                "delete_glowup: blob wipe failed for %s/%s: %s — recording to DLQ",
-                bucket,
-                key,
-                exc,
-            )
-            # orphan_repo.record is itself defensive — it never raises —
-            # but wrap in try/except anyway so a theoretical future
-            # regression doesn't break the request.
-            try:
-                await run_sync(orphan_repo.record, bucket, key, DELETE_GLOWUP_REASON)
-            except Exception as record_exc:  # noqa: BLE001
-                logger.warning(
-                    "delete_glowup: DLQ record also failed for %s/%s: %s",
-                    bucket,
-                    key,
-                    record_exc,
-                )
+        await wipe_blob_or_record_orphan(
+            image_repo, orphan_repo, bucket, key, DELETE_GLOWUP_REASON
+        )
 
     # 8. Emit analytics (swallow-wrapped — analytics failure must not fail
     # a destructive path that already committed).

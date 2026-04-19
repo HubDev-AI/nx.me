@@ -82,6 +82,7 @@ class _FakeTable:
         self._filters: list[tuple[str, Any]] = []
         self._payload: dict[str, Any] | None = None
         self._maybe_single = False
+        self._on_conflict: str | None = None
 
     # Method chain ------------------------------------------------------
 
@@ -95,6 +96,14 @@ class _FakeTable:
         self._payload = payload
         return self
 
+    def upsert(
+        self, payload: dict[str, Any], on_conflict: str | None = None
+    ) -> "_FakeTable":
+        self._op = "upsert"
+        self._payload = payload
+        self._on_conflict = on_conflict
+        return self
+
     def update(self, payload: dict[str, Any]) -> "_FakeTable":
         self._op = "update"
         self._payload = payload
@@ -102,6 +111,9 @@ class _FakeTable:
 
     def delete(self) -> "_FakeTable":
         self._op = "delete"
+        return self
+
+    def lt(self, _col: str, _val: Any) -> "_FakeTable":
         return self
 
     def eq(self, col: str, val: Any) -> "_FakeTable":
@@ -125,6 +137,7 @@ class _FakeTable:
         filters = list(self._filters)
         payload = self._payload
         maybe_single = self._maybe_single
+        on_conflict = self._on_conflict
         self._reset_chain()
 
         def _matches(row: dict[str, Any]) -> bool:
@@ -140,6 +153,31 @@ class _FakeTable:
 
         if op == "insert":
             assert payload is not None
+            row = {
+                "id": str(uuid.uuid4()),
+                "attempts": 0,
+                "last_attempt_at": None,
+                **payload,
+            }
+            self._rows.append(row)
+            return SimpleNamespace(data=[row], count=1)
+
+        if op == "upsert":
+            assert payload is not None
+            # Find an existing row matching on_conflict column (default: no match)
+            conflict_col = on_conflict
+            conflict_val = payload.get(conflict_col) if conflict_col else None
+            existing_idx = None
+            if conflict_col and conflict_val is not None:
+                for idx, row in enumerate(self._rows):
+                    if row.get(conflict_col) == conflict_val:
+                        existing_idx = idx
+                        break
+            if existing_idx is not None:
+                # Conflict: overwrite payload fields only (attempts stays on
+                # the existing row — record() is no longer a bump path).
+                self._rows[existing_idx].update(payload)
+                return SimpleNamespace(data=[dict(self._rows[existing_idx])], count=1)
             row = {
                 "id": str(uuid.uuid4()),
                 "attempts": 0,
@@ -200,12 +238,14 @@ class TestOrphanedAnalysesRepository:
         assert rows[0]["attempts"] == 0
         assert rows[0]["last_attempt_at"] is None
 
-    def test_record_is_idempotent_and_bumps_attempts(self):
-        """Second call for the same ``analysis_id`` updates in-place.
+    def test_record_is_idempotent_via_upsert(self):
+        """Second call for the same ``analysis_id`` is a race-free upsert.
 
-        Never inserts a duplicate (the real DB has UNIQUE(analysis_id)
-        backing this); ``attempts`` is incremented and
-        ``last_attempt_at`` is populated.
+        Never inserts a duplicate (UNIQUE(analysis_id) backs this via
+        ON CONFLICT). ``record`` is no longer a bump path — ``attempts``
+        only moves in ``mark_attempt`` (see repo docstring). Re-calling
+        ``record`` is safe; the attempt counter stays at 0 by design
+        (a legitimate re-record is a fresh first-delete attempt).
         """
         sb = _FakeSupabase()
         repo = OrphanedAnalysesRepository(sb)  # type: ignore[arg-type]
@@ -216,10 +256,9 @@ class TestOrphanedAnalysesRepository:
 
         rows = sb._tables[_TABLE_ORPHANED_ANALYSES]
         assert len(rows) == 1, "expected UNIQUE(analysis_id) idempotency"
-        assert rows[0]["attempts"] == 2, (
-            "two subsequent record() calls should bump attempts from 0 → 1 → 2"
-        )
-        assert rows[0]["last_attempt_at"] is not None
+        # ``record`` is race-free upsert; attempts stays at 0.
+        # ``mark_attempt`` (not exercised here) is the sole bump path.
+        assert rows[0]["attempts"] == 0
 
     def test_record_never_raises_on_underlying_failure(self):
         """If the DB blows up mid-call, ``record`` must swallow — the
@@ -242,6 +281,46 @@ class TestOrphanedAnalysesRepository:
 
         pending = repo.list_pending(limit=10)
         assert {r["analysis_id"] for r in pending} == {_ANALYSIS_ID, other_id}
+
+    def test_list_pending_filters_by_max_attempts(self):
+        """``max_attempts`` filter routes to ``.lt('attempts', n)`` at DB layer.
+
+        Prevents oldest-first ordering from pinning exhausted rows to the
+        head of the batch forever. Verified by asserting the ``lt`` clause
+        is issued on the underlying client.
+        """
+        sb = MagicMock()
+        select_chain = sb.table.return_value.select.return_value
+        # Simulate DB returning only the 2 non-exhausted rows.
+        (
+            select_chain.lt.return_value.order.return_value.limit.return_value
+        ).execute.return_value = SimpleNamespace(
+            data=[
+                {
+                    "id": "dlq-1",
+                    "analysis_id": "aaaa",
+                    "reason": DELETE_GLOWUP_REASON,
+                    "attempts": 0,
+                    "inserted_at": "2026-04-18T00:00:00+00:00",
+                    "last_attempt_at": None,
+                },
+                {
+                    "id": "dlq-2",
+                    "analysis_id": "bbbb",
+                    "reason": DELETE_GLOWUP_REASON,
+                    "attempts": 1,
+                    "inserted_at": "2026-04-18T00:00:01+00:00",
+                    "last_attempt_at": None,
+                },
+            ]
+        )
+
+        repo = OrphanedAnalysesRepository(sb)
+        rows = repo.list_pending(limit=10, max_attempts=5)
+
+        # The DB-layer filter is what this fix is about.
+        select_chain.lt.assert_called_once_with("attempts", 5)
+        assert len(rows) == 2
 
     def test_delete_removes_row_by_analysis_id(self):
         sb = _FakeSupabase()

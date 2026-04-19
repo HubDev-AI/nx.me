@@ -149,6 +149,9 @@ def _build_mocks(*, job_row: dict | None = None) -> SimpleNamespace:
     }
 
     post_repo = MagicMock()
+    orphan_repo = MagicMock()
+    orphan_repo.record.return_value = None
+    orphan_repo.delete_by_key.return_value = None
 
     supabase = MagicMock()
 
@@ -156,6 +159,7 @@ def _build_mocks(*, job_row: dict | None = None) -> SimpleNamespace:
         job_repo=job_repo,
         image_repo=image_repo,
         post_repo=post_repo,
+        orphan_repo=orphan_repo,
         supabase=supabase,
     )
 
@@ -164,12 +168,23 @@ def _make_claims(user_id: str = _USER_A_ID) -> dict:
     return {"sub": user_id}
 
 
+_BEFORE_KEY = "before/user-a/a.jpg"
+_AFTER_KEY = "after/user-a/b.jpg"
+
+
 def _patch_publish(monkeypatch) -> None:
-    """Replace ``app.api.posts.publish_post_images`` with a no-op that returns URLs."""
+    """Replace ``app.api.posts.publish_post_images`` with a no-op stub.
+
+    Returns URLs and storage keys so the publish-pending DLQ pre-record
+    (Fix 3) has what it needs.
+    """
     monkeypatch.setattr(
         "app.api.posts.publish_post_images",
         lambda *_args, **_kwargs: PublishedImageURLs(
-            before_url=_BEFORE_URL, after_url=_AFTER_URL
+            before_url=_BEFORE_URL,
+            after_url=_AFTER_URL,
+            before_key=_BEFORE_KEY,
+            after_key=_AFTER_KEY,
         ),
     )
 
@@ -195,6 +210,7 @@ async def _call_create_post(
         post_repo=deps.post_repo,
         job_repo=deps.job_repo,
         image_repo=deps.image_repo,
+        orphan_repo=deps.orphan_repo,
     )
 
 
@@ -382,3 +398,201 @@ class TestCreatePostNonUniqueErrorsPropagate:
         assert exc_info.value is other_pg_error
         # Lookup must not run for non-unique errors — keeps semantics tight.
         deps.post_repo.get_by_glow_up_job_id.assert_not_called()
+
+
+class TestCreatePostPublishPendingDLQ:
+    """Fix 3 — publish-pending pre-record + success cleanup.
+
+    The ``publish_post_images`` copy hits the PUBLIC bucket BEFORE M-5
+    re-verify. Any failure path between then and ``insert_post`` must
+    leave a DLQ row so the nightly reclaim worker drains the orphan.
+    """
+
+    @pytest.mark.asyncio
+    async def test_happy_path_removes_dlq_rows_after_insert(self, monkeypatch):
+        """201 path records DLQ then deletes both rows on success."""
+        _patch_run_sync(monkeypatch)
+        _patch_publish(monkeypatch)
+
+        deps = _build_mocks()
+        deps.post_repo.insert_post.return_value = {
+            "id": _POST_ID_1,
+            "share_hash": _SHARE_HASH_1,
+        }
+
+        from app.api.posts import PUBLISH_PENDING_REASON
+        from app.services.public_url import PUBLIC_BUCKET
+
+        response = await _call_create_post(deps=deps)
+        assert response.status_code == status.HTTP_201_CREATED
+
+        # Pre-record fired for both keys with the publish-pending reason.
+        record_calls = deps.orphan_repo.record.call_args_list
+        record_args = {(c.args[0], c.args[1], c.args[2]) for c in record_calls}
+        assert record_args == {
+            (PUBLIC_BUCKET, _BEFORE_KEY, PUBLISH_PENDING_REASON),
+            (PUBLIC_BUCKET, _AFTER_KEY, PUBLISH_PENDING_REASON),
+        }
+
+        # And both were cleared after insert_post returned.
+        delete_calls = deps.orphan_repo.delete_by_key.call_args_list
+        delete_args = {(c.args[0], c.args[1]) for c in delete_calls}
+        assert delete_args == {
+            (PUBLIC_BUCKET, _BEFORE_KEY),
+            (PUBLIC_BUCKET, _AFTER_KEY),
+        }
+
+    @pytest.mark.asyncio
+    async def test_m5_409_leaves_dlq_rows_intact(self, monkeypatch):
+        """Fresh-job check returning non-completed → 409 AND DLQ survives.
+
+        The public-bucket blobs are CDN-reachable at this point — losing
+        them means a blob leak with no sweeper coverage. The DLQ rows
+        must survive so the nightly reclaim worker cleans them up.
+        """
+        _patch_run_sync(monkeypatch)
+        _patch_publish(monkeypatch)
+
+        deps = _build_mocks()
+        # First call (ownership/status gate) returns completed; the M-5
+        # re-verify returns a processing row, triggering 409.
+        deps.job_repo.get_jobs_for_post.side_effect = [
+            _build_job_row(),
+            {**_build_job_row(), "status": "processing"},
+        ]
+
+        with pytest.raises(Exception) as exc_info:
+            await _call_create_post(deps=deps)
+
+        # 409 raised as HTTPException.
+        from fastapi import HTTPException
+
+        assert isinstance(exc_info.value, HTTPException)
+        assert exc_info.value.status_code == status.HTTP_409_CONFLICT
+
+        # Pre-record still fired for both keys BEFORE the M-5 check.
+        assert deps.orphan_repo.record.call_count == 2
+        # No cleanup on the 409 path — DLQ rows must survive.
+        deps.orphan_repo.delete_by_key.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_idempotent_200_still_clears_dlq(self, monkeypatch):
+        """On 23505 → 200 path (peer already inserted), DLQ rows still cleared.
+
+        The live peer row owns the blobs now; the publish-pending rows
+        from this request would otherwise cause the reclaim worker to
+        try deleting blobs still referenced by a live post.
+        """
+        _patch_run_sync(monkeypatch)
+        _patch_publish(monkeypatch)
+
+        deps = _build_mocks()
+        deps.post_repo.insert_post.side_effect = _FakeAPIError(
+            _PG_UNIQUE_VIOLATION_SQLSTATE
+        )
+        deps.post_repo.get_by_glow_up_job_id.return_value = _build_live_post_row(
+            post_id=_POST_ID_1, user_id=_USER_A_ID, share_hash=_SHARE_HASH_1
+        )
+
+        response = await _call_create_post(deps=deps)
+        assert response.status_code == status.HTTP_200_OK
+
+        # DLQ rows cleared even on the idempotent 200 path.
+        assert deps.orphan_repo.delete_by_key.call_count == 2
+
+
+class TestCreatePostRetryUniqueViolation:
+    """Fix 4 — retry unique_violation does not escalate as 500.
+
+    After the first 23505 + empty peer lookup, the endpoint retries
+    ``insert_post``. If a second peer races into the partial-predicate
+    slot between our retry and its successful peer insert, the retry
+    itself raises 23505. We must absorb that as idempotency, not 500.
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_unique_violation_returns_200_with_peer_post(
+        self, monkeypatch
+    ):
+        """First 23505 + empty lookup → retry → second 23505 → peer wins.
+
+        The second peer lookup finds the live post and the endpoint
+        returns 200 with that row. No 500 escalation.
+        """
+        _patch_run_sync(monkeypatch)
+        _patch_publish(monkeypatch)
+
+        deps = _build_mocks()
+        # insert_post: first 23505, second 23505 too (race with peer).
+        deps.post_repo.insert_post.side_effect = [
+            _FakeAPIError(_PG_UNIQUE_VIOLATION_SQLSTATE),
+            _FakeAPIError(_PG_UNIQUE_VIOLATION_SQLSTATE),
+        ]
+        # First get_by_glow_up_job_id: None (peer soft-deleted between
+        # first INSERT + lookup). Second lookup: peer won the retry race.
+        deps.post_repo.get_by_glow_up_job_id.side_effect = [
+            None,
+            _build_live_post_row(
+                post_id=_POST_ID_2, user_id=_USER_A_ID, share_hash=_SHARE_HASH_2
+            ),
+        ]
+
+        response = await _call_create_post(deps=deps)
+
+        assert isinstance(response, JSONResponse)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.headers["Location"] == f"/v1/posts/{_POST_ID_2}"
+        # Both inserts attempted once each.
+        assert deps.post_repo.insert_post.call_count == 2
+        # Two lookups — one per 23505 branch.
+        assert deps.post_repo.get_by_glow_up_job_id.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_third_way_race_escalates_unchanged(self, monkeypatch):
+        """If the second lookup also returns None, a 500 is correct.
+
+        Extremely rare third-way race: peer was soft-deleted yet again
+        between our retry's 23505 and the second lookup. No idempotent
+        answer is available.
+        """
+        _patch_run_sync(monkeypatch)
+        _patch_publish(monkeypatch)
+
+        deps = _build_mocks()
+        deps.post_repo.insert_post.side_effect = [
+            _FakeAPIError(_PG_UNIQUE_VIOLATION_SQLSTATE),
+            _FakeAPIError(_PG_UNIQUE_VIOLATION_SQLSTATE),
+        ]
+        # Both lookups miss.
+        deps.post_repo.get_by_glow_up_job_id.return_value = None
+
+        with pytest.raises(_FakeAPIError):
+            await _call_create_post(deps=deps)
+
+        assert deps.post_repo.insert_post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_race_with_other_user_owner_returns_404(self, monkeypatch):
+        """Second 23505 + live post owned by different user → 404.
+
+        Same leak-avoidance posture as the first-lookup branch.
+        """
+        _patch_run_sync(monkeypatch)
+        _patch_publish(monkeypatch)
+
+        deps = _build_mocks()
+        deps.post_repo.insert_post.side_effect = [
+            _FakeAPIError(_PG_UNIQUE_VIOLATION_SQLSTATE),
+            _FakeAPIError(_PG_UNIQUE_VIOLATION_SQLSTATE),
+        ]
+        deps.post_repo.get_by_glow_up_job_id.side_effect = [
+            None,
+            _build_live_post_row(
+                post_id=_POST_ID_2, user_id=_USER_B_ID, share_hash=_SHARE_HASH_2
+            ),
+        ]
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _call_create_post(deps=deps)
+
+        assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND

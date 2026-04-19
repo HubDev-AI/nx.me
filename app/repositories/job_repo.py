@@ -254,8 +254,10 @@ class JobRepository:
         )
         return result.data or []
 
-    def delete_by_ids(self, job_ids: list[str]) -> None:
-        """Bulk-hard-delete jobs by ID list.
+    def delete_by_ids(
+        self, job_ids: list[str], *, cutoff_iso: str | None = None
+    ) -> None:
+        """Bulk-hard-delete jobs by ID list with optional retention CAS.
 
         The FK cascade added in migration 0045 (``posts.glow_up_job_id
         ON DELETE CASCADE``) fans out to ``posts``; pre-existing cascades
@@ -263,10 +265,22 @@ class JobRepository:
         Callers must have already enumerated blob keys before invoking
         this — once the cascade runs the posts join is gone and the
         denormalized post-images keys cannot be recovered.
+
+        ``cutoff_iso`` — when provided, constrains the DELETE with the
+        retention purge predicate ``saved_at IS NULL AND created_at <
+        cutoff_iso``. This is a compare-and-swap at commit time: any row
+        that was Saved (``saved_at`` flipped to non-null) between the
+        earlier enumerate and this DELETE is silently skipped rather
+        than hard-deleted. Callers that enumerate a purge set MUST pass
+        the same cutoff used to assemble that set; the retention worker
+        is the only current site.
         """
         if not job_ids:
             return
-        self._sb.table("jobs").delete().in_("id", job_ids).execute()
+        query = self._sb.table("jobs").delete().in_("id", job_ids)
+        if cutoff_iso is not None:
+            query = query.is_("saved_at", "null").lt("created_at", cutoff_iso)
+        query.execute()
 
     # ------------------------------------------------------------------
     # jobs — write

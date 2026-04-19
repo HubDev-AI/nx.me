@@ -293,13 +293,24 @@ export default function ResultScreen() {
     setShareDialogVisible(false);
   }, []);
 
+  // Don't build a dialogJob before `jobId` has hydrated — coercing
+  // `undefined` to `""` would leave every callsite treating the
+  // snapshot as truthy and fire POST /v1/jobs//save (or
+  // /v1/posts with glow_up_job_id="") if the user tapped Save or
+  // Publish during the params-hydration race. Gating on `!jobId`
+  // matches the `enabled: !!jobId` narrowing used by the job query
+  // above, and `useShareDialog` already treats a null `job` as a
+  // universal no-op on every handler.
   const dialogJob = useMemo(
-    () => ({
-      id: (jobId as string) ?? "",
-      saved_at: result?.saved_at ?? null,
-      post_id: postState.post_id,
-      share_hash: postState.share_hash,
-    }),
+    () =>
+      jobId
+        ? {
+            id: jobId,
+            saved_at: result?.saved_at ?? null,
+            post_id: postState.post_id,
+            share_hash: postState.share_hash,
+          }
+        : null,
     [jobId, result?.saved_at, postState.post_id, postState.share_hash],
   );
 
@@ -697,21 +708,26 @@ export default function ResultScreen() {
         onClose={handleCloseZoom}
       />
 
-      {/* ShareDialog — only meaningful on success, but mounting unconditionally
-          keeps enter/exit animations smooth across state transitions. The
-          dialog is gated on `visible` anyway, so off-success state never
-          renders sheet chrome. */}
-      <ShareDialog
-        visible={shareDialogVisible}
-        onClose={handleCloseShareDialog}
-        job={dialogJob}
-        onSave={handleDialogSave}
-        onShare={handleDialogShare}
-        onPublish={handleDialogPublish}
-        saveState={dialogSaveState}
-        isPublishing={isPublishing}
-        publishError={publishError}
-      />
+      {/* ShareDialog — only rendered once `jobId` has hydrated, so the
+          dialog's `job` prop is never built from a missing param (which
+          would otherwise coerce to id="" and fire malformed API calls on
+          Save/Publish during the params-hydration race). The mount-only-
+          when-ready pattern matches profile.tsx's gate on `dialogJob`.
+          The dialog's internal `visible` flag still drives enter/exit
+          animations for the dialog lifecycle once mounted. */}
+      {dialogJob ? (
+        <ShareDialog
+          visible={shareDialogVisible}
+          onClose={handleCloseShareDialog}
+          job={dialogJob}
+          onSave={handleDialogSave}
+          onShare={handleDialogShare}
+          onPublish={handleDialogPublish}
+          saveState={dialogSaveState}
+          isPublishing={isPublishing}
+          publishError={publishError}
+        />
+      ) : null}
     </View>
   );
 }

@@ -25,6 +25,7 @@ from app.api.deps import (
     get_current_user,
     get_image_repo,
     get_job_repo,
+    get_orphaned_storage_repo,
     get_post_repo,
     get_redis,
     get_supabase,
@@ -36,8 +37,13 @@ from app.db.async_helpers import run_sync
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository
 from app.repositories.block_repo import BlockRepository
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.post_repo import PostRepository
-from app.services.public_url import build_avatar_url, publish_post_images
+from app.services.public_url import (
+    PUBLIC_BUCKET,
+    build_avatar_url,
+    publish_post_images,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +57,14 @@ router = APIRouter(
 # the same live (is_deleted=FALSE AND is_hidden=FALSE) glow_up_job_id.
 # Surface as caller-idempotency: return the existing live post instead of 500.
 _PG_UNIQUE_VIOLATION_SQLSTATE = "23505"
+
+# Reason string recorded in ``orphaned_storage_keys`` for post-images blobs
+# we uploaded to the PUBLIC bucket but have not yet committed via
+# ``post_repo.insert_post``. Server-side constant only, never user-derived.
+# On successful insert the pending DLQ row is deleted in the same request;
+# on any failure path (TOCTOU 409, exhausted retry, unexpected 5xx) the DLQ
+# row survives and the nightly reclaim worker drains it.
+PUBLISH_PENDING_REASON = "publish_pending"
 
 
 def _is_unique_violation(exc: Exception) -> bool:
@@ -149,6 +163,7 @@ async def create_post(
     post_repo: PostRepository = Depends(get_post_repo),
     job_repo: JobRepository = Depends(get_job_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
+    orphan_repo: OrphanedStorageKeyRepository = Depends(get_orphaned_storage_repo),
 ) -> Response:
     """Create a post from a completed glow-up job.
 
@@ -218,10 +233,32 @@ async def create_post(
 
     before_url = published.before_url
     after_url = published.after_url
+    before_key = published.before_key
+    after_key = published.after_key
+
+    # Publish-pending DLQ pre-record (Fix 3): the blobs now live at a
+    # CDN-reachable path under PUBLIC_BUCKET. If any downstream step
+    # (M-5 re-verify 409, insert_post exhausted retry, unexpected 5xx,
+    # even a mid-request worker crash) aborts without committing the
+    # posts row, the blobs would orphan with no DLQ coverage and no
+    # retention sweeper path (``reconcile_orphaned_blobs`` only drains
+    # rows already IN the DLQ; it doesn't discover new leaks). Record
+    # them NOW with reason=PUBLISH_PENDING_REASON. On successful insert
+    # we delete the DLQ rows in the same request; on any failure the
+    # rows survive and the nightly reclaim worker drains them.
+    #
+    # Safe in the happy path: ``orphan_repo.record`` is an idempotent
+    # upsert that never raises, so a rare DB blip does not fail the
+    # request and a double-call is a no-op.
+    await run_sync(
+        orphan_repo.record, PUBLIC_BUCKET, before_key, PUBLISH_PENDING_REASON
+    )
+    await run_sync(orphan_repo.record, PUBLIC_BUCKET, after_key, PUBLISH_PENDING_REASON)
 
     # Re-verify job status right before insert to minimise TOCTOU window (M-5).
     # The job could have been re-queued or failed between the first check and
-    # the image publish above.
+    # the image publish above. The DLQ pre-records above are what keep this
+    # path leak-free when M-5 fires.
     fresh_job = await run_sync(job_repo.get_jobs_for_post, body.glow_up_job_id)
     if not fresh_job or fresh_job["status"] != "completed":
         raise HTTPException(
@@ -266,9 +303,34 @@ async def create_post(
             # Unique fired but nothing live exists — the peer post was
             # soft-deleted or auto-hidden between INSERT and SELECT. The
             # partial predicate now permits a fresh row; retry once.
-            # A second failure (or any other exception) escalates unchanged.
-            post = await run_sync(post_repo.insert_post, insert_row)
-            response_status = status.HTTP_201_CREATED
+            #
+            # Fix 4: wrap the retry in a try/except so a second peer
+            # racing between the first 23505 and here cannot escalate
+            # as 500. On second unique_violation we look up the live
+            # post one more time — another peer just won — and return
+            # it as 200 if owned by caller. Any other exception (or a
+            # third-way race where nothing live exists) propagates
+            # unchanged as 500.
+            try:
+                post = await run_sync(post_repo.insert_post, insert_row)
+                response_status = status.HTTP_201_CREATED
+            except Exception as retry_exc:
+                if not _is_unique_violation(retry_exc):
+                    raise
+                retry_existing = await run_sync(
+                    post_repo.get_by_glow_up_job_id, body.glow_up_job_id
+                )
+                if retry_existing is None:
+                    # Extremely rare third-way race: soft-deleted again
+                    # between our retry and this lookup. Escalate.
+                    raise
+                if retry_existing["user_id"] != user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Job not found",
+                    )
+                post = retry_existing
+                response_status = status.HTTP_200_OK
         else:
             # Ownership re-check — jobs are user-scoped, but defend in depth.
             # Leak-avoidance 404 on mismatch matches the create-path posture
@@ -280,6 +342,21 @@ async def create_post(
                 )
             post = existing
             response_status = status.HTTP_200_OK
+
+    # Insert succeeded (either branch). The posts row now owns the public
+    # blobs; the publish-pending DLQ rows are no longer needed. Best-effort
+    # cleanup — if this fails the nightly reclaim worker would try to
+    # re-delete the blobs, so guard against the spurious retry.
+    try:
+        await run_sync(orphan_repo.delete_by_key, PUBLIC_BUCKET, before_key)
+        await run_sync(orphan_repo.delete_by_key, PUBLIC_BUCKET, after_key)
+    except Exception:  # noqa: BLE001 — best-effort, never fails the request
+        logger.warning(
+            "create_post: publish-pending DLQ cleanup failed for job %s — "
+            "reclaim worker will retry blob delete (safe; posts row owns them)",
+            body.glow_up_job_id,
+            exc_info=True,
+        )
 
     post_id = post["id"]
 

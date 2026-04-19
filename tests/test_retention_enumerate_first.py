@@ -430,6 +430,136 @@ async def test_retention_skips_when_reconcile_lock_held() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Fix 1: CAS DELETE preserves jobs Saved between enumerate and delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_by_ids_includes_retention_cas_predicate() -> None:
+    """``delete_by_ids(cutoff_iso=...)`` chains the ``saved_at`` + ``created_at``
+    CAS predicate on the DELETE so a concurrent Save survives the purge.
+
+    This protects against the race where a user Saves a job (flipping
+    ``saved_at`` from NULL to a timestamp) in the minutes-long window
+    between the enumerate call and the bulk DELETE. The CAS guarantees
+    the just-saved row is filtered out at commit time, not hard-deleted.
+    """
+    from app.repositories.job_repo import JobRepository
+
+    sb = MagicMock()
+    delete_chain = sb.table.return_value.delete.return_value
+    in_chain = delete_chain.in_.return_value
+    is_chain = in_chain.is_.return_value
+    lt_chain = is_chain.lt.return_value
+    lt_chain.execute.return_value = MagicMock(data=[])
+
+    job_repo = JobRepository(sb)
+    cutoff = "2026-04-11T00:00:00+00:00"
+    job_repo.delete_by_ids(["job-1", "job-2"], cutoff_iso=cutoff)
+
+    # The DELETE must be constrained by BOTH saved_at IS NULL and
+    # created_at < cutoff so a row that got Saved (or freshly created)
+    # between enumerate and delete is skipped rather than hard-deleted.
+    in_chain.is_.assert_called_once_with("saved_at", "null")
+    is_chain.lt.assert_called_once_with("created_at", cutoff)
+
+
+@pytest.mark.asyncio
+async def test_retention_passes_same_cutoff_to_delete_by_ids() -> None:
+    """The retention worker must pass the same ``cutoff_iso`` it used for
+    the SELECT into ``delete_by_ids`` — a mismatch would loosen the CAS."""
+    job = _make_doomed_job_row(before="raw/c/before.jpg", after="gen/c/after.jpg")
+    sb = _make_supabase(expired_jobs=[job])
+
+    # Capture the DELETE chain's filter calls so we can assert the CAS
+    # predicate was applied with the same cutoff retention computed.
+    captured: dict[str, list] = {"is": [], "lt": [], "in": []}
+    original_table = sb.table.side_effect
+
+    def _wrapped(name: str) -> MagicMock:
+        qb = original_table(name)
+        if name != "jobs":
+            return qb
+        original_is = qb.is_.side_effect
+        original_lt = qb.lt.side_effect
+        original_in = qb.in_.side_effect
+
+        def _is(col, val):
+            captured["is"].append((col, val))
+            return original_is(col, val)
+
+        def _lt(col, val):
+            captured["lt"].append((col, val))
+            return original_lt(col, val)
+
+        def _in(col, vals):
+            captured["in"].append((col, vals))
+            return original_in(col, vals)
+
+        qb.is_.side_effect = _is
+        qb.lt.side_effect = _lt
+        qb.in_.side_effect = _in
+        return qb
+
+    sb.table.side_effect = _wrapped
+
+    await run_retention(_make_ctx(sb))
+
+    # The bulk DELETE path must have chained an in_(id, ids), then the
+    # is_(saved_at, null) + lt(created_at, cutoff) CAS predicate. The
+    # exact cutoff value isn't asserted (retention computes it from
+    # settings.RETENTION_JOB_DAYS); we assert the columns + operator
+    # wiring, which is what this fix ensures.
+    saved_at_filters = [c for c in captured["is"] if c[0] == "saved_at"]
+    created_at_filters = [c for c in captured["lt"] if c[0] == "created_at"]
+    in_ids_filters = [c for c in captured["in"] if c[0] == "id"]
+
+    assert saved_at_filters, "CAS predicate on saved_at missing from DELETE"
+    assert created_at_filters, "CAS predicate on created_at missing from DELETE"
+    assert in_ids_filters, "DELETE must still scope to the enumerated id list"
+
+
+# ---------------------------------------------------------------------------
+# Fix 7: Error isolation between retention steps
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_upload_purge_runs_even_when_job_purge_raises(monkeypatch) -> None:
+    """A fault in Step 1 (job purge) must not skip Step 2 (upload purge).
+
+    Previously a single exception in ``delete_by_ids`` aborted the whole
+    cron tick — reservations and orphan reconciliation never ran. Now
+    each step is try-wrapped independently.
+    """
+    upload_id = str(uuid4())
+    storage_key = f"user/{upload_id}.jpg"
+    sb = _make_supabase(
+        expired_jobs=[_make_doomed_job_row()],
+        expired_uploads=[{"id": upload_id, "image_url": storage_key}],
+    )
+
+    # Force the job-repo's list_expired_unsaved_jobs to raise so the
+    # Step 1 try/except catches it and moves on to Step 2.
+    from app.workers import retention as retention_mod
+
+    class _BoomRepo:
+        def __init__(self, _sb):
+            pass
+
+        def list_expired_unsaved_jobs(self, _cutoff):
+            raise RuntimeError("db 503")
+
+    monkeypatch.setattr(retention_mod, "JobRepository", _BoomRepo)
+
+    await run_retention(_make_ctx(sb))
+
+    # Uploads step still ran — the upload blob got removed.
+    raw_removed = _remove_calls_for(sb, _RAW_SELFIES_BUCKET)
+    assert [storage_key] in raw_removed
+
+
+# ---------------------------------------------------------------------------
 # Enumeration runs BEFORE cascade DELETE (the ordering invariant)
 # ---------------------------------------------------------------------------
 

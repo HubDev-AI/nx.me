@@ -31,66 +31,36 @@ class OrphanedAnalysesRepository:
     # ------------------------------------------------------------------
 
     def record(self, analysis_id: str, reason: str) -> None:
-        """Idempotently record an orphaned analysis id.
+        """Idempotently record an orphaned analysis id via UPSERT.
 
-        First call inserts a row with ``attempts = 0``. Subsequent calls
-        for the same ``analysis_id`` bump ``attempts`` and refresh
-        ``last_attempt_at`` so the sweeper can tell repeat-failure rows
-        apart from never-retried ones.
+        Semantics: this is a first-insert-or-noop path. The UNIQUE
+        constraint on ``analysis_id`` makes the upsert race-free —
+        two concurrent first-writers cannot both succeed with
+        incremented attempts. ``attempts`` is bumped exclusively by
+        ``mark_attempt`` (called by the reclaim worker after a failed
+        retry), not by ``record`` — this avoids the read-then-write
+        race the prior implementation had between SELECT and INSERT/
+        UPDATE. A repeated ``record`` call is a no-op update of
+        ``reason`` only — ``attempts`` is NOT in the upsert payload,
+        so ``ON CONFLICT DO UPDATE`` leaves it untouched. This means a
+        re-record cannot accidentally erase a ``mark_attempt``
+        increment made by the reclaim worker.
 
-        Concurrency posture: read-then-write is race-prone under truly
-        simultaneous first-writers (both SELECT miss, both INSERT, one
-        hits ``UNIQUE(analysis_id)`` and the violation is swallowed by
-        the outer except — that writer's bump is lost). Acceptable on
-        this error path: the row still lands, the sweeper still finds
-        it, and a lost bump just means one sweeper cycle thinks a row
-        is fresher than it is. Not worth an RPC+trigger round-trip to
-        close.
-
-        supabase-py does not expose ``ON CONFLICT DO UPDATE SET column =
-        column + 1`` so the increment is done Python-side in two steps.
-        Two round-trips are fine here — this is an error path, not a
-        hot loop.
-
-        Never raises — failure here would mask the primary error the
-        caller is already swallow-logging (mirrors
-        ``OrphanedStorageKeyRepository.record``).
+        Mirrors ``OrphanedStorageKeyRepository.record`` — same shape,
+        same never-raise posture, same reason-string hygiene.
         """
         try:
-            existing = (
+            (
                 self._sb.table("orphaned_analyses")
-                .select("id, attempts")
-                .eq("analysis_id", analysis_id)
-                .maybe_single()
+                .upsert(
+                    {
+                        "analysis_id": analysis_id,
+                        "reason": reason,
+                    },
+                    on_conflict="analysis_id",
+                )
                 .execute()
             )
-            if existing and existing.data:
-                # Row already present — bump attempts, refresh last_attempt_at.
-                current_attempts = int(existing.data.get("attempts", 0))
-                now_iso = datetime.now(tz=timezone.utc).isoformat()
-                (
-                    self._sb.table("orphaned_analyses")
-                    .update(
-                        {
-                            "attempts": current_attempts + 1,
-                            "last_attempt_at": now_iso,
-                            "reason": reason,
-                        }
-                    )
-                    .eq("analysis_id", analysis_id)
-                    .execute()
-                )
-            else:
-                (
-                    self._sb.table("orphaned_analyses")
-                    .insert(
-                        {
-                            "analysis_id": analysis_id,
-                            "reason": reason,
-                        }
-                    )
-                    .execute()
-                )
         except Exception:  # noqa: BLE001 — defensive last-ditch logging
             logger.exception(
                 "Failed to record orphaned analysis %s (reason=%s) — row may "
@@ -103,20 +73,27 @@ class OrphanedAnalysesRepository:
     # Read (reclaim worker)
     # ------------------------------------------------------------------
 
-    def list_pending(self, limit: int) -> list[dict[str, Any]]:
+    def list_pending(
+        self, limit: int, max_attempts: int | None = None
+    ) -> list[dict[str, Any]]:
         """Return up to ``limit`` DLQ rows, oldest first.
 
-        No ``max_attempts`` filter yet — the sweeper ships in a follow-up
-        PR and can add ceiling logic there. Present now so tests can
-        sanity-check that ``record`` actually landed a row.
+        When ``max_attempts`` is provided, rows whose ``attempts`` column
+        is at or above the ceiling are filtered out at the DB layer.
+        Without this filter the oldest-first ORDER BY would pin exhausted
+        rows to the head of the batch forever, starving the sweeper of
+        retryable work (the ``test_skips_rows_at_attempt_ceiling`` client-
+        side guard still covers the defence-in-depth case).
+
+        Aligns the signature with
+        :meth:`OrphanedStorageKeyRepository.list_pending`.
         """
-        result = (
-            self._sb.table("orphaned_analyses")
-            .select("id, analysis_id, reason, attempts, inserted_at, last_attempt_at")
-            .order("inserted_at", desc=False)
-            .limit(limit)
-            .execute()
+        query = self._sb.table("orphaned_analyses").select(
+            "id, analysis_id, reason, attempts, inserted_at, last_attempt_at"
         )
+        if max_attempts is not None:
+            query = query.lt("attempts", max_attempts)
+        result = query.order("inserted_at", desc=False).limit(limit).execute()
         return result.data or []
 
     # ------------------------------------------------------------------
@@ -140,10 +117,11 @@ class OrphanedAnalysesRepository:
     def mark_attempt(self, analysis_id: str) -> None:
         """Bump ``attempts`` and set ``last_attempt_at`` after a failed retry.
 
-        Distinct from ``record``: ``record`` is called on the write-path
-        failure, ``mark_attempt`` by the reclaim worker after a retry
-        didn't clear. Same two-step read-then-write for the same
-        supabase-py column-arithmetic reason documented on ``record``.
+        Sole bump path: ``record`` is race-free upsert (first-insert-or-
+        noop; attempts=0), so the attempt counter only moves here. The
+        reclaim worker calls this after a retry didn't clear. Read-then-
+        write because supabase-py does not expose column arithmetic on
+        update; the nightly sweeper can absorb the extra round-trip.
         """
         now = datetime.now(tz=timezone.utc).isoformat()
         current = (
