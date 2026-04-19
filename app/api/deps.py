@@ -31,11 +31,13 @@ if TYPE_CHECKING:
     from app.repositories.block_repo import BlockRepository
     from app.repositories.feed_repo import FeedRepository
     from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
+    from app.repositories.guest_merge_repo import GuestMergeRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
     from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
     from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
     from app.repositories.post_repo import PostRepository
+    from app.repositories.plan_version_repo import PlanVersionRepository
     from app.repositories.subscription_repo import SubscriptionRepository
     from app.repositories.upload_repo import UploadRepository
     from app.repositories.user_repo import UserRepository
@@ -54,11 +56,6 @@ _TRUSTED_PROXY_NETWORKS = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Request helpers
-# ---------------------------------------------------------------------------
-
-
 def _is_trusted_proxy_host(host: str) -> bool:
     try:
         ip = ipaddress.ip_address(host)
@@ -68,10 +65,6 @@ def _is_trusted_proxy_host(host: str) -> bool:
 
 
 def _get_forwarded_ip(forwarded_for: str) -> str | None:
-    # Walk right-to-left and skip entries that are themselves trusted proxies;
-    # the first public IP we encounter is the real client. This prevents an
-    # attacker-controlled leftmost entry from winning, and stops CDN/LB hop
-    # addresses from being attributed as the client.
     for candidate in reversed([part.strip() for part in forwarded_for.split(",")]):
         if not candidate:
             continue
@@ -233,11 +226,6 @@ def require_admin(
         )
 
 
-# ---------------------------------------------------------------------------
-# Entitlement (A-5)
-# ---------------------------------------------------------------------------
-
-
 def get_user_repo(request: Request) -> "UserRepository":
     """Return a UserRepository wired to the app's Supabase client."""
     from app.repositories.user_repo import UserRepository
@@ -338,6 +326,13 @@ def get_subscription_repo(request: Request) -> "SubscriptionRepository":
     from app.repositories.subscription_repo import SubscriptionRepository
 
     return SubscriptionRepository(request.app.state.supabase)
+
+
+def get_plan_version_repo(request: Request) -> "PlanVersionRepository":
+    """Return a PlanVersionRepository wired to the app's Supabase client."""
+    from app.repositories.plan_version_repo import PlanVersionRepository
+
+    return PlanVersionRepository(request.app.state.supabase)
 
 
 def get_credit_ledger(request: Request) -> "CreditLedger":
@@ -501,3 +496,10 @@ def require_app_feature(feature: str):
             )
 
     return _check
+
+
+def get_guest_merge_repo(request: Request) -> "GuestMergeRepository":
+    """Return a GuestMergeRepository wired to the app's Supabase client."""
+    from app.repositories.guest_merge_repo import GuestMergeRepository
+
+    return GuestMergeRepository(request.app.state.supabase)
