@@ -19,16 +19,50 @@ jobs:
           --health-retries 5
         ports:
           - 6379:6379
+      # Postgres service mapped to 54322 (Supabase local default) so the
+      # live-DB tests in tests/test_dispute_lifecycle.py + the new
+      # TestLiveDBConcurrency class in tests/test_credit_rpcs_v2.py can
+      # connect without patching their hardcoded DSNs.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 54322:5432
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Apply database migrations
+        run: python -m app.migrations.run
+        env:
+          APP_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
+          REDIS_URL: redis://localhost:6379/0
+          # Dev-placeholder fingerprint secret — 64 hex chars (32 bytes).
+          # Production rotates via SIGNUP_FINGERPRINT_SERVER_SECRET in the
+          # env block; CI only needs a non-empty value to satisfy the
+          # fail-fast settings validator.
+          SIGNUP_FINGERPRINT_SERVER_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          SIGNUP_GRANT_MILLI: 300
+          WEEKLY_FREE_GRANT_MILLI: 100
       - run: pytest --tb=short -q
         env:
           APP_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54322/postgres
           REDIS_URL: redis://localhost:6379/0
+          SIGNUP_FINGERPRINT_SERVER_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          SIGNUP_GRANT_MILLI: 300
+          WEEKLY_FREE_GRANT_MILLI: 100
 
   card-web:
     runs-on: ubuntu-latest
