@@ -630,10 +630,15 @@ describe("ResultScreen — Publish path", () => {
       }),
     );
 
-    // Dialog closed — confirm panel gone.
-    await waitFor(() => {
-      expect(queryByTestId("share-dialog-confirm-publish")).toBeNull();
-    });
+    // Dialog closed — confirm panel gone. Bumped from default 1s to 5s
+    // because CI nodes are slower than dev hardware and the Reanimated
+    // mock's withTiming callback can race the React render commit.
+    await waitFor(
+      () => {
+        expect(queryByTestId("share-dialog-confirm-publish")).toBeNull();
+      },
+      { timeout: 5000 },
+    );
 
     // Re-opening the dialog: Publish row should be hidden now that
     // post_id is set in local state.
