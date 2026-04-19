@@ -83,10 +83,14 @@ def _patch_google_common(monkeypatch, user_id: str, email: str, fake_session) ->
 
 
 def _make_google_session(user_id: str, email: str):
+    from datetime import datetime, timezone
+
     fake_user = MagicMock()
     fake_user.id = user_id
     fake_user.email = email
     fake_user.user_metadata = {}
+    # created_at must be a real datetime so the new-account grant gate works.
+    fake_user.created_at = datetime.now(tz=timezone.utc)
     fake_session = MagicMock()
     fake_session.user = fake_user
     fake_session.session = MagicMock(

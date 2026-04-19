@@ -938,8 +938,15 @@ async def social_login(
             guest_merge_repo,
         )
 
-    # --- Signup grant (Unit 9) -------------------------------------------
-    await _apply_signup_grant(supabase, user_id, x_install_uuid)
+    # --- Signup grant (Unit 9) — new accounts only -----------------------
+    # Supabase upsert (ignore_duplicates=True) gives no "was inserted" signal.
+    # Use created_at recency: if the auth account was created within the last
+    # 60 s this is a genuine new signup; existing users returning via social
+    # login have a created_at well in the past.
+    _now = datetime.now(tz=timezone.utc)
+    _account_age = _now - user.created_at.replace(tzinfo=timezone.utc)
+    if _account_age < timedelta(seconds=60):
+        await _apply_signup_grant(supabase, user_id, x_install_uuid)
 
     username = await _resolve_login_username(user_repo, user_id, fallback=auto_username)
 
@@ -1188,9 +1195,6 @@ async def tiktok_login(
                 supabase,
                 guest_merge_repo,
             )
-
-        # --- Signup grant (Unit 9) — idempotent; RPC deduplicates --------
-        await _apply_signup_grant(supabase, existing_user["id"], x_install_uuid)
 
         logger.info("TikTok login successful for existing user %s", existing_user["id"])
         existing_username = await _resolve_login_username(
