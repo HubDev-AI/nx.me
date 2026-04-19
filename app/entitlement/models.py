@@ -1,34 +1,132 @@
-"""Entitlement data models.
+"""Entitlement data models — ledger-based (Unit 7).
 
-AC-D1: All entitlement state is computed from credit_ledger + subscriptions.
-A-4: Tiers are DB-driven; tier_id UUID FK, not string enums.
-A-5: EntitlementResult with error codes for rate/feature gating.
+New shape:
+  EntitlementState carries tier (marketing label), remaining_glowups,
+  approx_remaining_ada, subscription_status, period_end, grace_end,
+  blocked_reason, plan_version_id, and purchase_options.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+from typing import Literal
 from uuid import UUID
+
+from pydantic import BaseModel
 
 
 # ---------------------------------------------------------------------------
-# Tier record (cached from DB, per A-4)
+# Subscription status (pure enum — drives tier label + blocked_reason)
+# ---------------------------------------------------------------------------
+
+
+class SubscriptionStatus(str, Enum):
+    """Derived subscription state (R3 derivation logic)."""
+
+    NONE = "none"
+    ACTIVE = "active"
+    GRACE = "grace"
+    CANCELED = "canceled"
+    LOCKED = "locked"
+
+
+# ---------------------------------------------------------------------------
+# Blocked reason
+# ---------------------------------------------------------------------------
+
+
+class BlockedReason(str, Enum):
+    """Why a user account is blocked (state-level, not per-action)."""
+
+    NONE = "none"
+    SUBSCRIPTION_LOCKED_BY_DISPUTE = "subscription_locked_by_dispute"
+
+
+# ---------------------------------------------------------------------------
+# Purchase options (returned inline in EntitlementState for paywall display)
+# ---------------------------------------------------------------------------
+
+
+class PackOption(BaseModel):
+    """A single credit-pack purchase option."""
+
+    pack_id: str
+    milli_credits: int
+    price_id: str
+    amount_cents: int
+    currency: str
+
+
+class ProOption(BaseModel):
+    """Pro subscription purchase option."""
+
+    price_id: str
+    amount_cents: int
+    currency: str
+
+
+class PurchaseOptions(BaseModel):
+    """All available purchase options returned with entitlement state."""
+
+    pack: PackOption | None = None
+    pro: ProOption | None = None
+
+
+# ---------------------------------------------------------------------------
+# Entitlement state (ledger-based, Unit 7)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EntitlementState:
+    """Full entitlement snapshot for a user. Recomputed, never cached as source of truth."""
+
+    # Marketing tier label (R10): "Pro" iff status in {active, grace}, else "Free"
+    tier: Literal["Free", "Pro"]
+    # How many full glowups the current balance covers
+    remaining_glowups: int
+    # Approximate Ada messages the current balance covers (floor)
+    approx_remaining_ada: int
+    # Derived subscription status
+    subscription_status: SubscriptionStatus
+    # Subscription billing period end (active/grace only)
+    period_end: datetime | None
+    # Grace period end (grace only; None when status != grace)
+    grace_end: datetime | None
+    # Account-level block reason
+    blocked_reason: BlockedReason
+    # The plan_version row used to compute costs
+    plan_version_id: UUID
+    # Purchase options for paywall display (always populated, fail-soft on Stripe errors)
+    purchase_options: PurchaseOptions
+
+
+# ---------------------------------------------------------------------------
+# Error codes — concurrent limit only (used by concurrent_guard callers)
+# ---------------------------------------------------------------------------
+
+ACCOUNT_CONCURRENT_LIMIT = "ACCOUNT_CONCURRENT_LIMIT"
+INSUFFICIENT_CREDITS = "INSUFFICIENT_CREDITS"
+ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+
+
+# ---------------------------------------------------------------------------
+# Legacy: TierRecord — kept until R2 drops auth.py default-tier path
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class TierRecord:
-    """A tier row from the tiers table (Redis-cached, TTL 5 min)."""
+    """Tier row from legacy `tiers` table. Deleted in R2 alongside the table."""
 
     id: UUID
     slug: str
     display_name: str
     is_default: bool
     is_active: bool
-    generation_type: (
-        str  # LimitType value: daily, weekly, monthly, credits, total, unlimited
-    )
+    generation_type: str
     generation_limit: int | None
     generation_period_seconds: int | None
     advisor_nudges_type: str
@@ -40,82 +138,3 @@ class TierRecord:
     feature_visual_comparison: bool
     stripe_price_id: str | None
     credits_based: bool
-
-
-# ---------------------------------------------------------------------------
-# Entitlement state (recomputed from credit_ledger + subscriptions)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class EntitlementState:
-    """Full entitlement snapshot for a user. Recomputed, never cached as source of truth."""
-
-    tier: TierRecord
-    trial_analyses_remaining: int
-    trial_analyses_limit: int
-    credit_balance: int
-    has_active_subscription: bool
-    subscription_billing_period_end: datetime | None = None
-    can_generate: bool = False
-    reason: str | None = None  # Why can_generate is False
-
-
-# ---------------------------------------------------------------------------
-# can_generate result (AC-2)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CanGenerateResult:
-    """Result of EntitlementService.can_generate()."""
-
-    can_generate: bool
-    reason: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Entitlement check result (A-5)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class EntitlementResult:
-    """Result of EntitlementService.check() — route-level enforcement."""
-
-    allowed: bool
-    error_code: str | None = None
-    limit: int | None = None
-    used: int | None = None
-    retry_after: datetime | None = None
-    reset_in_seconds: int | None = None
-    upgrade_available: bool = False
-
-
-# ---------------------------------------------------------------------------
-# Error codes (A-5)
-# ---------------------------------------------------------------------------
-
-TIER_LIMIT_DAILY = "TIER_LIMIT_DAILY"
-TIER_LIMIT_WEEKLY = "TIER_LIMIT_WEEKLY"
-TIER_LIMIT_MONTHLY = "TIER_LIMIT_MONTHLY"
-TIER_LIMIT_TOTAL = "TIER_LIMIT_TOTAL"
-TIER_LIMIT_CREDITS = "TIER_LIMIT_CREDITS"
-TIER_FEATURE_LOCKED = "TIER_FEATURE_LOCKED"
-TIER_CONCURRENT_LIMIT = "TIER_CONCURRENT_LIMIT"
-
-# HTTP status mapping: 429 = "try later", 402 = "pay to unlock"
-PAYMENT_REQUIRED_CODES = frozenset(
-    {TIER_LIMIT_TOTAL, TIER_LIMIT_CREDITS, TIER_FEATURE_LOCKED}
-)
-
-# User-facing error messages for entitlement failures
-ENTITLEMENT_ERROR_MESSAGES: dict[str, str] = {
-    TIER_LIMIT_DAILY: "Daily generation limit reached",
-    TIER_LIMIT_WEEKLY: "Weekly generation limit reached",
-    TIER_LIMIT_MONTHLY: "Monthly generation limit reached",
-    TIER_LIMIT_TOTAL: "Lifetime generation limit reached",
-    TIER_LIMIT_CREDITS: "No credits remaining",
-    TIER_FEATURE_LOCKED: "Feature not available on your current plan",
-    TIER_CONCURRENT_LIMIT: "A generation is already in progress",
-}

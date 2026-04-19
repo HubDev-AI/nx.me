@@ -17,11 +17,6 @@ import redis.asyncio as aioredis
 
 from app.api.middleware.auth import UserClaims, validate_jwt
 from app.db.async_helpers import run_sync
-from app.entitlement.models import (
-    ENTITLEMENT_ERROR_MESSAGES,
-    EntitlementResult,
-    PAYMENT_REQUIRED_CODES,
-)
 
 if TYPE_CHECKING:
     from arq import ArqRedis
@@ -360,7 +355,12 @@ def get_advisor_repo(request: Request) -> "AdvisorRepository":
 
 
 def get_tier_repo(request: Request) -> "TierRepository":
-    """Return a TierRepository wired to the app's Supabase + Redis clients."""
+    """Return a TierRepository wired to the app's Supabase + Redis clients.
+
+    Used by auth routes for default-tier lookup during user creation.
+    EntitlementService no longer uses TierRepository — this dep exists
+    solely for the auth signup flow until Units 9/10/11 refactor auth.
+    """
     from app.entitlement.tier_repo import TierRepository
 
     return TierRepository(request.app.state.supabase, request.app.state.redis)
@@ -376,9 +376,6 @@ def get_entitlement_service(
         supabase=request.app.state.supabase,
         redis_client=request.app.state.redis,
     )
-
-
-_ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
 
 
 def get_payment_adapter(request=None) -> "PaymentPort":
@@ -453,61 +450,14 @@ def get_embedding_adapter() -> "EmbeddingPort":
     )
 
 
-def require_entitlement(action: str):
-    """FastAPI dependency: check entitlement before route execution (A-5).
-
-    Usage:
-        @router.post("/generations")
-        async def create_generation(
-            _: None = Depends(require_entitlement("generation")),
-            claims: UserClaims = Depends(get_current_user),
-        ): ...
-    """
-
-    async def _check(
-        claims: UserClaims = Depends(get_current_user),
-        svc: "EntitlementService" = Depends(get_entitlement_service),
-    ) -> None:
-        from uuid import UUID
-
-        user_id = UUID(claims["sub"])
-        result: EntitlementResult = await svc.check(user_id, action)
-        if not result.allowed:
-            status_code = 402 if result.error_code in PAYMENT_REQUIRED_CODES else 429
-            headers: dict[str, str] | None = None
-            if status_code == 429 and result.reset_in_seconds is not None:
-                headers = {"Retry-After": str(result.reset_in_seconds)}
-            raise HTTPException(
-                status_code=status_code,
-                detail={
-                    "error": {
-                        "code": result.error_code,
-                        "message": _ERROR_MESSAGES.get(
-                            result.error_code, "Entitlement check failed"
-                        ),
-                        "detail": {
-                            "limit": result.limit,
-                            "used": result.used,
-                            "retry_after": result.retry_after.isoformat()
-                            if result.retry_after
-                            else None,
-                            "reset_in_seconds": result.reset_in_seconds,
-                            "upgrade_available": result.upgrade_available,
-                        },
-                    }
-                },
-                headers=headers,
-            )
-
-    return _check
-
-
 def require_feature(feature: str):
-    """FastAPI dependency: check feature flag on user's tier (A-5).
+    """FastAPI dependency: Ada/feature gate (credits-only engine, Unit 7).
 
-    When ``FEATURE_PREMIUM_BYPASS`` is enabled (dev/staging only), this
-    dependency short-circuits and allows every caller through — useful for
-    exercising premium routes as a guest during local testing.
+    The credits-only engine is ledger-gated, not tier-gated. This
+    dependency is a no-op stub — ``ADVISOR_ENABLED`` and credit-ledger
+    checks inside the service layer enforce access. The stub is kept so
+    route signatures that already declare ``Depends(require_feature(...))``
+    continue to compile without change.
 
     Usage:
         @router.post("/advisor/messages")
@@ -516,33 +466,8 @@ def require_feature(feature: str):
         ): ...
     """
 
-    async def _check(
-        # Mirrors the route's own auth dep on purpose. FastAPI dedupes
-        # `Depends(...)` per request, so this resolves once per call — the
-        # repetition just lets `_check` access claims without forcing every
-        # route to plumb them in.
-        claims: UserClaims = Depends(get_user_or_guest),
-        svc: "EntitlementService" = Depends(get_entitlement_service),
-    ) -> None:
-        from uuid import UUID
-
-        from app.config import settings
-
-        if settings.FEATURE_PREMIUM_BYPASS:
-            return
-
-        user_id = UUID(claims["sub"])
-        if not await svc.has_feature(user_id, feature):
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": {
-                        "code": "TIER_FEATURE_LOCKED",
-                        "message": f"Feature '{feature}' is not available on your current plan",
-                        "detail": {"upgrade_available": True},
-                    }
-                },
-            )
+    async def _check() -> None:
+        return
 
     return _check
 

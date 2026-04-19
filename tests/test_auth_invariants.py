@@ -110,6 +110,8 @@ def _settings_kwargs(**overrides: object) -> dict[str, object]:
         "ADMIN_API_KEY": "y" * 32,
         "FEATURE_AUTH_REQUIRED": True,
         "SIGNUP_FINGERPRINT_SERVER_SECRET": "z" * 64,
+        "STRIPE_PRICE_CREDITS_PACK_V1": "price_test_pack",
+        "STRIPE_PRICE_PRO_V1": "price_test_pro",
     }
     base.update(overrides)
     return base

@@ -14,6 +14,7 @@ If an RPC is unavailable, the operation fails — the RPC exists for atomicity.
 from __future__ import annotations
 
 import logging
+from typing import Literal
 from uuid import UUID, uuid4
 
 from supabase import Client
@@ -56,12 +57,23 @@ class CreditLedger:
         # RPC returns NULL (None) for users with no ledger entries → 0 is correct.
         return int(result.data) if result.data is not None else 0
 
-    def reserve(self, user_id: UUID) -> UUID:
+    def reserve(
+        self,
+        user_id: UUID,
+        action_type: Literal["glowup", "ada_message"],
+    ) -> UUID:
         """Create a credit reservation (optimistic hold).
 
-        Atomic via credit_reserve RPC: inserts both credit_reservations
-        row (status='reserved') and credit_ledger entry (delta=-1) in
-        a single transaction.
+        Atomic via credit_reserve RPC (3-arg form, migration 0049): inserts
+        both credit_reservations row (status='reserved') and credit_ledger
+        entry (delta=-milli_cost) in a single transaction.  The RPC raises
+        ``insufficient_credits`` (mapped to a DB exception) when the balance
+        is too low — callers should let that propagate.
+
+        Args:
+            user_id: The user whose credits are being reserved.
+            action_type: ``"glowup"`` or ``"ada_message"`` — drives which
+                milli-cost column the RPC reads from ``plan_versions``.
 
         Returns:
             reservation_id (UUID)
@@ -77,11 +89,15 @@ class CreditLedger:
             {
                 "p_user_id": user_id_str,
                 "p_reservation_id": str(reservation_id),
+                "p_action_type": action_type,
             },
         ).execute()
 
         logger.info(
-            "Credit reserved for user %s: reservation %s", user_id_str, reservation_id
+            "Credit reserved for user %s: reservation %s (action=%s)",
+            user_id_str,
+            reservation_id,
+            action_type,
         )
         return reservation_id
 

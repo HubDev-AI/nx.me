@@ -145,29 +145,11 @@ async def generate_nudge(
 
     supabase: Client = ctx["supabase"]
     redis: aioredis.Redis = ctx["redis"]
-    uid = UUID(user_id)
     advisor_repo = AdvisorRepository(supabase)
-    user_id_hash = hash_user_id(user_id)
 
-    # Entitlement check (spec Section 7.3, A-5)
-    from app.entitlement.service import EntitlementService
-
-    ent_svc = EntitlementService(supabase=supabase, redis_client=redis)
-    try:
-        result = await ent_svc.check(uid, "advisor_nudge")
-    except Exception as exc:
-        logger.warning("Entitlement check failed for user=%s: %s", user_id_hash, exc)
-        return
-
-    if not result.allowed:
-        logger.info(
-            "Nudge skipped — entitlement denied for user=%s (trigger=%s, code=%s)",
-            user_id_hash,
-            trigger,
-            result.error_code,
-        )
-        return
-
+    # R4a: Ada is ledger-gated, not tier-gated. ADVISOR_ENABLED (checked
+    # above) is the only gate here. Per-nudge credit charging is deferred
+    # to a later unit.
     if trigger in _VISION_TRIGGERS:
         await _generate_vision_nudge(
             advisor_repo=advisor_repo,

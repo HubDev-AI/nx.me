@@ -47,7 +47,6 @@ from app.entitlement.ledger import CreditLedger
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
-from app.entitlement.trial_grantor import TrialGrantor
 from app.repositories.image_repo import ImageRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.user_repo import UserRepository
@@ -347,17 +346,8 @@ async def register(
             detail="Account creation failed.",
         ) from exc
 
-    # --- Grant trial credits immediately (idempotent) --------------------
-    try:
-        from uuid import UUID
-
-        grantor = TrialGrantor(supabase)
-        await run_sync(grantor.grant, UUID(user_id))
-    except Exception as exc:
-        # Non-fatal: user is created, they just won't have trial credits yet
-        logger.warning(
-            "Trial grant failed during registration for %s: %s", user_id, exc
-        )
+    # Trial credit grant removed — signup grants are handled by Unit 9
+    # (fingerprint-based signup grant via ARQ job). No trial credits here.
 
     # --- Auto-login: sign in to get session tokens -----------------------
     # IMPORTANT: use a SEPARATE Supabase client for sign_in_with_password.
@@ -418,11 +408,9 @@ async def verify_email(
     verification link and the Supabase SDK exchanges the magic link for a
     valid JWT session.
 
-    AC-2: TrialGrantor.grant(user_id) is idempotent — calling this endpoint
-    twice does not double-grant trial analyses.
+    AC-2: previously triggered TrialGrantor.grant (removed Unit 7); kept
+    as the email-verification confirmation endpoint for mobile compat.
     """
-    from uuid import UUID
-
     user_id_str: str = claims["sub"]
 
     # Verify that Supabase auth has confirmed the email
@@ -445,9 +433,7 @@ async def verify_email(
     # Mark email_verified in our users table
     await run_sync(user_repo.set_email_verified, user_id_str)
 
-    # Grant trial analyses (idempotent)
-    grantor = TrialGrantor(supabase)
-    await run_sync(grantor.grant, UUID(user_id_str))
+    # Trial grant removed — signup grants handled by Unit 9 (fingerprint-based ARQ job).
 
     # Read updated count for response
     remaining: int = await run_sync(user_repo.get_trial_analyses_remaining, user_id_str)
@@ -1147,14 +1133,7 @@ async def tiktok_login(
                 detail="Account creation failed.",
             ) from exc
 
-    # Grant trial credits (non-fatal)
-    try:
-        from uuid import UUID
-
-        grantor = TrialGrantor(supabase)
-        await run_sync(grantor.grant, UUID(user_id))
-    except Exception as exc:
-        logger.warning("Trial grant failed for TikTok user %s: %s", user_id, exc)
+    # Trial credit grant removed — signup grants handled by Unit 9 (fingerprint-based ARQ job).
 
     # Sign in to get session tokens
     login_client = get_supabase_service()

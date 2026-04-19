@@ -298,6 +298,11 @@ class Settings(BaseSettings):
     STRIPE_PRICE_CREDITS_25: str = ""
     STRIPE_PRICE_CREDITS_50: str = ""
 
+    # Credits-only engine (Unit 7 — plan 2026-04-19-002)
+    # Required — fail-fast at settings load if missing or blank.
+    STRIPE_PRICE_CREDITS_PACK_V1: str
+    STRIPE_PRICE_PRO_V1: str
+
     # ── Payments — Credits engine (plan 2026-04-19-002) ────────────────────
     # Server-side HMAC key used to derive `signup_grants_issued.deterministic_hash`
     # from the mobile-generated installation UUID. Required; fail-fast if

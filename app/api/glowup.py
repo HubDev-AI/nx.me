@@ -22,39 +22,27 @@ from app.analytics import events
 from app.api.deps import (
     get_user_or_guest,
     get_credit_ledger,
-    get_entitlement_service,
     get_glowup_service,
     get_job_repo,
     get_redis,
 )
 from app.api.middleware.auth import UserClaims
 from app.config import settings
-from app.constants.tiers import SLUG_TO_DB_TIER, SLUG_TO_TIER_NAME
 from app.db.async_helpers import run_sync
 from app.entitlement.ledger import CreditLedger
-from app.entitlement.models import (
-    ENTITLEMENT_ERROR_MESSAGES,
-    PAYMENT_REQUIRED_CODES,
-    TIER_CONCURRENT_LIMIT,
-)
-from app.entitlement.service import EntitlementService
 from app.generation.cost_tracker import CostTracker
 from app.generation.models import JobStatus
 from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
+from app.services.concurrent_guard import acquire_slot, release_slot
 from app.services.glowup_service import GlowupService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["glowup"])
 
-# Maps tier slug → public display name (for API responses)
-_SLUG_TO_TIER_NAME = SLUG_TO_TIER_NAME
-
-# Maps tier slug → DB enum value (for user_tier_at_enqueue column)
-_SLUG_TO_DB_TIER = SLUG_TO_DB_TIER
-
-# Error messages for entitlement failures
-_ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
+# DB enum values for user_tier_at_enqueue (must match jobs check constraint)
+_DB_TIER_FREE = "CREDIT_HOLDER"
+_DB_TIER_PRO = "PREMIUM"
 
 
 # ---------------------------------------------------------------------------
@@ -91,19 +79,14 @@ class GenerateResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-async def _check_entitlement(
-    ent_svc: EntitlementService,
-    user_id: UUID,
+async def _acquire_concurrent_slot(
+    redis_client: aioredis.Redis,
+    user_id_str: str,
 ) -> None:
-    """Verify the user is allowed to generate.
-
-    Raises HTTPException 409 for concurrent limit, 402 for payment required.
-    """
-    ent_result = await ent_svc.check(user_id, "generation")
-    if ent_result.allowed:
-        return
-
-    if ent_result.error_code == TIER_CONCURRENT_LIMIT:
+    """Acquire a concurrent generation slot; raises 409 if at capacity."""
+    ttl = settings.GENERATION_TIMEOUT_SECONDS + 60
+    acquired = await acquire_slot(redis_client, user_id_str, ttl)
+    if not acquired:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -114,36 +97,12 @@ async def _check_entitlement(
             },
         )
 
-    http_status_code = 402 if ent_result.error_code in PAYMENT_REQUIRED_CODES else 429
-    raise HTTPException(
-        status_code=http_status_code,
-        detail={
-            "error": {
-                "code": ent_result.error_code,
-                "message": _ERROR_MESSAGES.get(
-                    ent_result.error_code or "", "Entitlement check failed"
-                ),
-                "detail": {
-                    "limit": ent_result.limit,
-                    "used": ent_result.used,
-                    "retry_after": ent_result.retry_after.isoformat()
-                    if ent_result.retry_after
-                    else None,
-                    "reset_in_seconds": ent_result.reset_in_seconds,
-                    "upgrade_available": ent_result.upgrade_available,
-                },
-            }
-        },
-    )
-
 
 async def _preflight_checks(
     cost_tracker: CostTracker,
-    ent_svc: EntitlementService,
-    user_id: UUID,
     user_id_str: str,
-):
-    """Run cost-tracker pre-flight gates and return the user's tier."""
+) -> None:
+    """Run cost-tracker pre-flight gates."""
     _service_unavailable = {
         "error": {
             "code": "SERVICE_UNAVAILABLE",
@@ -173,15 +132,6 @@ async def _preflight_checks(
                 }
             },
         )
-
-    tier = await ent_svc.get_tier(user_id)
-
-    if tier.slug == "free" and await cost_tracker.should_throttle_trial():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_service_unavailable
-        )
-
-    return tier
 
 
 async def _check_idempotency(
@@ -342,7 +292,6 @@ async def generate_glowup(
     idempotency_key_header: str | None = Header(None, alias="idempotency-key"),
     claims: UserClaims = Depends(get_user_or_guest),
     redis_client: aioredis.Redis = Depends(get_redis),
-    ent_svc: EntitlementService = Depends(get_entitlement_service),
     job_repo: JobRepository = Depends(get_job_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> GenerateResponse:
@@ -437,18 +386,34 @@ async def generate_glowup(
     if idempotency_response:
         return idempotency_response
 
-    # _check_entitlement atomically acquires a concurrent slot on success.
-    # Every downstream failure path (preflight, reservation, enqueue) must
-    # release the slot; otherwise users can leak slots up to the TTL.
-    await _check_entitlement(ent_svc, user_id)
+    # Acquire concurrent slot before any reservations or DB writes.
+    # Every downstream failure path must call release_slot so users
+    # don't leak slots up to the TTL.
+    await _acquire_concurrent_slot(redis_client, user_id_str)
 
     reservation_id: UUID | None = None
     created_job_id: UUID | None = None
     try:
         cost_tracker = CostTracker(redis_client)
-        tier = await _preflight_checks(cost_tracker, ent_svc, user_id, user_id_str)
+        await _preflight_checks(cost_tracker, user_id_str)
 
-        tier_name = _SLUG_TO_DB_TIER.get(tier.slug, tier.slug.upper())
+        # Derive DB-enum tier label for audit column.
+        # Credits-only: Free users are CREDIT_HOLDER, Pro users are PREMIUM.
+        # Requires a simple subscription check without full entitlement fetch.
+        from app.db.async_helpers import run_sync as _rs
+
+        sub_row = await _rs(
+            lambda: (
+                request.app.state.supabase.table("subscriptions")
+                .select("status")
+                .eq("user_id", user_id_str)
+                .eq("status", "active")
+                .limit(1)
+                .execute()
+            )
+        )
+        tier_name = _DB_TIER_PRO if sub_row.data else _DB_TIER_FREE
+
         # ARQ stores pending jobs in a sorted set at the default queue name
         # ("arq:queue"); the unified worker only consumes from this queue,
         # so the shared depth is the true wait signal.
@@ -461,12 +426,11 @@ async def generate_glowup(
             queue_position = (raw_position // 50) * 50
 
         # Reserve credit and enqueue.
-        if tier.credits_based:
-            reservation_id = ledger.reserve(user_id)
+        reservation_id = ledger.reserve(user_id, action_type="glowup")
 
         job_id = uuid4()
         now_utc = datetime.now(tz=timezone.utc).isoformat()
-        usage_status = "reserved" if tier.credits_based else "committed"
+        usage_status = "reserved"
 
         await run_sync(
             job_repo.create,
@@ -504,7 +468,7 @@ async def generate_glowup(
             str(job_id),
         )
     except Exception:
-        await redis_client.decr(f"concurrent:{user_id_str}")
+        await release_slot(redis_client, user_id_str)
         if reservation_id:
             try:
                 ledger.release(reservation_id)
