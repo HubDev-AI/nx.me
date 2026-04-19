@@ -429,15 +429,15 @@ class TestHardDeleteAccount:
             def incr(self, key: str) -> "_CountingPipeline":
                 return self
 
-            def expire(self, key: str, ttl: int, nx: bool = False) -> "_CountingPipeline":
+            def expire(
+                self, key: str, ttl: int, nx: bool = False
+            ) -> "_CountingPipeline":
                 return self
 
             async def execute(self) -> list:
                 return [self._count, True]
 
-        deps.redis_client.pipeline = MagicMock(
-            side_effect=lambda: _CountingPipeline()
-        )
+        deps.redis_client.pipeline = MagicMock(side_effect=lambda: _CountingPipeline())
         deps.redis_client.ttl = AsyncMock(return_value=120)
 
         # First `threshold` calls should succeed (rate limit not exceeded)

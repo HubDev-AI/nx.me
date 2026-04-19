@@ -144,7 +144,7 @@ const FALLBACK_ACCENT = "#7C5CFF";
 const DESTRUCTIVE_ACCENT = THEME.colors.destructive;
 
 /** Default sublabel applied to destructive items when none is explicit. */
-const DEFAULT_DESTRUCTIVE_SUBLABEL = "Destructive";
+const DEFAULT_DESTRUCTIVE_SUBLABEL = undefined;
 
 /** Hex alpha suffix (~19%) for the dashed orbital ring stroke. */
 const ORBIT_RING_ALPHA = "30";

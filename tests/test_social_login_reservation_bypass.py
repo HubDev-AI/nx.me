@@ -48,7 +48,9 @@ class _MockRedis:
         def incr(self, key: str) -> "_MockRedis._Pipeline":
             return self
 
-        def expire(self, key: str, ttl: int, nx: bool = False) -> "_MockRedis._Pipeline":
+        def expire(
+            self, key: str, ttl: int, nx: bool = False
+        ) -> "_MockRedis._Pipeline":
             return self
 
         async def execute(self) -> list:
@@ -93,9 +95,7 @@ def _make_google_session(user_id: str, email: str):
     return fake_session
 
 
-def _patch_tiktok_common(
-    monkeypatch, open_id: str, display_name: str
-) -> None:
+def _patch_tiktok_common(monkeypatch, open_id: str, display_name: str) -> None:
     monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
     monkeypatch.setattr("app.api.auth.get_client_ip", lambda request: "203.0.113.3")
     monkeypatch.setattr(
@@ -141,7 +141,9 @@ class TestSocialLoginReservationBypass:
         fake_session = _make_google_session("u-google-1", "alice@example.com")
         fake_supabase = MagicMock()
         fake_supabase.auth.sign_in_with_id_token.return_value = fake_session
-        _patch_google_common(monkeypatch, "u-google-1", "alice@example.com", fake_session)
+        _patch_google_common(
+            monkeypatch, "u-google-1", "alice@example.com", fake_session
+        )
 
         # username availability: first call -> reserved, second call -> available
         availability_calls: list[dict] = []
