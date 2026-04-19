@@ -15,12 +15,10 @@ import { Button } from "../components/ui/Button";
 import { Body, Caption, Heading } from "../components/ui/Text";
 import { useTheme } from "../lib/theme-context";
 
-/** Entitlement response shape from GET /v1/entitlement */
+/** Minimal entitlement fields used by onboarding (decorative only). */
 interface EntitlementSnapshot {
   tier: string;
-  trial_analyses_remaining: number;
-  credit_balance: number;
-  can_generate: boolean;
+  remaining_glowups: number;
 }
 
 /** Feature list items shown to new users */
@@ -51,7 +49,7 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
-  const [trialRemaining, setTrialRemaining] = useState<number | null>(null);
+  const [remainingGlowups, setRemainingGlowups] = useState<number | null>(null);
   const [isLoadingEntitlement, setIsLoadingEntitlement] = useState(true);
   const [entitlementError, setEntitlementError] = useState(false);
 
@@ -62,7 +60,7 @@ export default function OnboardingScreen() {
       try {
         const data = await apiFetch<EntitlementSnapshot>("/v1/entitlement");
         if (!cancelled) {
-          setTrialRemaining(data.trial_analyses_remaining);
+          setRemainingGlowups(data.remaining_glowups);
         }
       } catch (err) {
         if (!cancelled) {
@@ -92,8 +90,8 @@ export default function OnboardingScreen() {
     ? "Loading..."
     : entitlementError
       ? "Welcome to NXME"
-      : trialRemaining !== null && trialRemaining > 0
-        ? `You have ${trialRemaining} free ${trialRemaining === 1 ? "analysis" : "analyses"} remaining`
+      : remainingGlowups !== null && remainingGlowups > 0
+        ? `You have ${remainingGlowups} free ${remainingGlowups === 1 ? "glow-up" : "glow-ups"} to try`
         : "Welcome to NXME";
 
   return (
@@ -120,12 +118,12 @@ export default function OnboardingScreen() {
 
         {!isLoadingEntitlement &&
         !entitlementError &&
-        trialRemaining !== null &&
-        trialRemaining > 0 ? (
+        remainingGlowups !== null &&
+        remainingGlowups > 0 ? (
           <View style={styles.trialBadge}>
             <Ionicons name="gift-outline" size={20} color={SUCCESS_DARK} />
             <Body weight="semibold" color={SUCCESS_DARK}>
-              {trialRemaining} free {trialRemaining === 1 ? "trial" : "trials"} included
+              {remainingGlowups} free {remainingGlowups === 1 ? "glow-up" : "glow-ups"} included
             </Body>
           </View>
         ) : null}

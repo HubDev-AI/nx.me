@@ -33,13 +33,13 @@ import {
 import { Body, Caption, Heading } from "../ui/Text";
 import { formatPrice } from "../../lib/format-price";
 import { PREMIUM_BENEFITS } from "../../constants/premium-benefits";
-import type { PremiumOption } from "../../lib/entitlement";
+import type { ProOption } from "../../lib/entitlement";
 
-/** Suffix appended to the Premium price (e.g. "/mo"). Monthly-only for now. */
+/** Suffix appended to the Pro price (e.g. "/mo"). Monthly-only for now. */
 const BILLING_INTERVAL_SUFFIX = "/mo";
 
 interface PremiumCardProps {
-  premium: PremiumOption;
+  premium: ProOption;
   onSubscribe: () => void;
   isLoading: boolean;
   disabled: boolean;
@@ -90,9 +90,9 @@ export function PremiumCard({
           <Heading size="md">Premium</Heading>
         </View>
 
-        {/* Plan name + price */}
+        {/* Price line */}
         <Caption weight="medium" style={styles.priceLine}>
-          {premium.name} · {formatPrice(premium.amount_cents, premium.currency)}
+          {formatPrice(premium.amount_cents, premium.currency)}
           {BILLING_INTERVAL_SUFFIX}
         </Caption>
 

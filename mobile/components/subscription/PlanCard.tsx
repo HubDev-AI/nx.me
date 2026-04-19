@@ -2,8 +2,8 @@
  * PlanCard — current-plan summary on the subscription screen.
  *
  * Shows tier icon, tier name, contextual subtitle, stats row
- * (credits, trial remaining, billing date), trial progress bar
- * for FREE users, and the cancel link for active premium subs.
+ * (remaining glow-ups, billing date), and the cancel link for
+ * active Pro subs.
  *
  * Pure presentational component — purchase + cancel actions are
  * driven by `usePurchaseFlow` in the parent screen.
@@ -25,48 +25,37 @@ type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 interface TierConfig {
   label: string;
   icon: IoniconName;
-  description: (
-    trialRemaining: number,
-    trialLimit: number,
-  ) => string;
+  description: (remainingGlowups: number) => string;
 }
 
-const TIER_FREE = "FREE";
-const TIER_CREDITS = "CREDITS";
-const TIER_PREMIUM = "PREMIUM";
+const TIER_FREE = "Free";
+const TIER_PRO = "Pro";
 
 const SUBSCRIPTION_STATUS_ACTIVE = "active";
-const SUBSCRIPTION_STATUS_CANCELING = "canceling";
+const SUBSCRIPTION_STATUS_GRACE = "grace";
+const SUBSCRIPTION_STATUS_CANCELED = "canceled";
 
-/** Min trial bar width so progress is visible even at 0%. */
-const TRIAL_BAR_MIN_PERCENT = 5;
-const TRIAL_BAR_HEIGHT = 6;
-const TRIAL_BAR_RADIUS = 3;
 const PLAN_ICON_SIZE = 56;
 const PLAN_ICON_GLYPH_SIZE = 28;
 const STAT_NUMBER_FONT_SIZE = 20;
-const TRIAL_LABEL_FONT_SIZE = 12;
-const TRIAL_LABEL_LETTER_SPACING = 0.2;
 const CARD_BORDER_WIDTH = 1.5;
 
 const TIER_CONFIG: Record<string, TierConfig> = {
   [TIER_FREE]: {
     label: "Free",
     icon: "leaf-outline",
-    description: (trialRemaining) =>
-      trialRemaining > 0
-        ? `${trialRemaining} free ${trialRemaining === 1 ? "analysis" : "analyses"} remaining`
-        : "Trial expired -- upgrade to continue",
+    description: (remaining) =>
+      remaining > 0
+        ? `${remaining} free ${remaining === 1 ? "glow-up" : "glow-ups"} remaining`
+        : "No credits — upgrade to continue",
   },
-  [TIER_CREDITS]: {
-    label: "Credits",
-    icon: "diamond-outline",
-    description: () => "Pay-as-you-go with credit packs",
-  },
-  [TIER_PREMIUM]: {
-    label: "Premium",
+  [TIER_PRO]: {
+    label: "Pro",
     icon: "diamond",
-    description: () => "Unlimited analyses & priority processing",
+    description: (remaining) =>
+      remaining > 0
+        ? `${remaining} glow-ups remaining this period`
+        : "No credits — top up to continue",
   },
 };
 
@@ -77,7 +66,7 @@ const DEFAULT_TIER: TierConfig = {
 };
 
 function tierConfig(tier: string): TierConfig {
-  return TIER_CONFIG[tier.toUpperCase()] ?? { ...DEFAULT_TIER, label: tier };
+  return TIER_CONFIG[tier] ?? { ...DEFAULT_TIER, label: tier };
 }
 
 /** Skeleton dimensions tuned to mirror the loaded card. */
@@ -128,29 +117,29 @@ interface PlanCardProps {
 export function PlanCard({ entitlement, isCancelling, onCancel }: PlanCardProps) {
   const { theme } = useTheme();
 
-  const tier = entitlement.tier?.toUpperCase() ?? TIER_FREE;
+  const tier = entitlement.tier;
   const tierMeta = tierConfig(tier);
-  const isPremium = tier === TIER_PREMIUM;
-  const trialRemaining = entitlement.trial_analyses_remaining;
-  const trialLimit = entitlement.trial_analyses_limit;
-  const creditBalance = entitlement.credit_balance;
-  const billingEnd = entitlement.billing_period_end;
+  const isPro = tier === TIER_PRO;
+  const remainingGlowups = entitlement.remaining_glowups;
   const subscriptionStatus = entitlement.subscription_status;
+  const periodEnd = entitlement.period_end;
+  const graceEnd = entitlement.grace_end;
 
-  const subtitle = isPremium
+  const subtitle = isPro
     ? subscriptionStatus === SUBSCRIPTION_STATUS_ACTIVE
       ? "Active subscription"
-      : subscriptionStatus === SUBSCRIPTION_STATUS_CANCELING
-        ? "Cancels at period end"
-        : "Active"
-    : tierMeta.description(trialRemaining, trialLimit);
+      : subscriptionStatus === SUBSCRIPTION_STATUS_GRACE
+        ? "Payment issue — update card to stay Pro"
+        : subscriptionStatus === SUBSCRIPTION_STATUS_CANCELED
+          ? "Cancels at period end"
+          : "Active"
+    : tierMeta.description(remainingGlowups);
 
-  const trialUsed = Math.max(0, trialLimit - trialRemaining);
-  const trialPercent =
-    trialLimit > 0 ? (trialUsed / trialLimit) * 100 : 0;
-  const trialBarPercent =
-    trialPercent > 0 ? Math.max(TRIAL_BAR_MIN_PERCENT, trialPercent) : 0;
-  const trialBarWidth = `${trialBarPercent}%` as const;
+  // Show grace_end when in grace, period_end otherwise for Pro
+  const billingDateLabel =
+    subscriptionStatus === SUBSCRIPTION_STATUS_GRACE && graceEnd != null
+      ? graceEnd
+      : periodEnd;
 
   return (
     <View
@@ -184,68 +173,33 @@ export function PlanCard({ entitlement, isCancelling, onCancel }: PlanCardProps)
 
       {/* Stats row */}
       <View style={styles.statsRow}>
-        {!isPremium && (
+        <View style={styles.statBox}>
+          <Text style={[styles.statNumber, { color: theme.accent }]}>
+            {remainingGlowups}
+          </Text>
+          <Caption>Glow-Ups</Caption>
+        </View>
+        {billingDateLabel && (
           <View style={styles.statBox}>
             <Text style={[styles.statNumber, { color: theme.accent }]}>
-              {creditBalance}
-            </Text>
-            <Caption>Credits</Caption>
-          </View>
-        )}
-        {tier === TIER_FREE && (
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: theme.accent }]}>
-              {trialRemaining}
-            </Text>
-            <Caption>Trial Left</Caption>
-          </View>
-        )}
-        {isPremium && (
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: theme.accent }]}>
-              Unlimited
-            </Text>
-            <Caption>Generations</Caption>
-          </View>
-        )}
-        {billingEnd && (
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, { color: theme.accent }]}>
-              {new Date(billingEnd).toLocaleDateString(undefined, {
+              {new Date(billingDateLabel).toLocaleDateString(undefined, {
                 month: "short",
                 day: "numeric",
               })}
             </Text>
             <Caption>
-              {subscriptionStatus === SUBSCRIPTION_STATUS_CANCELING
-                ? "Expires"
-                : "Renews"}
+              {subscriptionStatus === SUBSCRIPTION_STATUS_GRACE
+                ? "Grace ends"
+                : subscriptionStatus === SUBSCRIPTION_STATUS_CANCELED
+                  ? "Expires"
+                  : "Renews"}
             </Caption>
           </View>
         )}
       </View>
 
-      {/* Trial timeline for free users */}
-      {tier === TIER_FREE && trialLimit > 0 && (
-        <View style={styles.trialTimeline}>
-          <View style={styles.trialBarBg}>
-            <View
-              style={[
-                styles.trialBarFill,
-                { backgroundColor: theme.accent, width: trialBarWidth },
-              ]}
-            />
-          </View>
-          <Caption color="muted" style={styles.trialBarLabel}>
-            {trialRemaining > 0
-              ? `${trialUsed} of ${trialLimit} trial analyses used`
-              : "Trial complete -- upgrade below"}
-          </Caption>
-        </View>
-      )}
-
-      {/* Cancel for premium users */}
-      {isPremium && subscriptionStatus === SUBSCRIPTION_STATUS_ACTIVE && (
+      {/* Cancel for active Pro users */}
+      {isPro && subscriptionStatus === SUBSCRIPTION_STATUS_ACTIVE && (
         <PressableScale
           onPress={onCancel}
           disabled={isCancelling}
@@ -314,24 +268,6 @@ const styles = StyleSheet.create({
     fontSize: STAT_NUMBER_FONT_SIZE,
     letterSpacing: 0,
     fontVariant: ["tabular-nums"],
-  },
-  trialTimeline: {
-    marginTop: THEME.spacing.lg,
-    gap: THEME.spacing.sm,
-  },
-  trialBarBg: {
-    height: TRIAL_BAR_HEIGHT,
-    borderRadius: TRIAL_BAR_RADIUS,
-    backgroundColor: THEME.colors.surface,
-    overflow: "hidden",
-  },
-  trialBarFill: {
-    height: "100%",
-    borderRadius: TRIAL_BAR_RADIUS,
-  },
-  trialBarLabel: {
-    fontSize: TRIAL_LABEL_FONT_SIZE,
-    letterSpacing: TRIAL_LABEL_LETTER_SPACING,
   },
   cancelLink: {
     alignSelf: "center",

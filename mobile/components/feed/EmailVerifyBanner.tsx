@@ -41,10 +41,10 @@ export function EmailVerifyBanner() {
         const pending = await getItem(SECURE_STORE_KEYS.PENDING_EMAIL_VERIFICATION);
         if (!pending || cancelled) return;
 
-        // Double-check: if entitlement shows trials > 0, user has verified
+        // Double-check: if entitlement shows glow-ups remaining, user has verified
         try {
           const ent = await fetchEntitlement();
-          if (ent.trial_analyses_remaining > 0) {
+          if (ent.remaining_glowups > 0) {
             // Already verified -- clear the flag
             await deleteItem(SECURE_STORE_KEYS.PENDING_EMAIL_VERIFICATION);
             return;

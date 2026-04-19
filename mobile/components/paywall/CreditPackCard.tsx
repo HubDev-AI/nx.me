@@ -22,11 +22,11 @@ import {
 } from "../../constants/config";
 import { Body, Caption } from "../ui/Text";
 import { formatPrice } from "../../lib/format-price";
-import type { CreditPackOption } from "../../lib/entitlement";
+import type { PackOption } from "../../lib/entitlement";
 
 interface CreditPackCardProps {
-  pack: CreditPackOption;
-  onPurchase: (pack: CreditPackOption) => void;
+  pack: PackOption;
+  onPurchase: (pack: PackOption) => void;
   isLoading: boolean;
   disabled: boolean;
 }
@@ -77,7 +77,7 @@ export function CreditPackCard({
         onPressOut={handlePressOut}
         disabled={isDisabled}
         style={styles.container}
-        accessibilityLabel={`Purchase ${pack.credits} credits for ${formattedPrice}`}
+        accessibilityLabel={`Purchase ${pack.credits_milli / 1000} credits for ${formattedPrice}`}
         accessibilityRole="button"
         accessibilityState={{ disabled: isDisabled, busy: isLoading }}
       >
@@ -88,7 +88,7 @@ export function CreditPackCard({
             color={THEME.colors.creditAccent}
           />
           {/* Numeric count — keeps tabular-nums + custom bold face. */}
-          <Text style={styles.creditCount}>{pack.credits}</Text>
+          <Text style={styles.creditCount}>{pack.credits_milli / 1000}</Text>
           <Caption weight="medium">credits</Caption>
           <Caption style={styles.priceSeparator}>·</Caption>
           <Caption weight="medium" style={styles.price}>
