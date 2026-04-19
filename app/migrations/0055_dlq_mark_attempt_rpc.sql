@@ -23,7 +23,3 @@ END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.dlq_mark_attempt(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
-
-INSERT INTO _schema_migrations (migration_id, applied_at)
-    VALUES ('0055_dlq_mark_attempt_rpc', now())
-    ON CONFLICT (migration_id) DO NOTHING;

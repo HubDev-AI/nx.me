@@ -31,7 +31,3 @@ DROP TABLE IF EXISTS tiers CASCADE;
 ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_status_check;
 ALTER TABLE subscriptions ADD CONSTRAINT subscriptions_status_check
     CHECK (status IN ('active', 'cancelled', 'incomplete', 'trialing'));
-
-INSERT INTO _schema_migrations (migration_id, applied_at)
-    VALUES ('0054_drop_legacy_payments', now())
-    ON CONFLICT (migration_id) DO NOTHING;

@@ -13,6 +13,3 @@ CREATE INDEX IF NOT EXISTS idx_stripe_customer_dlq_drain ON stripe_customer_dlq 
 ALTER TABLE stripe_customer_dlq ENABLE ROW LEVEL SECURITY;
 CREATE POLICY stripe_customer_dlq_deny_all ON stripe_customer_dlq
     FOR ALL TO anon, authenticated USING (false) WITH CHECK (false);
-
-INSERT INTO _schema_migrations (migration_id, applied_at) VALUES ('0053_stripe_customer_dlq', now())
-    ON CONFLICT (migration_id) DO NOTHING;

@@ -4,7 +4,6 @@ Usage:
     python -m app.migrations.run                          # apply all unapplied migrations
     python -m app.migrations.run --target 0001_initial    # apply up to and including target
     python -m app.migrations.run --down --target 0001_initial  # revert down to and including target
-    python -m app.migrations.run --validate-tiers         # verify seeded tiers match SEED_TIERS
 """
 
 from __future__ import annotations
@@ -17,8 +16,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import psycopg2
-
-from app.config.tiers import SEED_TIERS
 
 
 MIGRATIONS_DIR = Path(__file__).parent
@@ -149,50 +146,6 @@ def _revert_migration(conn, migration_id: str, path: Path) -> None:
         raise
 
 
-def _validate_tiers(conn) -> None:
-    """Verify that the tiers table contains exactly the rows defined in SEED_TIERS.
-
-    Uses SEED_TIERS as the authoritative Python source of truth and compares
-    slugs, fixed UUIDs, and the is_default flag against the live database.
-    Exits non-zero if any mismatch is detected.
-    """
-    with conn.cursor() as cur:
-        cur.execute("SELECT id, slug, is_default FROM tiers ORDER BY slug")
-        rows = {row[1]: {"id": row[0], "is_default": row[2]} for row in cur.fetchall()}
-
-    expected_slugs = {t.slug for t in SEED_TIERS}
-    actual_slugs = set(rows)
-    if expected_slugs != actual_slugs:
-        missing = expected_slugs - actual_slugs
-        extra = actual_slugs - expected_slugs
-        print("Error: tiers mismatch", file=sys.stderr)
-        if missing:
-            print(f"  Missing slugs: {sorted(missing)}", file=sys.stderr)
-        if extra:
-            print(f"  Unexpected slugs: {sorted(extra)}", file=sys.stderr)
-        sys.exit(1)
-
-    errors: list[str] = []
-    for tier in SEED_TIERS:
-        row = rows[tier.slug]
-        if str(row["id"]) != tier.id:
-            errors.append(
-                f"  {tier.slug}: id mismatch (db={row['id']}, expected={tier.id})"
-            )
-        if row["is_default"] != tier.is_default:
-            errors.append(
-                f"  {tier.slug}: is_default mismatch (db={row['is_default']}, expected={tier.is_default})"
-            )
-
-    if errors:
-        print("Error: tier data mismatch:", file=sys.stderr)
-        for e in errors:
-            print(e, file=sys.stderr)
-        sys.exit(1)
-
-    print(f"Tiers OK — {len(SEED_TIERS)} tiers validated against SEED_TIERS")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run database migrations")
     parser.add_argument(
@@ -203,11 +156,6 @@ def main() -> None:
         "--down",
         action="store_true",
         help="Revert migrations down to and including the target",
-    )
-    parser.add_argument(
-        "--validate-tiers",
-        action="store_true",
-        help="Verify seeded tiers match SEED_TIERS definition (post-migration check)",
     )
     args = parser.parse_args()
 
@@ -220,10 +168,6 @@ def main() -> None:
     conn = psycopg2.connect(dsn)
 
     try:
-        if args.validate_tiers:
-            _validate_tiers(conn)
-            return
-
         _ensure_schema_migrations(conn)
         migrations = _discover_migrations()
         applied = _get_applied(conn)
