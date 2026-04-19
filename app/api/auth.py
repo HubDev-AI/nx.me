@@ -371,6 +371,10 @@ async def register(
             guest_merge_repo,
         )
 
+    # --- Signup grant (Unit 9) -------------------------------------------
+    # Fire after merge so the 2x-cap accounting in the RPC is correct.
+    await _apply_signup_grant(supabase, user_id, x_install_uuid)
+
     # --- Auto-login: sign in to get session tokens -----------------------
     # IMPORTANT: use a SEPARATE Supabase client for sign_in_with_password.
     # sign_in_with_password mutates the client's internal auth session,
@@ -642,6 +646,61 @@ async def _merge_guest_ledger(
         ) from exc
 
 
+async def _apply_signup_grant(
+    supabase: Client,
+    user_id: str,
+    x_install_uuid: str | None,
+) -> None:
+    """Invoke the ``credit_apply_signup_grant`` RPC after account creation.
+
+    Web signups (no ``X-Install-UUID`` header) pass all-NULL hash/salt args;
+    the RPC grants unconditionally and writes no fingerprint row. Mobile
+    signups supply all three fingerprint args; the RPC deduplicates via the
+    ``signup_grants_issued`` table.
+
+    Non-fatal: errors are logged but never bubble to the caller — the user
+    account is already created and the session tokens already returned by the
+    time this runs. A failed grant is visible in the credit_ledger audit trail
+    (or its absence) and can be replayed by ops if needed.
+    """
+    from app.entitlement.fingerprint import (
+        compute_deterministic_hash,
+        compute_protected_hash,
+        generate_salt,
+        get_primary_secret,
+    )
+
+    deterministic_hash: bytes | None = None
+    protected_hash: bytes | None = None
+    salt: bytes | None = None
+
+    if x_install_uuid is not None:
+        server_secret = get_primary_secret()
+        deterministic_hash = compute_deterministic_hash(x_install_uuid, server_secret)
+        salt = generate_salt()
+        protected_hash = compute_protected_hash(x_install_uuid, salt)
+
+    try:
+        await run_sync(
+            supabase.rpc(
+                "credit_apply_signup_grant",
+                {
+                    "p_user_id": user_id,
+                    "p_deterministic_hash": deterministic_hash,
+                    "p_protected_hash": protected_hash,
+                    "p_salt": salt,
+                    "p_signup_grant_milli": settings.SIGNUP_GRANT_MILLI,
+                },
+            ).execute
+        )
+    except Exception:
+        logger.exception(
+            "credit_apply_signup_grant RPC failed for user %s (install_uuid present=%s)",
+            user_id,
+            x_install_uuid is not None,
+        )
+
+
 # ===========================================================================
 # Story 2-2 — Social Login, Logout & Account Deletion
 # ===========================================================================
@@ -878,6 +937,9 @@ async def social_login(
             supabase,
             guest_merge_repo,
         )
+
+    # --- Signup grant (Unit 9) -------------------------------------------
+    await _apply_signup_grant(supabase, user_id, x_install_uuid)
 
     username = await _resolve_login_username(user_repo, user_id, fallback=auto_username)
 
@@ -1127,6 +1189,9 @@ async def tiktok_login(
                 guest_merge_repo,
             )
 
+        # --- Signup grant (Unit 9) — idempotent; RPC deduplicates --------
+        await _apply_signup_grant(supabase, existing_user["id"], x_install_uuid)
+
         logger.info("TikTok login successful for existing user %s", existing_user["id"])
         existing_username = await _resolve_login_username(
             user_repo,
@@ -1287,6 +1352,9 @@ async def tiktok_login(
             supabase,
             guest_merge_repo,
         )
+
+    # --- Signup grant (Unit 9) -------------------------------------------
+    await _apply_signup_grant(supabase, user_id, x_install_uuid)
 
     # Sign in to get session tokens
     login_client = get_supabase_service()

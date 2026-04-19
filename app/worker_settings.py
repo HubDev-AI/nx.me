@@ -28,9 +28,20 @@ from app.advisor.nudge_scheduler import (
 from app.repositories.image_repo import ImageRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.workers.delete_account_blobs import wipe_deleted_user_blobs
+from app.workers.fingerprint_purge import (
+    FINGERPRINT_PURGE_CRON_HOUR,
+    FINGERPRINT_PURGE_CRON_MINUTE,
+    run_fingerprint_purge,
+)
 from app.workers.orphan_analysis_reclaim import reclaim_orphaned_analyses
 from app.workers.orphan_reclaim import reclaim_orphaned_blobs
 from app.workers.retention import run_retention
+from app.workers.weekly_free_grant import (
+    WEEKLY_FREE_GRANT_CRON_HOUR,
+    WEEKLY_FREE_GRANT_CRON_MINUTE,
+    WEEKLY_FREE_GRANT_CRON_WEEKDAY,
+    run_weekly_free_grant,
+)
 
 configure_logging()
 
@@ -126,6 +137,8 @@ class WorkerSettings:
         write_analysis_insight_job,
         reconcile_reaction_counts,
         wipe_deleted_user_blobs,
+        run_weekly_free_grant,
+        run_fingerprint_purge,
     ]
 
     on_startup = startup
@@ -140,6 +153,19 @@ class WorkerSettings:
         cron(run_retention, hour=3, minute=30),  # Nightly at 03:30 UTC
         cron(reclaim_orphaned_blobs, hour=3, minute=45),  # Nightly at 03:45 UTC
         cron(reclaim_orphaned_analyses, hour=4, minute=0),  # Nightly at 04:00 UTC
+        # Unit 9: weekly free grant — Monday 02:30 UTC (unused slot)
+        cron(
+            run_weekly_free_grant,
+            weekday=WEEKLY_FREE_GRANT_CRON_WEEKDAY,
+            hour=WEEKLY_FREE_GRANT_CRON_HOUR,
+            minute=WEEKLY_FREE_GRANT_CRON_MINUTE,
+        ),
+        # Unit 9: fingerprint purge — daily 03:15 UTC (unused slot)
+        cron(
+            run_fingerprint_purge,
+            hour=FINGERPRINT_PURGE_CRON_HOUR,
+            minute=FINGERPRINT_PURGE_CRON_MINUTE,
+        ),
     ]
 
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
