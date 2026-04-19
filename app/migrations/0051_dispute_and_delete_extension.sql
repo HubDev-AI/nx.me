@@ -102,17 +102,18 @@ BEGIN
     );
   END IF;
 
-  -- Out-of-order arrival: the persisted event is at least as new as the
+  -- Out-of-order arrival: the persisted event is strictly newer than the
   -- incoming one. Reject so the webhook handler returns HTTP 5xx and lets
   -- Stripe retry delivery. CAS on the timestamp guarantees terminal
   -- consistency: whichever event Stripe successfully delivers with the
-  -- strictly-newer `p_event_at` wins. Using `>=` (not `>`) so that tied
-  -- timestamps with DIFFERENT event_ids deterministically reject the
-  -- second arrival — the duplicate-event_id branch above already handles
-  -- Stripe redeliveries of the same event, so this branch only fires when
-  -- the id is different, and a true tie there is ambiguous ordering that
-  -- must be resolved by a retry.
-  IF v_current_event_at IS NOT NULL AND v_current_event_at >= p_event_at THEN
+  -- newest `p_event_at` wins. Using strict `>` (not `>=`) so that tied
+  -- timestamps with DIFFERENT event_ids are accepted as last-write-wins.
+  -- The duplicate-event_id branch above already catches Stripe retries of
+  -- the same event, so this branch only fires when the id differs. Tied
+  -- timestamps on distinct events are real (Stripe can emit `created` +
+  -- `closed_won` at the same millisecond in rare cases); accepting both
+  -- is safe because closed transitions are idempotent semantically.
+  IF v_current_event_at IS NOT NULL AND v_current_event_at > p_event_at THEN
     RETURN jsonb_build_object(
       'applied',    false,
       'reason',     'out_of_order',

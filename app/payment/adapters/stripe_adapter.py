@@ -12,6 +12,8 @@ import functools
 import logging
 from typing import TYPE_CHECKING
 
+from postgrest.exceptions import APIError as PostgrestAPIError
+
 from app.config import settings
 from app.db.async_helpers import run_sync
 from app.payment.ports import (
@@ -21,6 +23,13 @@ from app.payment.ports import (
     SubscriptionSnapshot,
     WebhookEvent,
 )
+
+# Supabase/PostgREST exceptions that the customer-id cache helpers treat as
+# recoverable: the cache is advisory, not the source of truth. Stripe remains
+# canonical — losing a cache read/write just means the next call re-does the
+# search-or-create round trip. Scoped narrowly so genuine bugs (TypeError,
+# AttributeError on malformed rows, etc.) still surface.
+_CUSTOMER_ID_CACHE_RECOVERABLE = (PostgrestAPIError, ConnectionError, TimeoutError)
 
 if TYPE_CHECKING:
     from supabase import Client
@@ -269,7 +278,7 @@ class StripePaymentAdapter:
                     .execute()
                 )
             )
-        except Exception as exc:
+        except _CUSTOMER_ID_CACHE_RECOVERABLE as exc:
             logger.warning(
                 "Failed to read users.stripe_customer_id for %s: %s", user_id, exc
             )
@@ -299,7 +308,7 @@ class StripePaymentAdapter:
                     .execute()
                 )
             )
-        except Exception as exc:
+        except _CUSTOMER_ID_CACHE_RECOVERABLE as exc:
             logger.warning(
                 "Failed to write users.stripe_customer_id for %s: %s", user_id, exc
             )

@@ -62,6 +62,17 @@ REGISTRATION_IP_LIMIT=100
 
 # ── Account deletion — hard-delete + username reservation ────────────────────
 USERNAME_RESERVATION_DAYS=180
+
+# ── Signup fingerprinting + credit grants (R6a / R6) ─────────────────────────
+# Server-side HMAC key for hashing the mobile installation UUID into
+# `signup_grants_issued.deterministic_hash`. MUST be 256-bit (32-byte) random.
+# This is a dev-only placeholder; generate a real value for non-dev via:
+#   python3 -c "import secrets; print(secrets.token_hex(32))"
+SIGNUP_FINGERPRINT_SERVER_SECRET=local-dev-signup-fingerprint-secret-change-in-production
+# Signup credit grant (milli-credits); 300 milli = 3 glow-ups at 100/glow-up.
+SIGNUP_GRANT_MILLI=300
+# Weekly free grant for authenticated Free-tier users; 100 milli = 1 glow-up.
+WEEKLY_FREE_GRANT_MILLI=100
 EOF
 
 echo ".env generated with local Supabase defaults."

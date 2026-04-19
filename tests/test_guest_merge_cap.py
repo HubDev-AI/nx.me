@@ -133,13 +133,17 @@ class _MergeFake:
 
         self.insert_ledger(new_user_id, transfer_non_pack, "guest_merge_non_pack")
 
-        pack_ref = uuid.uuid5(_NS_URL, f"guest_merge:{guest_user_id}")
-        self.insert_ledger(
-            new_user_id,
-            pack,
-            "credit_pack_purchase",
-            reference_id=pack_ref,
-        )
+        # Skip the pack insert on a zero-pack merge: the uuid5
+        # `guest_merge:<guest_id>` reference_id is one-shot per guest, and
+        # a zero-delta row would burn it for no accounting benefit.
+        if pack > 0:
+            pack_ref = uuid.uuid5(_NS_URL, f"guest_merge:{guest_user_id}")
+            self.insert_ledger(
+                new_user_id,
+                pack,
+                "credit_pack_purchase",
+                reference_id=pack_ref,
+            )
 
         if truncated > 0:
             self.insert_ledger(
@@ -282,7 +286,13 @@ class TestGuestMergeCap(unittest.TestCase):
         self.assertEqual(result["truncated_milli"], 400)
 
     def test_zero_balance_guest_marked_merged(self) -> None:
-        """Guest with 0 balance still has its merged_at stamped."""
+        """Guest with 0 balance still has its merged_at stamped.
+
+        The zero-pack guard skips the `credit_pack_purchase` INSERT so the
+        uuid5 `guest_merge:<guest_id>` reference_id isn't burned on a
+        no-op merge. The non-pack `guest_merge_non_pack` audit row is
+        still written (delta=0) to stamp the merge in the ledger.
+        """
         result = self.db.merge_guest_ledger_v2(
             self.guest_id,
             self.new_user_id,
@@ -297,6 +307,16 @@ class TestGuestMergeCap(unittest.TestCase):
         self.assertEqual(
             self.db.users[self.guest_id]["merged_into_user_id"], self.new_user_id
         )
+
+        # Zero-pack guard: no `credit_pack_purchase` row written on the
+        # new user. This keeps the uuid5 reference_id available should
+        # the user later purchase a pack through normal webhook flow.
+        pack_rows = [
+            r
+            for r in self.db.rows_for(self.new_user_id)
+            if r["type"] == "credit_pack_purchase"
+        ]
+        self.assertEqual(pack_rows, [])
 
     def test_pack_reference_id_is_deterministic(self) -> None:
         """pack reference_id = uuid5(NS_URL, 'guest_merge:<guest_user_id>')"""

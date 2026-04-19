@@ -149,10 +149,15 @@ def _backfill(dry_run: bool) -> tuple[int, int, int, int]:
             )
             continue
 
+        # Guard against a concurrent live-server write (the Stripe adapter
+        # lazy-populates this same column via `_write_cached_customer_id`).
+        # `.is_('stripe_customer_id', 'null')` adds `WHERE stripe_customer_id
+        # IS NULL` so we only fill empty rows, never stomp a live write.
         (
             sb.table(_USERS_TABLE)
             .update({_STRIPE_CUSTOMER_ID_KEY: customer_id})
             .eq(_USER_ID_KEY, user_id)
+            .is_(_STRIPE_CUSTOMER_ID_KEY, "null")
             .execute()
         )
         updated += 1

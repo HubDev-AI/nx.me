@@ -323,18 +323,14 @@ BEGIN
 
     -- Non-pack balance excludes pack credits AND reserve/commit markers
     -- (mirror of monthly_allotment logic: defensive even though a guest
-    -- shouldn't have in-flight reservations at merge time).
-    SELECT COALESCE(SUM(delta), 0)
-      INTO v_non_pack_balance
+    -- shouldn't have in-flight reservations at merge time). Combined into
+    -- a single scan via conditional SUMs to halve the lock hold time.
+    SELECT
+        COALESCE(SUM(CASE WHEN type = 'credit_pack_purchase' THEN delta ELSE 0 END), 0),
+        COALESCE(SUM(CASE WHEN type NOT IN ('credit_pack_purchase', 'reserve', 'commit') THEN delta ELSE 0 END), 0)
+      INTO v_pack_balance, v_non_pack_balance
       FROM credit_ledger
-     WHERE user_id = p_guest_user_id
-       AND type NOT IN ('credit_pack_purchase', 'reserve', 'commit');
-
-    SELECT COALESCE(SUM(delta), 0)
-      INTO v_pack_balance
-      FROM credit_ledger
-     WHERE user_id = p_guest_user_id
-       AND type = 'credit_pack_purchase';
+     WHERE user_id = p_guest_user_id;
 
     v_transfer_non_pack := LEAST(v_non_pack_balance, 2 * p_signup_grant_milli);
     v_truncated         := v_non_pack_balance - v_transfer_non_pack;
@@ -342,18 +338,23 @@ BEGIN
     INSERT INTO credit_ledger (user_id, delta, type)
     VALUES (p_new_user_id, v_transfer_non_pack, 'guest_merge_non_pack');
 
-    v_pack_ref := extensions.uuid_generate_v5(
-        extensions.uuid_ns_url(),
-        'guest_merge:' || p_guest_user_id::text
-    );
+    -- Skip the pack INSERT on a zero-pack merge: the uuid5
+    -- `guest_merge:<guest_id>` reference_id is one-shot per guest, and a
+    -- zero-delta row would burn it for no accounting benefit.
+    IF v_pack_balance > 0 THEN
+        v_pack_ref := extensions.uuid_generate_v5(
+            extensions.uuid_ns_url(),
+            'guest_merge:' || p_guest_user_id::text
+        );
 
-    INSERT INTO credit_ledger (user_id, delta, type, reference_id)
-    VALUES (
-        p_new_user_id,
-        v_pack_balance,
-        'credit_pack_purchase',
-        v_pack_ref
-    );
+        INSERT INTO credit_ledger (user_id, delta, type, reference_id)
+        VALUES (
+            p_new_user_id,
+            v_pack_balance,
+            'credit_pack_purchase',
+            v_pack_ref
+        );
+    END IF;
 
     IF v_truncated > 0 THEN
         INSERT INTO credit_ledger (user_id, delta, type, metadata)

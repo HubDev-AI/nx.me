@@ -42,11 +42,12 @@ class PlanVersionRepository:
     def __init__(self, supabase: Client) -> None:
         self._sb = supabase
         # Instance-level cache: avoids a per-request round trip to resolve
-        # the Free-default id, without leaking across the process lifetime.
-        # ``plan_versions`` rows are immutable once seeded, so caching the
-        # id is safe. We never cache the full row — seed-time edits to
-        # cost columns would poison the cache for the process.
+        # the Free-default id and row. ``plan_versions`` rows are immutable
+        # once seeded (R12), so caching the full row is safe within a single
+        # request-scoped repo instance. The cache never leaks across the
+        # process lifetime because a fresh repo is built per request.
         self._default_free_id: UUID | None = None
+        self._default_free_row: dict | None = None
 
     # ------------------------------------------------------------------
     # Reads
@@ -78,6 +79,19 @@ class PlanVersionRepository:
         """
         if self._default_free_id is not None:
             return self._default_free_id
+        self._load_default_free_row()
+        assert self._default_free_id is not None  # set by _load_default_free_row
+        return self._default_free_id
+
+    def _load_default_free_row(self) -> dict:
+        """Populate the Free-default cache (id + row) from a single query.
+
+        Shared by ``get_default_free_id`` and ``get_active_version_for_user``
+        so both the id-only and full-row consumers hit the same cached
+        fetch. Raises ``RuntimeError`` if the seed is missing.
+        """
+        if self._default_free_row is not None:
+            return self._default_free_row
         row = self.get_by_version_num(FREE_DEFAULT_VERSION_NUM)
         if not row:
             raise RuntimeError(
@@ -85,7 +99,8 @@ class PlanVersionRepository:
                 "migration 0048 did not seed correctly."
             )
         self._default_free_id = UUID(row["id"])
-        return self._default_free_id
+        self._default_free_row = row
+        return row
 
     def get_active_version_for_user(self, user_id: UUID) -> dict:
         """Return the plan_version row the user is currently billed against.
@@ -132,11 +147,7 @@ class PlanVersionRepository:
                 "resolve to a plan_versions row (DB corruption or orphan)."
             )
 
-        # No active subscription → Free default.
-        free_row = self.get_by_version_num(FREE_DEFAULT_VERSION_NUM)
-        if not free_row:
-            raise RuntimeError(
-                f"plan_versions seed row '{FREE_DEFAULT_VERSION_NUM}' is missing; "
-                "migration 0048 did not seed correctly."
-            )
-        return free_row
+        # No active subscription → Free default. Route through the cache
+        # so repeated free-user resolutions on the same repo instance hit
+        # `plan_versions` at most once.
+        return self._load_default_free_row()

@@ -502,13 +502,17 @@ class TestApplyDisputeEventOutOfOrder:
         assert row["dispute_last_event_id"] == "evt_lost"
         assert row["dispute_last_status"] == _STATUS_CLOSED_LOST
 
-    def test_tied_timestamps_different_event_ids_cas_rejects_one(self, db_conn) -> None:
+    def test_tied_timestamps_different_event_ids_cas_accepts_second(
+        self, db_conn
+    ) -> None:
         """Two events with IDENTICAL event_at (same microsecond, different
-        event_ids). The CAS uses `>=` (not strict `>`) precisely so that
-        tied timestamps on distinct events deterministically reject the
-        second arrival as out_of_order — the duplicate-event_id branch
-        already handles Stripe redeliveries, so a true tie with a
-        different id is ambiguous ordering that must be retried by Stripe.
+        event_ids). The CAS uses strict `>` so that tied timestamps on
+        distinct events are accepted as last-write-wins — the
+        duplicate-event_id branch already handles Stripe redeliveries, so
+        this branch only fires for truly distinct events. Stripe can emit
+        `created` + `closed_won` at the same millisecond in rare cases;
+        accepting both is safe because closed transitions are idempotent
+        semantically.
         """
         cur = db_conn.cursor()
         user_id = _insert_user(cur)
@@ -535,15 +539,14 @@ class TestApplyDisputeEventOutOfOrder:
             event_at=t_tied,
             new_status=_STATUS_CLOSED_WON,
         )
-        assert second["applied"] is False
-        assert second["reason"] == "out_of_order"
+        assert second["applied"] is True
 
-        # Terminal state pinned to the first arrival; Stripe will retry
-        # the rejected side with (presumably) clearer ordering.
+        # Terminal state pinned to the second arrival (last-write-wins on
+        # tied timestamps with distinct event_ids).
         row = _read_user(cur, user_id)
-        assert row["dispute_last_event_id"] == "evt_a"
-        assert row["dispute_last_status"] == _STATUS_CREATED
-        assert row["locked_at"] is not None
+        assert row["dispute_last_event_id"] == "evt_b"
+        assert row["dispute_last_status"] == _STATUS_CLOSED_WON
+        assert row["locked_at"] is None
 
 
 # ---------------------------------------------------------------------------
