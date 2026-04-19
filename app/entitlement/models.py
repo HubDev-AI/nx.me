@@ -4,6 +4,8 @@ New shape:
   EntitlementState carries tier (marketing label), remaining_glowups,
   approx_remaining_ada, subscription_status, period_end, grace_end,
   blocked_reason, plan_version_id, and purchase_options.
+
+R2: TierRecord and TierRepository removed; tiers table dropped in migration 0054.
 """
 
 from __future__ import annotations
@@ -110,31 +112,3 @@ class EntitlementState:
 ACCOUNT_CONCURRENT_LIMIT = "ACCOUNT_CONCURRENT_LIMIT"
 INSUFFICIENT_CREDITS = "INSUFFICIENT_CREDITS"
 ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
-
-
-# ---------------------------------------------------------------------------
-# Legacy: TierRecord — kept until R2 drops auth.py default-tier path
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class TierRecord:
-    """Tier row from legacy `tiers` table. Deleted in R2 alongside the table."""
-
-    id: UUID
-    slug: str
-    display_name: str
-    is_default: bool
-    is_active: bool
-    generation_type: str
-    generation_limit: int | None
-    generation_period_seconds: int | None
-    advisor_nudges_type: str
-    advisor_nudges_limit: int | None
-    advisor_nudges_period_seconds: int | None
-    max_concurrent_generations: int
-    identity_similarity_threshold: float
-    feature_advisor_chat: bool
-    feature_visual_comparison: bool
-    stripe_price_id: str | None
-    credits_based: bool

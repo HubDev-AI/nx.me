@@ -129,17 +129,6 @@ class UserRepository:
             return None
         return result.data
 
-    def get_trial_analyses_remaining(self, user_id: str) -> int:
-        """Return trial_analyses_remaining for the given user (0 if not found)."""
-        result = (
-            self._sb.table("users")
-            .select("trial_analyses_remaining")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-        return result.data["trial_analyses_remaining"] if result.data else 0
-
     def get_user_post_stats(self, user_id: str) -> dict:
         """Call the user_post_stats RPC to get post_count and total_reactions.
 

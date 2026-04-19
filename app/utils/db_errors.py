@@ -2,7 +2,7 @@
 
 Centralises the unique-violation detection that was previously
 reimplemented at three call sites (``app/api/posts.py``,
-``app/advisor/memory_manager.py``, ``app/entitlement/trial_grantor.py``).
+``app/advisor/memory_manager.py``, and the legacy trial_grantor module).
 Keeping one source of truth removes drift risk when the Supabase/psycopg
 client surface rotates between wrapper versions.
 

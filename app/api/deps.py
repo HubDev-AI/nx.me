@@ -25,7 +25,6 @@ if TYPE_CHECKING:
     from app.advisor.llm_port import LLMPort
     from app.entitlement.ledger import CreditLedger
     from app.entitlement.service import EntitlementService
-    from app.entitlement.tier_repo import TierRepository
     from app.payment.ports import PaymentPort
     from app.repositories.advisor_repo import AdvisorRepository
     from app.repositories.block_repo import BlockRepository
@@ -348,18 +347,6 @@ def get_advisor_repo(request: Request) -> "AdvisorRepository":
     from app.repositories.advisor_repo import AdvisorRepository
 
     return AdvisorRepository(request.app.state.supabase)
-
-
-def get_tier_repo(request: Request) -> "TierRepository":
-    """Return a TierRepository wired to the app's Supabase + Redis clients.
-
-    Used by auth routes for default-tier lookup during user creation.
-    EntitlementService no longer uses TierRepository — this dep exists
-    solely for the auth signup flow until Units 9/10/11 refactor auth.
-    """
-    from app.entitlement.tier_repo import TierRepository
-
-    return TierRepository(request.app.state.supabase, request.app.state.redis)
 
 
 def get_entitlement_service(

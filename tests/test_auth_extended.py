@@ -228,9 +228,6 @@ class TestAuthSessionIsolation:
         user_repo.check_username_availability.return_value = {"available": True}
         user_repo.upsert.return_value = None
         user_repo.get_profile_by_id.return_value = {"username": "alice"}
-        tier_repo = SimpleNamespace(
-            get_default=AsyncMock(return_value=SimpleNamespace(id="tier-1"))
-        )
 
         result = await social_login(
             request=MagicMock(),
@@ -238,7 +235,6 @@ class TestAuthSessionIsolation:
             supabase=shared_supabase,
             r=MockRedis(),
             user_repo=user_repo,
-            tier_repo=tier_repo,
         )
 
         assert result.username == "alice"

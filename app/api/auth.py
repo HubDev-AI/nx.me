@@ -46,7 +46,6 @@ from app.api.deps import (
     get_redis,
     get_stripe_customer_dlq_repo,
     get_supabase,
-    get_tier_repo,
     get_user_repo,
 )
 from app.entitlement.ledger import CreditLedger
@@ -230,7 +229,6 @@ async def register(
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
-    tier_repo=Depends(get_tier_repo),
     guest_merge_repo: GuestMergeRepository = Depends(get_guest_merge_repo),
 ) -> RegisterResponse:
     """Register a new account with email + password.
@@ -238,8 +236,7 @@ async def register(
     AC-3: Device fingerprint rate limit — ≥3 attempts in 24h → HTTP 429
     AC-4: Disposable email → HTTP 422
     AC-6: Age gate via birth_year → is_minor flag
-    AC-1: User row created with tier = default, trial_analyses_remaining = 0
-          (trial credited only after email verification via TrialGrantor.grant)
+    AC-1: User row created; signup grant applied via ARQ job (Unit 9).
     """
     # --- Provider gate: reject if email auth is disabled ---------------------
     if not settings.AUTH_PROVIDER_EMAIL_ENABLED:
@@ -302,17 +299,6 @@ async def register(
         age = date.today().year - body.birth_year
         is_minor = age < _MIN_AGE_YEARS
 
-    # --- Fetch default tier (LE-3: use TierRepository with Redis caching) -
-    try:
-        default_tier = await tier_repo.get_default()
-    except ValueError:
-        logger.error("No active default tier found in database")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Service configuration error.",
-        )
-    default_tier_id: str = str(default_tier.id)
-
     # --- Create Supabase auth user ----------------------------------------
     logger.info("Creating auth user for %s / %s", body.email, body.username)
     try:
@@ -337,8 +323,6 @@ async def register(
         "username": body.username,
         "display_name": body.display_name,
         "email": str(body.email),
-        "tier_id": default_tier_id,
-        "trial_analyses_remaining": 0,
         "email_verified": True,  # auto-confirmed via admin API
         "guest_session_token": body.guest_session_token,
     }
@@ -466,13 +450,11 @@ async def verify_email(
     await run_sync(user_repo.set_email_verified, user_id_str)
 
     # Trial grant removed — signup grants handled by Unit 9 (fingerprint-based ARQ job).
+    # trial_analyses_remaining column dropped in migration 0054; always 0 now.
 
-    # Read updated count for response
-    remaining: int = await run_sync(user_repo.get_trial_analyses_remaining, user_id_str)
-
-    logger.info("Email verified and trial granted for user %s", user_id_str)
+    logger.info("Email verified for user %s", user_id_str)
     return VerifyEmailResponse(
-        trial_analyses_remaining=remaining,
+        trial_analyses_remaining=0,
         message="Email verified. Your free analyses are ready.",
     )
 
@@ -776,7 +758,6 @@ async def social_login(
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
-    tier_repo=Depends(get_tier_repo),
     guest_merge_repo: GuestMergeRepository = Depends(get_guest_merge_repo),
 ) -> LoginResponse:
     """Authenticate via a social provider id_token (Google or Apple).
@@ -858,21 +839,6 @@ async def social_login(
     user = auth_response.user
     user_id = str(user.id)
 
-    # Fetch default tier for new social users (existing users already have one;
-    # ignore_duplicates=True ensures we don't overwrite it).
-    # LE-3: use TierRepository.get_default() which has Redis caching.
-    try:
-        default_tier = await tier_repo.get_default()
-    except ValueError:
-        logger.error(
-            "No active default tier found — cannot create social user %s", user_id
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Service configuration error.",
-        )
-    default_tier_id: str = str(default_tier.id)
-
     # Build a DB-safe username: email prefix slugified to [a-zA-Z0-9_],
     # or fallback to first 20 chars of the UUID (also slugified).
     raw_username = user.email.split("@")[0] if user.email else user_id[:20]
@@ -913,8 +879,6 @@ async def social_login(
                     "display_name": (user.user_metadata or {}).get("full_name", "")
                     or (user.email or user_id),
                     "email_verified": True,
-                    "trial_analyses_remaining": 0,
-                    "tier_id": default_tier_id,
                 },
                 "id",
                 True,
@@ -1092,7 +1056,6 @@ async def tiktok_login(
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
-    tier_repo=Depends(get_tier_repo),
     guest_merge_repo: GuestMergeRepository = Depends(get_guest_merge_repo),
 ) -> LoginResponse:
     """Authenticate via TikTok OAuth2 authorization code.
@@ -1217,16 +1180,6 @@ async def tiktok_login(
         )
 
     # --- New user: create Supabase auth account + users row ---
-    try:
-        default_tier = await tier_repo.get_default()
-    except ValueError:
-        logger.error("No active default tier found — cannot create TikTok user")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Service configuration error.",
-        )
-    default_tier_id = str(default_tier.id)
-
     # Create auth user with synthetic email and derived password
     try:
         auth_response = await run_sync(
@@ -1282,8 +1235,6 @@ async def tiktok_login(
                     "username": auto_username,
                     "display_name": tiktok_user.display_name or auto_username,
                     "email_verified": True,
-                    "trial_analyses_remaining": 0,
-                    "tier_id": default_tier_id,
                     "tiktok_open_id": open_id,
                 },
             )
