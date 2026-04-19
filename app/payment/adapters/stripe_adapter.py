@@ -10,11 +10,29 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+from typing import TYPE_CHECKING
 
 from app.config import settings
-from app.payment.ports import PaymentIntentBundle, PriceInfo, WebhookEvent
+from app.db.async_helpers import run_sync
+from app.payment.ports import (
+    PaymentFetchError,
+    PaymentIntentBundle,
+    PriceInfo,
+    SubscriptionSnapshot,
+    WebhookEvent,
+)
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 logger = logging.getLogger(__name__)
+
+# Hard upper bound for delete_customer (R17 delete-account budget).
+_DELETE_CUSTOMER_TIMEOUT_SECONDS = 3.0
+# Extra slack on top of per-call timeouts when wrapping with wait_for — the
+# Stripe SDK's request_timeout isn't always strict, and this ensures a
+# misbehaving call can't stall the caller past its overall budget.
+_TIMEOUT_UPPER_BOUND_SLACK_SECONDS = 0.5
 
 
 @functools.lru_cache(maxsize=128)
@@ -44,7 +62,7 @@ def _retrieve_price_cached(price_id: str) -> PriceInfo:
 class StripePaymentAdapter:
     """Real Stripe payment adapter."""
 
-    def __init__(self) -> None:
+    def __init__(self, supabase_client: "Client | None" = None) -> None:
         if not settings.STRIPE_WEBHOOK_SECRET:
             raise RuntimeError("STRIPE_WEBHOOK_SECRET must be set for Stripe adapter")
 
@@ -52,6 +70,12 @@ class StripePaymentAdapter:
 
         stripe.api_key = settings.STRIPE_API_KEY
         self._stripe = stripe
+        # Optional: when supplied, `_get_or_create_customer` prefers the
+        # cached `users.stripe_customer_id` column over `Customer.search`
+        # and writes the id back on miss (lazy-write-back). When None, the
+        # adapter falls back to pure Stripe calls — safe for contexts that
+        # construct the adapter without DB access (e.g. one-shot scripts).
+        self._supabase = supabase_client
 
     async def create_checkout_session(
         self,
@@ -181,15 +205,28 @@ class StripePaymentAdapter:
         )
 
     async def _get_or_create_customer(self, user_id: str) -> str:
-        """Idempotent Stripe customer lookup keyed on `metadata.user_id`.
+        """Idempotent Stripe customer lookup with lazy-populated cache.
 
-        No per-user `stripe_customer_id` table exists in v1; rate limits
-        on `Customer.search` (~100/sec) are acceptable at current scale.
-        If search misses, create a customer with the user_id stamped into
-        metadata for future lookups.
+        Preference order (fastest first):
+          1. ``users.stripe_customer_id`` column — O(1), zero Stripe calls.
+          2. ``Customer.search(metadata.user_id:"...")`` fallback. Writes the
+             column back on hit so subsequent calls skip straight to step 1.
+          3. ``Customer.create(metadata.user_id=...)`` if nothing matches.
+             Writes the column back.
+
+        When constructed without a ``supabase_client`` the column steps are
+        skipped and the adapter behaves like the legacy search/create path —
+        a safety net for contexts (one-shot scripts, test harnesses) that
+        don't have a DB handle.
         """
         loop = asyncio.get_running_loop()
 
+        # Step 1: column-first lookup (zero Stripe calls on the hot path).
+        cached_id = await self._read_cached_customer_id(user_id)
+        if cached_id:
+            return cached_id
+
+        # Step 2: fallback to Stripe Customer.search, keyed on metadata.user_id.
         query = f'metadata["user_id"]:"{user_id}"'
         result = await loop.run_in_executor(
             None,
@@ -197,13 +234,191 @@ class StripePaymentAdapter:
         )
         existing = result.get("data") or []
         if existing:
-            return existing[0]["id"]
+            customer_id = existing[0]["id"]
+            await self._write_cached_customer_id(user_id, customer_id)
+            return customer_id
 
+        # Step 3: create a new customer, stamping user_id into metadata for
+        # future searches, and write the id back to the column.
         customer = await loop.run_in_executor(
             None,
             lambda: self._stripe.Customer.create(metadata={"user_id": user_id}),
         )
-        return customer["id"]
+        customer_id = customer["id"]
+        await self._write_cached_customer_id(user_id, customer_id)
+        return customer_id
+
+    async def _read_cached_customer_id(self, user_id: str) -> str | None:
+        """Read ``users.stripe_customer_id`` for the given user.
+
+        Returns None when the adapter has no supabase client, when the row
+        is missing, or when the column is NULL. Failures are logged and
+        swallowed — the caller falls back to the Stripe search path rather
+        than bubbling an infra error up to the customer.
+        """
+        if self._supabase is None:
+            return None
+
+        try:
+            result = await run_sync(
+                lambda: (
+                    self._supabase.table("users")
+                    .select("stripe_customer_id")
+                    .eq("id", user_id)
+                    .maybe_single()
+                    .execute()
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to read users.stripe_customer_id for %s: %s", user_id, exc
+            )
+            return None
+
+        if not result or not result.data:
+            return None
+        cached = result.data.get("stripe_customer_id")
+        return cached or None
+
+    async def _write_cached_customer_id(self, user_id: str, customer_id: str) -> None:
+        """Write ``users.stripe_customer_id`` for the given user.
+
+        Best-effort — failures are logged and swallowed. The Stripe id is
+        already the canonical source; losing the cache just means the next
+        call will re-do the fallback search.
+        """
+        if self._supabase is None:
+            return
+
+        try:
+            await run_sync(
+                lambda: (
+                    self._supabase.table("users")
+                    .update({"stripe_customer_id": customer_id})
+                    .eq("id", user_id)
+                    .execute()
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to write users.stripe_customer_id for %s: %s", user_id, exc
+            )
+
+    async def retrieve_subscription(
+        self,
+        subscription_id: str,
+        timeout: float = 3.0,
+    ) -> SubscriptionSnapshot:
+        """Fetch a subscription snapshot from Stripe, bounded by ``timeout``.
+
+        The Stripe SDK's ``request_timeout`` kwarg isn't always strict, so
+        we layer ``asyncio.wait_for`` on top with a small slack upper
+        bound as a belt-and-braces guard. Errors (SDK failures, socket
+        timeouts, ``asyncio.TimeoutError``) all funnel into
+        ``PaymentFetchError`` so callers don't need to import stripe to
+        handle failure.
+        """
+        loop = asyncio.get_running_loop()
+        upper_bound = timeout + _TIMEOUT_UPPER_BOUND_SLACK_SECONDS
+
+        try:
+            sub = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    functools.partial(
+                        self._stripe.Subscription.retrieve,
+                        subscription_id,
+                        request_timeout=timeout,
+                    ),
+                ),
+                timeout=upper_bound,
+            )
+        except asyncio.TimeoutError as exc:
+            logger.warning(
+                "Stripe Subscription.retrieve timed out after %.2fs for %s",
+                upper_bound,
+                subscription_id,
+            )
+            raise PaymentFetchError(
+                f"timeout retrieving subscription {subscription_id}"
+            ) from exc
+        except self._stripe.StripeError as exc:
+            logger.exception(
+                "Stripe API error during Subscription.retrieve (%s): %s",
+                subscription_id,
+                exc,
+            )
+            raise PaymentFetchError(
+                f"failed to retrieve subscription {subscription_id}: {exc}"
+            ) from exc
+
+        customer = sub.get("customer")
+        if isinstance(customer, dict):
+            customer_id = str(customer.get("id") or "")
+        else:
+            customer_id = str(customer or "")
+
+        cancel_at_raw = sub.get("cancel_at")
+        cancel_at = int(cancel_at_raw) if cancel_at_raw is not None else None
+
+        return SubscriptionSnapshot(
+            id=str(sub["id"]),
+            status=str(sub["status"]),
+            current_period_start=int(sub["current_period_start"]),
+            current_period_end=int(sub["current_period_end"]),
+            cancel_at_period_end=bool(sub.get("cancel_at_period_end", False)),
+            customer_id=customer_id,
+            cancel_at=cancel_at,
+        )
+
+    async def delete_customer(self, customer_id: str) -> None:
+        """Delete a Stripe customer; idempotent on ``resource_missing``.
+
+        The wider delete-account path (R17) must be tolerant of replays —
+        if Stripe already has no record of the customer, the correct
+        behaviour is "success, nothing to do". Any other Stripe error is
+        logged and re-raised so the caller can decide whether to retry.
+        """
+        loop = asyncio.get_running_loop()
+
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    functools.partial(
+                        self._stripe.Customer.delete,
+                        customer_id,
+                    ),
+                ),
+                timeout=_DELETE_CUSTOMER_TIMEOUT_SECONDS
+                + _TIMEOUT_UPPER_BOUND_SLACK_SECONDS,
+            )
+        except asyncio.TimeoutError as exc:
+            logger.warning("Stripe Customer.delete timed out for %s", customer_id)
+            raise PaymentFetchError(f"timeout deleting customer {customer_id}") from exc
+        except self._stripe.InvalidRequestError as exc:
+            # Stripe marks already-deleted customers as resource_missing.
+            # Accept either the structured ``code`` attribute (preferred) or
+            # the stringified message as a belt-and-braces fallback for
+            # older stripe-python versions.
+            code = getattr(exc, "code", None)
+            if code == "resource_missing" or "resource_missing" in str(exc):
+                logger.info(
+                    "Stripe customer %s already deleted (resource_missing)",
+                    customer_id,
+                )
+                return
+            logger.exception(
+                "Stripe API error during Customer.delete (%s): %s", customer_id, exc
+            )
+            raise
+        except self._stripe.StripeError as exc:
+            logger.exception(
+                "Stripe API error during Customer.delete (%s): %s", customer_id, exc
+            )
+            raise
+
+        logger.info("Stripe customer %s deleted", customer_id)
 
     def construct_webhook_event(self, payload: bytes, sig_header: str) -> WebhookEvent:
         """Verify Stripe webhook signature and return a typed WebhookEvent.
