@@ -42,6 +42,25 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Bootstrap Supabase auth schema (CI Postgres only)
+        # Migrations 0003/0016 reference `auth.users(id)` for ON DELETE
+        # CASCADE FKs, and migrations 0049/0050/0051 call `auth.role()` /
+        # `auth.uid()` for RLS-style guards. Real Supabase ships these via
+        # GoTrue; CI's bare Postgres needs minimal stubs so the runner
+        # doesn't blow up at 0003.
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d postgres <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              email TEXT,
+              created_at TIMESTAMPTZ DEFAULT now()
+          );
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS UUID
+              LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+          CREATE OR REPLACE FUNCTION auth.role() RETURNS TEXT
+              LANGUAGE sql STABLE AS $$ SELECT 'service_role'::text $$;
+          SQL
       - name: Apply database migrations
         run: python -m app.migrations.run
         env:
