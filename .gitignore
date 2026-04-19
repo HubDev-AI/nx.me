@@ -90,3 +90,9 @@ mobile/screenshots/
 logs/
 # Added by code-review-graph
 .code-review-graph/
+
+# oh-my-claudecode local state
+.omc/
+
+# ce:review run artifacts
+.context/

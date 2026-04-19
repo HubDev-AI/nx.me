@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd mobile && ./node_modules/.bin/tsc --noEmit 2>&1 | tail -5 && echo '---lint---' && ./node_modules/.bin/expo lint 2>&1 | tail -5\",\"description\":\"Mobile tsc + lint\"}",
-  "error": "Exit code 1\n(eval):cd:1: no such file or directory: mobile",
-  "timestamp": "2026-04-18T23:04:04.020Z",
-  "retry_count": 1
-}
