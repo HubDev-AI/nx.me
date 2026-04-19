@@ -2,6 +2,7 @@
 title: "Account deletion: the hard-reset invariants"
 module: auth
 date: 2026-04-18
+last_updated: 2026-04-19
 problem_type: best_practice
 component: authentication
 severity: critical
@@ -37,6 +38,7 @@ related_prs:
 related_docs:
   - docs/superpowers/specs/2026-04-18-delete-account-hard-reset-design.md
   - docs/superpowers/plans/2026-04-18-delete-account-hard-reset.md
+  - docs/solutions/best-practices/enumerate-before-cascade-with-cas-2026-04-19.md
 ---
 
 # Account deletion: the hard-reset invariants
