@@ -72,6 +72,14 @@ DECLARE
   v_current_event_at TIMESTAMPTZ;
   v_locked_at        TIMESTAMPTZ;
 BEGIN
+  -- SEC-001: this RPC is service-role-only by design — Stripe webhooks
+  -- drive it. Reject any authenticated non-service caller immediately.
+  -- Unattached contexts (`auth.role() IS NULL`, e.g. direct migrator
+  -- shell) still pass through.
+  IF auth.role() IS NOT NULL AND auth.role() != 'service_role' THEN
+    RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+  END IF;
+
   -- Validate status enum up-front; fail fast on invalid input.
   IF p_new_status NOT IN ('created', 'closed_won', 'closed_lost', 'funds_withdrawn') THEN
     RAISE EXCEPTION 'invalid_dispute_status: %', p_new_status
@@ -179,6 +187,12 @@ BEGIN
   );
 END;
 $$;
+
+-- SEC-001 belt-and-braces: revoke direct RPC execute from anon +
+-- authenticated. This is service-role-only by design.
+REVOKE EXECUTE ON FUNCTION public.apply_dispute_event(UUID, TEXT, TIMESTAMPTZ, TEXT)
+    FROM PUBLIC, anon, authenticated;
+
 
 -- DOWN:
 

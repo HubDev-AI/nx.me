@@ -46,6 +46,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_weekly_ref
     ON credit_ledger (reference_id)
     WHERE type = 'weekly_free_grant';
 
+-- Pack + dispute-compensation dedup handles. Anchors the ON CONFLICT clauses
+-- in `credit_apply_pack_purchase_v2` and `credit_dispute_compensate_v2` so a
+-- caller that replays the same uuid5 reference for the same type silently
+-- no-ops (belt-and-braces on top of the primary `processed_webhook_events`
+-- dedup).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_pack_ref
+    ON credit_ledger (reference_id)
+    WHERE type = 'credit_pack_purchase';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_dispute_ref
+    ON credit_ledger (reference_id)
+    WHERE type = 'dispute_compensation';
+
+-- Supports `SUM(delta) WHERE user_id = $1 AND type NOT IN (...)` in
+-- `credit_reserve_v2` (0049) and `credit_apply_monthly_allotment_v2` below —
+-- enables an index-only scan instead of a full table scan per reserve call.
+CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_type_delta
+    ON credit_ledger (user_id, type) INCLUDE (delta);
+
 -- =========================================================================
 -- 1. credit_apply_monthly_allotment_v2
 --    REPLACE semantics (R11): single ledger entry with metadata payload
@@ -67,6 +86,16 @@ DECLARE
     v_current_non_pack_balance INTEGER;
     v_allotment                INTEGER;
 BEGIN
+    -- SEC-001: enforce RLS-equivalent scoping. Service-role bypasses (so the
+    -- subscription-renewal worker can drive this); any other authenticated
+    -- caller must match `auth.uid()`. Bare `auth.role() IS NULL` paths
+    -- (e.g. direct migrator shell) also bypass — no auth context attached.
+    IF auth.role() IS NOT NULL
+       AND auth.role() != 'service_role'
+       AND auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
     -- Single-user advisory lock (hashtextextended domain from Unit 2).
     PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 
@@ -125,6 +154,22 @@ AS $$
 DECLARE
     v_exists BOOLEAN;
 BEGIN
+    -- SEC-001: non-service-role callers must match `auth.uid()`.
+    IF auth.role() IS NOT NULL
+       AND auth.role() != 'service_role'
+       AND auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
+    -- Reject inconsistent fingerprint arg combinations. Web signups pass
+    -- all-NULL; mobile signups pass all-present. Anything else is a caller
+    -- bug — fail fast rather than silently treat a partial fingerprint as
+    -- a web signup and skip the dedup registry.
+    IF (p_deterministic_hash IS NULL) <> (p_protected_hash IS NULL)
+       OR (p_deterministic_hash IS NULL) <> (p_salt IS NULL) THEN
+        RAISE EXCEPTION 'invalid_fingerprint_args' USING ERRCODE = 'P0001';
+    END IF;
+
     PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 
     -- Web signup (no install-UUID header): grant unconditionally, no
@@ -178,6 +223,13 @@ AS $$
 DECLARE
     v_dedup_ref UUID;
 BEGIN
+    -- SEC-001: non-service-role callers must match `auth.uid()`.
+    IF auth.role() IS NOT NULL
+       AND auth.role() != 'service_role'
+       AND auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
     PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 
     v_dedup_ref := extensions.uuid_generate_v5(
@@ -213,6 +265,15 @@ AS $$
 DECLARE
     v_pack_ref UUID;
 BEGIN
+    -- SEC-001: non-service-role callers must match `auth.uid()`. The
+    -- webhook handler invokes this under the service-role key; clients
+    -- calling the RPC directly are rejected.
+    IF auth.role() IS NOT NULL
+       AND auth.role() != 'service_role'
+       AND auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
     PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 
     v_pack_ref := extensions.uuid_generate_v5(
@@ -220,13 +281,13 @@ BEGIN
         'pack:' || p_event_id
     );
 
-    -- No UNIQUE index on this reference; outer processed_webhook_events
-    -- dedup is the primary idempotency. ON CONFLICT DO NOTHING is a
-    -- safety net that only fires when a caller reuses the same UUID
-    -- across entry types (which should not happen in practice).
+    -- Partial UNIQUE index `idx_credit_ledger_pack_ref` anchors this
+    -- ON CONFLICT clause — second call for the same event_id silently
+    -- no-ops. Outer `processed_webhook_events` dedup is the primary
+    -- guard; this is belt-and-braces.
     INSERT INTO credit_ledger (user_id, delta, type, reference_id)
     VALUES (p_user_id, p_credits_milli, 'credit_pack_purchase', v_pack_ref)
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT (reference_id) WHERE type = 'credit_pack_purchase' DO NOTHING;
 END;
 $$;
 
@@ -249,6 +310,14 @@ AS $$
 DECLARE
     v_comp_ref UUID;
 BEGIN
+    -- SEC-001: non-service-role callers must match `auth.uid()`. Normally
+    -- invoked under service-role by the dispute webhook handler.
+    IF auth.role() IS NOT NULL
+       AND auth.role() != 'service_role'
+       AND auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
     PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 
     v_comp_ref := extensions.uuid_generate_v5(
@@ -256,9 +325,11 @@ BEGIN
         'dispute:' || p_charge_id
     );
 
+    -- Partial UNIQUE index `idx_credit_ledger_dispute_ref` anchors the
+    -- ON CONFLICT — repeat charge_id delivery is a no-op.
     INSERT INTO credit_ledger (user_id, delta, type, reference_id)
     VALUES (p_user_id, -p_amount_milli, 'dispute_compensation', v_comp_ref)
-    ON CONFLICT DO NOTHING;
+    ON CONFLICT (reference_id) WHERE type = 'dispute_compensation' DO NOTHING;
 END;
 $$;
 
@@ -291,6 +362,18 @@ DECLARE
     v_truncated         INTEGER;
     v_pack_ref          UUID;
 BEGIN
+    -- SEC-001: the merge destination is `p_new_user_id` (where credits
+    -- land). Non-service-role callers must match it — a mobile client
+    -- authenticates as the NEW user to claim its guest balance. Bogus
+    -- callers that try to merge somebody else's guest row into their own
+    -- account still hit the install-UUID binding below, but we reject
+    -- the cross-user case early as well.
+    IF auth.role() IS NOT NULL
+       AND auth.role() != 'service_role'
+       AND auth.uid() IS DISTINCT FROM p_new_user_id THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
     -- Advisory locks on BOTH user_ids in UUID order (lexicographic via
     -- ::text cast) so two concurrent merges never deadlock on opposite
     -- lock orders.
@@ -378,6 +461,25 @@ BEGIN
     );
 END;
 $$;
+
+
+-- SEC-001 belt-and-braces: explicitly revoke direct RPC execute from
+-- anon + authenticated. The in-function `auth.uid()` guards are the
+-- primary defence; these REVOKEs stop a caller from reaching the
+-- function body at all. service_role bypasses via SECURITY DEFINER
+-- ownership, so no REVOKE is applied there.
+REVOKE EXECUTE ON FUNCTION public.credit_apply_monthly_allotment_v2(UUID, UUID)
+    FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.credit_apply_signup_grant_v2(UUID, BYTEA, BYTEA, BYTEA, INT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.credit_apply_weekly_free_grant_v2(UUID, TEXT, INT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.credit_apply_pack_purchase_v2(UUID, TEXT, INT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.credit_dispute_compensate_v2(UUID, TEXT, INT)
+    FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.merge_guest_ledger_v2(UUID, UUID, INT, BYTEA)
+    FROM PUBLIC, anon, authenticated;
 
 
 -- DOWN:
