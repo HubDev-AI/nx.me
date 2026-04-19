@@ -225,8 +225,13 @@ class TestRunWeeklyFreeGrantEdgeCases:
         assert any("RPC failed" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_subscription_fetch_failure_aborts_cleanly(self, caplog):
-        """If subscription fetch fails, worker aborts without crashing."""
+    async def test_subscription_fetch_failure_raises_for_arq_retry(self, caplog):
+        """If subscription fetch fails, worker re-raises so ARQ retries.
+
+        Outer-loop failures (subscription/page fetch) must propagate so
+        ARQ's retry policy can re-run them rather than silently succeeding
+        on a transient DB outage.
+        """
         import logging
 
         user_id = str(uuid4())
@@ -237,7 +242,8 @@ class TestRunWeeklyFreeGrantEdgeCases:
         ctx = {"supabase": sb}
 
         with caplog.at_level(logging.ERROR, logger="app.workers.weekly_free_grant"):
-            await run_weekly_free_grant(ctx)
+            with pytest.raises(RuntimeError, match="DB down"):
+                await run_weekly_free_grant(ctx)
 
         # No RPC calls should have fired
         grant_calls = [

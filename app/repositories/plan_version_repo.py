@@ -43,9 +43,13 @@ class PlanVersionRepository:
         self._sb = supabase
         # Instance-level cache: avoids a per-request round trip to resolve
         # the Free-default id and row. ``plan_versions`` rows are immutable
-        # once seeded (R12), so caching the full row is safe within a single
+        # once seeded (R12), so caching full rows is safe within a single
         # request-scoped repo instance. The cache never leaks across the
         # process lifetime because a fresh repo is built per request.
+        #
+        # Keyed by ``version_num`` string so Pro lookups on the webhook path
+        # also benefit (previously only the free-default was cached).
+        self._cache: dict[str, dict] = {}
         self._default_free_id: UUID | None = None
         self._default_free_row: dict | None = None
 
@@ -54,7 +58,14 @@ class PlanVersionRepository:
     # ------------------------------------------------------------------
 
     def get_by_version_num(self, version_num: str) -> dict | None:
-        """Return the ``plan_versions`` row for ``version_num``, or ``None``."""
+        """Return the ``plan_versions`` row for ``version_num``, or ``None``.
+
+        Results are cached by ``version_num`` for the lifetime of this repo
+        instance — called on every webhook for Pro lookups, and rows are
+        immutable once seeded (R12).
+        """
+        if version_num in self._cache:
+            return self._cache[version_num]
         result = (
             self._sb.table("plan_versions")
             .select(
@@ -67,6 +78,7 @@ class PlanVersionRepository:
         )
         if not result or not result.data:
             return None
+        self._cache[version_num] = result.data
         return result.data
 
     def get_default_free_id(self) -> UUID:

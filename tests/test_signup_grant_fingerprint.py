@@ -102,29 +102,37 @@ class TestGenerateSalt:
 class TestGetServerSecrets:
     def test_single_secret_parses_as_single_element_list(self, monkeypatch):
         monkeypatch.setattr(
-            settings, "SIGNUP_FINGERPRINT_SERVER_SECRET", "primary-only-secret"
+            settings,
+            "SIGNUP_FINGERPRINT_SERVER_SECRET",
+            "primary-only-secret-padded-to-32-bytes",
         )
-        assert get_server_secrets() == [b"primary-only-secret"]
-        assert get_primary_secret() == b"primary-only-secret"
+        assert get_server_secrets() == [b"primary-only-secret-padded-to-32-bytes"]
+        assert get_primary_secret() == b"primary-only-secret-padded-to-32-bytes"
 
     def test_primary_then_secondary_parses_in_order(self, monkeypatch):
         monkeypatch.setattr(
             settings,
             "SIGNUP_FINGERPRINT_SERVER_SECRET",
-            "primary-secret,secondary-secret",
+            "primary-secret-padded-to-32-bytes-xx,secondary-secret-padded-to-32-bytes-x",
         )
         secrets = get_server_secrets()
-        assert secrets == [b"primary-secret", b"secondary-secret"]
+        assert secrets == [
+            b"primary-secret-padded-to-32-bytes-xx",
+            b"secondary-secret-padded-to-32-bytes-x",
+        ]
         # Writes always use primary; secondary is lookup-only.
-        assert get_primary_secret() == b"primary-secret"
+        assert get_primary_secret() == b"primary-secret-padded-to-32-bytes-xx"
 
     def test_whitespace_around_entries_is_stripped(self, monkeypatch):
         monkeypatch.setattr(
             settings,
             "SIGNUP_FINGERPRINT_SERVER_SECRET",
-            "  primary  ,  secondary  ",
+            "  primary-padded-to-32-bytes-aaaaa  ,  secondary-padded-to-32-bytes-aaa  ",
         )
-        assert get_server_secrets() == [b"primary", b"secondary"]
+        assert get_server_secrets() == [
+            b"primary-padded-to-32-bytes-aaaaa",
+            b"secondary-padded-to-32-bytes-aaa",
+        ]
 
     def test_empty_env_raises_valueerror(self, monkeypatch):
         # feedback_no_env_fallbacks — missing secret MUST fail loudly rather
@@ -193,10 +201,14 @@ class TestExistsRotationAware:
         monkeypatch.setattr(
             settings,
             "SIGNUP_FINGERPRINT_SERVER_SECRET",
-            "primary-secret,secondary-secret",
+            "primary-secret-padded-to-32-bytes-xx,secondary-secret-padded-to-32-bytes-x",
         )
-        primary_hash = compute_deterministic_hash(INSTALL_UUID, b"primary-secret")
-        secondary_hash = compute_deterministic_hash(INSTALL_UUID, b"secondary-secret")
+        primary_hash = compute_deterministic_hash(
+            INSTALL_UUID, b"primary-secret-padded-to-32-bytes-xx"
+        )
+        secondary_hash = compute_deterministic_hash(
+            INSTALL_UUID, b"secondary-secret-padded-to-32-bytes-x"
+        )
 
         sb = _build_dispatch_supabase({primary_hash})
         repo = SignupGrantRepository(sb)
@@ -210,10 +222,14 @@ class TestExistsRotationAware:
         monkeypatch.setattr(
             settings,
             "SIGNUP_FINGERPRINT_SERVER_SECRET",
-            "primary-secret,secondary-secret",
+            "primary-secret-padded-to-32-bytes-xx,secondary-secret-padded-to-32-bytes-x",
         )
-        primary_hash = compute_deterministic_hash(INSTALL_UUID, b"primary-secret")
-        secondary_hash = compute_deterministic_hash(INSTALL_UUID, b"secondary-secret")
+        primary_hash = compute_deterministic_hash(
+            INSTALL_UUID, b"primary-secret-padded-to-32-bytes-xx"
+        )
+        secondary_hash = compute_deterministic_hash(
+            INSTALL_UUID, b"secondary-secret-padded-to-32-bytes-x"
+        )
 
         # Row was issued under the OLD primary (now secondary) before rotation;
         # the repo must still find it, otherwise abuse prevention is broken.
@@ -228,7 +244,7 @@ class TestExistsRotationAware:
         monkeypatch.setattr(
             settings,
             "SIGNUP_FINGERPRINT_SERVER_SECRET",
-            "primary-secret,secondary-secret",
+            "primary-secret-padded-to-32-bytes-xx,secondary-secret-padded-to-32-bytes-x",
         )
         sb = _build_dispatch_supabase(set())  # nothing matches
         repo = SignupGrantRepository(sb)
@@ -238,7 +254,11 @@ class TestExistsRotationAware:
         assert len(sb.probes) == 2
 
     def test_single_secret_config_probes_once(self, monkeypatch):
-        monkeypatch.setattr(settings, "SIGNUP_FINGERPRINT_SERVER_SECRET", "only-secret")
+        monkeypatch.setattr(
+            settings,
+            "SIGNUP_FINGERPRINT_SERVER_SECRET",
+            "only-secret-padded-to-32-bytes-aa",
+        )
         sb = _build_dispatch_supabase(set())
         repo = SignupGrantRepository(sb)
 

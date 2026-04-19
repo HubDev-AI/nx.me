@@ -26,8 +26,20 @@ redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
 return 1
 """
 
-# Module-level SHA cache — loaded lazily on first acquire call per process.
+# Lua script: clamped decrement — never goes below zero.
+# Prevents negative counters when release_slot runs without a prior acquire
+# (e.g. duplicate release, worker crash recovery path R-09).
+_RELEASE_SCRIPT = """
+if tonumber(redis.call('GET', KEYS[1]) or '0') > 0 then
+    return redis.call('DECR', KEYS[1])
+else
+    return 0
+end
+"""
+
+# Module-level SHA cache — loaded lazily on first acquire/release call per process.
 _acquire_sha: str | None = None
+_release_sha: str | None = None
 
 
 def _concurrent_key(user_id: str) -> str:
@@ -63,11 +75,16 @@ async def acquire_slot(
 
 
 async def release_slot(redis: aioredis.Redis, user_id: str) -> None:
-    """Decrement the concurrent slot counter for ``user_id``.
+    """Decrement the concurrent slot counter for ``user_id``, clamped at zero.
 
-    Safe to call even if the counter is already 0 — ``DECR`` on a
-    non-existent key sets it to -1, but the acquire script treats any
-    value < limit as available, so the counter self-corrects on the next
-    acquire.
+    Uses a Lua script so the read-then-decrement is atomic. The clamp
+    prevents the counter from going negative when ``release_slot`` is called
+    without a prior ``acquire_slot`` (duplicate release, worker crash recovery
+    path R-09). A negative counter would incorrectly block future acquires.
     """
-    await redis.decr(_concurrent_key(user_id))
+    global _release_sha  # noqa: PLW0603
+
+    if _release_sha is None:
+        _release_sha = await redis.script_load(_RELEASE_SCRIPT)
+
+    await redis.evalsha(_release_sha, 1, _concurrent_key(user_id))

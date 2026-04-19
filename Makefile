@@ -93,9 +93,9 @@ card-web/node_modules:
 
 # ── Stripe dev tooling ────────────────────────────────────────────────────────
 stripe-dev:
-	@echo "Starting Stripe CLI listener (forwarding to /v1/webhooks/stripe) — Ctrl+C to stop"
+	@echo "Starting Stripe CLI listener (forwarding to /webhooks/stripe) — Ctrl+C to stop"
 	@command -v stripe >/dev/null || { echo "stripe CLI not installed: brew install stripe/stripe-cli/stripe"; exit 1; }
-	stripe listen --forward-to localhost:8000/v1/webhooks/stripe --skip-verify
+	stripe listen --forward-to localhost:8000/webhooks/stripe --skip-verify
 
 stripe-bootstrap: app/.env
 	@set -a && . ./app/.env && set +a && uv run python -m app.services.stripe_dev_bootstrap

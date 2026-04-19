@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import time
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 _SCRUBBED_HEADERS: frozenset[str] = frozenset(
     {
         "authorization",
+        "cookie",
+        "set-cookie",
         "x-install-uuid",
     }
 )
@@ -33,7 +35,9 @@ _SCRUBBED_HEADERS: frozenset[str] = frozenset(
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log each request with latency; scrub sensitive headers."""
 
-    async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         start = time.monotonic()
         response: Response = await call_next(request)
         elapsed_ms = (time.monotonic() - start) * 1000

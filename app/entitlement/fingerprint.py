@@ -88,6 +88,12 @@ def get_server_secrets() -> list[bytes]:
             "SIGNUP_FINGERPRINT_SERVER_SECRET is required "
             "(expected PRIMARY[,SECONDARY])."
         )
+    for s in parts:
+        if len(s) < 32:
+            raise ValueError(
+                f"SIGNUP_FINGERPRINT_SERVER_SECRET entry is too short "
+                f"({len(s)} bytes); minimum is 32 bytes for adequate HMAC entropy."
+            )
     return parts
 
 

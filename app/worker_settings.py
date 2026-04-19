@@ -183,13 +183,15 @@ class WorkerSettings:
             hour=FINGERPRINT_PURGE_CRON_HOUR,
             minute=FINGERPRINT_PURGE_CRON_MINUTE,
         ),
-        # Unit 11: webhook event purge — daily 03:45 UTC (PII retention cap)
+        # Unit 11: webhook event purge — daily 03:50 UTC (PII retention cap)
+        # Was 03:45 — moved to avoid collision with reclaim_orphaned_blobs.
         cron(
             purge_old_webhook_events,
             hour=WEBHOOK_EVENT_PURGE_CRON_HOUR,
             minute=WEBHOOK_EVENT_PURGE_CRON_MINUTE,
         ),
-        # Unit 11: Stripe customer DLQ reconciler — daily 04:00 UTC
+        # Unit 11: Stripe customer DLQ reconciler — daily 04:15 UTC
+        # Was 04:00 — moved to avoid collision with reclaim_orphaned_analyses.
         cron(
             reconcile_stripe_customer_dlq,
             hour=STRIPE_CUSTOMER_DLQ_CRON_HOUR,

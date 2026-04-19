@@ -1,7 +1,6 @@
 """User repository — all supabase.table('users') and auth.admin queries in one place.
 
-Follows the same pattern as TierRepository: constructor takes a Client,
-methods are synchronous (callers use run_sync for async handlers).
+Constructor takes a Client; methods are synchronous (callers use run_sync for async handlers).
 """
 
 from __future__ import annotations

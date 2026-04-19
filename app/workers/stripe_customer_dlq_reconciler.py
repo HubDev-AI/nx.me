@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 _DLQ_MAX_ATTEMPTS = 5
 
 # Cron schedule constants (registered in app/worker_settings.py).
-# Daily 04:00 UTC.
+# Daily 04:15 UTC (moved from 04:00 to avoid collision with reclaim_orphaned_analyses).
 STRIPE_CUSTOMER_DLQ_CRON_HOUR = 4
-STRIPE_CUSTOMER_DLQ_CRON_MINUTE = 0
+STRIPE_CUSTOMER_DLQ_CRON_MINUTE = 15
 
 
 async def reconcile_stripe_customer_dlq(ctx: dict) -> None:
