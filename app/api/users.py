@@ -149,6 +149,13 @@ class HistoryEntry(BaseModel):
     # saved cells so the user can tell at a glance which transformations
     # they have already kept.
     saved_at: str | None = None
+    # ID of the currently LIVE public post for this glow-up job, or None
+    # when the job has not been published (or its post was soft-deleted /
+    # auto-hidden). "Live" matches the partial UNIQUE index predicate from
+    # migration 0046: ``is_deleted = FALSE AND is_hidden = FALSE``. The
+    # mobile grid renders a small globe overlay on cells whose glow-up
+    # has a live post so the user can tell at a glance which are public.
+    post_id: str | None = None
 
 
 class HistoryResponse(BaseModel):
@@ -531,6 +538,23 @@ async def get_user_history(
             saved_at_raw if isinstance(saved_at_raw, str) else None
         )
 
+        # The LEFT JOIN in get_latest_jobs_for_sources returns posts as a
+        # nested array (one entry per row matching posts.glow_up_job_id =
+        # jobs.id). We surface the live post's id only — soft-deleted /
+        # auto-hidden rows do not count as "published" for the profile
+        # grid indicator. The partial UNIQUE index from migration 0046
+        # guarantees at most one live match, so first-found is safe.
+        posts_rel = job.get("posts") or []
+        live_post = next(
+            (
+                p
+                for p in posts_rel
+                if not p.get("is_deleted") and not p.get("is_hidden")
+            ),
+            None,
+        )
+        post_id_value: str | None = live_post["id"] if live_post else None
+
         entries.append(
             HistoryEntry(
                 analysis_id=analysis_id,
@@ -551,6 +575,7 @@ async def get_user_history(
                 after_image_url=after_url,
                 created_at=row["created_at"],
                 saved_at=saved_at_value,
+                post_id=post_id_value,
             )
         )
 

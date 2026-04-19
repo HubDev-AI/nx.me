@@ -19,6 +19,7 @@ const BASE: Capabilities = {
   canSeeFeed: false,
   canUseAdvisor: false,
   canShareGlowup: false,
+  canPublishGlowup: false,
   canShareProfile: false,
   canSeeOnboarding: false,
   canSubscribe: true,

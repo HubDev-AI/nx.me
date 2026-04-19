@@ -61,6 +61,16 @@ export interface Capabilities {
    * which gates result-card sharing (tied to `share_enabled`).
    */
   canShareProfile: boolean;
+  /**
+   * Can publish a glowup to the social feed. Distinct from
+   * `canShareGlowup` (native-share button, keyed to `share_enabled`)
+   * and `canSeeFeed` (viewing the feed, keyed to `social_enabled`
+   * alone): publishing creates server-side content attributed to an
+   * account, so it requires a real signed-in user on top of the
+   * social surface being enabled — guests have no durable identity
+   * to publish under.
+   */
+  canPublishGlowup: boolean;
   /** Onboarding flow runs after login. */
   canSeeOnboarding: boolean;
   /** Subscription screen reachable — stub true until premium tiering ships. */
@@ -100,6 +110,8 @@ export function useCapabilities(): Capabilities {
       canUseAdvisor: features.advisor_enabled,
       canShareGlowup: features.share_enabled,
       canShareProfile: features.social_enabled,
+      canPublishGlowup:
+        features.social_enabled && session.isUser && !session.isGuest,
       canSeeOnboarding: features.onboarding_enabled,
       canSubscribe: true,
       canReact: features.social_enabled,

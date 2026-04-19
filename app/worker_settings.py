@@ -28,6 +28,7 @@ from app.advisor.nudge_scheduler import (
 from app.repositories.image_repo import ImageRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.workers.delete_account_blobs import wipe_deleted_user_blobs
+from app.workers.orphan_analysis_reclaim import reclaim_orphaned_analyses
 from app.workers.orphan_reclaim import reclaim_orphaned_blobs
 from app.workers.retention import run_retention
 
@@ -89,6 +90,7 @@ class WorkerSettings:
         cron(reconcile_reaction_counts, hour=3, minute=0),  # Nightly at 03:00 UTC
         cron(run_retention, hour=3, minute=30),  # Nightly at 03:30 UTC
         cron(reclaim_orphaned_blobs, hour=3, minute=45),  # Nightly at 03:45 UTC
+        cron(reclaim_orphaned_analyses, hour=4, minute=0),  # Nightly at 04:00 UTC
     ]
 
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)

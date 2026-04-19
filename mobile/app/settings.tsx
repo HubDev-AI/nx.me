@@ -4,7 +4,7 @@
  * Route: /settings (custom header)
  * Auth: required — fetches /v1/auth/me for account details.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,

@@ -104,6 +104,15 @@ export interface JobResult {
    * variant when the user re-opens a saved job.
    */
   saved_at: string | null;
+  /**
+   * Post identifier + share hash, populated by the backend only when a
+   * live post exists for this job (completed status + user has
+   * published). Kept optional so callers that construct a `JobResult`
+   * without publishing context (polling intermediate states, tests)
+   * stay ergonomic. Mirrors `app/api/jobs.py::JobStatusResponse`.
+   */
+  post_id?: string | null;
+  share_hash?: string | null;
 }
 
 export interface EntitlementInfo {

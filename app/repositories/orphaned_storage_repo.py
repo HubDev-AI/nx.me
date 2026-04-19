@@ -91,6 +91,23 @@ class OrphanedStorageKeyRepository:
         """Remove a DLQ row once the storage delete succeeded."""
         (self._sb.table("orphaned_storage_keys").delete().eq("id", row_id).execute())
 
+    def delete_by_key(self, bucket: str, storage_key: str) -> None:
+        """Remove a DLQ row by its ``(bucket, storage_key)`` pair.
+
+        Used by publish-pending pre-records in ``POST /v1/posts`` — the
+        caller records a row before committing the post insert so any
+        TOCTOU / 409 / retry failure path leaves the upload in the DLQ.
+        On successful insert the caller removes the row via this method.
+        Safe on already-deleted keys (idempotent no-op delete).
+        """
+        (
+            self._sb.table("orphaned_storage_keys")
+            .delete()
+            .eq("bucket", bucket)
+            .eq("storage_key", storage_key)
+            .execute()
+        )
+
     def mark_attempt(self, row_id: str) -> None:
         """Bump ``attempts`` and set ``last_attempt_at`` after a failed retry."""
         now = datetime.now(tz=timezone.utc).isoformat()

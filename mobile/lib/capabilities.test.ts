@@ -183,6 +183,23 @@ describe("useCapabilities", () => {
     },
   );
 
+  // ---------- Publish glowup: requires real user AND social ----------
+
+  it.each([
+    { mode: "user" as const, social: true, expected: true },
+    { mode: "user" as const, social: false, expected: false },
+    { mode: "guest" as const, social: true, expected: false },
+    { mode: "guest" as const, social: false, expected: false },
+    { mode: "anon" as const, social: true, expected: false },
+    { mode: "anon" as const, social: false, expected: false },
+  ])(
+    "canPublishGlowup requires real user AND social_enabled (mode=$mode, social=$social)",
+    ({ mode, social, expected }) => {
+      setInputs(mode, { social_enabled: social });
+      expect(render().canPublishGlowup).toBe(expected);
+    },
+  );
+
   // ---------- Stubs ----------
 
   it("canSubscribe is stubbed true until premium tiering adds a flag", () => {

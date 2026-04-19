@@ -326,12 +326,26 @@ class Settings(BaseSettings):
         30  # uploads not accessed for N days are purged (with CASCADE)
     )
     RETENTION_JOB_DAYS: int = 7  # unsaved jobs older than N days are purged
+    # Cap on the per-run unsaved-job purge batch — the nightly worker runs
+    # enumerate-before-cascade one job at a time and wipes blobs inline, so
+    # a very large backlog is bounded here to keep any single run short.
+    # The next night's run picks up the remainder.
+    RETENTION_JOB_BATCH_LIMIT: int = 1000
 
     # Orphan-blob reclaim — nightly cron in app/workers/orphan_reclaim.py
     # (migration 0036). Rows exceeding MAX_ATTEMPTS stay in the DLQ table for
     # operator review; BATCH_SIZE caps DB reads per run.
     ORPHAN_RECLAIM_MAX_ATTEMPTS: int = 5
     ORPHAN_RECLAIM_BATCH_SIZE: int = 100
+
+    # Orphan-analysis reclaim — nightly cron in
+    # app/workers/orphan_analysis_reclaim.py (migration 0047). Rows hitting
+    # MAX_ATTEMPTS are left in the DLQ for operator review; BATCH_SIZE caps
+    # DB reads per run. Kept separate from ORPHAN_RECLAIM_* so the two
+    # sweepers can be tuned independently (different surface, different
+    # delete cost — blobs hit object storage, analyses hit Postgres).
+    ORPHAN_ANALYSIS_RECLAIM_MAX_ATTEMPTS: int = 5
+    ORPHAN_ANALYSIS_RECLAIM_BATCH_SIZE: int = 100
 
     # Reconcile/retention cron mutex — reconcile holds a Redis lock so the
     # retention cron (scheduled 30 min later) skips if reconcile is still

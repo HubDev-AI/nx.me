@@ -24,12 +24,14 @@ import {
   Text,
   StyleSheet,
   Alert,
+  Pressable,
 } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import { useQueryClient } from "@tanstack/react-query";
 import Animated, {
   Easing,
   FadeIn,
@@ -44,10 +46,9 @@ import { Ionicons } from "@expo/vector-icons";
 import BeforeAfterSlider from "../../components/result/BeforeAfterSlider";
 import { ResultActions, type SaveState } from "../../components/result/ResultActions";
 import { useShareComposite } from "../../components/result/ShareComposite";
-import {
-  HeaderBackButton,
-  HeaderBackButtonSpacer,
-} from "../../components/ui/HeaderBackButton";
+import { ShareDialog } from "../../components/result/ShareDialog";
+import { useShareDialog } from "../../components/result/useShareDialog";
+import { HeaderBackButton } from "../../components/ui/HeaderBackButton";
 import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import {
   getJobFailureMessage,
@@ -55,6 +56,7 @@ import {
   saveJob,
   type JobResult,
 } from "../../lib/analysis";
+import { apiFetch } from "../../lib/api";
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
 import { PressableScale } from "../../components/ui/PressableScale";
@@ -63,18 +65,18 @@ import { Heading } from "../../components/ui/Text";
 import { useTheme } from "../../lib/theme-context";
 import { FONTS } from "../../hooks/useFonts";
 import {
+  MIN_TOUCH_TARGET,
   RESULT_HARD_TIMEOUT_COPY,
   RESULT_SCREEN_HARD_TIMEOUT_MS,
   RESULT_SCREEN_IMAGE_URL_TIMEOUT_MS,
   RESULT_WAITING_BODY,
   RESULT_WAITING_TITLE,
-  UNIVERSAL_LINK_ORIGIN,
 } from "../../constants/config";
 import { useAppQuery } from "../../lib/hooks/use-app-query";
-import { useAppMutation } from "../../lib/hooks/use-app-mutation";
 import { useRefundToast } from "../../lib/hooks/use-refund-toast";
 import { showToast } from "../../lib/toast";
 import { useAuth } from "../../lib/auth-context";
+import { useCapabilities } from "../../lib/capabilities";
 import { parseApiError, shouldRetry } from "../../lib/errors";
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,18 @@ const TICK_INTERVAL_MS = 1_000;
 /** Hourglass rotation period (ms) — slow enough to read as patient, not stuck. */
 const HOURGLASS_ROTATION_MS = 2_400;
 
+// TODO(writer-review): Delete-confirm copy must name external-link
+// breakage per `feedback_female_user_targeting` + plan §Risks table
+// ("Links you've already shared will stop working").
+const DELETE_CONFIRM_TITLE = "Delete this glow-up?";
+const DELETE_CONFIRM_BODY =
+  "Links you've already shared will stop working. This can't be undone.";
+const DELETE_CONFIRM_CANCEL_LABEL = "Cancel";
+const DELETE_CONFIRM_DELETE_LABEL = "Delete";
+
+/** Header-right overflow accessibility label. */
+const HEADER_OVERFLOW_LABEL = "More options";
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -107,11 +121,31 @@ export default function ResultScreen() {
   const router = useRouter();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const capabilities = useCapabilities();
 
   const [saveState, setSaveState] = useState<SaveState>("pending");
   // Zoom viewer — which image, if any, is currently presented full-screen.
   const [zoomTarget, setZoomTarget] = useState<"before" | "after" | null>(null);
   const { username } = useAuth();
+
+  // ShareDialog state — owned by the screen so the dialog can open from
+  // either the primary button or (future) other entry points. The
+  // Save/Share/Publish handler triplet lives in `useShareDialog` so this
+  // screen and the profile long-press path stay in lockstep on the
+  // R5/R8 blocking-auto-save invariant.
+  const [shareDialogVisible, setShareDialogVisible] = useState(false);
+  /**
+   * Client-side mirror of `post_id` + `share_hash`. Populated from either
+   * the latest `GET /v1/jobs/{id}` poll (backend Unit 3) or the
+   * `POST /v1/posts` response (via `useShareDialog` `onPublishSuccess`)
+   * so the dialog + share URL pick up a fresh publish without a
+   * round-trip refetch.
+   */
+  const [postState, setPostState] = useState<{
+    post_id: string | null;
+    share_hash: string | null;
+  }>({ post_id: null, share_hash: null });
 
   // Share composite hook — ShareCompositeView must be in the tree
   const { ShareCompositeView, generateAndShare, isCapturing } =
@@ -206,59 +240,189 @@ export default function ResultScreen() {
     }
   }, [result?.saved_at, saveState]);
 
+  // Hydrate post_id/share_hash from the latest poll so the dialog and
+  // share-URL derivation see the server-known state. Only promotes (never
+  // clears) so an in-flight Publish response isn't clobbered by a stale
+  // poll window.
+  useEffect(() => {
+    if (result?.post_id && result.post_id !== postState.post_id) {
+      setPostState({
+        post_id: result.post_id,
+        share_hash: result.share_hash ?? null,
+      });
+    }
+  }, [result?.post_id, result?.share_hash, postState.post_id]);
+
   // Surface the one-time refund toast when the worker auto-refunds a
   // failed/cancelled job. Module-level dedup ensures the user sees
   // the banner exactly once per device per job, even if the result
   // screen + a profile pending cell observe the same job.
   useRefundToast(result);
 
-  // Save mutation — copy matches the "Save on profile" button label.
-  const saveMutation = useAppMutation<{ saved_at: string }, void>({
-    mutationKey: ["job.save", jobId],
-    mutationFn: () => saveJob(jobId as string),
-    onSuccess: () => {
-      setSaveState("saved");
-      showToast({ kind: "success", message: "Saved on your profile." });
+  // Unified save-path wrapper. Both the primary "Save on profile" button
+  // (`handleSave` below) and the dialog's Save row (via
+  // `useShareDialog.handleSave`) / Share-path blocking auto-save
+  // (`useShareDialog.handleShare`) funnel through this single helper.
+  //
+  // One codepath for every save surface: one POST per tap, one shared
+  // invalidation of the `["job", jobId]` query (so the next render sees
+  // the fresh `saved_at` without waiting for the next 2s poll), and
+  // consistent error surfacing upstream. Callers handle their own
+  // success/error UX (toasts, state flips) because the two entry points
+  // differ — the primary button shows a toast, the dialog auto-save on
+  // the Share path intentionally suppresses it.
+  const saveJobFn = useCallback(
+    async (id: string) => {
+      const response = await saveJob(id);
+      // Invalidate the job query so the next render picks up the new
+      // `saved_at` from the cache instead of the stale snapshot the
+      // current render is still holding. Without this the outline
+      // "Save on profile" button and the dialog's Save row would rely
+      // purely on `saveState` drift until the next 2s poll lands.
+      queryClient.invalidateQueries({ queryKey: ["job", id] });
+      return response;
     },
-    onError: () => {
-      setSaveState("pending");
-      showToast({ kind: "error", message: "Couldn't save on profile. Try again." });
-    },
-  });
+    [queryClient],
+  );
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (saveState !== "pending") return;
     setSaveState("saving");
-    saveMutation.mutate();
-  }, [saveState, saveMutation]);
-
-  const handleShare = useCallback(async () => {
-    if (!result?.before_image_url || !result.after_image_url) return;
-    // Authenticated users get a clickable link back to their latest card on
-    // the web surface (card-web /{username}). Guests share the PNG only.
-    const shareUrl = username
-      ? `${UNIVERSAL_LINK_ORIGIN}/${username}`
-      : undefined;
     try {
-      await generateAndShare({
-        beforeUrl: result.before_image_url,
-        afterUrl: result.after_image_url,
-        rightLabel: "Glow Up",
-        shareUrl,
-        shareMessage: shareUrl
-          ? `My NXME glow-up — ${shareUrl}`
-          : undefined,
+      await saveJobFn(jobId as string);
+      setSaveState("saved");
+      showToast({ kind: "success", message: "Saved on your profile." });
+    } catch {
+      setSaveState("pending");
+      showToast({
+        kind: "error",
+        message: "Couldn't save on profile. Try again.",
       });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("timeout")) {
-        Alert.alert(
-          "Share failed",
-          "Images didn't finish loading. Try again in a moment.",
-        );
-      }
-      // User-cancelled native share sheet — not an error
     }
-  }, [result, generateAndShare, username]);
+  }, [saveState, saveJobFn, jobId]);
+
+  // ---- ShareDialog handlers -------------------------------------------
+  //
+  // The triplet (Save / Share / Publish) lives in `useShareDialog` so
+  // this screen and the profile long-press entry share the R5/R8
+  // blocking-auto-save invariant. Parent still owns visibility + the
+  // postState mirror; hook owns in-flight + error state.
+  const closeShareDialog = useCallback(() => {
+    setShareDialogVisible(false);
+  }, []);
+
+  // Don't build a dialogJob before `jobId` has hydrated — coercing
+  // `undefined` to `""` would leave every callsite treating the
+  // snapshot as truthy and fire POST /v1/jobs//save (or
+  // /v1/posts with glow_up_job_id="") if the user tapped Save or
+  // Publish during the params-hydration race. Gating on `!jobId`
+  // matches the `enabled: !!jobId` narrowing used by the job query
+  // above, and `useShareDialog` already treats a null `job` as a
+  // universal no-op on every handler.
+  const dialogJob = useMemo(
+    () =>
+      jobId
+        ? {
+            id: jobId,
+            saved_at: result?.saved_at ?? null,
+            post_id: postState.post_id,
+            share_hash: postState.share_hash,
+          }
+        : null,
+    [jobId, result?.saved_at, postState.post_id, postState.share_hash],
+  );
+
+  const getShareImageUrls = useCallback(
+    async () => ({
+      before: result?.before_image_url ?? null,
+      after: result?.after_image_url ?? null,
+    }),
+    [result?.before_image_url, result?.after_image_url],
+  );
+
+  const handleDialogSaveSuccess = useCallback(() => {
+    // Reuse the primary-row mutation's "saved" state so both the
+    // outline Save-on-profile button and the dialog Save row stay in
+    // lockstep. No-op if already saved.
+    setSaveState("saved");
+  }, []);
+
+  const handleDialogPublishSuccess = useCallback(
+    (post_id: string, share_hash: string) => {
+      setPostState({ post_id, share_hash });
+    },
+    [],
+  );
+
+  const {
+    saveState: dialogSaveState,
+    isPublishing,
+    publishError,
+    handleSave: handleDialogSave,
+    handleShare: handleDialogShare,
+    handlePublish: handleDialogPublish,
+    resetPublishError,
+  } = useShareDialog({
+    job: dialogJob,
+    username,
+    generateAndShare,
+    getImageUrls: getShareImageUrls,
+    onDialogClose: closeShareDialog,
+    saveJobFn,
+    onSaveSuccess: handleDialogSaveSuccess,
+    onPublishSuccess: handleDialogPublishSuccess,
+  });
+
+  // Dialog-entry tap from the primary button. Clears any stale publish
+  // error so a re-open starts clean.
+  const handleOpenShareDialog = useCallback(() => {
+    resetPublishError();
+    setShareDialogVisible(true);
+  }, [resetPublishError]);
+
+  const handleCloseShareDialog = useCallback(() => {
+    // Don't let the user dismiss mid-publish — parent-owned lifecycle
+    // mirrors ShareDialog's internal guard so state stays consistent.
+    if (isPublishing) return;
+    setShareDialogVisible(false);
+  }, [isPublishing]);
+
+  // ---- Delete overflow (header-right) ---------------------------------
+
+  const runDelete = useCallback(async () => {
+    try {
+      await apiFetch<void>(`/v1/jobs/${jobId}`, { method: "DELETE" });
+      // Drop the stale job query so navigating back doesn't flash the
+      // deleted content; invalidate the profile grid so it refetches.
+      queryClient.removeQueries({ queryKey: ["job", jobId] });
+      if (username) {
+        queryClient.invalidateQueries({
+          queryKey: ["profile.glowups", username],
+        });
+      }
+      router.replace("/(tabs)/profile");
+    } catch (err) {
+      // Best-effort 204 — toast and keep the user on the screen per
+      // plan §Unit 8 ("do not auto-retry").
+      const app = parseApiError(err);
+      showToast({ kind: "error", message: app.message });
+    }
+  }, [jobId, queryClient, username, router]);
+
+  const handleDeletePress = useCallback(() => {
+    Alert.alert(
+      DELETE_CONFIRM_TITLE,
+      DELETE_CONFIRM_BODY,
+      [
+        { text: DELETE_CONFIRM_CANCEL_LABEL, style: "cancel" },
+        {
+          text: DELETE_CONFIRM_DELETE_LABEL,
+          style: "destructive",
+          onPress: runDelete,
+        },
+      ],
+    );
+  }, [runDelete]);
 
   // Post-result navigation targets. Kept distinct so copy can match the
   // user's mental model at each state: "Try Again" = start a new attempt
@@ -417,7 +581,28 @@ export default function ResultScreen() {
         >
           {headerTitle}
         </Heading>
-        <HeaderBackButtonSpacer />
+        {/* Right slot: Delete overflow on success; spacer in every other
+            state so the centered title stays balanced. `navigation.setOptions`
+            can't be used — the native-stack header is `headerShown: false`
+            on this screen, so we render directly into the custom header. */}
+        {isSuccess ? (
+          <Pressable
+            onPress={handleDeletePress}
+            style={styles.headerOverflow}
+            accessibilityLabel={HEADER_OVERFLOW_LABEL}
+            accessibilityRole="button"
+            hitSlop={8}
+            testID="result-header-overflow"
+          >
+            <Ionicons
+              name="ellipsis-horizontal"
+              size={20}
+              color={THEME.colors.textSecondary}
+            />
+          </Pressable>
+        ) : (
+          <View style={styles.headerOverflow} />
+        )}
       </View>
       <QueryStateView
         isLoading={false}
@@ -500,10 +685,13 @@ export default function ResultScreen() {
 
                 <Animated.View entering={FadeIn.duration(300).delay(400)}>
                   <ResultActions
-                    onSave={handleSave}
-                    onShare={handleShare}
+                    onSave={() => {
+                      void handleSave();
+                    }}
+                    onOpenShareDialog={handleOpenShareDialog}
                     onTryAnother={handleTryAgain}
                     saveState={saveState}
+                    canPublishGlowup={capabilities.canPublishGlowup}
                   />
                 </Animated.View>
 
@@ -540,6 +728,27 @@ export default function ResultScreen() {
         altText={zoomTarget === "before" ? "Before photo" : "Glow-up photo"}
         onClose={handleCloseZoom}
       />
+
+      {/* ShareDialog — only rendered once `jobId` has hydrated, so the
+          dialog's `job` prop is never built from a missing param (which
+          would otherwise coerce to id="" and fire malformed API calls on
+          Save/Publish during the params-hydration race). The mount-only-
+          when-ready pattern matches profile.tsx's gate on `dialogJob`.
+          The dialog's internal `visible` flag still drives enter/exit
+          animations for the dialog lifecycle once mounted. */}
+      {dialogJob ? (
+        <ShareDialog
+          visible={shareDialogVisible}
+          onClose={handleCloseShareDialog}
+          job={dialogJob}
+          onSave={handleDialogSave}
+          onShare={handleDialogShare}
+          onPublish={handleDialogPublish}
+          saveState={dialogSaveState}
+          isPublishing={isPublishing}
+          publishError={publishError}
+        />
+      ) : null}
     </View>
   );
 }
@@ -567,6 +776,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: HEADER_TITLE_FONT_SIZE,
+  },
+  /* Overflow slot — sized to MIN_TOUCH_TARGET so the header row stays
+     visually centered whether the Delete affordance is live or spacer-only. */
+  headerOverflow: {
+    width: MIN_TOUCH_TARGET,
+    height: MIN_TOUCH_TARGET,
+    alignItems: "center",
+    justifyContent: "center",
   },
   safeArea: {
     flex: 1,

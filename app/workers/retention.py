@@ -1,7 +1,10 @@
 """Nightly retention worker — purges expired uploads and unsaved jobs.
 
 Retention policy (all periods sourced from config — no magic numbers):
-  - Unsaved jobs older than RETENTION_JOB_DAYS: purged individually.
+  - Unsaved jobs older than RETENTION_JOB_DAYS: purged individually, with
+    per-job blob enumeration BEFORE the DB DELETE. Raw-selfies +
+    generated-images + live post-images blobs are all wiped; failures land
+    in ``orphaned_storage_keys`` with reason ``retention_purge``.
     Leaves the associated upload + glowup_analysis intact (independent lifecycle).
   - Uploads not accessed for RETENTION_UPLOAD_DAYS: purged via CASCADE,
     which drops glowup_analyses and any remaining associated jobs automatically.
@@ -10,6 +13,15 @@ Storage cleanup: for each deleted upload, the corresponding image blob is
 removed from Supabase storage (raw-selfies bucket). The uploads.image_url
 column stores the storage key directly (e.g. "{user_id}/{upload_id}.jpg"),
 not a full HTTPS URL — so no URL parsing is needed.
+
+Unsaved-job purge ordering mirrors ``app/api/jobs.py::delete_job`` (Unit 5):
+enumerate BEFORE cascade. If reversed, the FK cascade drops the ``posts``
+join that denormalises post-images keys and those blobs silently orphan.
+
+Batching: the nightly batch is bounded by an app-layer cap
+(``RETENTION_JOB_BATCH_LIMIT``). Anything over the cap is deferred to the
+next night's run — retention naturally catches up. This avoids a second
+ARQ hop and keeps the worker path synchronous like the rest of the module.
 
 Scheduling: nightly cron at 03:30 UTC (configured in app/worker_settings.py).
 Runs 30 minutes after ``reconcile_reaction_counts`` at 03:00 UTC. If
@@ -20,15 +32,25 @@ it checks the shared ``RECONCILE_LOCK_KEY`` mutex before doing any work.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from supabase import Client
 
 from app.api.social import RECONCILE_LOCK_KEY
 from app.config import settings
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
+from app.services.blob_cleanup import wipe_blob_or_record_orphan_sync
 from app.services.public_url import RAW_SELFIES_BUCKET
 
 logger = logging.getLogger(__name__)
+
+
+# Reason string recorded in ``orphaned_storage_keys`` when a blob wipe fails
+# during the nightly retention purge. Mirrors ``DELETE_GLOWUP_REASON`` and
+# ``"delete_account"`` — server-side only, never derived from user input.
+RETENTION_PURGE_REASON = "retention_purge"
 
 
 async def purge_expired_username_reservations(supabase: Client) -> int:
@@ -135,75 +157,172 @@ async def run_retention(ctx: dict) -> None:
     supabase: Client = ctx["supabase"]
 
     # ------------------------------------------------------------------
-    # Step 1: Purge unsaved jobs older than RETENTION_JOB_DAYS
+    # Step 1: Purge unsaved jobs older than RETENTION_JOB_DAYS.
+    #
+    # ORDER MATTERS (mirrors ``app/api/jobs.py::delete_job``): enumerate
+    # every ``(bucket, key)`` tuple per doomed job BEFORE issuing the
+    # DELETE. A bulk delete here without enumeration would rely on the FK
+    # cascade to drop posts/images rows, and the denormalised
+    # post-images keys on ``posts.before_image_url`` / ``after_image_url``
+    # would vanish with the cascade — the blobs would orphan silently
+    # with zero sweeper coverage. See plan: "enumerate-before-cascade".
+    #
+    # Step isolation: each of Step 1 (job purge), Step 2 (upload purge),
+    # Step 3 (reservation cleanup), Step 4 (reconcile) is independently
+    # try-wrapped. A fault in one step must not starve the downstream
+    # maintenance work, same defensive pattern used by the reservation
+    # + reconcile blocks that already had it.
     # ------------------------------------------------------------------
 
-    purged_jobs_result = (
-        supabase.table("jobs")
-        .delete()
-        .is_("saved_at", "null")
-        .lt(
-            "created_at",
-            f"now() - interval '{settings.RETENTION_JOB_DAYS} days'",
-        )
-        .execute()
-    )
-    purged_jobs: list[dict] = purged_jobs_result.data or []
-    purged_job_count = len(purged_jobs)
+    job_repo = JobRepository(supabase)
+    orphan_repo = OrphanedStorageKeyRepository(supabase)
+    image_repo = ImageRepository(supabase)
+
+    cutoff_iso = (
+        datetime.now(tz=timezone.utc) - timedelta(days=settings.RETENTION_JOB_DAYS)
+    ).isoformat()
+
+    purged_job_count = 0
+    purged_job_blob_count = 0
+    job_blob_dlq_count = 0
+
+    try:
+        # Bounded nightly batch: cap the per-run size so a first-night run
+        # after a backfill cannot balloon into a multi-minute loop.
+        # Retention runs every night and will catch up across ticks. The
+        # cap is deliberately large enough (1000 jobs/run) that normal
+        # steady-state traffic fits comfortably in a single run.
+        doomed_jobs = job_repo.list_expired_unsaved_jobs(cutoff_iso)
+        if len(doomed_jobs) > settings.RETENTION_JOB_BATCH_LIMIT:
+            logger.warning(
+                "retention: %d expired unsaved jobs exceed batch cap %d — "
+                "purging first %d this run; remainder deferred to next tick",
+                len(doomed_jobs),
+                settings.RETENTION_JOB_BATCH_LIMIT,
+                settings.RETENTION_JOB_BATCH_LIMIT,
+            )
+            doomed_jobs = doomed_jobs[: settings.RETENTION_JOB_BATCH_LIMIT]
+
+        doomed_ids: list[str] = [row["id"] for row in doomed_jobs if row.get("id")]
+
+        # Step 1a: gather (bucket, key) tuples per doomed job. Reuses the
+        # exact enumerate helper that ``delete_job`` uses, so raw-selfies,
+        # generated-images, and live post-images keys stay in lock-step
+        # across both delete paths — the "API surface parity" invariant.
+        doomed_blobs: list[tuple[str, str]] = []
+        for job_id in doomed_ids:
+            try:
+                doomed_blobs.extend(job_repo.enumerate_blob_keys_for_delete(job_id))
+            except Exception:
+                logger.exception(
+                    "retention: blob enumeration failed for job %s — blobs "
+                    "for this job may orphan until manual cleanup",
+                    job_id,
+                )
+
+        # Step 1b: constrained bulk DELETE. CAS predicate re-asserts the
+        # retention purge invariants (``saved_at IS NULL AND created_at <
+        # cutoff``) at commit time so any row a user Saved between the
+        # enumerate call above and this DELETE is skipped rather than
+        # hard-deleted. The same cutoff fed into ``list_expired_unsaved_jobs``
+        # must be passed here — anything else narrows the CAS inconsistently.
+        #
+        # Short-circuit on failure: if the DB DELETE itself raises, we
+        # must NOT wipe the blobs whose DB references survived. The
+        # enumerate-before-cascade invariant assumes the DELETE committed.
+        try:
+            job_repo.delete_by_ids(doomed_ids, cutoff_iso=cutoff_iso)
+            purged_job_count = len(doomed_ids)
+        except Exception:
+            logger.exception(
+                "retention: bulk job DELETE failed — skipping blob wipes "
+                "to preserve enumerate-before-cascade invariant"
+            )
+            doomed_blobs = []
+
+        # Step 1c: inline blob wipe via shared helper. Per-key so a single
+        # 503 lands in the DLQ alone instead of dragging the whole batch
+        # through retry limbo. Routes through ``image_repo`` to stay aligned
+        # with every other blob-delete site in the codebase (delete_job,
+        # delete_account). On exception, the helper records to
+        # ``orphaned_storage_keys`` with reason ``retention_purge``; the
+        # nightly reclaim worker drains that table.
+        for bucket, key in doomed_blobs:
+            ok = wipe_blob_or_record_orphan_sync(
+                image_repo, orphan_repo, bucket, key, RETENTION_PURGE_REASON
+            )
+            if ok:
+                purged_job_blob_count += 1
+            else:
+                job_blob_dlq_count += 1
+    except Exception:
+        logger.exception("retention job-purge step failed — continuing to uploads")
 
     # ------------------------------------------------------------------
     # Step 2: Fetch uploads to purge — collect storage keys first
     # ------------------------------------------------------------------
 
-    expired_uploads_result = (
-        supabase.table("uploads")
-        .select("id, image_url")
-        .lt(
-            "last_accessed_at",
-            f"now() - interval '{settings.RETENTION_UPLOAD_DAYS} days'",
-        )
-        .execute()
-    )
-    expired_uploads: list[dict] = expired_uploads_result.data or []
-
     purged_upload_count = 0
     purged_storage_count = 0
 
-    if expired_uploads:
-        upload_ids = [row["id"] for row in expired_uploads]
-        storage_keys = [
-            row["image_url"] for row in expired_uploads if row.get("image_url")
-        ]
+    try:
+        expired_uploads_result = (
+            supabase.table("uploads")
+            .select("id, image_url")
+            .lt(
+                "last_accessed_at",
+                f"now() - interval '{settings.RETENTION_UPLOAD_DAYS} days'",
+            )
+            .execute()
+        )
+        expired_uploads: list[dict] = expired_uploads_result.data or []
 
-        # --------------------------------------------------------------
-        # Step 3: Delete uploads (CASCADE drops glowup_analyses + orphans)
-        # --------------------------------------------------------------
+        if expired_uploads:
+            upload_ids = [row["id"] for row in expired_uploads]
+            storage_keys = [
+                row["image_url"] for row in expired_uploads if row.get("image_url")
+            ]
 
-        supabase.table("uploads").delete().in_("id", upload_ids).execute()
-        purged_upload_count = len(upload_ids)
+            # ----------------------------------------------------------
+            # Step 2a: Delete uploads (CASCADE drops glowup_analyses +
+            # orphans).
+            # ----------------------------------------------------------
 
-        # --------------------------------------------------------------
-        # Step 4: Remove blobs from Supabase storage (raw-selfies bucket)
-        # --------------------------------------------------------------
+            supabase.table("uploads").delete().in_("id", upload_ids).execute()
+            purged_upload_count = len(upload_ids)
 
-        if storage_keys:
-            try:
-                supabase.storage.from_(RAW_SELFIES_BUCKET).remove(storage_keys)
-                purged_storage_count = len(storage_keys)
-            except Exception:
-                logger.error(
-                    "Retention: storage blob cleanup failed for %d keys — orphaned blobs may remain",
-                    len(storage_keys),
-                    exc_info=True,
-                )
+            # ----------------------------------------------------------
+            # Step 2b: Remove blobs from Supabase storage via image_repo
+            # so retention stays aligned with delete_job + delete_account
+            # (they all go through ImageRepository.remove).
+            # ----------------------------------------------------------
+
+            if storage_keys:
+                try:
+                    image_repo.remove(RAW_SELFIES_BUCKET, storage_keys)
+                    purged_storage_count = len(storage_keys)
+                except Exception:
+                    logger.error(
+                        "Retention: storage blob cleanup failed for %d keys "
+                        "— orphaned blobs may remain",
+                        len(storage_keys),
+                        exc_info=True,
+                    )
+    except Exception:
+        logger.exception(
+            "retention upload-purge step failed — continuing to reservations"
+        )
 
     # ------------------------------------------------------------------
     # Step 5: Observability log
     # ------------------------------------------------------------------
 
     logger.info(
-        "Retention: purged %d jobs, %d uploads, %d storage objects",
+        "Retention: purged %d jobs (%d blobs wiped, %d DLQ'd), "
+        "%d uploads, %d upload storage objects",
         purged_job_count,
+        purged_job_blob_count,
+        job_blob_dlq_count,
         purged_upload_count,
         purged_storage_count,
     )

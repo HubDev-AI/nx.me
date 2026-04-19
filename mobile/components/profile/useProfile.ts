@@ -251,15 +251,25 @@ export function useProfile(): UseProfileReturn {
 
   const reconcileWithJob = useCallback(
     (jobId: string, result: JobResult) => {
+      // JobResult.post_id is optional (older backends omit it); treat it
+      // as the authoritative value when present so publish/delete flows
+      // in the result screen propagate to the profile grid's globe
+      // indicator on the next poll. Fall back to the entry's own cached
+      // value when the response omits the field to avoid clobbering.
+      const incomingPostId =
+        result.post_id !== undefined ? result.post_id : undefined;
       setGlowUps((prev) => {
         let touched = false;
         const next = prev.map((entry) => {
           if (entry.job_id !== jobId) return entry;
+          const nextPostId =
+            incomingPostId !== undefined ? incomingPostId : entry.post_id;
           if (
             entry.status === result.status &&
             entry.after_image_url === result.after_image_url &&
             entry.before_image_url === result.before_image_url &&
-            entry.saved_at === result.saved_at
+            entry.saved_at === result.saved_at &&
+            entry.post_id === nextPostId
           ) {
             return entry;
           }
@@ -275,6 +285,7 @@ export function useProfile(): UseProfileReturn {
             // value directly so an admin-side clear also propagates
             // down to the grid.
             saved_at: result.saved_at,
+            post_id: nextPostId,
           };
         });
         return touched ? next : prev;

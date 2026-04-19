@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from app.analytics import events
@@ -24,7 +24,11 @@ from app.api.deps import (
     get_user_or_guest,
     get_credit_ledger,
     get_current_user,
+    get_image_repo,
     get_job_repo,
+    get_orphaned_analyses_repo,
+    get_orphaned_storage_repo,
+    get_post_repo,
     get_redis,
 )
 from app.api.middleware.auth import UserClaims
@@ -36,11 +40,38 @@ from app.generation.models import (
     FAILURE_IDENTITY,
     JobStatus,
 )
-from app.repositories.job_repo import JobRepository
+from app.repositories.image_repo import ImageRepository
+from app.repositories.job_repo import JobRepository, SOURCE_TYPE_GLOWUP
+from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
+from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
+from app.repositories.post_repo import PostRepository
+from app.services.blob_cleanup import wipe_blob_or_record_orphan
+from app.services.rate_limiter import check_delete_glowup_rate_limit
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["jobs"])
+
+
+# Reason string recorded in ``orphaned_storage_keys`` when a blob wipe
+# fails during DELETE /v1/jobs/{job_id}. Mirrors ``"delete_account"`` from
+# ``delete_account`` — purely server-side; never derived from user input.
+DELETE_GLOWUP_REASON = "delete_glowup"
+
+# Statuses from which a glow-up can be hard-deleted. In-flight statuses
+# (queued/processing/finalizing) must be cancelled first so we do not
+# race the ARQ worker. Diverges from ``cancel_job`` (which flips
+# non-terminal jobs to cancelled); here we refuse them entirely.
+_DELETABLE_JOB_STATUSES: frozenset[str] = frozenset(
+    {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
+)
+
+# Peer statuses that should *NOT* keep a shared ``glowup_analyses`` row
+# alive. A cancelled peer already released its reservation and is, for
+# ref-counting purposes, gone. Other non-terminal + completed + failed
+# peers DO keep the analysis so re-generation off the same analysis
+# stays possible (see plan §Key Technical Decisions, "peers" paragraph).
+_CANCELLED_PEER_STATUSES: frozenset[str] = frozenset({JobStatus.CANCELLED})
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +92,13 @@ class JobStatusResponse(BaseModel):
     retry_eligible: bool | None = None
     user_guidance: str | None = None
     saved_at: str | None = None
+    # Populated only when ``status == COMPLETED`` AND a live post
+    # (``is_deleted = FALSE AND is_hidden = FALSE``) exists for this
+    # job. Mobile uses them to (a) hide the Publish row when already
+    # published, (b) decide whether to append the card-web URL in
+    # Share, (c) build the hash-URL for result-card Share.
+    post_id: str | None = None
+    share_hash: str | None = None
 
 
 class SaveResponse(BaseModel):
@@ -91,6 +129,7 @@ async def get_job(
     claims: UserClaims = Depends(get_user_or_guest),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
+    post_repo: PostRepository = Depends(get_post_repo),
 ) -> JobStatusResponse:
     """Poll job status with estimated wait time.
 
@@ -152,6 +191,10 @@ async def get_job(
     before_url: str | None = None
     after_url: str | None = None
     identity_preserved: bool | None = None
+    # R4/R5/R9 — attached only when a live post exists for this job so the
+    # client can gate Publish and build a non-broken share URL.
+    post_id: str | None = None
+    share_hash: str | None = None
 
     if job_status == JobStatus.COMPLETED:
         identity_preserved = job.get("identity_preserved")
@@ -173,6 +216,13 @@ async def get_job(
                 job["after_image_url"],
                 settings.SIGNED_URL_EXPIRY_SECONDS,
             )
+
+        active_post = await run_sync(
+            post_repo.get_active_by_glow_up_job_id, str(job_id)
+        )
+        if active_post:
+            post_id = active_post.get("id")
+            share_hash = active_post.get("share_hash")
 
     # Failed: include refund and retry info
     credit_refunded: bool | None = None
@@ -208,6 +258,8 @@ async def get_job(
         retry_eligible=retry_eligible,
         user_guidance=user_guidance,
         saved_at=saved_at_str,
+        post_id=post_id,
+        share_hash=share_hash,
     )
 
 
@@ -429,3 +481,180 @@ async def refund_job(
         status=job["status"],
         credit_refunded=credit_refunded,
     )
+
+
+# ---------------------------------------------------------------------------
+# DELETE /jobs/{job_id} — hard-cascade the glow-up and everything it produced.
+# ---------------------------------------------------------------------------
+
+
+# ORDER MATTERS: enumerate blob keys BEFORE DELETE FROM jobs — the FK cascade
+# drops posts/images rows, and the join to find storage keys dies with them.
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(
+    job_id: UUID,
+    claims: UserClaims = Depends(get_user_or_guest),
+    redis_client: aioredis.Redis = Depends(get_redis),
+    job_repo: JobRepository = Depends(get_job_repo),
+    image_repo: ImageRepository = Depends(get_image_repo),
+    orphan_repo: OrphanedStorageKeyRepository = Depends(get_orphaned_storage_repo),
+    orphan_analyses_repo: OrphanedAnalysesRepository = Depends(
+        get_orphaned_analyses_repo
+    ),
+) -> Response:
+    """Hard-delete a glow-up, its post (if any), and every owned blob.
+
+    ORDER MATTERS: enumerate blob keys BEFORE DELETE FROM jobs — the FK
+    cascade drops posts/images rows, and the join to find storage keys
+    dies with them.
+
+    Cascade chain (reverse-chronological in effect):
+      1. Fetch job + owner check. Missing job, wrong owner, or already-
+         deleted → idempotent 204 BEFORE the rate limiter runs. A buggy
+         client looping DELETE on stale job IDs (all 204) cannot burn the
+         user's own budget — only real destructive work consumes it.
+      2. Rate-limit gate (per-caller, 10/min) — AFTER the owner check so
+         no-op 204 responses do not count. See ``check_delete_glowup_
+         rate_limit`` for the "real deletes only" semantic.
+      3. Status gate: ``completed | failed | cancelled`` only. In-flight
+         jobs must be cancelled first via ``POST /jobs/{id}/cancel``.
+      4. Enumerate ``(bucket, key)`` for every blob this job owns —
+         raw-selfies, generated-images, and (if a live post exists)
+         post-images. ``JobRepository.enumerate_blob_keys_for_delete``
+         does the post lookup internally to keep this handler tidy.
+      5. Ref-count the shared ``glowup_analyses`` row via peer jobs.
+         Cancelled peers do not count; any other peer keeps the analysis
+         alive for re-generation. Only glow-up sources are considered —
+         future ``makeup_session`` source_types route elsewhere.
+      6. Issue the single ``DELETE FROM jobs`` — FK cascade wipes posts,
+         reactions, comments, reports, credit_reservations,
+         prompt_experiments.
+      7. If peers=0 and source is a glowup, delete the analysis row.
+      8. Inline blob wipe per key — on exception, record to
+         ``orphaned_storage_keys`` with ``reason=DELETE_GLOWUP_REASON``
+         (nightly reclaim worker drains it).
+      9. Emit ``events.glowup_delete`` (swallow-wrapped like glowup_save).
+
+    Response posture — **intentional divergence from sibling /jobs
+    endpoints**: missing job + wrong-owner + already-deleted all return
+    204. This mirrors ``delete_account`` and satisfies the idempotency
+    invariant from ``docs/solutions/best-practices/account-delete-hard-
+    reset-invariant-2026-04-18.md`` — destructive ops that are retried
+    must not surface 404 on the second call, or clients cannot tell
+    success from "never existed". GET/cancel/refund/save return 404 on
+    wrong-owner; DELETE here deliberately does not.
+
+    Rate-limit semantic: the limiter only gates the destructive path.
+    No-op 204s (missing job, wrong owner, already deleted) do NOT
+    consume budget, so a stolen token looping stale IDs cannot DoS the
+    real owner out of their own 10/min budget. Security posture is
+    unchanged — the 204 response shape is identical in all three no-op
+    cases whether or not the limiter ran.
+    """
+    user_id_str: str = claims["sub"]
+    job_id_str = str(job_id)
+
+    # 1a. Fetch job. Missing → idempotent 204 (mirrors delete_account).
+    # Runs BEFORE the rate limiter so no-op 204s don't burn budget —
+    # see docstring "Rate-limit semantic".
+    job = await run_sync(job_repo.get_by_id, job_id_str)
+    if not job:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 1b. Wrong owner → 204 (see docstring for the divergence rationale).
+    # Also precedes the rate limiter so a stolen-token sweep on another
+    # user's IDs does not consume the real owner's budget.
+    if job.get("user_id") != user_id_str:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    # 2. Rate-limit gate — only reached after we know we're about to do
+    # real destructive work. See docstring and the helper docstring for
+    # why this sits after the owner check rather than at the top.
+    allowed, retry_after = await check_delete_glowup_rate_limit(
+        user_id_str, redis_client
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many glow-up deletions. Try again in a moment.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # 3. Status gate. Non-terminal statuses must be cancelled first so
+    # the DB DELETE does not race the ARQ worker writing back results.
+    job_status = job.get("status")
+    if job_status not in _DELETABLE_JOB_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": {
+                    "code": "JOB_NOT_CANCELLABLE",
+                    "message": (
+                        "This glow-up is still in progress. Cancel it first, "
+                        "then try again."
+                    ),
+                }
+            },
+        )
+
+    # 4. Enumerate blob keys BEFORE cascade. If this step is skipped or
+    # reordered after the DELETE, the post-images keys (denormalized on
+    # ``posts.before_image_url``/``after_image_url``) vanish with the
+    # cascaded row and the blobs orphan silently.
+    blob_keys = await run_sync(job_repo.enumerate_blob_keys_for_delete, job_id_str)
+
+    # 5. Ref-count peer jobs sharing this source_id. Only relevant for
+    # ``glowup_analysis`` source_type — other polymorphic sources own
+    # their own lifecycle and must not be touched by this endpoint.
+    source_type = job.get("source_type")
+    source_id = job.get("source_id")
+    delete_analysis = False
+    if source_type == SOURCE_TYPE_GLOWUP and source_id:
+        peer_count = await run_sync(
+            job_repo.count_peer_jobs_for_source,
+            source_id,
+            exclude_id=job_id_str,
+            exclude_statuses=set(_CANCELLED_PEER_STATUSES),
+        )
+        if peer_count == 0:
+            delete_analysis = True
+
+    # 6. DB cascade. Single DELETE fans out via FK cascade.
+    await run_sync(job_repo.delete_by_id, job_id_str)
+
+    # 7. Analysis row — no FK cascade, explicit delete after we know the
+    # jobs row is gone.
+    if delete_analysis:
+        try:
+            await run_sync(job_repo.delete_analysis_by_id, source_id)
+        except Exception as exc:  # noqa: BLE001
+            # Don't fail the request — analysis orphan is recoverable
+            # (plan §Risks acknowledges; a future reclaim worker drains
+            # the DLQ). Record the orphan so the sweeper has a durable
+            # handle; ``record`` is itself defensive and never raises.
+            logger.warning(
+                "delete_glowup: analysis row delete failed for %s: %s — "
+                "recording to DLQ",
+                source_id,
+                exc,
+            )
+            await run_sync(orphan_analyses_repo.record, source_id, DELETE_GLOWUP_REASON)
+
+    # 8. Inline blob wipe. Per-key so a single failing key lands in the
+    # DLQ alone — batching the whole list would force us to DLQ every
+    # key on a single storage blip. Shared helper keeps retention +
+    # delete_job in lock-step on the wipe-or-DLQ contract.
+    for bucket, key in blob_keys:
+        await wipe_blob_or_record_orphan(
+            image_repo, orphan_repo, bucket, key, DELETE_GLOWUP_REASON
+        )
+
+    # 9. Emit analytics (swallow-wrapped — analytics failure must not fail
+    # a destructive path that already committed).
+    try:
+        events.glowup_delete(job_id=job_id_str, user_id=user_id_str)
+    except Exception:
+        logger.warning("Analytics emit failed for glowup_delete", exc_info=True)
+
+    logger.info("Glow-up %s hard-deleted by user %s", job_id_str, user_id_str)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
