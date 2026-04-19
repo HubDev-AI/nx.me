@@ -3,9 +3,9 @@
 Exercises the `apply_dispute_event(p_user_id, p_event_id, p_event_at,
 p_new_status)` RPC introduced in 0051 plus its interaction with:
 
-  - `credit_reserve_v2` (migration 0049, Unit 2): must reject
+  - `credit_reserve` (migration 0049, Unit 2): must reject
     `AccountLocked` when `users.locked_at IS NOT NULL`.
-  - `credit_dispute_compensate_v2` (migration 0050, Unit 3): caller-side
+  - `credit_dispute_compensate` (migration 0050, Unit 3): caller-side
     compensating ledger write on `closed_lost`.
 
 Uses psycopg2 against the local Supabase Postgres at ``127.0.0.1:54322``
@@ -63,7 +63,7 @@ _LEDGER_TYPE_PURCHASE = "purchase"
 # SQLSTATE for `apply_dispute_event` invalid-status RAISE.
 _INVALID_DISPUTE_STATUS_SQLSTATE = "P0001"
 
-# SQLSTATE for `credit_reserve_v2` account-locked RAISE (per Unit 2 spec).
+# SQLSTATE for `credit_reserve` account-locked RAISE (per Unit 2 spec).
 _ACCOUNT_LOCKED_SQLSTATE = "P0001"
 
 
@@ -90,7 +90,7 @@ def _db_reachable() -> bool:
 def _rpc_available(rpc_name: str) -> bool:
     """True iff the given RPC is already loaded in the target DB.
 
-    Unit 4 lands the CAS RPC; Units 2/3 land the `_v2` credit RPCs used by
+    Unit 4 lands the CAS RPC; Units 2/3 land the credit RPCs used by
     the integration tests. When Unit 4 is tested in isolation (Units 2/3
     not yet merged), the dependent tests skip instead of failing.
     """
@@ -133,14 +133,14 @@ pytestmark = [
     ),
 ]
 
-_requires_reserve_v2 = pytest.mark.skipif(
-    not _rpc_available("credit_reserve_v2"),
-    reason="migration 0049 not applied — `credit_reserve_v2` RPC missing",
+_requires_reserve = pytest.mark.skipif(
+    not _rpc_available("credit_reserve"),
+    reason="migration 0049 not applied — `credit_reserve` (action-typed) RPC missing",
 )
 
-_requires_dispute_compensate_v2 = pytest.mark.skipif(
-    not _rpc_available("credit_dispute_compensate_v2"),
-    reason="migration 0050 not applied — `credit_dispute_compensate_v2` RPC missing",
+_requires_dispute_compensate = pytest.mark.skipif(
+    not _rpc_available("credit_dispute_compensate"),
+    reason="migration 0050 not applied — `credit_dispute_compensate` RPC missing",
 )
 
 
@@ -550,14 +550,14 @@ class TestApplyDisputeEventOutOfOrder:
 
 
 # ---------------------------------------------------------------------------
-# Tests — integration with credit_reserve_v2 (Unit 2)
+# Tests — integration with credit_reserve (Unit 2)
 # ---------------------------------------------------------------------------
 
 
-@_requires_reserve_v2
-class TestDisputeLockRejectsReserveV2:
+@_requires_reserve
+class TestDisputeLockRejectsReserve:
     """A user locked by `apply_dispute_event('created', ...)` must have
-    `credit_reserve_v2` reject with AccountLocked (SQLSTATE P0002)."""
+    `credit_reserve` reject with AccountLocked (SQLSTATE P0002)."""
 
     def test_reserve_rejects_when_locked(self, db_conn) -> None:
         cur = db_conn.cursor()
@@ -579,7 +579,7 @@ class TestDisputeLockRejectsReserveV2:
         with pytest.raises(psycopg2.errors.RaiseException) as exc_info:
             cur.execute(
                 """
-                SELECT credit_reserve_v2(
+                SELECT credit_reserve(
                     %s::uuid, %s::uuid, %s::text
                 )
                 """,
@@ -589,7 +589,7 @@ class TestDisputeLockRejectsReserveV2:
 
     def test_reserve_resumes_after_closed_won(self, db_conn) -> None:
         """Full in-order lifecycle: reserve blocked while locked, then
-        `closed_won` clears `locked_at`, then `credit_reserve_v2` succeeds."""
+        `closed_won` clears `locked_at`, then `credit_reserve` succeeds."""
         cur = db_conn.cursor()
         user_id = _insert_user(cur)
         _grant_credits(cur, user_id, _PLAN_VERSION_V1_PRO_MONTHLY_ALLOTMENT_MILLI)
@@ -620,7 +620,7 @@ class TestDisputeLockRejectsReserveV2:
         reservation_id = str(uuid.uuid4())
         cur.execute(
             """
-            SELECT credit_reserve_v2(
+            SELECT credit_reserve(
                 %s::uuid, %s::uuid, %s::text
             )
             """,
@@ -635,15 +635,15 @@ class TestDisputeLockRejectsReserveV2:
 
 
 # ---------------------------------------------------------------------------
-# Tests — integration with credit_dispute_compensate_v2 (Unit 3)
+# Tests — integration with credit_dispute_compensate (Unit 3)
 # ---------------------------------------------------------------------------
 
 
-@_requires_reserve_v2
-@_requires_dispute_compensate_v2
+@_requires_reserve
+@_requires_dispute_compensate
 class TestClosedLostWithCompensatingLedger:
     """Full closed_lost path: apply_dispute_event stays locked, caller
-    writes compensating ledger via credit_dispute_compensate_v2 → balance
+    writes compensating ledger via credit_dispute_compensate → balance
     goes negative, user still locked."""
 
     def test_closed_lost_leaves_locked_and_compensating_entry(self, db_conn) -> None:
@@ -688,7 +688,7 @@ class TestClosedLostWithCompensatingLedger:
 
         # Caller writes compensating ledger.
         cur.execute(
-            "SELECT credit_dispute_compensate_v2(%s::uuid, %s::text, %s::int)",
+            "SELECT credit_dispute_compensate(%s::uuid, %s::text, %s::int)",
             (user_id, charge_id, pack_amount_milli),
         )
 
@@ -719,7 +719,7 @@ class TestClosedLostWithCompensatingLedger:
 # ---------------------------------------------------------------------------
 
 
-@_requires_reserve_v2
+@_requires_reserve
 class TestFullLifecycle:
     """End-to-end created → closed_won flow: user regains reserve access."""
 
@@ -752,7 +752,7 @@ class TestFullLifecycle:
             with pytest.raises(psycopg2.errors.RaiseException) as exc_info:
                 cur.execute(
                     """
-                    SELECT credit_reserve_v2(
+                    SELECT credit_reserve(
                         %s::uuid, %s::uuid, %s::text
                     )
                     """,
@@ -776,7 +776,7 @@ class TestFullLifecycle:
         # 4. reserve now succeeds.
         cur.execute(
             """
-            SELECT credit_reserve_v2(
+            SELECT credit_reserve(
                 %s::uuid, %s::uuid, %s::text
             )
             """,

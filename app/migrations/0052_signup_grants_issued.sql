@@ -44,7 +44,7 @@
 --
 -- RLS is enabled with a deny-all policy for `anon` and `authenticated`.
 -- Only the service-role JWT (which bypasses RLS) touches this table —
--- writes via `credit_apply_signup_grant_v2`, reads via the nightly purge
+-- writes via `credit_apply_signup_grant`, reads via the nightly purge
 -- job. No user-facing query path exists or should exist.
 --
 -- Migration runner (`app/migrations/run.py`) wraps this file in its own

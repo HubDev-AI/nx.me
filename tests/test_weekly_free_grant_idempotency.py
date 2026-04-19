@@ -1,4 +1,4 @@
-"""Tests for credit_apply_weekly_free_grant_v2 (Unit 3).
+"""Tests for credit_apply_weekly_free_grant (Unit 3).
 
 The RPC must be idempotent per (user_id, iso_week):
 
@@ -30,13 +30,13 @@ def _weekly_ref(user_id: str, iso_week: str) -> UUID:
 
 
 class _WeeklyGrantFake:
-    """Python model of credit_apply_weekly_free_grant_v2 backed by
+    """Python model of credit_apply_weekly_free_grant backed by
     the partial UNIQUE index."""
 
     def __init__(self) -> None:
         self.rows: list[dict] = []
 
-    def credit_apply_weekly_free_grant_v2(
+    def credit_apply_weekly_free_grant(
         self,
         user_id: str,
         iso_week: str,
@@ -81,9 +81,7 @@ class TestWeeklyFreeGrantIdempotency(unittest.TestCase):
 
     # -- Happy path ----------------------------------------------------
     def test_first_call_inserts_single_entry(self) -> None:
-        self.db.credit_apply_weekly_free_grant_v2(
-            self.user_id, self.iso_week, self.grant
-        )
+        self.db.credit_apply_weekly_free_grant(self.user_id, self.iso_week, self.grant)
 
         rows = self.db.rows_for(self.user_id)
         self.assertEqual(len(rows), 1)
@@ -95,9 +93,7 @@ class TestWeeklyFreeGrantIdempotency(unittest.TestCase):
         """The reference_id must be uuid5(NS_URL, 'weekly:<user>:<iso_week>')
         so two independent callers with the same inputs derive the same UUID
         and the second insert collides on the partial UNIQUE index."""
-        self.db.credit_apply_weekly_free_grant_v2(
-            self.user_id, self.iso_week, self.grant
-        )
+        self.db.credit_apply_weekly_free_grant(self.user_id, self.iso_week, self.grant)
 
         rows = self.db.rows_for(self.user_id)
         expected = _weekly_ref(self.user_id, self.iso_week)
@@ -111,12 +107,8 @@ class TestWeeklyFreeGrantIdempotency(unittest.TestCase):
         This is the test referenced in plan Unit 3 Verification:
             tests/test_weekly_free_grant_idempotency.py::test_same_week_is_noop
         """
-        self.db.credit_apply_weekly_free_grant_v2(
-            self.user_id, self.iso_week, self.grant
-        )
-        self.db.credit_apply_weekly_free_grant_v2(
-            self.user_id, self.iso_week, self.grant
-        )
+        self.db.credit_apply_weekly_free_grant(self.user_id, self.iso_week, self.grant)
+        self.db.credit_apply_weekly_free_grant(self.user_id, self.iso_week, self.grant)
 
         rows = self.db.rows_for(self.user_id)
         self.assertEqual(len(rows), 1, "ON CONFLICT DO NOTHING suppressed duplicate")
@@ -126,7 +118,7 @@ class TestWeeklyFreeGrantIdempotency(unittest.TestCase):
         """Stress the ON CONFLICT branch: many repeat calls still emit
         exactly one ledger row."""
         for _ in range(25):
-            self.db.credit_apply_weekly_free_grant_v2(
+            self.db.credit_apply_weekly_free_grant(
                 self.user_id, self.iso_week, self.grant
             )
 
@@ -138,8 +130,8 @@ class TestWeeklyFreeGrantIdempotency(unittest.TestCase):
     def test_different_iso_weeks_both_insert(self) -> None:
         """Different ISO weeks derive different reference_ids → both
         calls succeed. This is the "next Monday" case."""
-        self.db.credit_apply_weekly_free_grant_v2(self.user_id, "2026-W16", self.grant)
-        self.db.credit_apply_weekly_free_grant_v2(self.user_id, "2026-W17", self.grant)
+        self.db.credit_apply_weekly_free_grant(self.user_id, "2026-W16", self.grant)
+        self.db.credit_apply_weekly_free_grant(self.user_id, "2026-W17", self.grant)
 
         rows = self.db.rows_for(self.user_id)
         self.assertEqual(len(rows), 2)
@@ -149,10 +141,8 @@ class TestWeeklyFreeGrantIdempotency(unittest.TestCase):
         """Different users in the same ISO week derive different
         reference_ids → both rows are written."""
         other_user = str(uuid4())
-        self.db.credit_apply_weekly_free_grant_v2(
-            self.user_id, self.iso_week, self.grant
-        )
-        self.db.credit_apply_weekly_free_grant_v2(other_user, self.iso_week, self.grant)
+        self.db.credit_apply_weekly_free_grant(self.user_id, self.iso_week, self.grant)
+        self.db.credit_apply_weekly_free_grant(other_user, self.iso_week, self.grant)
 
         self.assertEqual(len(self.db.rows_for(self.user_id)), 1)
         self.assertEqual(len(self.db.rows_for(other_user)), 1)

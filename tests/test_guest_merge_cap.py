@@ -1,4 +1,4 @@
-"""Tests for merge_guest_ledger_v2 (Unit 10).
+"""Tests for merge_guest_ledger (Unit 10).
 
 The RPC atomically transfers a guest user's ledger into a new
 authenticated user:
@@ -45,7 +45,7 @@ class GuestMergeError(RuntimeError):
 
 
 class _MergeFake:
-    """Python model of merge_guest_ledger_v2 + users.merged_* columns."""
+    """Python model of merge_guest_ledger (0050) + users.merged_* columns."""
 
     def __init__(self) -> None:
         self.ledger: list[dict] = []
@@ -105,7 +105,7 @@ class _MergeFake:
         )
 
     # -- RPC contract ---------------------------------------------------
-    def merge_guest_ledger_v2(
+    def merge_guest_ledger(
         self,
         guest_user_id: str,
         new_user_id: str,
@@ -181,7 +181,7 @@ class TestGuestMergeCap(unittest.TestCase):
         self.db.insert_ledger(self.guest_id, 100, "weekly_free_grant")
         self.db.insert_ledger(self.guest_id, 100, "weekly_free_grant")
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -205,7 +205,7 @@ class TestGuestMergeCap(unittest.TestCase):
         cap = 2 * self.SIGNUP_GRANT  # 600
         self.db.insert_ledger(self.guest_id, cap, "signup_grant")
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -222,7 +222,7 @@ class TestGuestMergeCap(unittest.TestCase):
         written on the new user."""
         self.db.insert_ledger(self.guest_id, 700, "signup_grant")
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -251,7 +251,7 @@ class TestGuestMergeCap(unittest.TestCase):
         self.db.insert_ledger(self.guest_id, 1500, "credit_pack_purchase")
         self.db.insert_ledger(self.guest_id, 500, "credit_pack_purchase")
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -274,7 +274,7 @@ class TestGuestMergeCap(unittest.TestCase):
         self.db.insert_ledger(self.guest_id, 1000, "signup_grant")
         self.db.insert_ledger(self.guest_id, 500, "credit_pack_purchase")
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -293,7 +293,7 @@ class TestGuestMergeCap(unittest.TestCase):
         no-op merge. The non-pack `guest_merge_non_pack` audit row is
         still written (delta=0) to stamp the merge in the ledger.
         """
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -321,7 +321,7 @@ class TestGuestMergeCap(unittest.TestCase):
     def test_pack_reference_id_is_deterministic(self) -> None:
         """pack reference_id = uuid5(NS_URL, 'guest_merge:<guest_user_id>')"""
         self.db.insert_ledger(self.guest_id, 200, "credit_pack_purchase")
-        self.db.merge_guest_ledger_v2(
+        self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -348,7 +348,7 @@ class TestGuestMergeCap(unittest.TestCase):
 
         attacker_hash = b"\x22" * 32
         with self.assertRaises(GuestMergeError) as ctx:
-            self.db.merge_guest_ledger_v2(
+            self.db.merge_guest_ledger(
                 self.guest_id,
                 self.new_user_id,
                 self.SIGNUP_GRANT,
@@ -368,7 +368,7 @@ class TestGuestMergeCap(unittest.TestCase):
         """Caller forgot to pass X-Install-UUID header but the guest
         was bound to one → still a mismatch, not a bypass."""
         with self.assertRaises(GuestMergeError) as ctx:
-            self.db.merge_guest_ledger_v2(
+            self.db.merge_guest_ledger(
                 self.guest_id,
                 self.new_user_id,
                 self.SIGNUP_GRANT,
@@ -383,7 +383,7 @@ class TestGuestMergeCap(unittest.TestCase):
         self.db.seed_user(pre_rollout_guest, guest_install_uuid_hash=None)
         self.db.insert_ledger(pre_rollout_guest, 300, "signup_grant")
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             pre_rollout_guest,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -398,7 +398,7 @@ class TestGuestMergeCap(unittest.TestCase):
         pre_rollout_guest = str(uuid4())
         self.db.seed_user(pre_rollout_guest, guest_install_uuid_hash=None)
 
-        result = self.db.merge_guest_ledger_v2(
+        result = self.db.merge_guest_ledger(
             pre_rollout_guest,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -412,7 +412,7 @@ class TestGuestMergeCap(unittest.TestCase):
     def test_already_merged_raises_p0004(self) -> None:
         """Second merge attempt on the same guest → P0004."""
         # First merge succeeds.
-        self.db.merge_guest_ledger_v2(
+        self.db.merge_guest_ledger(
             self.guest_id,
             self.new_user_id,
             self.SIGNUP_GRANT,
@@ -423,7 +423,7 @@ class TestGuestMergeCap(unittest.TestCase):
         another_user = str(uuid4())
         self.db.seed_user(another_user)
         with self.assertRaises(GuestMergeError) as ctx:
-            self.db.merge_guest_ledger_v2(
+            self.db.merge_guest_ledger(
                 self.guest_id,
                 another_user,
                 self.SIGNUP_GRANT,

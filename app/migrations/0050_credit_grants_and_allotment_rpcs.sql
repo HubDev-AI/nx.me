@@ -35,7 +35,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- * credit_ledger.metadata — audit payload carrier (discarded_milli on
 --   monthly_allotment; truncated_milli on guest_merge_truncated).
 -- * partial UNIQUE on reference_id WHERE type='weekly_free_grant' — the
---   dedup handle for credit_apply_weekly_free_grant_v2. Scoped to this
+--   dedup handle for credit_apply_weekly_free_grant. Scoped to this
 --   single type so other types that already reuse reference_id (e.g. the
 --   per-reservation reserve/release/commit trio) continue to work.
 -- -------------------------------------------------------------------------
@@ -47,7 +47,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_weekly_ref
     WHERE type = 'weekly_free_grant';
 
 -- Pack + dispute-compensation dedup handles. Anchors the ON CONFLICT clauses
--- in `credit_apply_pack_purchase_v2` and `credit_dispute_compensate_v2` so a
+-- in `credit_apply_pack_purchase` and `credit_dispute_compensate` so a
 -- caller that replays the same uuid5 reference for the same type silently
 -- no-ops (belt-and-braces on top of the primary `processed_webhook_events`
 -- dedup).
@@ -60,20 +60,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_credit_ledger_dispute_ref
     WHERE type = 'dispute_compensation';
 
 -- Supports `SUM(delta) WHERE user_id = $1 AND type NOT IN (...)` in
--- `credit_reserve_v2` (0049) and `credit_apply_monthly_allotment_v2` below —
+-- `credit_reserve` (0049) and `credit_apply_monthly_allotment` below —
 -- enables an index-only scan instead of a full table scan per reserve call.
 CREATE INDEX IF NOT EXISTS idx_credit_ledger_user_type_delta
     ON credit_ledger (user_id, type) INCLUDE (delta);
 
 -- =========================================================================
--- 1. credit_apply_monthly_allotment_v2
+-- 1. credit_apply_monthly_allotment
 --    REPLACE semantics (R11): single ledger entry with metadata payload
 --    capturing the discarded non-pack balance. Excludes pack credits
 --    (so paid packs survive renewal) AND excludes in-flight reserve/commit
 --    markers (so a mid-flight reservation cannot be REPLACE'd away, and a
 --    subsequent release doesn't double-credit into the new allotment).
 -- =========================================================================
-CREATE OR REPLACE FUNCTION public.credit_apply_monthly_allotment_v2(
+CREATE OR REPLACE FUNCTION public.credit_apply_monthly_allotment(
     p_user_id         UUID,
     p_plan_version_id UUID
 )
@@ -135,11 +135,11 @@ END;
 $$;
 
 -- =========================================================================
--- 2. credit_apply_signup_grant_v2
+-- 2. credit_apply_signup_grant
 --    One-time fingerprint-bound signup grant (R6a). NULL hash/salt args =
 --    web signup, no fingerprint enforcement (documented residual risk).
 -- =========================================================================
-CREATE OR REPLACE FUNCTION public.credit_apply_signup_grant_v2(
+CREATE OR REPLACE FUNCTION public.credit_apply_signup_grant(
     p_user_id             UUID,
     p_deterministic_hash  BYTEA,
     p_protected_hash      BYTEA,
@@ -206,11 +206,11 @@ END;
 $$;
 
 -- =========================================================================
--- 3. credit_apply_weekly_free_grant_v2
+-- 3. credit_apply_weekly_free_grant
 --    ISO-week scheduled grant (R6). Idempotent per (user, iso_week) via a
 --    deterministic uuid5 reference + partial UNIQUE on reference_id.
 -- =========================================================================
-CREATE OR REPLACE FUNCTION public.credit_apply_weekly_free_grant_v2(
+CREATE OR REPLACE FUNCTION public.credit_apply_weekly_free_grant(
     p_user_id            UUID,
     p_iso_week           TEXT,
     p_weekly_grant_milli INT
@@ -247,12 +247,12 @@ END;
 $$;
 
 -- =========================================================================
--- 4. credit_apply_pack_purchase_v2
+-- 4. credit_apply_pack_purchase
 --    Pack grant driven by a Stripe webhook. Primary dedup lives outside
 --    this RPC in processed_webhook_events; the uuid5 reference_id + ON
 --    CONFLICT DO NOTHING is belt-and-braces.
 -- =========================================================================
-CREATE OR REPLACE FUNCTION public.credit_apply_pack_purchase_v2(
+CREATE OR REPLACE FUNCTION public.credit_apply_pack_purchase(
     p_user_id       UUID,
     p_event_id      TEXT,
     p_credits_milli INT
@@ -292,12 +292,12 @@ END;
 $$;
 
 -- =========================================================================
--- 5. credit_dispute_compensate_v2
+-- 5. credit_dispute_compensate
 --    Negative compensating entry keyed to a Stripe charge_id (R-Dispute-3).
 --    Negative balance is acceptable here per R-Dispute-3; outer dispute
 --    state machine keeps the account locked.
 -- =========================================================================
-CREATE OR REPLACE FUNCTION public.credit_dispute_compensate_v2(
+CREATE OR REPLACE FUNCTION public.credit_dispute_compensate(
     p_user_id      UUID,
     p_charge_id    TEXT,
     p_amount_milli INT
@@ -334,7 +334,7 @@ END;
 $$;
 
 -- =========================================================================
--- 6. merge_guest_ledger_v2
+-- 6. merge_guest_ledger
 --    Atomic guest → authenticated-user merge (R16). Install-UUID binding
 --    prevents pack drain via guest-token theft. 2× signup-grant cap on
 --    non-pack; pack credits transfer whole.
@@ -342,7 +342,7 @@ $$;
 --    Returns JSON for the HTTP layer so the mobile client can surface
 --    any truncated amount to the user.
 -- =========================================================================
-CREATE OR REPLACE FUNCTION public.merge_guest_ledger_v2(
+CREATE OR REPLACE FUNCTION public.merge_guest_ledger(
     p_guest_user_id      UUID,
     p_new_user_id        UUID,
     p_signup_grant_milli INT,
@@ -468,17 +468,17 @@ $$;
 -- primary defence; these REVOKEs stop a caller from reaching the
 -- function body at all. service_role bypasses via SECURITY DEFINER
 -- ownership, so no REVOKE is applied there.
-REVOKE EXECUTE ON FUNCTION public.credit_apply_monthly_allotment_v2(UUID, UUID)
+REVOKE EXECUTE ON FUNCTION public.credit_apply_monthly_allotment(UUID, UUID)
     FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.credit_apply_signup_grant_v2(UUID, BYTEA, BYTEA, BYTEA, INT)
+REVOKE EXECUTE ON FUNCTION public.credit_apply_signup_grant(UUID, BYTEA, BYTEA, BYTEA, INT)
     FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.credit_apply_weekly_free_grant_v2(UUID, TEXT, INT)
+REVOKE EXECUTE ON FUNCTION public.credit_apply_weekly_free_grant(UUID, TEXT, INT)
     FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.credit_apply_pack_purchase_v2(UUID, TEXT, INT)
+REVOKE EXECUTE ON FUNCTION public.credit_apply_pack_purchase(UUID, TEXT, INT)
     FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.credit_dispute_compensate_v2(UUID, TEXT, INT)
+REVOKE EXECUTE ON FUNCTION public.credit_dispute_compensate(UUID, TEXT, INT)
     FROM PUBLIC, anon, authenticated;
-REVOKE EXECUTE ON FUNCTION public.merge_guest_ledger_v2(UUID, UUID, INT, BYTEA)
+REVOKE EXECUTE ON FUNCTION public.merge_guest_ledger(UUID, UUID, INT, BYTEA)
     FROM PUBLIC, anon, authenticated;
 
 
@@ -489,9 +489,9 @@ REVOKE EXECUTE ON FUNCTION public.merge_guest_ledger_v2(UUID, UUID, INT, BYTEA)
 -- to carry forward, and dropping it would risk downstream references).
 -- The partial UNIQUE index is also left in place for the same reason.
 
-DROP FUNCTION IF EXISTS public.merge_guest_ledger_v2(UUID, UUID, INT, BYTEA);
-DROP FUNCTION IF EXISTS public.credit_dispute_compensate_v2(UUID, TEXT, INT);
-DROP FUNCTION IF EXISTS public.credit_apply_pack_purchase_v2(UUID, TEXT, INT);
-DROP FUNCTION IF EXISTS public.credit_apply_weekly_free_grant_v2(UUID, TEXT, INT);
-DROP FUNCTION IF EXISTS public.credit_apply_signup_grant_v2(UUID, BYTEA, BYTEA, BYTEA, INT);
-DROP FUNCTION IF EXISTS public.credit_apply_monthly_allotment_v2(UUID, UUID);
+DROP FUNCTION IF EXISTS public.merge_guest_ledger(UUID, UUID, INT, BYTEA);
+DROP FUNCTION IF EXISTS public.credit_dispute_compensate(UUID, TEXT, INT);
+DROP FUNCTION IF EXISTS public.credit_apply_pack_purchase(UUID, TEXT, INT);
+DROP FUNCTION IF EXISTS public.credit_apply_weekly_free_grant(UUID, TEXT, INT);
+DROP FUNCTION IF EXISTS public.credit_apply_signup_grant(UUID, BYTEA, BYTEA, BYTEA, INT);
+DROP FUNCTION IF EXISTS public.credit_apply_monthly_allotment(UUID, UUID);

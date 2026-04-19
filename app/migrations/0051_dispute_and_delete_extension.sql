@@ -35,13 +35,13 @@
 --   closed_lost      → leave users.locked_at as-is (set by the earlier
 --                      `created` in-order; caller must also write a
 --                      compensating ledger entry via
---                      `credit_dispute_compensate_v2` — Unit 3)
+--                      `credit_dispute_compensate` — Unit 3)
 --   funds_withdrawn  → audit-only (advance CAS tuple; no lock change)
 --
 -- === Advisory lock ===
 --
 -- Per-user advisory lock via `hashtextextended(p_user_id::text, 0)` — the
--- 64-bit domain adopted by the `_v2` credit RPCs (migration 0049). Keeps
+-- 64-bit domain adopted by the credit RPCs (migration 0049). Keeps
 -- concurrent dispute events on the same user serialised without blocking
 -- other users. `hashtextextended` is PG14+ and already required by 0049.
 --
@@ -87,9 +87,9 @@ BEGIN
   END IF;
 
   -- Serialise concurrent dispute events for this user. 64-bit domain
-  -- matches the `_v2` credit RPCs (0049), so a reserve in flight and a
+  -- matches the credit RPCs (0049), so a reserve in flight and a
   -- dispute event contend on the same lock — required for the
-  -- `credit_commit_v2` → release conversion path (R4) to see a
+  -- `credit_commit` → release conversion path (R4) to see a
   -- consistent `users.locked_at`.
   PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 

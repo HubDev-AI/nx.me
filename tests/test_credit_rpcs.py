@@ -1,4 +1,4 @@
-"""Tests for the `_v2` credit RPCs added by migration 0049.
+"""Tests for the credit RPCs added by migration 0049.
 
 These RPCs resolve cost server-side from `plan_versions` via an action-type
 parameter (R23). The test harness mirrors `tests/test_credit_ledger_invariants.py`
@@ -18,8 +18,8 @@ Covered scenarios (from Unit 2 of the payments-credits-only plan):
     AccountLocked (P0002).
   * Integration — `locked_at` set between reserve and commit converts the
     commit to a release (dispute-during-in-flight, R4).
-  * Integration — Phase A legacy `credit_reserve/release/commit/refund` remain
-    callable alongside the `_v2` RPCs (no type clash).
+  * Integration — Legacy `credit_reserve/release/commit/refund` (0014/0019)
+    remain callable alongside the new RPCs (no type clash).
 """
 
 from __future__ import annotations
@@ -61,9 +61,9 @@ class _RpcResult:
 
 
 class _InMemorySupabaseV2:
-    """Simulates the `_v2` RPCs plus the legacy v1 RPCs in memory.
+    """Simulates the action-typed credit RPCs plus the legacy v1 RPCs in memory.
 
-    Matches the behaviour defined in `app/migrations/0049_credit_rpcs_v2.sql`:
+    Matches the behaviour defined in `app/migrations/0049_credit_rpcs.sql`:
       * cost resolved via plan_versions lookup (active subscription or
         v1_free_default fallback),
       * dispute lock via `users.locked_at`,
@@ -125,31 +125,29 @@ class _InMemorySupabaseV2:
     # -- RPC dispatch ------------------------------------------------------
 
     def rpc(self, name: str, params: dict) -> _RpcResult:
-        if name == "credit_reserve_v2":
-            return self._credit_reserve_v2(params)
-        if name == "credit_commit_v2":
-            return self._credit_commit_v2(params)
-        if name == "credit_release_v2":
-            return self._credit_release_v2(params)
-        if name == "credit_refund_v2":
-            return self._credit_refund_v2(params)
-        # Legacy v1 RPCs — used by the Phase A coexistence test.
+        # Action-typed reserve (0049 — new signature includes p_action_type).
+        if name == "credit_reserve" and "p_action_type" in params:
+            return self._credit_reserve_new(params)
+        # commit / release / refund: same semantics for both overloads —
+        # route to the v2 impl which handles arbitrary amounts.
+        if name == "credit_commit":
+            return self._credit_commit_new(params)
+        if name == "credit_release":
+            return self._credit_release_new(params)
+        if name == "credit_refund":
+            return self._credit_refund_new(params)
+        # Helpers.
         if name == "sum_credit_balance":
             user_id = params["p_user_id"]
             return _RpcResult(data=self._balance(user_id))
+        # Legacy v1 reserve (0014/0019 — untyped, no p_action_type).
         if name == "credit_reserve":
             return self._credit_reserve_v1(params)
-        if name == "credit_release":
-            return self._credit_release_v1(params)
-        if name == "credit_commit":
-            return self._credit_commit_v1(params)
-        if name == "credit_refund":
-            return self._credit_refund_v1(params)
         raise _RpcException(f"Unknown RPC: {name}", "42883")
 
-    # -- _v2 RPCs ---------------------------------------------------------
+    # -- action-typed RPCs (0049) -----------------------------------------
 
-    def _credit_reserve_v2(self, params: dict) -> _RpcResult:
+    def _credit_reserve_new(self, params: dict) -> _RpcResult:
         user_id = str(params["p_user_id"])
         reservation_id = str(params["p_reservation_id"])
         action_type = params["p_action_type"]
@@ -191,7 +189,7 @@ class _InMemorySupabaseV2:
             )
             return _RpcResult(data={"id": reservation_id, "amount": cost})
 
-    def _credit_commit_v2(self, params: dict) -> _RpcResult:
+    def _credit_commit_new(self, params: dict) -> _RpcResult:
         reservation_id = str(params["p_reservation_id"])
         reservation = self._find_reservation(reservation_id)
         if reservation is None:
@@ -234,7 +232,7 @@ class _InMemorySupabaseV2:
             )
             return _RpcResult(data={"id": reservation_id})
 
-    def _credit_release_v2(self, params: dict) -> _RpcResult:
+    def _credit_release_new(self, params: dict) -> _RpcResult:
         reservation_id = str(params["p_reservation_id"])
         reservation = self._find_reservation(reservation_id)
         if reservation is None:
@@ -255,7 +253,7 @@ class _InMemorySupabaseV2:
             )
             return _RpcResult(data={"id": reservation_id})
 
-    def _credit_refund_v2(self, params: dict) -> _RpcResult:
+    def _credit_refund_new(self, params: dict) -> _RpcResult:
         reservation_id = str(params["p_reservation_id"])
         reservation = self._find_reservation(reservation_id)
         if reservation is None:
@@ -396,7 +394,7 @@ def _seed_user(
 def _reserve(db: _InMemorySupabaseV2, user_id: str, action_type: str) -> str:
     reservation_id = str(uuid4())
     db.rpc(
-        "credit_reserve_v2",
+        "credit_reserve",
         {
             "p_user_id": user_id,
             "p_reservation_id": reservation_id,
@@ -411,7 +409,7 @@ def _reserve(db: _InMemorySupabaseV2, user_id: str, action_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-class TestCreditRpcsV2HappyPath(unittest.TestCase):
+class TestCreditRpcsHappyPath(unittest.TestCase):
     """Reserve → commit, reserve → release, reserve → refund."""
 
     def test_reserve_then_commit_drops_balance_by_cost(self) -> None:
@@ -423,7 +421,7 @@ class TestCreditRpcsV2HappyPath(unittest.TestCase):
         res_id = _reserve(db, user_id, "glowup")
         self.assertEqual(db._balance(user_id), 2900)
 
-        db.rpc("credit_commit_v2", {"p_reservation_id": res_id}).execute()
+        db.rpc("credit_commit", {"p_reservation_id": res_id}).execute()
         # commit writes delta=0 — balance stays at 2900.
         self.assertEqual(db._balance(user_id), 2900)
 
@@ -439,7 +437,7 @@ class TestCreditRpcsV2HappyPath(unittest.TestCase):
         res_id = _reserve(db, user_id, "glowup")
         self.assertEqual(db._balance(user_id), 2900)
 
-        db.rpc("credit_release_v2", {"p_reservation_id": res_id}).execute()
+        db.rpc("credit_release", {"p_reservation_id": res_id}).execute()
         self.assertEqual(db._balance(user_id), 3000)
 
         reservation = db._find_reservation(res_id)
@@ -451,10 +449,10 @@ class TestCreditRpcsV2HappyPath(unittest.TestCase):
         user_id = _seed_user(db, balance_milli=3000)
 
         res_id = _reserve(db, user_id, "glowup")
-        db.rpc("credit_commit_v2", {"p_reservation_id": res_id}).execute()
+        db.rpc("credit_commit", {"p_reservation_id": res_id}).execute()
         self.assertEqual(db._balance(user_id), 2900)
 
-        db.rpc("credit_refund_v2", {"p_reservation_id": res_id}).execute()
+        db.rpc("credit_refund", {"p_reservation_id": res_id}).execute()
         self.assertEqual(db._balance(user_id), 3000)
 
         reservation = db._find_reservation(res_id)
@@ -473,7 +471,7 @@ class TestCreditRpcsV2HappyPath(unittest.TestCase):
         self.assertEqual(reservation["amount"], _ADA_COST_MILLI)
 
 
-class TestCreditRpcsV2EdgeCases(unittest.TestCase):
+class TestCreditRpcsEdgeCases(unittest.TestCase):
     """Edge cases around cost resolution, insufficient balance, and locking."""
 
     def test_ada_message_at_balance_under_five_raises_insufficient_credits(
@@ -545,7 +543,7 @@ class TestCreditRpcsV2ErrorPaths(unittest.TestCase):
 
         with self.assertRaises(_RpcException) as ctx:
             db.rpc(
-                "credit_reserve_v2",
+                "credit_reserve",
                 {
                     "p_user_id": user_id,
                     "p_reservation_id": str(uuid4()),
@@ -570,14 +568,14 @@ class TestCreditRpcsV2ErrorPaths(unittest.TestCase):
         self.assertIn("account_locked", str(ctx.exception))
 
 
-class TestCreditRpcsV2Integration(unittest.TestCase):
-    """Dispute-during-in-flight + Phase A coexistence."""
+class TestCreditRpcsIntegration(unittest.TestCase):
+    """Dispute-during-in-flight + legacy coexistence."""
 
     def test_commit_during_dispute_lock_converts_to_release(self) -> None:
-        """locked_at set between reserve and commit → commit_v2 refunds user.
+        """locked_at set between reserve and commit → credit_commit refunds user.
 
         Mirrors the R4 dispute-during-in-flight path: reservation is in
-        'reserved' state when the dispute lock lands; commit_v2 detects
+        'reserved' state when the dispute lock lands; credit_commit detects
         locked_at, flips status='released', and writes +amount/'release'.
         """
         db = _InMemorySupabaseV2()
@@ -590,7 +588,7 @@ class TestCreditRpcsV2Integration(unittest.TestCase):
         # and commit.
         db.users[user_id]["locked_at"] = datetime.now(tz=timezone.utc).isoformat()
 
-        db.rpc("credit_commit_v2", {"p_reservation_id": res_id}).execute()
+        db.rpc("credit_commit", {"p_reservation_id": res_id}).execute()
 
         # Balance restored (release refund); reservation marked 'released'
         # rather than 'committed' — the user gets the credit back even though
@@ -615,9 +613,9 @@ class TestCreditRpcsV2Integration(unittest.TestCase):
         self.assertEqual(len(release_rows), 1)
         self.assertEqual(release_rows[0]["delta"], _GLOWUP_COST_MILLI)
 
-    def test_legacy_v1_rpcs_coexist_with_v2(self) -> None:
-        """Phase A invariant: legacy credit_reserve/release/commit/refund stay
-        callable alongside the `_v2` RPCs without conflict."""
+    def test_legacy_v1_rpcs_coexist_with_new(self) -> None:
+        """Legacy credit_reserve (0014/0019 untyped) stays callable alongside
+        the new action-typed RPCs (0049) without conflict."""
         db = _InMemorySupabaseV2()
         user_id = _seed_user(db, balance_milli=100)
 
@@ -657,7 +655,7 @@ class TestCreditRpcsV2Integration(unittest.TestCase):
         self.assertEqual(v1_row_after["status"], "released")
 
 
-class TestCreditRpcsV2PlanVersionLookup(unittest.TestCase):
+class TestCreditRpcsPlanVersionLookup(unittest.TestCase):
     """Cost resolution path — active subscription vs v1_free_default fallback."""
 
     def test_user_without_subscription_uses_v1_free_default(self) -> None:
@@ -781,8 +779,8 @@ def _live_rpc_installed(rpc_name: str) -> bool:
     _live_db_reachable(), f"local Postgres not reachable at {_live_db_dsn()}"
 )
 @unittest.skipUnless(
-    _live_rpc_installed("credit_reserve_v2"),
-    "migration 0049 not applied — credit_reserve_v2 missing",
+    _live_rpc_installed("credit_reserve"),
+    "migration 0049 not applied — credit_reserve (action-typed) missing",
 )
 class TestLiveDBConcurrency(unittest.TestCase):
     """Live-DB proofs for advisory-lock serialization + `auth.uid()` guard.
@@ -867,7 +865,7 @@ class TestLiveDBConcurrency(unittest.TestCase):
                 try:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "SELECT credit_reserve_v2(%s::uuid, %s::uuid, %s::text)",
+                            "SELECT credit_reserve(%s::uuid, %s::uuid, %s::text)",
                             (user_id, reservation_id, "glowup"),
                         )
                     with results_lock:
@@ -905,7 +903,7 @@ class TestLiveDBConcurrency(unittest.TestCase):
         "auth.uid()/auth.role() not installed — Supabase helpers missing",
     )
     def test_42501_cross_user_call_rejected(self) -> None:
-        """Setting JWT claims for user A and invoking credit_reserve_v2 for
+        """Setting JWT claims for user A and invoking credit_reserve for
         user B must RAISE with SQLSTATE 42501 (`forbidden`).
 
         Proves the `auth.uid() IS DISTINCT FROM p_user_id` guard added by
@@ -927,7 +925,7 @@ class TestLiveDBConcurrency(unittest.TestCase):
                 reservation_id = str(uuid4())
                 with self.assertRaises(psycopg2.errors.InsufficientPrivilege) as ctx:
                     cur.execute(
-                        "SELECT credit_reserve_v2(%s::uuid, %s::uuid, %s::text)",
+                        "SELECT credit_reserve(%s::uuid, %s::uuid, %s::text)",
                         (user_b, reservation_id, "glowup"),
                     )
                 self.assertEqual(ctx.exception.pgcode, _FORBIDDEN_SQLSTATE)

@@ -1,9 +1,8 @@
--- 0049_credit_rpcs_v2.sql
--- Phase A: parallel `_v2` credit RPCs that resolve cost server-side from
--- `plan_versions` via an action-type parameter (R23). Legacy `credit_reserve`,
--- `credit_release`, `credit_commit`, `credit_refund` remain intact during
--- Phase A so readers and writers can migrate independently; Phase B drops the
--- v1 RPCs.
+-- 0049_credit_rpcs.sql
+-- Action-typed credit RPCs that resolve cost server-side from `plan_versions`
+-- via an action-type parameter (R23). Legacy `credit_reserve`, `credit_release`,
+-- `credit_commit`, `credit_refund` (0014/0019) remain intact until Unit R2
+-- (entitlement service rewrite) migrates their callers.
 --
 -- Key behaviours:
 --   * Advisory-lock domain is `hashtextextended(user_id::text, 0)` — 64-bit
@@ -15,9 +14,9 @@
 --     supplies an amount.
 --   * `credit_reservations.amount` stores the actual milli-credit cost (not 1).
 --     Legacy rows with amount=1 coexist.
---   * `users.locked_at IS NOT NULL` → dispute-lock; all `_v2` RPCs honour it.
---     `credit_reserve_v2` rejects with `account_locked` (SQLSTATE P0002).
---     `credit_commit_v2` converts a commit to a release when the lock was set
+--   * `users.locked_at IS NOT NULL` → dispute-lock; all RPCs honour it.
+--     `credit_reserve` rejects with `account_locked` (SQLSTATE P0002).
+--     `credit_commit` converts a commit to a release when the lock was set
 --     between reserve and commit (dispute-during-in-flight path, R4). Output
 --     quarantine (`dispute_review_quarantine`) is DEFERRED to v1.1 — v1
 --     contract is credit refund via release; the user-facing image stays
@@ -32,8 +31,8 @@
 
 -- UP
 
--- 1. credit_reserve_v2: action-typed, cost resolved from plan_versions.
-CREATE OR REPLACE FUNCTION public.credit_reserve_v2(
+-- 1. credit_reserve: action-typed, cost resolved from plan_versions.
+CREATE OR REPLACE FUNCTION public.credit_reserve(
   p_user_id UUID,
   p_reservation_id UUID,
   p_action_type TEXT
@@ -130,10 +129,10 @@ BEGIN
 END;
 $$;
 
--- 2. credit_commit_v2: advisory-locked commit that honours dispute-lock by
+-- 2. credit_commit: advisory-locked commit that honours dispute-lock by
 --    converting commit → release when `users.locked_at` is set between the
 --    reserve and the commit (R4 dispute-during-in-flight path).
-CREATE OR REPLACE FUNCTION public.credit_commit_v2(p_reservation_id UUID)
+CREATE OR REPLACE FUNCTION public.credit_commit(p_reservation_id UUID)
 RETURNS SETOF credit_reservations
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -203,9 +202,9 @@ BEGIN
 END;
 $$;
 
--- 3. credit_release_v2: release a 'reserved' reservation; refund the exact
+-- 3. credit_release: release a 'reserved' reservation; refund the exact
 --    reserved amount (cost-in-milli).
-CREATE OR REPLACE FUNCTION public.credit_release_v2(p_reservation_id UUID)
+CREATE OR REPLACE FUNCTION public.credit_release(p_reservation_id UUID)
 RETURNS SETOF credit_reservations
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -247,9 +246,9 @@ BEGIN
 END;
 $$;
 
--- 4. credit_refund_v2: flip 'committed' → 'released'; refund the reserved
+-- 4. credit_refund: flip 'committed' → 'released'; refund the reserved
 --    amount. Used for post-commit fal.ai auto-refund and admin refunds.
-CREATE OR REPLACE FUNCTION public.credit_refund_v2(p_reservation_id UUID)
+CREATE OR REPLACE FUNCTION public.credit_refund(p_reservation_id UUID)
 RETURNS SETOF credit_reservations
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -293,10 +292,11 @@ $$;
 
 
 -- DOWN:
--- Drop only the four `_v2` functions. Legacy `credit_reserve/release/commit/
--- refund` remain intact (Phase A invariant).
+-- Drop only the four action-typed functions added here. Legacy
+-- credit_reserve/release/commit/refund (0014/0019) remain intact
+-- until Unit R2.
 
-DROP FUNCTION IF EXISTS public.credit_reserve_v2(UUID, UUID, TEXT);
-DROP FUNCTION IF EXISTS public.credit_commit_v2(UUID);
-DROP FUNCTION IF EXISTS public.credit_release_v2(UUID);
-DROP FUNCTION IF EXISTS public.credit_refund_v2(UUID);
+DROP FUNCTION IF EXISTS public.credit_reserve(UUID, UUID, TEXT);
+DROP FUNCTION IF EXISTS public.credit_commit(UUID);
+DROP FUNCTION IF EXISTS public.credit_release(UUID);
+DROP FUNCTION IF EXISTS public.credit_refund(UUID);

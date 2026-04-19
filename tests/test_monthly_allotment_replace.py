@@ -1,4 +1,4 @@
-"""Tests for credit_apply_monthly_allotment_v2 (Unit 3).
+"""Tests for credit_apply_monthly_allotment (Unit 3).
 
 Verifies the REPLACE semantics of the monthly-allotment RPC:
 
@@ -77,7 +77,7 @@ class _LedgerFake:
         )
 
     # -- RPC contract --------------------------------------------------
-    def credit_apply_monthly_allotment_v2(
+    def credit_apply_monthly_allotment(
         self, user_id: str, plan_version_id: str
     ) -> None:
         plan = self.plan_versions.get(plan_version_id)
@@ -114,7 +114,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         self.db.insert(self.user_id, 2500, "signup_grant")
         self.db.insert(self.user_id, 500, "credit_pack_purchase")
 
-        self.db.credit_apply_monthly_allotment_v2(self.user_id, self.plan_id)
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
 
         alloc_entries = [
             r
@@ -136,7 +136,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         self.db.insert(self.user_id, 2500, "signup_grant")
         self.db.insert(self.user_id, 500, "credit_pack_purchase")
 
-        self.db.credit_apply_monthly_allotment_v2(self.user_id, self.plan_id)
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
 
         self.assertEqual(self.db.non_pack_balance(self.user_id), 3000)
         # Pack row + monthly_allotment delta: pack survives.
@@ -153,7 +153,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         """Fresh user with 0 non-pack balance: single entry
         (+3000, monthly_allotment, metadata.discarded_milli=0).
         No "phantom" second row."""
-        self.db.credit_apply_monthly_allotment_v2(self.user_id, self.plan_id)
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
 
         rows = self.db.rows_for(self.user_id)
         self.assertEqual(len(rows), 1)
@@ -172,7 +172,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         Sequence:
           1. Seed 200 non-pack (signup_grant)
           2. Simulate reserve -100 (type='reserve')  — in-flight
-          3. Renewal fires → credit_apply_monthly_allotment_v2
+          3. Renewal fires → credit_apply_monthly_allotment
              expected delta: 3000 - 200 = 2800  (not 3000 - 100 = 2900)
 
         Rationale (see plan Key Technical Decisions / Unit 3 Approach):
@@ -187,7 +187,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         # In-flight reservation lands mid-allotment.
         self.db.insert(self.user_id, -100, "reserve", reference_id=str(uuid4()))
 
-        self.db.credit_apply_monthly_allotment_v2(self.user_id, self.plan_id)
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
 
         alloc = [
             r
@@ -206,7 +206,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         self.db.insert(self.user_id, -100, "reserve", reference_id=str(uuid4()))
         self.db.insert(self.user_id, 0, "commit", reference_id=str(uuid4()))
 
-        self.db.credit_apply_monthly_allotment_v2(self.user_id, self.plan_id)
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
 
         alloc = [
             r
@@ -226,7 +226,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
         # Add non-pack that should be discarded.
         self.db.insert(self.user_id, 1000, "weekly_free_grant")
 
-        self.db.credit_apply_monthly_allotment_v2(self.user_id, self.plan_id)
+        self.db.credit_apply_monthly_allotment(self.user_id, self.plan_id)
 
         pack_total = sum(
             r["delta"]
@@ -240,7 +240,7 @@ class TestMonthlyAllotmentReplace(unittest.TestCase):
     # -- Error path ----------------------------------------------------
     def test_unknown_plan_version_raises(self) -> None:
         with self.assertRaises(RuntimeError):
-            self.db.credit_apply_monthly_allotment_v2(self.user_id, str(uuid4()))
+            self.db.credit_apply_monthly_allotment(self.user_id, str(uuid4()))
 
 
 if __name__ == "__main__":
