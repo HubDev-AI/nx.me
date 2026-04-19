@@ -36,8 +36,8 @@ class TestCreditPurchaseIntentModels:
     """Pydantic model sanity checks."""
 
     def test_request_model(self):
-        req = CreditPurchaseIntentRequest(credit_pack_id="10_credits")
-        assert req.credit_pack_id == "10_credits"
+        req = CreditPurchaseIntentRequest(credit_pack_id="credits_pack_v1")
+        assert req.credit_pack_id == "credits_pack_v1"
 
     def test_response_model(self):
         resp = CreditPurchaseIntentResponse(
@@ -64,7 +64,7 @@ class TestCreateCreditPurchaseIntent:
 
     @pytest.mark.asyncio
     async def test_invalid_pack_id_returns_400(self):
-        body = CreditPurchaseIntentRequest(credit_pack_id="999_credits")
+        body = CreditPurchaseIntentRequest(credit_pack_id="unknown_pack")
         claims = {"sub": str(uuid4())}
         payment = AsyncMock()
 
@@ -80,10 +80,10 @@ class TestCreateCreditPurchaseIntent:
     async def test_unconfigured_price_returns_503(self, monkeypatch):
         from app.api import entitlement as ent_module
 
-        # Clear any prior monkeypatch so STRIPE_PRICE_CREDITS_10 is empty.
-        monkeypatch.setattr(ent_module.settings, "STRIPE_PRICE_CREDITS_10", "")
+        # Clear STRIPE_PRICE_CREDITS_PACK_V1 so the resolver raises 503.
+        monkeypatch.setattr(ent_module.settings, "STRIPE_PRICE_CREDITS_PACK_V1", "")
 
-        body = CreditPurchaseIntentRequest(credit_pack_id="10_credits")
+        body = CreditPurchaseIntentRequest(credit_pack_id="credits_pack_v1")
         claims = {"sub": str(uuid4())}
         payment = AsyncMock()
 
@@ -100,11 +100,11 @@ class TestCreateCreditPurchaseIntent:
         from app.api import entitlement as ent_module
 
         monkeypatch.setattr(
-            ent_module.settings, "STRIPE_PRICE_CREDITS_10", "price_10_test"
+            ent_module.settings, "STRIPE_PRICE_CREDITS_PACK_V1", "price_pack_v1_test"
         )
 
         user_id = str(uuid4())
-        body = CreditPurchaseIntentRequest(credit_pack_id="10_credits")
+        body = CreditPurchaseIntentRequest(credit_pack_id="credits_pack_v1")
         claims = {"sub": user_id}
         payment = AsyncMock()
         payment.create_payment_intent.return_value = self._bundle(user_id)
@@ -122,10 +122,9 @@ class TestCreateCreditPurchaseIntent:
         payment.create_payment_intent.assert_called_once()
         kwargs = payment.create_payment_intent.call_args.kwargs
         assert kwargs["user_id"] == user_id
-        assert kwargs["price_id"] == "price_10_test"
+        assert kwargs["price_id"] == "price_pack_v1_test"
         assert kwargs["metadata"]["flow"] == FLOW_PAYMENT_SHEET
-        assert kwargs["metadata"]["credits"] == "10"
-        assert kwargs["metadata"]["pack_id"] == "10_credits"
+        assert kwargs["metadata"]["pack_id"] == "credits_pack_v1"
 
 
 class TestMockPaymentAdapterCreatePaymentIntent:

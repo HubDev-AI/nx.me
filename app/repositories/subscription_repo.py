@@ -7,11 +7,9 @@ methods are synchronous (callers use run_sync for async handlers).
 from __future__ import annotations
 
 import logging
-from uuid import UUID
+from uuid import uuid5, NAMESPACE_URL
 
 from supabase import Client
-
-from app.entitlement.ledger import CreditLedger
 
 logger = logging.getLogger(__name__)
 
@@ -158,63 +156,6 @@ class SubscriptionRepository:
         return bool(result.data)
 
     # ------------------------------------------------------------------
-    # users table — tier updates driven by webhook events
-    # ------------------------------------------------------------------
-
-    def update_user_tier(self, user_id: str | UUID, tier_id: str | UUID) -> None:
-        """Update a user's tier_id."""
-        self._sb.table("users").update(
-            {
-                "tier_id": str(tier_id),
-            }
-        ).eq("id", str(user_id)).execute()
-
-    # ------------------------------------------------------------------
-    # Tier recomputation via credit balance
-    # ------------------------------------------------------------------
-
-    def recompute_tier_after_subscription_deleted(
-        self,
-        user_id: str,
-        credit_holder_tier_id: str,
-        trial_tier_id: str,
-    ) -> str:
-        """Recompute a user's tier after subscription deletion based on credit balance.
-
-        Returns the new tier_id that was applied.
-        """
-        ledger = CreditLedger(self._sb)
-        balance = ledger.balance(UUID(user_id))
-        new_tier_id = credit_holder_tier_id if balance > 0 else trial_tier_id
-        self.update_user_tier(user_id, new_tier_id)
-        return new_tier_id
-
-    # ------------------------------------------------------------------
-    # RPC — atomic credit checkout
-    # ------------------------------------------------------------------
-
-    def handle_checkout_credit_atomic(
-        self,
-        user_id: str,
-        credits: int,
-        event_id: str,
-        trial_tier_id: str,
-        credit_holder_tier_id: str,
-    ) -> dict:
-        """Call the handle_checkout_credit_atomic RPC and return the first row."""
-        result = self._sb.rpc(
-            "handle_checkout_credit_atomic",
-            {
-                "p_user_id": user_id,
-                "p_credits": credits,
-                "p_event_id": event_id,
-                "p_trial_tier_id": trial_tier_id,
-                "p_credit_holder_tier_id": credit_holder_tier_id,
-            },
-        ).execute()
-        return result.data[0] if result.data else {}
-
-    # ------------------------------------------------------------------
     # RPC — credit-pack purchase (Unit 8b)
     # ------------------------------------------------------------------
 
@@ -287,18 +228,18 @@ class SubscriptionRepository:
     ) -> None:
         """Write a negative credit_ledger entry for a Stripe charge refund.
 
-        Keyed on charge_id so duplicate charge.refunded deliveries are no-ops
-        (ON CONFLICT DO NOTHING via the unique constraint on reference_id where
-        type='refund' — assumed to be added alongside this call; if the index
-        does not exist yet, duplicates are harmless for v1 given the outer
-        processed_webhook_events dedup).
+        reference_id is a deterministic uuid5(NAMESPACE_URL, charge_id) so the
+        ch_xxx Stripe string is safely mapped to the UUID column type.
+        Duplicate charge.refunded deliveries are no-ops via ON CONFLICT
+        (reference_id, type) — belt-and-braces on top of processed_webhook_events.
         """
+        reference_id = str(uuid5(NAMESPACE_URL, charge_id))
         self._sb.table("credit_ledger").upsert(
             {
                 "user_id": user_id,
                 "delta": -amount_milli,
                 "type": "refund",
-                "reference_id": charge_id,
+                "reference_id": reference_id,
             },
             on_conflict="reference_id,type",
             ignore_duplicates=True,

@@ -117,12 +117,10 @@ async def get_entitlement(
 # Credit purchase (Story 4-4)
 # ---------------------------------------------------------------------------
 
-# Credit pack definitions — map pack ID to (price_id env var, credit count)
-# Stripe price IDs are env-specific; configure via admin or env vars.
+# Credit pack definitions — map pack ID to milli-credit grant.
+# Single SKU for the credits-only payments rebuild; extend as new SKUs are added.
 _CREDIT_PACKS: dict[str, int] = {
-    "10_credits": 10,
-    "25_credits": 25,
-    "50_credits": 50,
+    "credits_pack_v1": settings.CREDIT_PACK_V1_CREDITS_MILLI,
 }
 
 
@@ -154,12 +152,12 @@ FLOW_PAYMENT_SHEET = "payment_sheet"
 def _resolve_credit_pack_or_raise(credit_pack_id: str) -> tuple[int, str]:
     """Shared lookup for credit pack id + configured Stripe price.
 
-    Returns ``(credit_count, price_id)``. Raises HTTPException with the
+    Returns ``(milli_credits, price_id)``. Raises HTTPException with the
     same status codes the legacy Checkout endpoint uses so mobile error
     handling stays consistent across the two flows.
     """
-    credit_count = _CREDIT_PACKS.get(credit_pack_id)
-    if credit_count is None:
+    milli_credits = _CREDIT_PACKS.get(credit_pack_id)
+    if milli_credits is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -170,7 +168,7 @@ def _resolve_credit_pack_or_raise(credit_pack_id: str) -> tuple[int, str]:
             },
         )
 
-    price_id = getattr(settings, f"STRIPE_PRICE_CREDITS_{credit_count}", "")
+    price_id = settings.STRIPE_PRICE_CREDITS_PACK_V1
     if not price_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -181,7 +179,7 @@ def _resolve_credit_pack_or_raise(credit_pack_id: str) -> tuple[int, str]:
                 }
             },
         )
-    return credit_count, price_id
+    return milli_credits, price_id
 
 
 @router.post(

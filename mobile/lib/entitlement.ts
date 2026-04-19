@@ -15,12 +15,13 @@ import { ENTITLEMENT_ENDPOINTS } from "../constants/config";
 
 /** Single credit pack purchase option returned by the backend. */
 export interface PackOption {
+  pack_id: string;
   price_id: string;
   amount_cents: number;
   /** ISO 4217 currency code, lowercase (e.g. "usd"). */
   currency: string;
   /** Milli-credits granted on purchase (divide by 1000 for display credits). */
-  credits_milli: number;
+  milli_credits: number;
 }
 
 /** Pro subscription purchase option returned by the backend. */
@@ -29,8 +30,6 @@ export interface ProOption {
   amount_cents: number;
   /** ISO 4217 currency code, lowercase (e.g. "usd"). */
   currency: string;
-  /** Monthly milli-credit allotment (divide by 1000 for display credits). */
-  monthly_allotment_milli: number;
 }
 
 export interface PurchaseOptions {
@@ -91,16 +90,16 @@ export async function fetchEntitlement(): Promise<EntitlementState> {
  * The returned secrets bootstrap `initPaymentSheet` + `presentPaymentSheet`
  * from `@stripe/stripe-react-native`.
  *
- * @param priceId  The Stripe price ID from `PurchaseOptions.pack.price_id`.
+ * @param packId  The credit pack ID from `PurchaseOptions.pack.pack_id`.
  */
 export async function createCreditPurchaseIntent(
-  priceId: string,
+  packId: string,
 ): Promise<CreditPurchaseIntentResponse> {
   return apiFetch<CreditPurchaseIntentResponse>(
     ENTITLEMENT_ENDPOINTS.PURCHASE_CREDITS_INTENT,
     {
       method: "POST",
-      body: JSON.stringify({ price_id: priceId }),
+      body: JSON.stringify({ credit_pack_id: packId }),
     },
   );
 }

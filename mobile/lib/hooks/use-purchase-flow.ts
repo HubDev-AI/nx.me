@@ -142,7 +142,7 @@ export function usePurchaseFlow({
     async (pack: PackOption) => {
       setPurchasingId(pack.price_id);
       try {
-        const intent = await createCreditPurchaseIntent(pack.price_id);
+        const intent = await createCreditPurchaseIntent(pack.pack_id);
 
         if (__DEV__ && intent.publishable_key !== STRIPE_PUBLISHABLE_KEY) {
           console.warn(

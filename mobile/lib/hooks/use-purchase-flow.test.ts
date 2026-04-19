@@ -34,10 +34,11 @@ jest.mock("../toast", () => ({
 }));
 
 const PACK = {
+  pack_id: "credits_pack_v1",
   price_id: "price_10",
   amount_cents: 499,
   currency: "usd",
-  credits_milli: 10_000,
+  milli_credits: 10_000,
 };
 
 const ENTITLEMENT = {
@@ -83,7 +84,7 @@ describe("usePurchaseFlow.buyCredits", () => {
       await result.current.buyCredits(PACK);
     });
 
-    expect(mockCreateIntent).toHaveBeenCalledWith("price_10");
+    expect(mockCreateIntent).toHaveBeenCalledWith("credits_pack_v1");
     expect(mockInitPaymentSheet).toHaveBeenCalledWith(
       expect.objectContaining({
         paymentIntentClientSecret: "pi_1_secret",
