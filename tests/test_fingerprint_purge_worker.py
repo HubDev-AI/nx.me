@@ -3,7 +3,7 @@
 Covers:
   - Happy path: old rows are deleted, fresh rows are retained.
   - Zero rows deleted: no crash, log emitted.
-  - Repository failure: logged, worker returns cleanly.
+  - Repository failure: logged, exception re-raised so ARQ retries.
   - Cutoff is approximately 365 days ago (within tolerance).
 """
 
@@ -126,8 +126,8 @@ class TestRunFingerprintPurge:
 
 class TestRunFingerprintPurgeErrors:
     @pytest.mark.asyncio
-    async def test_repo_failure_does_not_raise(self):
-        """Repository errors must be caught — worker must not crash."""
+    async def test_repo_failure_raises(self):
+        """Repository errors must be re-raised so ARQ can retry the job."""
         ctx = {"supabase": MagicMock()}
 
         with patch("app.workers.fingerprint_purge.SignupGrantRepository") as MockRepo:
@@ -135,8 +135,8 @@ class TestRunFingerprintPurgeErrors:
                 "DB timeout"
             )
 
-            # Must not raise
-            await run_fingerprint_purge(ctx)
+            with pytest.raises(RuntimeError, match="DB timeout"):
+                await run_fingerprint_purge(ctx)
 
     @pytest.mark.asyncio
     async def test_repo_failure_is_logged(self, caplog):
@@ -151,7 +151,8 @@ class TestRunFingerprintPurgeErrors:
             )
 
             with caplog.at_level(logging.ERROR, logger="app.workers.fingerprint_purge"):
-                await run_fingerprint_purge(ctx)
+                with pytest.raises(RuntimeError):
+                    await run_fingerprint_purge(ctx)
 
         assert any(
             "purge_older_than" in r.message or "fingerprint_purge" in r.message

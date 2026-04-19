@@ -23,7 +23,7 @@ class TestDeriveLocked:
         sub = {
             "status": "active",
             "billing_period_end": _FUTURE.isoformat(),
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(
             sub, locked_at="2026-04-18T00:00:00Z", now=_NOW
@@ -44,20 +44,20 @@ class TestDeriveNoSub:
 
 
 class TestDeriveCanceled:
-    def test_canceled_status_returns_canceled(self):
+    def test_cancelled_status_returns_canceled(self):
         sub = {
-            "status": "canceled",
+            "status": "cancelled",
             "billing_period_end": _FUTURE.isoformat(),
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.CANCELED
 
-    def test_canceled_with_past_period_still_canceled(self):
+    def test_cancelled_with_past_period_still_canceled(self):
         sub = {
-            "status": "canceled",
+            "status": "cancelled",
             "billing_period_end": _PAST.isoformat(),
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.CANCELED
@@ -68,7 +68,7 @@ class TestDeriveActive:
         sub = {
             "status": "active",
             "billing_period_end": _FUTURE.isoformat(),
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.ACTIVE
@@ -77,7 +77,7 @@ class TestDeriveActive:
         sub = {
             "status": "active",
             "billing_period_end": None,
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.ACTIVE
@@ -88,7 +88,7 @@ class TestDeriveGrace:
         sub = {
             "status": "active",
             "billing_period_end": _PAST.isoformat(),
-            "grace_period_end": _GRACE_FUTURE.isoformat(),
+            "grace_until": _GRACE_FUTURE.isoformat(),
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.GRACE
@@ -99,7 +99,7 @@ class TestDeriveExpired:
         sub = {
             "status": "active",
             "billing_period_end": _PAST.isoformat(),
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.NONE
@@ -108,7 +108,7 @@ class TestDeriveExpired:
         sub = {
             "status": "active",
             "billing_period_end": _PAST.isoformat(),
-            "grace_period_end": (_NOW - timedelta(hours=1)).isoformat(),
+            "grace_until": (_NOW - timedelta(hours=1)).isoformat(),
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.NONE
@@ -121,7 +121,7 @@ class TestDeriveNaiveDatetimes:
         sub = {
             "status": "active",
             "billing_period_end": naive_future,
-            "grace_period_end": None,
+            "grace_until": None,
         }
         result = derive_subscription_status(sub, locked_at=None, now=_NOW)
         assert result == SubscriptionStatus.ACTIVE

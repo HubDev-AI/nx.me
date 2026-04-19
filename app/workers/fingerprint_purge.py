@@ -53,6 +53,6 @@ async def run_fingerprint_purge(ctx: dict) -> None:
         deleted = repo.purge_older_than(cutoff)
     except Exception:
         logger.exception("fingerprint_purge: purge_older_than failed")
-        return
+        raise
 
     logger.info("fingerprint_purge: done — deleted=%d rows", deleted)

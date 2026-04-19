@@ -185,8 +185,10 @@ class TestPaymentSucceeded:
         )
 
     @pytest.mark.asyncio
-    async def test_active_no_grace_is_noop(self):
+    async def test_active_no_grace_grants_allotment(self):
+        """Normal renewal (no grace): allotment granted, no status update needed."""
         user_id = str(uuid4())
+        plan_id = str(uuid4())
         sub_repo = _make_sub_repo(
             subscription_row={
                 "id": "row_2",
@@ -195,12 +197,16 @@ class TestPaymentSucceeded:
                 "grace_until": None,
             }
         )
-        plan_repo = _make_plan_repo()
+        plan_repo = _make_plan_repo(plan_version_id=plan_id)
 
         await _handle_payment_succeeded(sub_repo, plan_repo, {"subscription": "sub_ok"})
 
+        # No status update needed — subscription was already active.
         sub_repo.update_subscription_by_provider_id.assert_not_called()
-        sub_repo.call_credit_apply_monthly_allotment.assert_not_called()
+        # But allotment MUST be granted on every successful payment (P0 #3).
+        sub_repo.call_credit_apply_monthly_allotment.assert_called_once_with(
+            user_id, plan_id
+        )
 
     @pytest.mark.asyncio
     async def test_missing_subscription_id_skips(self):

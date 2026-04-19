@@ -658,15 +658,19 @@ async def _apply_signup_grant(
         get_primary_secret,
     )
 
-    deterministic_hash: bytes | None = None
-    protected_hash: bytes | None = None
-    salt: bytes | None = None
+    deterministic_hash: str | None = None
+    protected_hash: str | None = None
+    salt: str | None = None
 
     if x_install_uuid is not None:
         server_secret = get_primary_secret()
-        deterministic_hash = compute_deterministic_hash(x_install_uuid, server_secret)
-        salt = generate_salt()
-        protected_hash = compute_protected_hash(x_install_uuid, salt)
+        det_bytes = compute_deterministic_hash(x_install_uuid, server_secret)
+        salt_bytes = generate_salt()
+        prot_bytes = compute_protected_hash(x_install_uuid, salt_bytes)
+        # Supabase expects BYTEA as hex-encoded strings prefixed with \x
+        deterministic_hash = f"\\x{det_bytes.hex()}"
+        protected_hash = f"\\x{prot_bytes.hex()}"
+        salt = f"\\x{salt_bytes.hex()}"
 
     try:
         await run_sync(
@@ -1474,7 +1478,7 @@ _INLINE_BLOB_WIPE_THRESHOLD = 500
 # Each prefix is combined with the user_id as ``f"{prefix}:{user_id}"`` to form
 # the job_id used at enqueue time. Extend this tuple when new per-user ARQ
 # jobs are introduced so they are always cancelled on delete.
-_USER_SCOPED_JOB_PREFIXES = ("delete_account", "weekly_free_grant")
+_USER_SCOPED_JOB_PREFIXES = ("delete_account",)
 
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT, response_model=None)

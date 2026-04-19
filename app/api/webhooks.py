@@ -46,7 +46,6 @@ from app.api.deps import (
 )
 from app.api.entitlement import FLOW_PAYMENT_SHEET
 from app.config import settings
-from app.constants.tiers import TIER_ID_CREDIT_HOLDER, TIER_ID_TRIAL
 from app.constants.webhooks import (
     DISPUTE_EVENT_CLOSED_LOST,
     DISPUTE_EVENT_CLOSED_WON,
@@ -234,37 +233,17 @@ async def _handle_checkout_completed(
         )
 
     elif mode == "payment":
-        # Credit-pack purchase — Unit 8b scope; logic preserved from v0.
-        credits_str = metadata.get("credits", "0")
-        try:
-            credits = int(credits_str)
-        except (ValueError, TypeError):
-            logger.error(
-                "checkout.session.completed: invalid credits value '%s' in event %s",
-                credits_str,
-                event_id,
-            )
-            return
-
-        if credits <= 0:
-            logger.warning(
-                "checkout.session.completed with invalid credits=%s", credits_str
-            )
-            return
-
-        rpc_result = sub_repo.handle_checkout_credit_atomic(
+        # Credit-pack purchase — call credit_apply_pack_purchase RPC (Unit 8b).
+        sub_repo.call_credit_apply_pack_purchase(
             user_id=user_id,
-            credits=credits,
             event_id=event_id,
-            trial_tier_id=TIER_ID_TRIAL,
-            credit_holder_tier_id=TIER_ID_CREDIT_HOLDER,
+            credits_milli=settings.CREDIT_PACK_V1_CREDITS_MILLI,
         )
         logger.info(
-            "Credit purchase: user=%s, credits=%d, event=%s, tier_upgraded=%s",
+            "Credit pack purchase (checkout): user=%s, credits_milli=%d, event=%s",
             user_id,
-            credits,
+            settings.CREDIT_PACK_V1_CREDITS_MILLI,
             event_id,
-            rpc_result.get("tier_upgraded", False),
         )
 
 
@@ -425,9 +404,9 @@ async def _handle_payment_succeeded(
 ) -> None:
     """Handle invoice.payment_succeeded.
 
-    If the subscription is currently in grace (grace_until IS NOT NULL) OR
-    the label is effectively Free (grace expired), restore status='active',
-    clear grace_until, and re-grant the monthly allotment (REPLACE semantics).
+    Always calls credit_apply_monthly_allotment (REPLACE semantics) — this is
+    the renewal grant. If the subscription is in grace (grace_until IS NOT NULL),
+    also clears grace_until and restores status='active'.
     """
     sub_id = invoice.get("subscription", "")
     if not sub_id:
@@ -441,37 +420,28 @@ async def _handle_payment_succeeded(
         )
         return
 
+    user_id = row.get("user_id")
+    if not user_id:
+        logger.error(
+            "invoice.payment_succeeded: subscription row has no user_id for sub=%s",
+            sub_id,
+        )
+        return
+
+    # Resolve plan version for the allotment grant.
+    pro_row = plan_repo.get_by_version_num(PRO_VERSION_NUM)
+    if not pro_row:
+        raise RuntimeError(
+            f"plan_versions seed row '{PRO_VERSION_NUM}' missing during "
+            "payment_succeeded handler"
+        )
+    plan_version_id = pro_row["id"]
+
     grace_until = row.get("grace_until")
-    current_status = row.get("status", "")
     now_utc = datetime.now(tz=timezone.utc)
 
-    # Recover if in grace or if grace has already expired (status drifted to
-    # non-active after the grace window lapsed without a prior payment event).
-    in_grace = grace_until is not None
-    grace_expired = (
-        current_status != "active"
-        and grace_until is None
-        and current_status in {"past_due"}  # legacy enum value compatibility
-    )
-
-    if in_grace or grace_expired:
-        user_id = row.get("user_id")
-        if not user_id:
-            logger.error(
-                "invoice.payment_succeeded: subscription row has no user_id for sub=%s",
-                sub_id,
-            )
-            return
-
-        # Resolve plan version for re-grant.
-        pro_row = plan_repo.get_by_version_num(PRO_VERSION_NUM)
-        if not pro_row:
-            raise RuntimeError(
-                f"plan_versions seed row '{PRO_VERSION_NUM}' missing during "
-                "payment_succeeded recovery"
-            )
-        plan_version_id = pro_row["id"]
-
+    if grace_until is not None:
+        # Grace recovery: clear grace_until and restore active status.
         sub_repo.update_subscription_by_provider_id(
             sub_id,
             {
@@ -480,17 +450,19 @@ async def _handle_payment_succeeded(
                 "updated_at": now_utc.isoformat(),
             },
         )
-        sub_repo.call_credit_apply_monthly_allotment(user_id, plan_version_id)
-
         logger.info(
             "Payment succeeded during grace: user=%s sub=%s grace_cleared=True",
             user_id,
             sub_id,
         )
-    else:
-        logger.info(
-            "invoice.payment_succeeded for active sub=%s — no recovery needed", sub_id
-        )
+
+    # Always re-grant the monthly allotment (renewal or grace recovery).
+    sub_repo.call_credit_apply_monthly_allotment(user_id, plan_version_id)
+    logger.info(
+        "invoice.payment_succeeded: monthly allotment granted user=%s sub=%s",
+        user_id,
+        sub_id,
+    )
 
 
 def _handle_payment_failed(sub_repo: SubscriptionRepository, invoice: dict) -> None:
@@ -649,10 +621,10 @@ def _resolve_dispute_user_id(
 
     Returns user_id string or None if the user cannot be found.
     """
-    customer_id = dispute.get("customer") or dispute.get("charge", {})
-    # dispute object carries .customer directly
-    if not isinstance(customer_id, str):
-        customer_id = dispute.get("customer")
+    _charge = dispute.get("charge")
+    customer_id = dispute.get("customer") or (
+        _charge.get("customer") if isinstance(_charge, dict) else None
+    )
 
     if not customer_id:
         logger.warning("dispute event missing customer field (event=%s)", event_id)

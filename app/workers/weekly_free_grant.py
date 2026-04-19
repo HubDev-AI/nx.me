@@ -17,6 +17,7 @@ Pattern mirrors ``app/workers/retention.py::run_retention``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -41,24 +42,20 @@ def _current_iso_week() -> str:
     return datetime.now(tz=timezone.utc).strftime("%G-W%V")
 
 
-async def run_weekly_free_grant(ctx: dict) -> None:
-    """ARQ cron task: grant weekly free credits to eligible Free users.
+def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) -> None:
+    """Sync implementation of the grant loop — runs in a thread pool via
+    ``asyncio.to_thread`` so the event loop is never blocked by supabase-py's
+    synchronous HTTP calls.
 
-    Iterates non-guest users in pages, skipping any with an active
-    subscription (Pro users). For each eligible user invokes
-    ``credit_apply_weekly_free_grant`` with the current ISO-week; the RPC
-    deduplicates via the partial UNIQUE index so re-runs are always safe.
+    Error handling:
+    - Subscription fetch failure -> re-raise so ARQ retries the whole job.
+    - Page fetch failure -> re-raise so ARQ retries the whole job.
+    - Per-user RPC failure -> log + continue (one bad user must not abort the
+      entire week's grant run).
+
+    TODO(perf-001): batch via set-returning RPC at scale to eliminate the
+    N+1 pattern (one RPC per user). Acceptable at pre-launch volume.
     """
-    supabase: Client = ctx["supabase"]
-    iso_week = _current_iso_week()
-    weekly_grant_milli = settings.WEEKLY_FREE_GRANT_MILLI
-
-    logger.info(
-        "weekly_free_grant: starting for iso_week=%s grant_milli=%d",
-        iso_week,
-        weekly_grant_milli,
-    )
-
     # Fetch user IDs with active subscriptions so we can skip them.
     # The subscriptions table is small pre-launch; one-shot fetch is adequate.
     try:
@@ -71,9 +68,9 @@ async def run_weekly_free_grant(ctx: dict) -> None:
         pro_user_ids: set[str] = {row["user_id"] for row in (sub_result.data or [])}
     except Exception:
         logger.exception(
-            "weekly_free_grant: failed to fetch active subscriptions — aborting"
+            "weekly_free_grant: failed to fetch active subscriptions -- aborting"
         )
-        return
+        raise
 
     granted = 0
     skipped_pro = 0
@@ -91,10 +88,10 @@ async def run_weekly_free_grant(ctx: dict) -> None:
             )
         except Exception:
             logger.exception(
-                "weekly_free_grant: failed to fetch users page at offset=%d — aborting",
+                "weekly_free_grant: failed to fetch users page at offset=%d -- aborting",
                 offset,
             )
-            break
+            raise
 
         rows = page_result.data or []
         if not rows:
@@ -136,3 +133,22 @@ async def run_weekly_free_grant(ctx: dict) -> None:
         skipped_pro,
         errors,
     )
+
+
+async def run_weekly_free_grant(ctx: dict) -> None:
+    """ARQ cron task: grant weekly free credits to eligible Free users.
+
+    Offloads the sync supabase-py calls to a thread pool via
+    ``asyncio.to_thread`` so the ARQ event loop is not blocked.
+    """
+    supabase: Client = ctx["supabase"]
+    iso_week = _current_iso_week()
+    weekly_grant_milli = settings.WEEKLY_FREE_GRANT_MILLI
+
+    logger.info(
+        "weekly_free_grant: starting for iso_week=%s grant_milli=%d",
+        iso_week,
+        weekly_grant_milli,
+    )
+
+    await asyncio.to_thread(_run_grant_sync, supabase, iso_week, weekly_grant_milli)

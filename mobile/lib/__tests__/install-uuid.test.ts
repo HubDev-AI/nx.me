@@ -95,4 +95,29 @@ describe("getOrCreateInstallUuid", () => {
     expect(mockRandomUUID).toHaveBeenCalledTimes(1);
     expect(result).toBe(VALID_UUID);
   });
+
+  it("awaits setItem before returning the UUID (write is not fire-and-forget)", async () => {
+    // If setItem were fire-and-forget the resolved value would be returned
+    // before the mock's promise settles. We track completion order to prove
+    // the function waits for the write.
+    mockGetItem.mockResolvedValue(null);
+    mockRandomUUID.mockReturnValue(VALID_UUID);
+
+    const completionOrder: string[] = [];
+
+    mockSetItem.mockImplementation(async () => {
+      // Yield to the microtask queue so that a fire-and-forget write would
+      // let the caller return before reaching this point.
+      await Promise.resolve();
+      completionOrder.push("setItem");
+    });
+
+    const resultPromise = getOrCreateInstallUuid();
+    const result = await resultPromise;
+    completionOrder.push("returned");
+
+    // setItem must have completed before the function returned the UUID.
+    expect(completionOrder).toEqual(["setItem", "returned"]);
+    expect(result).toBe(VALID_UUID);
+  });
 });

@@ -3,7 +3,7 @@
 Covers:
   - Happy path: deletes events with inserted_at < 30 days ago; retains fresh rows.
   - Zero rows deleted: no crash, log emitted.
-  - DB failure: logged, worker returns cleanly.
+  - DB failure: logged, exception re-raised so ARQ retries.
   - Cutoff is approximately 30 days ago (within tolerance).
 """
 
@@ -126,10 +126,11 @@ class TestPurgeOldWebhookEvents:
 
 class TestPurgeOldWebhookEventsErrors:
     @pytest.mark.asyncio
-    async def test_db_failure_does_not_raise(self):
-        """DB errors must be caught — worker must not crash."""
+    async def test_db_failure_raises(self):
+        """DB errors must be re-raised so ARQ can retry the job."""
         ctx = _make_ctx(raises=RuntimeError("DB timeout"))
-        await purge_old_webhook_events(ctx)  # must not raise
+        with pytest.raises(RuntimeError, match="DB timeout"):
+            await purge_old_webhook_events(ctx)
 
     @pytest.mark.asyncio
     async def test_db_failure_is_logged(self, caplog):
@@ -139,7 +140,8 @@ class TestPurgeOldWebhookEventsErrors:
         with caplog.at_level(
             logging.ERROR, logger="app.workers.purge_old_webhook_events"
         ):
-            await purge_old_webhook_events(ctx)
+            with pytest.raises(RuntimeError):
+                await purge_old_webhook_events(ctx)
 
         assert any(
             "DELETE" in r.message or "purge_old_webhook_events" in r.message

@@ -83,30 +83,20 @@ class StripeCustomerDLQRepository:
     # ------------------------------------------------------------------
 
     def mark_attempt(self, customer_id: str, last_error: str | None = None) -> None:
-        """Increment ``attempts`` and refresh ``last_error`` / ``updated_at``."""
-        now = datetime.now(tz=timezone.utc).isoformat()
-        current = (
-            self._sb.table("stripe_customer_dlq")
-            .select("attempts")
-            .eq("customer_id", customer_id)
-            .maybe_single()
-            .execute()
-        )
-        if not current or not current.data:
-            return
-        next_attempts = int(current.data.get("attempts", 0)) + 1
-        (
-            self._sb.table("stripe_customer_dlq")
-            .update(
-                {
-                    "attempts": next_attempts,
-                    "last_error": last_error,
-                    "updated_at": now,
-                }
-            )
-            .eq("customer_id", customer_id)
-            .execute()
-        )
+        """Increment ``attempts`` and refresh ``last_error`` / ``updated_at``.
+
+        Delegates to the ``dlq_mark_attempt`` Postgres function (migration
+        0055) which performs an atomic ``UPDATE attempts = attempts + 1`` —
+        eliminates the previous non-atomic SELECT-then-UPDATE pattern that
+        could lose increments under concurrent reconciler runs.
+        """
+        self._sb.rpc(
+            "dlq_mark_attempt",
+            {
+                "p_customer_id": customer_id,
+                "p_last_error": last_error,
+            },
+        ).execute()
 
     def delete(self, customer_id: str) -> None:
         """Remove a DLQ row once the Stripe delete succeeded."""

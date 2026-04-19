@@ -39,8 +39,8 @@ def derive_subscription_status(
     Logic (R3, R10):
     - locked_at not None → LOCKED (overrides everything)
     - subscription None → NONE
-    - subscription.status == 'canceled' → CANCELED
-    - grace_period_end > now → GRACE
+    - subscription.status == 'cancelled' → CANCELED
+    - grace_until > now → GRACE
     - billing_period_end > now → ACTIVE
     - billing_period_end is None and status == 'active' → ACTIVE
     - else → NONE (post-grace expiry)
@@ -55,7 +55,7 @@ def derive_subscription_status(
 
     status = subscription.get("status", "")
 
-    if status == "canceled":
+    if status == "cancelled":
         return SubscriptionStatus.CANCELED
 
     # Parse helper: string or datetime → aware datetime (UTC)
@@ -70,7 +70,7 @@ def derive_subscription_status(
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
 
-    grace_end = _parse(subscription.get("grace_period_end"))
+    grace_end = _parse(subscription.get("grace_until"))
     billing_end = _parse(subscription.get("billing_period_end"))
 
     # Grace check runs before billing check so an expired billing period
@@ -128,22 +128,31 @@ class EntitlementService:
 
         locked_at = user_result.data.get("locked_at")
 
-        # 2. Fetch latest subscription row (status, billing_period_end,
-        #    grace_period_end, plan_version_id, cancelled_at)
+        # 2. Fetch latest subscription rows (status, billing_period_end,
+        #    grace_until, plan_version_id, cancelled_at).
+        #    Fetch top 5 to handle a cancelled row newer than an active row.
         sub_result = await run_sync(
             lambda: (
                 self._sb.table("subscriptions")
                 .select(
-                    "status, billing_period_end, grace_period_end, "
+                    "status, billing_period_end, grace_until, "
                     "plan_version_id, cancelled_at"
                 )
                 .eq("user_id", user_id_str)
                 .order("created_at", desc=True)
-                .limit(1)
+                .limit(5)
                 .execute()
             )
         )
-        sub: dict | None = sub_result.data[0] if sub_result.data else None
+        # Prefer active/grace rows; fall back to the most-recent row.
+        sub: dict | None = None
+        if sub_result.data:
+            for row in sub_result.data:
+                if row.get("status") in {"active", "grace"}:
+                    sub = row
+                    break
+            if sub is None:
+                sub = sub_result.data[0]
 
         # 3. Derive subscription status
         subscription_status = derive_subscription_status(sub, locked_at, now)
@@ -176,6 +185,10 @@ class EntitlementService:
             else BlockedReason.NONE
         )
 
+        # Emit INSUFFICIENT_CREDITS when balance is depleted and no dispute lock.
+        if remaining_glowups == 0 and blocked_reason == BlockedReason.NONE:
+            blocked_reason = BlockedReason.INSUFFICIENT_CREDITS
+
         # 9. Period end / grace end
         period_end: datetime | None = None
         grace_end: datetime | None = None
@@ -186,7 +199,7 @@ class EntitlementService:
                 if period_end.tzinfo is None:
                     period_end = period_end.replace(tzinfo=timezone.utc)
         if sub and subscription_status == SubscriptionStatus.GRACE:
-            grace_str = sub.get("grace_period_end")
+            grace_str = sub.get("grace_until")
             if grace_str:
                 grace_end = datetime.fromisoformat(grace_str)
                 if grace_end.tzinfo is None:

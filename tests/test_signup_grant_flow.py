@@ -47,7 +47,7 @@ class TestApplySignupGrantMobile:
     @pytest.mark.asyncio
     async def test_rpc_called_with_all_fingerprint_args(self, monkeypatch):
         """Mobile signup: deterministic_hash, protected_hash, and salt must all
-        be non-None bytes objects passed to credit_apply_signup_grant."""
+        be non-None hex-encoded BYTEA strings (\\x...) passed to credit_apply_signup_grant."""
         sb = _make_supabase_mock()
         user_id = str(uuid4())
 
@@ -57,9 +57,13 @@ class TestApplySignupGrantMobile:
         rpc_name, rpc_params = sb.rpc.call_args.args
         assert rpc_name == "credit_apply_signup_grant"
         assert rpc_params["p_user_id"] == user_id
-        assert isinstance(rpc_params["p_deterministic_hash"], bytes)
-        assert isinstance(rpc_params["p_protected_hash"], bytes)
-        assert isinstance(rpc_params["p_salt"], bytes)
+        # Supabase BYTEA columns must be passed as \\x<hex> strings
+        assert isinstance(rpc_params["p_deterministic_hash"], str)
+        assert rpc_params["p_deterministic_hash"].startswith("\\x")
+        assert isinstance(rpc_params["p_protected_hash"], str)
+        assert rpc_params["p_protected_hash"].startswith("\\x")
+        assert isinstance(rpc_params["p_salt"], str)
+        assert rpc_params["p_salt"].startswith("\\x")
         # grant amount sourced from settings (no magic numbers)
         from app.config import settings
 
@@ -71,7 +75,7 @@ class TestApplySignupGrantMobile:
         two calls (but different salts → different protected hashes)."""
         user_id = str(uuid4())
 
-        hashes: list[bytes] = []
+        hashes: list[str] = []
 
         def _capture_rpc(name, params):
             hashes.append(params["p_deterministic_hash"])
@@ -88,8 +92,10 @@ class TestApplySignupGrantMobile:
         assert len(hashes) == 2
         # Deterministic hash must be the same across calls for same UUID.
         assert hashes[0] == hashes[1]
-        assert isinstance(hashes[0], bytes)
-        assert len(hashes[0]) == 32  # SHA-256
+        assert isinstance(hashes[0], str)
+        assert hashes[0].startswith("\\x")
+        # SHA-256 produces 32 bytes = 64 hex chars; prefix adds 2 chars
+        assert len(hashes[0]) == 66  # \\x + 64 hex chars
 
     @pytest.mark.asyncio
     async def test_execute_is_called(self):

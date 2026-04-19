@@ -44,6 +44,7 @@ class BlockedReason(str, Enum):
 
     NONE = "none"
     SUBSCRIPTION_LOCKED_BY_DISPUTE = "subscription_locked_by_dispute"
+    INSUFFICIENT_CREDITS = "insufficient_credits"
 
 
 # ---------------------------------------------------------------------------
