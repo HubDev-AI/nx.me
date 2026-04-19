@@ -135,27 +135,18 @@ def db_conn() -> Iterator["_PgConnection"]:
 
 # ---------------------------------------------------------------------------
 # Helpers.
-#
-# Minimum-shape inserts touching only the NOT NULL columns required by
-# the live schema (migrations 0001, 0002, 0004, 0048). `users.tier_id`
-# was made NOT NULL in 0004, so every user helper resolves it from the
-# default tier at insert time.
 # ---------------------------------------------------------------------------
 
 
 def _insert_user(cur, *, stripe_customer_id: str | None = None) -> str:
-    """Insert a user on the default tier; return id."""
+    """Insert a user; return id."""
     suffix = uuid.uuid4().hex[:12]
     cur.execute(
         """
         INSERT INTO users (
-            username, display_name, email_verified, tier_id, stripe_customer_id
+            username, display_name, email_verified, stripe_customer_id
         )
-        VALUES (
-            %s, %s, FALSE,
-            (SELECT id FROM tiers WHERE is_default = TRUE LIMIT 1),
-            %s
-        )
+        VALUES (%s, %s, FALSE, %s)
         RETURNING id
         """,
         (f"planver_{suffix}", f"Plan Version {suffix}", stripe_customer_id),

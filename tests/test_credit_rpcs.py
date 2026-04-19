@@ -821,11 +821,8 @@ class TestLiveDBConcurrency(unittest.TestCase):
             suffix = uuid4().hex[:12]
             cur.execute(
                 """
-                INSERT INTO users (username, display_name, email_verified, tier_id)
-                VALUES (
-                    %s, %s, FALSE,
-                    (SELECT id FROM tiers WHERE is_default = TRUE LIMIT 1)
-                )
+                INSERT INTO users (username, display_name, email_verified)
+                VALUES (%s, %s, FALSE)
                 RETURNING id
                 """,
                 (f"livetest_{suffix}", f"LiveTest {suffix}"),

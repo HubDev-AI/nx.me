@@ -169,5 +169,4 @@ class TestGuestHelpers:
         assert row["is_guest"] is True
         assert row["guest_session_token"] == token
         assert row["display_name"] == "Guest"
-        assert row["tier_id"] == "a0000000-0000-0000-0000-000000000001"
         assert row["username"].startswith("guest-")
