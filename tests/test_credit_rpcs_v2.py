@@ -678,5 +678,263 @@ class TestCreditRpcsV2PlanVersionLookup(unittest.TestCase):
         self.assertEqual(db._balance(user_id), 400)
 
 
+# ---------------------------------------------------------------------------
+# Live-DB concurrency + auth-guard tests (G9)
+# ---------------------------------------------------------------------------
+#
+# The in-memory harness above models the advisory-lock contract but cannot
+# prove that Postgres's own `pg_advisory_xact_lock` serializes concurrent
+# transactions the same way, nor that the `auth.uid()` guard raises
+# SQLSTATE 42501 on a cross-user invocation. These live-DB tests close
+# both gaps against the local Supabase Postgres at 127.0.0.1:54322.
+#
+# Skipped cleanly when the DB isn't reachable (pattern mirrors
+# tests/test_dispute_lifecycle.py) so CI/laptops without Supabase pass.
+
+
+import os  # noqa: E402 — optional deps live-DB block isolated from in-memory tests
+
+try:
+    import psycopg2  # noqa: E402
+
+    _PSYCOPG_AVAILABLE = True
+except ImportError:  # pragma: no cover — psycopg2 missing in some test envs
+    _PSYCOPG_AVAILABLE = False
+
+
+_DEFAULT_LOCAL_DSN = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+_LIVE_GLOWUP_BALANCE_MILLI = 300
+_LIVE_EXPECTED_SUCCESSES = 3  # balance 300 / glowup cost 100
+_LIVE_THREAD_COUNT = 10
+_ACCOUNT_LOCKED_SQLSTATE = "P0001"
+_FORBIDDEN_SQLSTATE = "42501"
+
+
+def _live_db_dsn() -> str:
+    return os.environ.get("DATABASE_URL", _DEFAULT_LOCAL_DSN)
+
+
+def _live_db_reachable() -> bool:
+    if not _PSYCOPG_AVAILABLE:
+        return False
+    try:
+        conn = psycopg2.connect(_live_db_dsn(), connect_timeout=2)
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def _live_auth_helpers_installed() -> bool:
+    """True iff the `auth.uid()` / `auth.role()` helpers Supabase installs
+    are present. Vanilla Postgres lacks them and would make the 42501 test
+    spurious."""
+    if not _PSYCOPG_AVAILABLE:
+        return False
+    try:
+        conn = psycopg2.connect(_live_db_dsn(), connect_timeout=2)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1
+                      FROM pg_proc p
+                      JOIN pg_namespace n ON n.oid = p.pronamespace
+                     WHERE n.nspname = 'auth'
+                       AND p.proname IN ('uid', 'role')
+                    """
+                )
+                return len(cur.fetchall()) >= 2
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+def _live_rpc_installed(rpc_name: str) -> bool:
+    if not _PSYCOPG_AVAILABLE:
+        return False
+    try:
+        conn = psycopg2.connect(_live_db_dsn(), connect_timeout=2)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1
+                      FROM pg_proc p
+                      JOIN pg_namespace n ON n.oid = p.pronamespace
+                     WHERE n.nspname = 'public'
+                       AND p.proname = %s
+                     LIMIT 1
+                    """,
+                    (rpc_name,),
+                )
+                return cur.fetchone() is not None
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_PSYCOPG_AVAILABLE, "psycopg2 not installed")
+@unittest.skipUnless(
+    _live_db_reachable(), f"local Postgres not reachable at {_live_db_dsn()}"
+)
+@unittest.skipUnless(
+    _live_rpc_installed("credit_reserve_v2"),
+    "migration 0049 not applied — credit_reserve_v2 missing",
+)
+class TestLiveDBConcurrency(unittest.TestCase):
+    """Live-DB proofs for advisory-lock serialization + `auth.uid()` guard.
+
+    Every test commits its fixtures (each worker thread needs its own
+    autocommit connection so the main thread sees the seeded user) and
+    cleans up explicitly in `tearDown` — no outer rollback-the-world
+    transaction because the point is to exercise multiple concurrent
+    sessions against the same row.
+    """
+
+    def setUp(self) -> None:
+        self._conn = psycopg2.connect(_live_db_dsn())
+        self._conn.autocommit = True
+        self._created_user_ids: list[str] = []
+
+    def tearDown(self) -> None:
+        try:
+            if self._created_user_ids:
+                with self._conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM credit_reservations WHERE user_id = ANY(%s::uuid[])",
+                        (self._created_user_ids,),
+                    )
+                    cur.execute(
+                        "DELETE FROM credit_ledger WHERE user_id = ANY(%s::uuid[])",
+                        (self._created_user_ids,),
+                    )
+                    cur.execute(
+                        "DELETE FROM users WHERE id = ANY(%s::uuid[])",
+                        (self._created_user_ids,),
+                    )
+        finally:
+            self._conn.close()
+
+    def _insert_user_and_seed_balance(self, balance_milli: int) -> str:
+        with self._conn.cursor() as cur:
+            suffix = uuid4().hex[:12]
+            cur.execute(
+                """
+                INSERT INTO users (username, display_name, email_verified, tier_id)
+                VALUES (
+                    %s, %s, FALSE,
+                    (SELECT id FROM tiers WHERE is_default = TRUE LIMIT 1)
+                )
+                RETURNING id
+                """,
+                (f"livetest_{suffix}", f"LiveTest {suffix}"),
+            )
+            user_id = cur.fetchone()[0]
+            self._created_user_ids.append(str(user_id))
+            cur.execute(
+                """
+                INSERT INTO credit_ledger (user_id, delta, type, reference_id)
+                VALUES (%s, %s, 'monthly_allotment', gen_random_uuid())
+                """,
+                (str(user_id), balance_milli),
+            )
+            return str(user_id)
+
+    def test_concurrent_reserves_serialize_via_advisory_lock_real_postgres(
+        self,
+    ) -> None:
+        """10 threads, separate connections, balance=300. Exactly 3 succeed.
+
+        Proves `pg_advisory_xact_lock(hashtextextended(user_id::text, 0))`
+        serializes Stripe-style concurrent reserves under real Postgres —
+        the in-memory harness uses a Python `threading.RLock`, which could
+        mask a missing advisory lock in the SQL.
+        """
+        user_id = self._insert_user_and_seed_balance(_LIVE_GLOWUP_BALANCE_MILLI)
+
+        successes: list[str] = []
+        failures: list[Exception] = []
+        results_lock = threading.Lock()
+
+        def attempt() -> None:
+            conn = psycopg2.connect(_live_db_dsn())
+            try:
+                conn.autocommit = True
+                reservation_id = str(uuid4())
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT credit_reserve_v2(%s::uuid, %s::uuid, %s::text)",
+                            (user_id, reservation_id, "glowup"),
+                        )
+                    with results_lock:
+                        successes.append(reservation_id)
+                except psycopg2.errors.RaiseException as exc:
+                    with results_lock:
+                        failures.append(exc)
+            finally:
+                conn.close()
+
+        with ThreadPoolExecutor(max_workers=_LIVE_THREAD_COUNT) as pool:
+            list(pool.map(lambda _: attempt(), range(_LIVE_THREAD_COUNT)))
+
+        self.assertEqual(
+            len(successes),
+            _LIVE_EXPECTED_SUCCESSES,
+            f"balance=300 / glowup=100 → exactly {_LIVE_EXPECTED_SUCCESSES} reserves succeed",
+        )
+        self.assertEqual(len(failures), _LIVE_THREAD_COUNT - _LIVE_EXPECTED_SUCCESSES)
+        for exc in failures:
+            self.assertEqual(exc.pgcode, _ACCOUNT_LOCKED_SQLSTATE)
+            self.assertIn("insufficient_credits", str(exc))
+
+        # Balance drained to zero.
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(delta), 0) FROM credit_ledger WHERE user_id = %s",
+                (user_id,),
+            )
+            final_balance = cur.fetchone()[0]
+        self.assertEqual(final_balance, 0)
+
+    @unittest.skipUnless(
+        _live_auth_helpers_installed(),
+        "auth.uid()/auth.role() not installed — Supabase helpers missing",
+    )
+    def test_42501_cross_user_call_rejected(self) -> None:
+        """Setting JWT claims for user A and invoking credit_reserve_v2 for
+        user B must RAISE with SQLSTATE 42501 (`forbidden`).
+
+        Proves the `auth.uid() IS DISTINCT FROM p_user_id` guard added by
+        migration 0049 rejects cross-user calls. The test skips when the
+        `auth` schema helpers aren't present, so running against a vanilla
+        Postgres image (no Supabase bootstrap) doesn't produce a false
+        failure.
+        """
+        user_a = self._insert_user_and_seed_balance(_LIVE_GLOWUP_BALANCE_MILLI)
+        user_b = self._insert_user_and_seed_balance(_LIVE_GLOWUP_BALANCE_MILLI)
+
+        # New dedicated connection so SET LOCAL is scoped to this one tx.
+        conn = psycopg2.connect(_live_db_dsn())
+        conn.autocommit = False
+        try:
+            with conn.cursor() as cur:
+                claims = f'{{"role":"authenticated","sub":"{user_a}"}}'
+                cur.execute("SET LOCAL request.jwt.claims = %s", (claims,))
+                reservation_id = str(uuid4())
+                with self.assertRaises(psycopg2.errors.InsufficientPrivilege) as ctx:
+                    cur.execute(
+                        "SELECT credit_reserve_v2(%s::uuid, %s::uuid, %s::text)",
+                        (user_b, reservation_id, "glowup"),
+                    )
+                self.assertEqual(ctx.exception.pgcode, _FORBIDDEN_SQLSTATE)
+        finally:
+            conn.rollback()
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
