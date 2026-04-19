@@ -683,18 +683,44 @@ describe("ResultScreen — Publish path", () => {
 // ---------------------------------------------------------------------------
 
 describe("ResultScreen — Delete overflow", () => {
+  // Mirrors `OVERFLOW_MENU_EXIT_DURATION_MS` in
+  // mobile/components/result/GlowupOverflowMenu.tsx — the parent screen
+  // defers the destructive Alert until after the menu's exit animation
+  // so the iOS Alert/Modal stack doesn't swallow the first tap.
+  const OVERFLOW_EXIT_MS = 200;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("renders the overflow button on success", () => {
     const { getByTestId } = render(<ResultScreen />);
     expect(getByTestId("result-header-overflow")).toBeTruthy();
   });
 
-  it("tapping overflow opens Alert with Cancel + Delete", () => {
+  it("tapping the menu Delete row eventually opens Alert with Cancel + Delete", () => {
     const alertSpy = jest
       .spyOn(Alert, "alert")
       .mockImplementation(() => undefined);
     const { getByTestId } = render(<ResultScreen />);
 
+    // 1) Tap the header ellipsis → opens overflow sheet.
     fireEvent.press(getByTestId("result-header-overflow"));
+    expect(alertSpy).not.toHaveBeenCalled();
+
+    // 2) Tap the Delete row inside the sheet → the parent closes the sheet
+    //    and schedules Alert.alert after the exit animation completes.
+    fireEvent.press(getByTestId("glowup-overflow-row-delete"));
+    expect(alertSpy).not.toHaveBeenCalled();
+
+    // 3) Advance past the deferral window — Alert should now fire.
+    act(() => {
+      jest.advanceTimersByTime(OVERFLOW_EXIT_MS);
+    });
 
     expect(alertSpy).toHaveBeenCalledTimes(1);
     const [title, body, buttons] = alertSpy.mock.calls[0]!;
@@ -713,7 +739,6 @@ describe("ResultScreen — Delete overflow", () => {
       _body?: string,
       buttons?: unknown,
     ) => {
-      // Auto-press "Delete" so the test doesn't need an async pump.
       const list = buttons as {
         text: string;
         onPress?: () => void | Promise<void>;
@@ -724,8 +749,15 @@ describe("ResultScreen — Delete overflow", () => {
 
     const { getByTestId } = render(<ResultScreen />);
 
+    fireEvent.press(getByTestId("result-header-overflow"));
+    fireEvent.press(getByTestId("glowup-overflow-row-delete"));
+
     await act(async () => {
-      fireEvent.press(getByTestId("result-header-overflow"));
+      jest.advanceTimersByTime(OVERFLOW_EXIT_MS);
+    });
+    // Drain the runDelete async chain (apiFetch + query invalidations).
+    await act(async () => {
+      await Promise.resolve();
     });
 
     expect(mockApiFetch).toHaveBeenCalledWith(
@@ -760,8 +792,14 @@ describe("ResultScreen — Delete overflow", () => {
 
     const { getByTestId } = render(<ResultScreen />);
 
+    fireEvent.press(getByTestId("result-header-overflow"));
+    fireEvent.press(getByTestId("glowup-overflow-row-delete"));
+
     await act(async () => {
-      fireEvent.press(getByTestId("result-header-overflow"));
+      jest.advanceTimersByTime(OVERFLOW_EXIT_MS);
+    });
+    await act(async () => {
+      await Promise.resolve();
     });
 
     expect(mockShowToast).toHaveBeenCalledWith(
