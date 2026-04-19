@@ -279,6 +279,16 @@ class Settings(BaseSettings):
         "styling"  # Comma-separated: "styling,teeth,eyes"
     )
 
+    # Stripe SDK call budgets. The SDK's `request_timeout` kwarg isn't
+    # always strict, so `StripePaymentAdapter` wraps each call with an
+    # `asyncio.wait_for` upper bound equal to the per-call timeout plus
+    # `STRIPE_RPC_TIMEOUT_SLACK_SECONDS`. Values chosen against the R17
+    # delete-account budget — keep them in sync with the webhook/entitlement
+    # timeouts if those ever move.
+    STRIPE_DELETE_CUSTOMER_TIMEOUT_SECONDS: float = 3.0
+    STRIPE_RETRIEVE_SUBSCRIPTION_TIMEOUT_SECONDS: float = 3.0
+    STRIPE_RPC_TIMEOUT_SLACK_SECONDS: float = 0.5
+
     # Stripe checkout return URLs (server-controlled — never user-supplied)
     STRIPE_SUCCESS_URL: str = "https://nxme.ai/payment/success"
     STRIPE_CANCEL_URL: str = "https://nxme.ai/payment/cancel"

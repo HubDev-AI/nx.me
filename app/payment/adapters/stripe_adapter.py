@@ -36,13 +36,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Hard upper bound for delete_customer (R17 delete-account budget).
-_DELETE_CUSTOMER_TIMEOUT_SECONDS = 3.0
-# Extra slack on top of per-call timeouts when wrapping with wait_for — the
-# Stripe SDK's request_timeout isn't always strict, and this ensures a
-# misbehaving call can't stall the caller past its overall budget.
-_TIMEOUT_UPPER_BOUND_SLACK_SECONDS = 0.5
-
 
 @functools.lru_cache(maxsize=128)
 def _retrieve_price_cached(price_id: str) -> PriceInfo:
@@ -50,10 +43,25 @@ def _retrieve_price_cached(price_id: str) -> PriceInfo:
     survives across adapter instances (one network call per price).
 
     Stripe prices are immutable; cache invalidation is not required.
+
+    Raises ``PaymentFetchError`` on Stripe SDK failure so callers treat
+    price retrieval failures through the same adapter-agnostic funnel as
+    other fetches. Negative results (missing ``unit_amount``) still
+    surface as ``ValueError`` — that's a price-shape problem, not a
+    fetch failure, and belongs in the caller's config-validation path.
     """
     import stripe
 
-    price = stripe.Price.retrieve(price_id)
+    try:
+        price = stripe.Price.retrieve(price_id)
+    except stripe.StripeError as exc:
+        logger.exception(
+            "Stripe API error during Price.retrieve (%s): %s", price_id, exc
+        )
+        raise PaymentFetchError(
+            f"Stripe Price.retrieve failed for {price_id}: {exc}"
+        ) from exc
+
     unit_amount = price.get("unit_amount")
     if unit_amount is None:
         # Tiered or metered prices have no flat unit_amount and are not
@@ -117,7 +125,9 @@ class StripePaymentAdapter:
             logger.exception(
                 "Stripe API error during checkout session creation: %s", exc
             )
-            raise
+            raise PaymentFetchError(
+                f"Stripe Checkout.Session.create failed: {exc}"
+            ) from exc
 
         logger.info(
             "Stripe checkout session created: mode=%s, user=%s",
@@ -141,7 +151,9 @@ class StripePaymentAdapter:
             )
         except self._stripe.StripeError as exc:
             logger.exception("Stripe API error during subscription cancel: %s", exc)
-            raise
+            raise PaymentFetchError(
+                f"Stripe Subscription.modify failed for {subscription_id}: {exc}"
+            ) from exc
 
         logger.info(
             "Stripe subscription %s set to cancel at period end", subscription_id
@@ -197,7 +209,9 @@ class StripePaymentAdapter:
             )
         except self._stripe.StripeError as exc:
             logger.exception("Stripe API error during PaymentIntent creation: %s", exc)
-            raise
+            raise PaymentFetchError(
+                f"Stripe PaymentIntent.create failed for user {user_id}: {exc}"
+            ) from exc
 
         logger.info(
             "Stripe PaymentIntent created: user=%s, price=%s, intent=%s",
@@ -316,7 +330,7 @@ class StripePaymentAdapter:
     async def retrieve_subscription(
         self,
         subscription_id: str,
-        timeout: float = 3.0,
+        timeout: float | None = None,
     ) -> SubscriptionSnapshot:
         """Fetch a subscription snapshot from Stripe, bounded by ``timeout``.
 
@@ -326,9 +340,19 @@ class StripePaymentAdapter:
         timeouts, ``asyncio.TimeoutError``) all funnel into
         ``PaymentFetchError`` so callers don't need to import stripe to
         handle failure.
+
+        ``timeout=None`` defers to
+        ``settings.STRIPE_RETRIEVE_SUBSCRIPTION_TIMEOUT_SECONDS`` so every
+        SDK call budget is discoverable via config rather than a hardcoded
+        per-method literal.
         """
+        effective_timeout = (
+            timeout
+            if timeout is not None
+            else settings.STRIPE_RETRIEVE_SUBSCRIPTION_TIMEOUT_SECONDS
+        )
         loop = asyncio.get_running_loop()
-        upper_bound = timeout + _TIMEOUT_UPPER_BOUND_SLACK_SECONDS
+        upper_bound = effective_timeout + settings.STRIPE_RPC_TIMEOUT_SLACK_SECONDS
 
         try:
             sub = await asyncio.wait_for(
@@ -337,7 +361,7 @@ class StripePaymentAdapter:
                     functools.partial(
                         self._stripe.Subscription.retrieve,
                         subscription_id,
-                        request_timeout=timeout,
+                        request_timeout=effective_timeout,
                     ),
                 ),
                 timeout=upper_bound,
@@ -399,8 +423,8 @@ class StripePaymentAdapter:
                         customer_id,
                     ),
                 ),
-                timeout=_DELETE_CUSTOMER_TIMEOUT_SECONDS
-                + _TIMEOUT_UPPER_BOUND_SLACK_SECONDS,
+                timeout=settings.STRIPE_DELETE_CUSTOMER_TIMEOUT_SECONDS
+                + settings.STRIPE_RPC_TIMEOUT_SLACK_SECONDS,
             )
         except asyncio.TimeoutError as exc:
             logger.warning("Stripe Customer.delete timed out for %s", customer_id)
@@ -420,12 +444,16 @@ class StripePaymentAdapter:
             logger.exception(
                 "Stripe API error during Customer.delete (%s): %s", customer_id, exc
             )
-            raise
+            raise PaymentFetchError(
+                f"Stripe Customer.delete failed for {customer_id}: {exc}"
+            ) from exc
         except self._stripe.StripeError as exc:
             logger.exception(
                 "Stripe API error during Customer.delete (%s): %s", customer_id, exc
             )
-            raise
+            raise PaymentFetchError(
+                f"Stripe Customer.delete failed for {customer_id}: {exc}"
+            ) from exc
 
         logger.info("Stripe customer %s deleted", customer_id)
 

@@ -95,8 +95,11 @@ class PaymentPort(Protocol):
     async def get_price(self, price_id: str) -> PriceInfo:
         """Fetch price metadata (amount + currency) for a Stripe price ID.
 
-        Raises Exception on retrieval failure (caller decides whether to
-        skip the offering or propagate the error).
+        Raises ``PaymentFetchError`` on retrieval failure (caller decides
+        whether to skip the offering or propagate the error). Non-fetch
+        shape errors (missing ``unit_amount`` on tiered/metered prices)
+        still surface as ``ValueError`` — those are config-validation
+        concerns, not transient provider failures.
         """
         ...
 
@@ -117,14 +120,16 @@ class PaymentPort(Protocol):
     async def retrieve_subscription(
         self,
         subscription_id: str,
-        timeout: float = 3.0,
+        timeout: float | None = None,
     ) -> SubscriptionSnapshot:
         """Fetch a subscription snapshot for drift-protection (R14b).
 
         Raises ``PaymentFetchError`` on provider error or timeout. The
         adapter applies ``timeout`` as the SDK request timeout and
-        ``timeout + 0.5`` as a belt-and-braces upper bound so a misbehaving
-        SDK can't stall the caller past the webhook/entitlement budget.
+        ``timeout + STRIPE_RPC_TIMEOUT_SLACK_SECONDS`` as a belt-and-braces
+        upper bound so a misbehaving SDK can't stall the caller past the
+        webhook/entitlement budget. ``timeout=None`` defers to
+        ``settings.STRIPE_RETRIEVE_SUBSCRIPTION_TIMEOUT_SECONDS``.
         """
         ...
 

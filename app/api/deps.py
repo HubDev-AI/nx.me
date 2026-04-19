@@ -381,14 +381,25 @@ def get_entitlement_service(
 _ERROR_MESSAGES = ENTITLEMENT_ERROR_MESSAGES
 
 
-def get_payment_adapter() -> "PaymentPort":
-    """Return the configured payment adapter (Stripe or mock)."""
+def get_payment_adapter(request=None) -> "PaymentPort":
+    """Return the configured payment adapter (Stripe or mock).
+
+    When resolved as a FastAPI ``Depends`` (inside a route) ``request`` is
+    injected automatically and its ``app.state.supabase`` is forwarded to
+    ``StripePaymentAdapter`` so the adapter's lazy ``stripe_customer_id``
+    cache can hit/miss the ``users`` table. Direct calls from contexts
+    without a ``Request`` (e.g. the Stripe webhook handler's raw
+    ``get_payment_adapter()`` invocation, or unit tests) pass ``None`` and
+    the adapter falls back to its legacy ``Customer.search`` path — the
+    cache is advisory, not required for correctness.
+    """
     from app.config import settings
 
     if settings.ADAPTER__PAYMENT_ADAPTER == "stripe":
         from app.payment.adapters.stripe_adapter import StripePaymentAdapter
 
-        return StripePaymentAdapter()
+        supabase_client = request.app.state.supabase if request is not None else None
+        return StripePaymentAdapter(supabase_client=supabase_client)
     from app.payment.adapters.mock import MockPaymentAdapter
 
     return MockPaymentAdapter()

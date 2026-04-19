@@ -279,14 +279,16 @@ class TestStripeDeleteCustomer:
         await adapter.delete_customer("cus_gone")
 
     @pytest.mark.asyncio
-    async def test_other_invalid_request_errors_propagate(self, monkeypatch):
+    async def test_other_invalid_request_errors_wrap_to_payment_fetch_error(
+        self, monkeypatch
+    ):
         adapter = _build_stripe_adapter(monkeypatch)
         adapter._stripe.Customer.delete.side_effect = _FakeInvalidRequestError(
             "invalid API key",
             code="invalid_request_error",
         )
 
-        with pytest.raises(_FakeInvalidRequestError):
+        with pytest.raises(PaymentFetchError):
             await adapter.delete_customer("cus_x")
 
 
