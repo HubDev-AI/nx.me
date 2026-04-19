@@ -444,11 +444,33 @@ export default function ResultScreen() {
 
   // Stacked Modal + Alert races on iOS — close the menu first and defer
   // the native destructive confirm until after the sheet's exit animation
-  // completes, or Alert buttons can swallow the first tap.
+  // completes, or Alert buttons can swallow the first tap. The timer
+  // handle is tracked in a ref so:
+  //   (a) a rapid double-tap on Delete cancels the pending alert before
+  //       scheduling a fresh one (prevents two stacked Alert.alerts), and
+  //   (b) the unmount cleanup below cancels any in-flight defer so an
+  //       orphan timer can't raise Alert.alert on a navigated-away screen
+  //       and silently run runDelete via the captured jobId closure.
+  const menuDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleMenuDelete = useCallback(() => {
     setOverflowMenuVisible(false);
-    setTimeout(handleDeletePress, OVERFLOW_MENU_EXIT_DURATION_MS);
+    if (menuDeleteTimerRef.current) {
+      clearTimeout(menuDeleteTimerRef.current);
+    }
+    menuDeleteTimerRef.current = setTimeout(() => {
+      menuDeleteTimerRef.current = null;
+      handleDeletePress();
+    }, OVERFLOW_MENU_EXIT_DURATION_MS);
   }, [handleDeletePress]);
+
+  useEffect(() => {
+    return () => {
+      if (menuDeleteTimerRef.current) {
+        clearTimeout(menuDeleteTimerRef.current);
+        menuDeleteTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Post-result navigation targets. Kept distinct so copy can match the
   // user's mental model at each state: "Try Again" = start a new attempt

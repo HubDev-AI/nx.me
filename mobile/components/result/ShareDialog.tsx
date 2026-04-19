@@ -241,8 +241,11 @@ export function ShareDialog({
     if (visible) {
       // Re-opening during a still-running exit animation — clear the
       // closing gate so any pending completion callback no-ops when it
-      // finally fires.
+      // finally fires. Also reset `mode` here (not just on exit completion)
+      // so a rapid close → re-open that interrupts the exit animation
+      // doesn't flash the stale confirm panel.
       isClosingRef.current = false;
+      setMode("rows");
       setMounted(true);
       Animated.parallel([
         Animated.timing(slideAnim, {
@@ -271,6 +274,14 @@ export function ShareDialog({
         }),
       ]).start(handleExitComplete);
     }
+    // Stop in-flight animations on unmount so the legacy `Animated.timing`
+    // completion callback can't fire `setMounted` / `setMode` on a dead
+    // tree. `stopAnimation` invokes the callback with `finished: false`;
+    // `handleExitComplete`'s `if (!finished) return` guard traps it.
+    return () => {
+      slideAnim.stopAnimation();
+      scrimAnim.stopAnimation();
+    };
   }, [visible, slideAnim, scrimAnim, handleExitComplete]);
 
   // ---- Row visibility --------------------------------------------------
@@ -278,8 +289,6 @@ export function ShareDialog({
   const showSaveRow = job.saved_at === null && capabilities.canEditProfile;
   const showPublishRow =
     capabilities.canPublishGlowup && job.post_id === null;
-  // Share is always rendered when the dialog opens.
-  const showShareRow = true;
 
   // ---- Handlers --------------------------------------------------------
 
@@ -416,19 +425,16 @@ export function ShareDialog({
                   />
                 )}
 
-                {showShareRow && (
-                  <>
-                    {showSaveRow && <View style={styles.divider} />}
-                    <DialogRow
-                      iconName="share-outline"
-                      title={SHARE_TITLE}
-                      subtitle={SHARE_SUBTITLE}
-                      onPress={handleShare}
-                      accessibilityLabel={SHARE_TITLE}
-                      testID="share-dialog-row-share"
-                    />
-                  </>
-                )}
+                {/* Share is always rendered when the dialog opens. */}
+                {showSaveRow && <View style={styles.divider} />}
+                <DialogRow
+                  iconName="share-outline"
+                  title={SHARE_TITLE}
+                  subtitle={SHARE_SUBTITLE}
+                  onPress={handleShare}
+                  accessibilityLabel={SHARE_TITLE}
+                  testID="share-dialog-row-share"
+                />
 
                 {showPublishRow && (
                   <>
@@ -502,7 +508,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000000",
+    backgroundColor: THEME.colors.backdrop,
   },
   sheet: {
     backgroundColor: THEME.colors.glass,
@@ -516,13 +522,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: THEME.colors.sheetTopBorder,
   },
   handleBar: {
     width: 36,
     height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.borderFocused,
     alignSelf: "center",
     marginTop: THEME.spacing.sm,
     marginBottom: THEME.spacing.sm,

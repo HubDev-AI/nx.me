@@ -32,6 +32,8 @@ export const THEME = {
     glassLight: "rgba(17, 17, 17, 0.55)",
     /** Modal scrim base color (combine with backdrop opacity) */
     backdrop: "#000000",
+    /** Hairline top border on bottom-sheet modals (matches EditProfileSheet) */
+    sheetTopBorder: "rgba(255, 255, 255, 0.1)",
     /** Destructive notification background (10% destructive red) */
     destructiveBg: "rgba(239, 68, 68, 0.1)",
     /** Success notification background (10% success green) */

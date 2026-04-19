@@ -12,6 +12,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -38,9 +39,17 @@ from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
 
-from urllib.parse import urlparse
-
 logger = logging.getLogger(__name__)
+
+# Cap on the inline ``generate_nudge`` fallback that fires when
+# ``ctx["arq_pool"]`` is missing (see ``_enqueue_post_glowup_nudge``).
+# The call is awaited on the parent generation-job coroutine; without a
+# timeout an LLM provider stall could push total job time past ARQ's
+# ``job_timeout`` and trick ``watchdog_stuck_jobs`` into marking an
+# already-completed row as stuck. Keep this well below
+# ``GENERATION_TIMEOUT_SECONDS`` so the happy-path job budget is never
+# at risk.
+_NUDGE_INLINE_TIMEOUT_SECONDS = 20
 
 # G-9: Expanded allowlist to cover fallback provider CDN domains
 _ALLOWED_IMAGE_HOSTS = frozenset(
@@ -800,9 +809,18 @@ async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> No
             job_id,
         )
         try:
+            # Lazy import: ``generate_nudge`` is only needed on this
+            # degraded path. Top-level import would make every happy-path
+            # invocation pay for an unused advisor dependency graph.
             from app.advisor.nudge_scheduler import generate_nudge
 
-            await generate_nudge(ctx, user_id, TRIGGER_POST_GLOWUP, None, job_id)
+            # Bound the inline call so an LLM stall cannot overrun the
+            # parent ARQ job_timeout (see ``_NUDGE_INLINE_TIMEOUT_SECONDS``
+            # at module level for rationale).
+            await asyncio.wait_for(
+                generate_nudge(ctx, user_id, TRIGGER_POST_GLOWUP, None, job_id),
+                timeout=_NUDGE_INLINE_TIMEOUT_SECONDS,
+            )
         except Exception:
             logger.warning(
                 "Inline generate_nudge failed for user %s (job %s)",

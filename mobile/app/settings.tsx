@@ -236,8 +236,18 @@ export default function SettingsScreen() {
               if (isTimeout) {
                 // Force the device into a logged-out state so the user can
                 // retry from login. Orphan-reconcile on the server side
-                // will catch any partial-failure state.
-                await wipeLocalDeviceState();
+                // will catch any partial-failure state. Swallow any wipe
+                // error — the navigation + overlay release must run even
+                // if local cleanup fails, or the user stays trapped on the
+                // spinner the fix was supposed to clear.
+                try {
+                  await wipeLocalDeviceState();
+                } catch (wipeErr) {
+                  // Best-effort — the user is already being logged out.
+                  // Logging keeps the failure diagnosable; we do not
+                  // surface a second toast on top of the timeout toast.
+                  console.warn("wipeLocalDeviceState failed on timeout:", wipeErr);
+                }
                 setSessionMode("anon");
                 setIsDeleting(false);
                 setTimeout(() => {

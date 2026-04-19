@@ -38,8 +38,7 @@ import { Body } from "../ui/Text";
 // Animation constants — match EditProfileSheet / ShareDialog exactly.
 // ---------------------------------------------------------------------------
 
-/** Enter duration exported so callers can schedule after-exit work. */
-export const OVERFLOW_MENU_ENTER_DURATION_MS = 300;
+const ENTER_DURATION_MS = 300;
 /** Exit duration exported so callers can schedule after-exit work. */
 export const OVERFLOW_MENU_EXIT_DURATION_MS = 200;
 
@@ -53,8 +52,7 @@ const HEADER_SLOT_MIN_WIDTH = 60;
 // ---------------------------------------------------------------------------
 
 const CANCEL_LABEL = "Cancel";
-const DELETE_ROW_TITLE = "Delete glow-up";
-const DELETE_ROW_A11Y_LABEL = "Delete glow-up";
+const DELETE_ROW_LABEL = "Delete glow-up";
 
 // ---------------------------------------------------------------------------
 // Row sub-component — local duplicate of ShareDialog's DialogRow shape,
@@ -150,12 +148,12 @@ export function GlowupOverflowMenu({
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 1,
-          duration: OVERFLOW_MENU_ENTER_DURATION_MS,
+          duration: ENTER_DURATION_MS,
           useNativeDriver: true,
         }),
         Animated.timing(scrimAnim, {
           toValue: 1,
-          duration: OVERFLOW_MENU_ENTER_DURATION_MS,
+          duration: ENTER_DURATION_MS,
           useNativeDriver: true,
         }),
       ]).start();
@@ -174,18 +172,20 @@ export function GlowupOverflowMenu({
         }),
       ]).start(handleExitComplete);
     }
+    // Stop in-flight animations on unmount so the legacy `Animated.timing`
+    // completion callback can't fire `setMounted` on a dead tree.
+    // `stopAnimation` invokes the callback with `finished: false`; the
+    // `handleExitComplete`'s `if (!finished) return` guard traps it.
+    return () => {
+      slideAnim.stopAnimation();
+      scrimAnim.stopAnimation();
+    };
   }, [visible, slideAnim, scrimAnim, handleExitComplete]);
 
   const handleClose = useCallback(() => {
     hapticLight();
     onClose();
   }, [onClose]);
-
-  const handleDelete = useCallback(() => {
-    // Fire-and-forget — parent closes the menu and defers any follow-up
-    // Alert.alert until the exit animation finishes (iOS Modal+Alert race).
-    onDelete();
-  }, [onDelete]);
 
   const translateY = slideAnim.interpolate({
     inputRange: [0, 1],
@@ -246,10 +246,10 @@ export function GlowupOverflowMenu({
           <View style={styles.content}>
             <OverflowMenuRow
               iconName="trash-outline"
-              title={DELETE_ROW_TITLE}
-              onPress={handleDelete}
+              title={DELETE_ROW_LABEL}
+              onPress={onDelete}
               destructive
-              accessibilityLabel={DELETE_ROW_A11Y_LABEL}
+              accessibilityLabel={DELETE_ROW_LABEL}
               testID="glowup-overflow-row-delete"
             />
           </View>
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000000",
+    backgroundColor: THEME.colors.backdrop,
   },
   sheet: {
     backgroundColor: THEME.colors.glass,
@@ -284,13 +284,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: THEME.colors.sheetTopBorder,
   },
   handleBar: {
     width: 36,
     height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    borderRadius: THEME.radius.pill,
+    backgroundColor: THEME.colors.borderFocused,
     alignSelf: "center",
     marginTop: THEME.spacing.sm,
     marginBottom: THEME.spacing.sm,

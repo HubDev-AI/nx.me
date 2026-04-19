@@ -15,6 +15,7 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from types import SimpleNamespace
 from typing import Any
@@ -220,6 +221,39 @@ async def test_worker_enqueue_inline_fallback_swallows_errors(monkeypatch, caplo
     )
 
     assert any("Inline generate_nudge failed" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_worker_enqueue_inline_fallback_bounds_slow_nudge(monkeypatch, caplog):
+    """Inline fallback must be bounded by ``asyncio.wait_for``.
+
+    Without the timeout a stalled LLM round-trip keeps the parent ARQ
+    generation job alive past its ``job_timeout``, letting the watchdog
+    mark an already-``completed`` row as stuck. ``TimeoutError`` is
+    caught and logged the same way any other fallback error is — the
+    primary happy path must never be blocked by the nudge.
+    """
+    from app.generation import worker
+
+    async def _stall(*_args, **_kwargs):
+        # Simulate an LLM that never returns in the bounded window.
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr("app.advisor.nudge_scheduler.generate_nudge", _stall)
+    # Shrink the cap so the test runs in ms, not seconds.
+    monkeypatch.setattr(worker, "_NUDGE_INLINE_TIMEOUT_SECONDS", 0.05)
+
+    caplog.set_level(logging.WARNING)
+    # Must not raise and must not block past the cap.
+    await worker._enqueue_post_glowup_nudge(
+        ctx={},
+        job_id=_TEST_JOB_ID,
+        user_id=_TEST_USER_ID,
+    )
+
+    assert any("Inline generate_nudge failed" in r.message for r in caplog.records), (
+        "timed-out nudge must hit the swallow-and-log branch"
+    )
 
 
 # ---------------------------------------------------------------------------
