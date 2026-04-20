@@ -163,7 +163,14 @@ class Settings(BaseSettings):
 
     # Entitlement constants (AC-3: must be named constants, not inline literals)
     FREE_TRIAL_ANALYSES: int = 2
-    IDENTITY_SIMILARITY_THRESHOLD: float = 0.80
+    # ArcFace buffalo_l cosine similarity between L2-normalised face
+    # embeddings. Face verification ("same person") literature lands in
+    # the 0.28-0.50 band; glow-ups intentionally change style, hair, and
+    # makeup while preserving the person, so 0.80 rejects almost every
+    # legitimate output. 0.45 keeps obvious drift out without punishing
+    # the creative path. Override per-environment via
+    # ``IDENTITY_SIMILARITY_THRESHOLD`` (e.g. raise during incidents).
+    IDENTITY_SIMILARITY_THRESHOLD: float = 0.45
     MAX_CONCURRENT_GENERATIONS_PER_USER: int = 3
 
     # Advisor tuning (audit A-3, A-5, A-6)
