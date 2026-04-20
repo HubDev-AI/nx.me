@@ -450,3 +450,96 @@ These are the decisions the brainstorm should actually land.
 - It does not resolve product questions (§11). Those are *inputs* to the brainstorm.
 
 This is the map. The brainstorm picks the route.
+
+---
+
+## 13. Payments Integration — Paid-Only Commitment & Review Findings
+
+**Added 2026-04-20.** This section captures the outcome of a `/ce:brainstorm` + document-review cycle on whether the credits-only payments engine should be pre-wired for a future paid-only make-up action. Consensus across 7 reviewers: **do not modify the payments doc now; carry all make-up-specific payment design here and resolve it in the make-up brainstorm**.
+
+### 13.1 The commitment
+
+Make-up is a **paid-only action** at launch. Credits sourced from the Free tier (`signup_grant`, `weekly_free_grant`) must not be spendable on make-up. Glow-up and Ada remain spendable from any credit source.
+
+The canonical gating seam is the project's capabilities module (per `CLAUDE.md`):
+- **Backend**: `Depends(require_app_feature("makeup"))` on the make-up router.
+- **Mobile**: `useCapabilities().makeup_enabled` to gate UI entry points.
+
+At Stage 2 planning time, decide the eligibility mechanism between:
+- **(A) Capability-tier gate** — `makeup_enabled = True` iff user has active Pro subscription (tier-label-derived). Simplest. No ledger changes. Deprecates credits-as-cost-model for make-up entirely (make-up is free while Pro). Mid-grace and post-grace-expiry retention of make-up tracks tier label, not ledger balance.
+- **(B) Ledger-source-restricted reserve** — make-up costs credits like glow-up, but `credit_reserve_v2(p_action_type='makeup')` sums only paid-source ledger entries. Requires an eligibility table, split-debit accounting, and new blocked_reason. Preserves usage-based economics but adds substantial schema surface.
+- **(C) Hybrid** — capability gate for access + ledger cost for per-use debit, drawn from a unified Pro-credit pool. Capability-tier decides "can see the button"; ledger decides "how many make-ups left this cycle".
+
+**Recommendation**: start with **(A)** for simplicity. Only move to (B) or (C) if post-launch data shows make-up is a margin-killer that requires per-use metering inside the Pro tier.
+
+### 13.2 Shipped payments state (2026-04-20)
+
+Already merged on `dev`:
+- Migrations `0048–0061`. Don't assume a greenfield starting number — any Stage 2 migration must land at `0062+`.
+- `credit_reserve` / `credit_commit` / `credit_release` / `credit_refund` RPCs already take `(UUID, UUID, TEXT action_type)` per `0049`. Action type is caller-supplied; Stage 2 MUST validate `p_action_type` at API route level (server-side constant derived from endpoint, never passed from client body).
+- `credit_apply_monthly_allotment` (shipped `0050`) uses **single-row net-delta REPLACE** — the `retained_preserved` two-row pattern in earlier drafts is NOT shipped and was explicitly rejected in `0048`'s comment.
+- Advisory-lock domain is `hashtextextended(user_id::text, 0)` (64-bit), not `hashtext` (32-bit). Any new Stage 2 RPC must match.
+- Credit pack SKU fully removed (`0058`). No re-introduction planned.
+- `credit_ledger.type` CHECK enum at Stage 2 start: `trial_grant, purchase, reserve, commit, release, refund, adjustment, signup_grant, signup_grant_suppressed_by_fingerprint, weekly_free_grant, monthly_allotment, ada_message, dispute_compensation`. Any new type for make-up must extend this with the standard DROP-ADD CONSTRAINT pattern.
+
+### 13.3 Review findings (carry into Stage 2 brainstorm)
+
+Seven reviewers (coherence, feasibility, product-lens, design-lens, security-lens, scope-guardian, adversarial) evaluated a draft of paid-only eligibility wiring for the payments doc. Findings below survive for Stage 2 regardless of which path (A/B/C) is chosen.
+
+#### Product / strategic
+
+1. **Premise needs evidence.** "Make-up must be paid-only" is stated, never defended. Stage 2 planning should produce either (a) unit-cost model showing make-up inference is materially more expensive than glow-up, or (b) funnel hypothesis that paid-only make-up converts Free users better than inclusive pricing. Without this, path (A) is the right risk-minimizing default.
+2. **Debit-ordering is secondary.** Free-first vs paid-first ordering matters only if path (B) is chosen AND users can hold mixed-source balances. In path (A) the question is moot. In path (C), favor paid-first to accelerate paywall signals, not free-first.
+3. **Post-grace hoarding loophole (path B/C only).** A user who churned with retained paid balance could consume make-up indefinitely while earning weekly free credits for glow-up / Ada — effectively trading one failed Pro cycle for ongoing paid-action access. Either bound paid-balance lifespan after grace expiry, or use path (A) where the tier label gates access directly.
+4. **Positioning shift.** Splitting credits by source changes the mental model from "one credit pool, all actions" to "two pools, different eligibility". For a majority-female audience where copy simplicity matters, path (A) keeps the model unified: "Pro unlocks make-up; Free unlocks glow-up + Ada".
+
+#### Feasibility
+
+5. **Migration baseline is `0062+`**. Any eligibility schema, cost column, or new RPC must account for shipped state (`0048–0061`).
+6. **Don't rewrite shipped `0050`**. The two-row `retained_preserved` REPLACE pattern was deliberately excluded. Stage 2 must either live with single-row REPLACE (path A natively avoids this issue) or propose a compensating-entry ledger audit that does not depend on two-row nets.
+7. **Advisory-lock domain**: use `hashtextextended(user_id::text, 0)` consistently with `0049/0050`.
+8. **Server-side `p_action_type`**: the API route must hardcode the action type string per endpoint. Do not pass through request body. This is the sole enforcement point for path-B eligibility.
+
+#### Security
+
+9. **`ledger_type_eligibility` (if path B/C) requires RLS** `DENY ALL FOR anon, authenticated` per the pattern shipped for `signup_grants_issued`. The table is the sole enforcement point for paid-only invariants; compromise = silent bypass.
+10. **`paid_balance_milli` must not appear on `EntitlementState`**. Leaks pool composition to clients; `remaining_makeups` is sufficient.
+11. **`dispute_compensation` is ambiguous**. It is written for both dispute-won refunds AND future staff apology credits. If path B/C ever extends eligibility to this type for make-up, split into distinct ledger types (`dispute_won_refund` vs `admin_goodwill_credit`) first, otherwise goodwill credits silently grant paid-only access.
+
+#### Design (path B/C only)
+
+12. **Entry-point gate before reserve**. A Free user should discover make-up's paid-only nature *before* tapping in and triggering a rejection. Pro-only badge or locked state on the entry point.
+13. **`makeup_requires_paid_credits` empty state**. Distinct from plain `insufficient_credits`. Must not imply "out of credits" when user has free-source credits left for glow-up / Ada. Copy must remain female-first per `feedback_female_user_targeting`.
+14. **Combined-state copy**. When both weekly-regen copy (paywall bottom line) AND make-up paywall fire on the same screen, information hierarchy must be resolved. "Your next free glow-up drops in 3 days" + "Make-up requires Pro" cannot render with equal prominence.
+15. **Accessibility**. If mobile shows split pools via color, screen readers need explicit labels ("3 free-tier credits, 25 Pro credits"). Non-color indicator required.
+
+#### Adversarial (path B/C only)
+
+16. **REPLACE vs in-flight reservation race**. If path (B) is chosen, Pro subscription activation during a mid-flight glow-up reservation must specify exact transaction ordering — otherwise release after REPLACE can leave phantom free or negative paid pool balance.
+17. **Reservation TTL**. Without a reaper, a crashed worker mid-reserve blocks the user's paid pool indefinitely. Path (A) avoids this because eligibility is tier-derived, not balance-derived.
+18. **Eligibility-table mutation during deploy** (path B/C). A migration that flips historical-row classification during live traffic changes `free_milli / paid_milli` views of in-flight reserves retroactively. Gate all eligibility-table writes behind maintenance windows or model-classification-as-frozen-per-row.
+19. **Grandfathering across resub**. When a canceled Pro user resubscribes months later on a newer `plan_versions` row, does cohort assignment preserve original price/cost? Stage 2 must pin: `subscriptions.plan_version_id` on fresh resub = original version OR current default?
+20. **Lint-allowlist drift**. If a coverage test gates new ledger types against an "intentionally blocked" allowlist, any future PR can silently expand the allowlist to suppress a failing test. Back allowlist with schema-level constraint (`CHECK (delta = 0)` for audit-only types).
+
+#### Scope
+
+21. **Default to the smallest change.** Path (A) — capability gate via `require_app_feature` + tier lookup — is a single `features.py` entry plus one line in the make-up router. No migration. No ledger changes. No eligibility table. This is the 80/20 starting point.
+22. **Re-cost `makeup_cost_milli` only if path (B/C)**. If make-up is metered, seed cost AFTER running empirical inference benchmarks across the 3 fal.ai endpoints in §3.1. Seeding 100 now (parity with glow-up) bakes in an unvalidated cost via R12's grandfathering freeze.
+23. **Coverage test (path B/C) is premature.** Gating ledger-type coverage before >1 paid-only action exists enforces a generality with zero current consumers.
+
+### 13.4 Concrete Stage 2 checklist
+
+When the make-up brainstorm opens:
+
+- [ ] Decide path A / B / C with an explicit rationale documented in the requirements doc.
+- [ ] If path A: single capability registration + tier lookup. No migration. Skip §13.3 findings 5–11, 16–20, 22–23.
+- [ ] If path B/C: start from §13.2 shipped state, land everything in `0062+`, address all §13.3 findings.
+- [ ] Either path: server-side hardcoded `p_action_type` in the make-up endpoint handler (§13.3 finding 8).
+- [ ] Either path: make-up module in `app/generation/modules/makeup.py` following `StylingModule` pattern (see §9 Tier 1).
+- [ ] Either path: `useCapabilities().makeup_enabled` guards mobile entry.
+- [ ] Document test plan for chosen path's blocked-access behavior (Free → make-up tap).
+- [ ] Register any new user-owned surfaces introduced by make-up with the delete-account hard-reset registry (`docs/solutions/best-practices/account-delete-hard-reset-invariant-2026-04-18.md`).
+
+### 13.5 Decision log
+
+- **2026-04-20** — `/ce:brainstorm` session: user framed make-up as paid-only, free+weekly credits restricted to glow-up + Ada. Initial direction was path (B) with eligibility table + split-debit columns. Document-review (7 reviewers) converged on: (a) Stage 1 wiring is YAGNI, (b) shipped `0048–0061` diverges from plan assumptions, (c) simpler path-A alternative via capabilities module was not compared. Decision: carry all payment-specific make-up design in this file (§13), keep the payments brainstorm doc clean, resolve path A/B/C in the make-up brainstorm cycle.
