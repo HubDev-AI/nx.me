@@ -259,6 +259,14 @@ export const ADVISOR_ENDPOINTS = {
  */
 export const POST_GLOWUP_LABEL = "After your glow-up";
 
+/** Ionicon name rendered alongside POST_GLOWUP_LABEL on NudgeCard/NudgeDetailSheet. */
+export const POST_GLOWUP_ICON = "bulb-outline" as const;
+
+/** Expo Router pathnames used for navigation — kept here so magic strings don't leak. */
+export const APP_ROUTES = {
+  ADVISOR: "/advisor",
+} as const;
+
 /**
  * Only the `n` newest nudges render the actionable CTA chip. Older cards
  * render a "quieter" variant — body + static chrome, no chip, no empty

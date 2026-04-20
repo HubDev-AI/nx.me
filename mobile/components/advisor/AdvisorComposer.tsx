@@ -130,6 +130,10 @@ export function AdvisorComposer({
             next.length === value.length + 1 && next.endsWith("\n");
           if (isEnterKey) {
             if (canSubmit) {
+              // Submitting consumes the prefill — matches the
+              // button-tap path so microcopy doesn't survive into
+              // subsequent messages on hardware-keyboard submits.
+              if (prefillActive) setPrefillActive(false);
               onSubmit();
             }
             return;

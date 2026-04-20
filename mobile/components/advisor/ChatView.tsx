@@ -130,6 +130,19 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
   const nextCursorRef = useRef<string | null>(null);
   /** Track the last message ID to only auto-scroll on appended messages */
   const lastMessageIdRef = useRef<string | null>(null);
+  /**
+   * Lifecycle guard — tab switching + background restore can unmount
+   * ChatView while a fetchMessages / sendMessage promise is still in
+   * flight. Without this guard, the resolved setState would warn on RN
+   * and corrupt the next mount. Mirrors the ChatSeedChips pattern.
+   */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // -------------------------------------------------------------------------
   // Load initial messages
@@ -139,17 +152,19 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
     setError(null);
     try {
       const response = await fetchMessages();
+      if (!isMountedRef.current) return;
       // API returns oldest first; FlatList renders top-to-bottom for standard chat order.
       setMessages(response.messages);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
+      if (!isMountedRef.current) return;
       // Route through parseApiError so the overlay shows a user-friendly
       // message, not `err.message` (which looked like `API 502` or worse
       // when raw).
       setError(parseApiError(err).message);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, []);
 
@@ -171,12 +186,14 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
     setIsLoadingMore(true);
     try {
       const response = await fetchMessages(nextCursorRef.current);
+      if (!isMountedRef.current) return;
       const older = response.messages;
       setMessages((prev) => [...older, ...prev]);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
     } catch {
+      if (!isMountedRef.current) return;
       retryCountRef.current += 1;
       if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
         const attemptIndex = Math.min(
@@ -198,7 +215,7 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
       // Reset so next user-initiated scroll starts a fresh retry round
       retryCountRef.current = 0;
     } finally {
-      setIsLoadingMore(false);
+      if (isMountedRef.current) setIsLoadingMore(false);
     }
   }, [hasMore, isLoadingMore]);
 
@@ -236,6 +253,7 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
       try {
         // Send and get Ada's response (backend returns the assistant reply)
         const adaResponse = await sendMessage(trimmed);
+        if (!isMountedRef.current) return;
 
         // Replace optimistic user message with the real one from the response
         // and append Ada's reply
@@ -256,6 +274,7 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
           listRef.current?.scrollToEnd({ animated: true });
         }, ADVISOR_CONFIG.AUTO_SCROLL_DELAY_MS);
       } catch (err) {
+        if (!isMountedRef.current) return;
         if (isPremiumRequired(err)) {
           // Remove optimistic message and show paywall
           setMessages((prev) =>
@@ -278,7 +297,7 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
           setError("Couldn't send that. Tap retry.");
         }
       } finally {
-        setIsSending(false);
+        if (isMountedRef.current) setIsSending(false);
       }
     },
     [inputText, isSending],

@@ -63,17 +63,24 @@ export default function AdvisorScreen() {
     ? rawParams.seedText[0]
     : rawParams.seedText;
 
-  // One-shot consumption: remember the seed the first time we see it,
-  // then clear the route param so a tab switch away + back doesn't
-  // re-seed the composer. The ChatView's own mount-time `useState`
-  // initializer is what actually captures the text; clearing the URL
-  // param here just prevents the param from re-arriving as a prop on
-  // ChatView's next remount.
+  // Committed seed survives `router.setParams({ seedText: undefined })`
+  // so ChatView can still receive the text on the render that clears
+  // the URL param. A new incoming `seedText` bumps `seedVersion`, which
+  // feeds into ChatView's React key — that forces a fresh mount so its
+  // one-shot useState initializer runs again. Without the key bump, a
+  // second nudge CTA while ChatView is already mounted would silently
+  // no-op (lazy initializer only runs once per mount).
+  const [committedSeed, setCommittedSeed] = useState<string | undefined>(
+    undefined,
+  );
+  const [seedVersion, setSeedVersion] = useState(0);
   const consumedSeedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!seedText) return;
     if (consumedSeedRef.current === seedText) return;
     consumedSeedRef.current = seedText;
+    setCommittedSeed(seedText);
+    setSeedVersion((v) => v + 1);
     // A seed means the user explicitly invoked Ada — switch the tab
     // even if they were viewing Nudges when they tapped the CTA.
     setActiveTab("chat");
@@ -131,7 +138,9 @@ export default function AdvisorScreen() {
 
       {/* Content */}
       <View style={styles.content}>
-        {activeTab === "chat" && <ChatView seedText={seedText} />}
+        {activeTab === "chat" && (
+          <ChatView key={`chat-${seedVersion}`} seedText={committedSeed} />
+        )}
         {activeTab === "nudges" && <NudgeFeed />}
         {activeTab === "memories" && <MemoryList />}
       </View>

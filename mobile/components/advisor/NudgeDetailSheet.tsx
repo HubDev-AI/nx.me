@@ -25,18 +25,10 @@ import { Body, Caption, Heading } from "../ui/Text";
 import { formatTimeAgo } from "../../lib/format";
 import {
   MIN_TOUCH_TARGET,
+  POST_GLOWUP_ICON,
   POST_GLOWUP_LABEL,
 } from "../../constants/config";
 import type { Nudge } from "../../lib/advisor";
-
-/**
- * Fixed icon for every `post_glowup` card. Mirrors `NudgeCard`'s
- * `POST_GLOWUP_ICON` — kept inline here instead of imported so the two
- * surfaces can diverge without spooky-action coupling (chip vs. sheet
- * can pick different icons if design asks).
- */
-const POST_GLOWUP_ICON: React.ComponentProps<typeof Ionicons>["name"] =
-  "bulb-outline";
 
 interface NudgeDetailSheetProps {
   nudge: Nudge | null;

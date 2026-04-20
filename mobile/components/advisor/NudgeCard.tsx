@@ -24,30 +24,21 @@ import { Body, Caption } from "../ui/Text";
 import {
   MIN_TOUCH_TARGET,
   NUDGES_CTA_VISIBLE_RECENT_CAP,
+  POST_GLOWUP_ICON,
   POST_GLOWUP_LABEL,
 } from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import type { Nudge } from "../../lib/advisor";
-
-/**
- * Fixed Ionicon for every `post_glowup` card. Historical `nudgeIcon()`
- * helpers had no explicit `post_glowup` case and fell through to
- * `bulb-outline`; this constant preserves that choice without keeping
- * the dead per-trigger switch statement.
- */
-const POST_GLOWUP_ICON: React.ComponentProps<typeof Ionicons>["name"] =
-  "bulb-outline";
 
 interface NudgeCardProps {
   nudge: Nudge;
   /**
    * Newest-first position in the feed. Used to decide whether the
    * actionable CTA chip renders — only the first
-   * `NUDGES_CTA_VISIBLE_RECENT_CAP` cards show it. Defaults to `0` so
-   * callers that forget to pass the index don't silently hide every
-   * chip.
+   * `NUDGES_CTA_VISIBLE_RECENT_CAP` cards show it. Required so callers
+   * cannot silently hide every chip by forgetting to pass it.
    */
-  index?: number;
+  index: number;
   /** Called when the card body (not the CTA) is tapped. */
   onPress: (nudge: Nudge) => void;
   /**
@@ -60,7 +51,7 @@ interface NudgeCardProps {
 
 function NudgeCardInner({
   nudge,
-  index = 0,
+  index,
   onPress,
   onCtaPress,
 }: NudgeCardProps) {

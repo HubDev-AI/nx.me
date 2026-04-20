@@ -27,11 +27,11 @@ export interface MessagesResponse {
 /**
  * Actionable `post_glowup` nudge — the single nudge shape shipped in Nudges v2.
  *
- * Backend contract (`/v1/advisor/nudges`) returns `body` plus a
- * `next_step.{label, seed}` pair; the client flattens the nested pair
- * into `next_step_label` / `next_step_seed` for ergonomic rendering. The
- * `trigger` / `observation_tag` fields were deleted in Unit 3 along with
- * the four legacy trigger paths — do not re-introduce them.
+ * Backend contract (`/v1/advisor/nudges`) returns flat `body`,
+ * `next_step_label`, and `next_step_seed` fields; the scheduler's JSON
+ * parser writes them as flat columns to the DB. The `trigger` /
+ * `observation_tag` fields were deleted in Unit 3 along with the four
+ * legacy trigger paths — do not re-introduce them.
  */
 export interface Nudge {
   id: string;

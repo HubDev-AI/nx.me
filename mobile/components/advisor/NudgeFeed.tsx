@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 
 import {
   ADVISOR_CONFIG,
+  APP_ROUTES,
   NUDGE_CTA_ERROR_TOAST,
   NUDGE_CTA_STALE_TOAST,
   PAGINATION_CONFIG,
@@ -33,9 +34,6 @@ import { NudgeDetailSheet } from "./NudgeDetailSheet";
 
 /** HTTP status code surfaced when a nudge has been deleted server-side. */
 const HTTP_STALE_NUDGE = 404;
-
-/** Expo Router pathname for the Ada advisor screen. */
-const ADVISOR_ROUTE = "/advisor" as const;
 
 /** Skeleton for loading state */
 function NudgeSkeleton() {
@@ -105,6 +103,13 @@ export function NudgeFeed() {
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextCursorRef = useRef<string | null>(null);
+  // Lifecycle guard — guarded setState must never run after unmount,
+  // otherwise late network responses from a tab switch raise RN warnings
+  // and corrupt visible state on remount. Matches the ChatSeedChips pattern.
+  const isMountedRef = useRef(true);
+  // CTA in-flight guard shared across NudgeCard + NudgeDetailSheet so
+  // double-fire from both surfaces for the same nudge is impossible.
+  const inFlightCtaIdsRef = useRef<Set<string>>(new Set());
 
   // -------------------------------------------------------------------------
   // Load nudges
@@ -114,21 +119,25 @@ export function NudgeFeed() {
     setError(null);
     try {
       const response = await fetchNudges();
+      if (!isMountedRef.current) return;
       setNudges(response.nudges);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
+      if (!isMountedRef.current) return;
       const message =
         err instanceof Error ? err.message : "We couldn't load your nudges.";
       setError(message);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     loadNudges();
     return () => {
+      isMountedRef.current = false;
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
@@ -150,13 +159,14 @@ export function NudgeFeed() {
     retryCountRef.current = 0;
     try {
       const response = await fetchNudges();
+      if (!isMountedRef.current) return;
       setNudges(response.nudges);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch {
       // Silently ignore refresh errors — existing data stays
     } finally {
-      setIsRefreshing(false);
+      if (isMountedRef.current) setIsRefreshing(false);
     }
   }, []);
 
@@ -168,11 +178,13 @@ export function NudgeFeed() {
     setIsLoadingMore(true);
     try {
       const response = await fetchNudges(nextCursorRef.current);
+      if (!isMountedRef.current) return;
       setNudges((prev) => [...prev, ...response.nudges]);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
     } catch {
+      if (!isMountedRef.current) return;
       retryCountRef.current += 1;
       if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
         const attemptIndex = Math.min(
@@ -198,7 +210,7 @@ export function NudgeFeed() {
         message: "Couldn't load more nudges. Pull to refresh.",
       });
     } finally {
-      setIsLoadingMore(false);
+      if (isMountedRef.current) setIsLoadingMore(false);
     }
   }, [hasMore, isLoadingMore]);
 
@@ -218,6 +230,7 @@ export function NudgeFeed() {
     try {
       await markNudgeRead(nudge.id);
     } catch {
+      if (!isMountedRef.current) return;
       setNudges((prev) =>
         prev.map((n) => (n.id === nudge.id ? { ...n, read_at: null } : n)),
       );
@@ -242,10 +255,19 @@ export function NudgeFeed() {
   // -------------------------------------------------------------------------
   const handleCtaPress = useCallback(
     async (nudge: Nudge) => {
+      // Cross-surface single-flight guard: if either NudgeCard or
+      // NudgeDetailSheet already fired this nudge's CTA, skip.
+      if (inFlightCtaIdsRef.current.has(nudge.id)) return;
+      inFlightCtaIdsRef.current.add(nudge.id);
       try {
         const response = await requestNudgeNextStep(nudge.id);
+        if (!isMountedRef.current) return;
+        // Close the detail sheet before navigation so the modal fade-out
+        // overlaps with the push transition — otherwise the sheet stays
+        // visible behind the new screen.
+        setSelectedNudge(null);
         router.push({
-          pathname: ADVISOR_ROUTE,
+          pathname: APP_ROUTES.ADVISOR,
           params: { seedText: response.seed_text },
         });
       } catch (err) {
@@ -256,6 +278,8 @@ export function NudgeFeed() {
           return;
         }
         showToast({ kind: "error", message: NUDGE_CTA_ERROR_TOAST });
+      } finally {
+        inFlightCtaIdsRef.current.delete(nudge.id);
       }
     },
     [handleRefresh, router],
