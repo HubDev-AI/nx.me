@@ -1,9 +1,20 @@
 ---
 date: 2026-04-19
 topic: payments-credits-only
+revised: 2026-04-20
 ---
 
 # Payments & Subscriptions: Credits-Only Engine
+
+## 2026-04-20 Revision — Pack Removal + Pro Cap Copy
+
+**Scope changes from user (/ce:brainstorm 2026-04-20):**
+
+1. **Credit Pack SKU fully removed.** R7-Pack, all pack-preservation language in R11, and the guest-merge pack-bypass in R16 are **superseded — DELETED**. Pro subscription is the ONLY paid SKU at launch. Pre-launch destructive removal per napkin rule #3: drop pack code, migrations, ledger type, mobile UI, tests in place.
+2. **Pro is explicitly limited, not "unlimited".** R7 already REPLACES balance each cycle, but shipped mobile/backend copy calls Pro "Unlimited". Copy migration below replaces every "unlimited" string with a concrete cap. Baseline cap: `MONTHLY_ALLOTMENT_MILLI = 3000` (30 glow-ups OR ~200 Ada messages, shared pool per R3) at `$9.99/mo`. `ADA_COST_MILLI = 15` (revised 2026-04-20 from original 5 — `~600/mo` was underwater on Claude inference; `15 milli/msg` yields ~50% gross margin at a realistic 20-gen + 60-Ada mix). Numbers become constants (`SIGNUP_GRANT_MILLI`, `WEEKLY_FREE_GRANT_MILLI`, `MONTHLY_ALLOTMENT_MILLI`, `GLOWUP_COST_MILLI`, `ADA_COST_MILLI`) + `plan_versions` row — no literals in copy files.
+3. **Weekly-regen copy is flag-gated.** Free-tier paywall line "+ 1 free glow-up every week" renders ONLY when `app_kill_switches.weekly_free_grant.enabled = FALSE` (job live). When the kill-switch is engaged, the weekly-regen line is hidden everywhere (paywall, empty states, subscription screen). Mobile reads this via `useCapabilities().weekly_free_grant_enabled`; backend adds the boolean to `GET /v1/features` (or `get_entitlement`, decided in planning — must route through the capabilities module per feature-gating rule).
+
+See new requirements **R-Pack-Removal**, **R-Pro-Copy**, **R-Weekly-Regen-Flag-Gated** below. Old pack requirements remain in the document body marked `[SUPERSEDED 2026-04-20 — DELETED]` for audit.
 
 ## Problem Frame
 
@@ -24,7 +35,7 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
 **Economy and accounting**
 
 - R1. One credit ledger is the single source of truth for remaining entitlements. Every billable action reads and writes this ledger; no other counter enforces quota.
-- R2. The internal unit of account is the **milli-credit** (integer). 1 glow-up generation = 100 milli-credits. 1 Ada/advisor message = 5 milli-credits (final ratio TBD in planning; constraint is that both glow-up and Ada costs are whole numbers of milli-credits). The `credit_ledger.delta` column and sum RPC remain INTEGER; no NUMERIC migration. User-facing display translates milli-credits into glow-ups and approximate Ada-message counts (see R3).
+- R2. The internal unit of account is the **milli-credit** (integer). 1 glow-up generation = 100 milli-credits. 1 Ada/advisor message = **15 milli-credits** (revised 2026-04-20 from 5 — margin protection against Claude inference cost; both glow-up and Ada costs are whole numbers of milli-credits). The `credit_ledger.delta` column and sum RPC remain INTEGER; no NUMERIC migration. User-facing display translates milli-credits into glow-ups and approximate Ada-message counts (see R3).
 - R3. A user's displayed balance is `floor(milli_balance / plan_version.glowup_cost_milli)` glow-ups plus `floor(milli_balance / plan_version.ada_cost_milli)` approximate Ada messages — divisors come from the user's active plan_version row, not hardcoded. When `milli_balance < cost_of_next_action`, the action is atomically rejected before any state change, not partially debited. The milli-credit unit is never surfaced to users. Because glow-ups and Ada share one balance, the mobile UI must make the shared pool explicit (e.g., "You have X glow-ups OR ~Y Ada messages from a shared balance") — see Outstanding Questions for UX decision.
 - R4. Every quota-consuming call performs an atomic reserve→commit/release cycle using the existing `credit_reservations` + `credit_ledger` primitive (per `app/migrations/0014_credit_ledger_rpcs.sql` and the advisory-lock variant `0019_credit_reserve_advisory_lock.sql`). Reserve debits milli-credits at job enqueue; commit finalises on success; release restores milli-credits on failure. The atomic reserve step is implemented as an RPC that acquires `pg_advisory_xact_lock(hashtext(user_id::text))` (same lock domain as 0019), then inside that lock: (1) SELECTs `users.locked_at` and `SUM(credit_ledger.delta)`, (2) rejects if `locked_at IS NOT NULL OR balance < p_amount_milli`, (3) INSERTs the reservation + ledger rows atomically. Balance is NEVER cached to `users`; ledger `SUM(delta)` remains the single source of truth (R1). REPLACE operations (R7/R11) and dispute-lock writes (`UPDATE users SET locked_at = now()`) acquire the SAME advisory lock, eliminating TOCTOU between reserve, REPLACE, and lock-set. The worker's `credit_commit_v2` RPC joins `users` and converts commit→release if `locked_at IS NOT NULL` at commit time. On lock-during-in-flight after fal.ai generation has completed, the worker marks the generation output as `dispute_review_quarantine` (hidden from user until dispute resolves) instead of double-loss. Failure mode for insufficient balance or locked account is a typed `InsufficientCredits` or `AccountLocked` error carrying the next-purchase or support URL.
 - R4a. Ada is **ledger-gated**, not tier-gated. Any user — Free, Pro, grace, canceled, locked-by-dispute — may consume Ada if `milli_balance ≥ ada_cost` and no higher-level lock applies (see R-Dispute). The Free/Pro label does not gate Ada access; the ledger does. Mobile does not check tier label when displaying Ada availability.
@@ -44,7 +55,8 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
   - Re-signup on the same device within 12 months after delete: signup grant skipped, ledger entry `signup_grant_suppressed_by_fingerprint` written for audit. The user can still receive weekly_free_grant entries on the new account.
   - `weekly_free_grant` is not fingerprint-bound — grants only to existing accounts.
 - R7. The Pro tier is subscription-only as the primary SKU. A successful subscription charge REPLACES the user's balance with the plan amount (in milli-credits) on each billing period start — use it or lose it, no rollover, no stacking. "Monthly allotment" is the canonical schema/code term. Pro users do not receive the weekly_free_grant (their refill is the monthly allotment).
-- R7-Pack. A single one-time credit pack SKU is offered as a secondary paid option: $4.99 for N credits (N TBD in planning; recommended 500 milli = 5 glow-ups). Inherits the existing `create_payment_intent` flow at `app/payment/adapters/stripe_adapter.py:122-181` + the PaymentSheet integration in `mobile/lib/hooks/use-purchase-flow.ts`. Pack credits are granted EXCLUSIVELY via the server-side `payment_intent.succeeded` webhook handler (`app/api/webhooks.py:_handle_payment_intent_succeeded`) — client-side PaymentSheet completion is never trusted as authorization for a ledger write. All mandates from R18 apply (signature verify, idempotency, out-of-order tolerance). The pack is a direct ledger grant of type `credit_pack_purchase`. Purchased pack credits ADD to the ledger balance (one-time purchases are the one legitimate additive case); REPLACE operations (R7/R11) leave `credit_pack_purchase` ledger entries untouched. Packs are available to both Free and Pro users as an impulse-buyer on-ramp.
+- R7-Pack. **[SUPERSEDED 2026-04-20 — DELETED]** Credit pack SKU removed from v1 scope. See R-Pack-Removal.
+  - Original text: A single one-time credit pack SKU is offered as a secondary paid option: $4.99 for N credits (N TBD in planning; recommended 500 milli = 5 glow-ups). Inherited `create_payment_intent` flow; pack is granted via `payment_intent.succeeded`; ledger type `credit_pack_purchase`; ADD semantic; available to Free and Pro.
 - R8. Only one Pro subscription can be live per user at a time (enforced by a partial UNIQUE index on `subscriptions(user_id) WHERE status='active'` per the existing `partial-unique-index-for-republish-after-soft-delete-2026-04-19` solution). Re-subscription after cancellation is supported and produces a fresh subscription row. No cooldown on resub because R7's REPLACE semantics eliminate the cancel→resub stacking exploit by construction (old balance is replaced, never additive).
 
 **Payment failure and grace**
@@ -53,7 +65,7 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
 - R10. If grace expires without a successful charge, the tier label flips to Free on the next `get_entitlement` call (derived from `grace_until < now()`). The current credit balance is retained — it does not zero out. Ada access continues per R4a because Ada is ledger-gated, not tier-gated. Only tier-label-sensitive UI (paywall copy, billing screen) changes.
 - R11. A successful retry during grace or within Stripe's retry window after grace expiry fires `invoice.payment_succeeded`. On that event:
   - If the user's label is currently "grace": `grace_until` is cleared, label restores to Pro, monthly allotment is REPLACED per R7 (not added — "fresh allotment" means a ledger entry `monthly_allotment` that REPLACES the current balance with `plan_version.monthly_allotment_milli`, discarding any retained balance). No stacking possible.
-  - If the user's label has already flipped to Free (grace expired): the subscription revives, label returns to Pro, monthly allotment is REPLACED per R7. `grace_until` stays cleared. Any pack-purchased credits (from `credit_pack_purchase` entries) are preserved — only monthly_allotment / weekly_free_grant / signup_grant entries are discarded at REPLACE time. Pack credits never expire and coexist with the monthly refill.
+  - If the user's label has already flipped to Free (grace expired): the subscription revives, label returns to Pro, monthly allotment is REPLACED per R7. `grace_until` stays cleared. **[2026-04-20 update — pack removal]** Pack-preservation carve-out deleted. REPLACE wipes the prior balance unconditionally; `credit_pack_purchase` entries no longer exist (see R-Pack-Removal).
 
 **Grandfathering (price + credit amount)**
 
@@ -94,6 +106,46 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
   - **Cap overflow**: if the guest non-pack ledger exceeds 2× signup grant, excess is discarded with an audit entry AND the mobile client is told about the truncation at merge-time (dedicated UI: "X credits will not transfer — reason Y") so the balance drop is not silent.
   - **Pack preservation**: `credit_pack_purchase` entries bypass the cap entirely — legitimate purchases transfer whole.
   - Guest-first-class applies to every paywall and credit surface.
+
+**Pack removal and Pro copy (2026-04-20)**
+
+- R-Pack-Removal. Credit pack SKU is removed from v1 scope entirely. Pro subscription is the sole paid SKU at launch.
+  - **Doc supersessions**: R7-Pack, pack-preservation clause in R11, pack-bypass clause in R16, pack-related Scope Boundary, pack-related Key Decision, and every pack-related Outstanding Question are DELETED (marked `[SUPERSEDED 2026-04-20 — DELETED]`).
+  - **Code deletions** (pre-launch destructive per napkin rule #3 — in-place delete, no deprecation shim):
+    - Migration: drop the `credit_pack_purchase` enum value from `credit_ledger.type` CHECK constraint (DROP CONSTRAINT + ADD CONSTRAINT pattern). Land in a new migration `0058+` — do NOT retro-edit `0048` / `0050`.
+    - Backend: remove pack branch from `app/api/webhooks.py::_handle_payment_intent_succeeded`; remove any pack-specific RPCs; remove pack seeding from `app/services/stripe_dev_bootstrap.py`; remove pack constants from `app/config/__init__.py` + `app/.env.example`.
+    - Mobile: delete `mobile/components/subscription/CreditPackGrid.tsx`, `mobile/components/paywall/CreditPackCard.tsx`; remove pack slot from `mobile/components/paywall/PaywallModal.tsx`; remove pack purchase branch from `mobile/lib/hooks/use-purchase-flow.ts`.
+    - Tests: delete `tests/test_webhooks_packs.py` and `tests/test_credit_purchases_intent.py` (pack portions); update `tests/test_plan_versions.py` references.
+    - Plan doc `docs/plans/2026-04-19-002-feat-payments-credits-only-engine-plan.md` updated in the same PR to mark pack units DELETED.
+  - **Data posture**: no production pack purchases exist (pre-launch); no compensating ledger entries required. If dev/staging has `credit_pack_purchase` rows, they are deleted along with the enum drop — dev seed loss accepted per R23 Phase B convention.
+  - **Delete-account scope**: no pack-related user surfaces remain; R17 scope is unaffected.
+  - **Rationale**: simpler paywall, removes the REPLACE-vs-ADD split that complicates R7/R11, eliminates the cap-bypass edge case in R16. Pack can be re-introduced post-launch as a new requirement if impulse-purchase revenue becomes a proven ask.
+
+- R-Pro-Copy. The string "Unlimited" is banned from Pro marketing surfaces. Pro copy states the concrete cap.
+  - **Constants** (move to `app/config/__init__.py` + `mobile/constants/premium-benefits.ts`, sourced from `plan_versions` via entitlement where possible):
+    - `MONTHLY_ALLOTMENT_MILLI = 3000`
+    - `GLOWUP_COST_MILLI = 100`
+    - `ADA_COST_MILLI = 15` (revised 2026-04-20 from 5 — margin protection)
+    - Derived for copy: `PRO_MONTHLY_GLOWUPS = 30`, `PRO_MONTHLY_ADA_APPROX = 200`
+    - `PRO_MONTHLY_PRICE_USD = "$9.99"` (also lives in Stripe Price object)
+    - Free signup grant `SIGNUP_GRANT_MILLI = 300` (3 glow-ups OR 20 Ada msgs from same pool)
+    - Free weekly regen `WEEKLY_FREE_GRANT_MILLI = 100` (1 glow-up/week OR ~6 Ada msgs)
+  - **Copy surfaces to rewrite** (zero literal "unlimited" remains):
+    - `mobile/copy/paywall.ts:48` — replace `"Go Pro for unlimited looks, or grab a credit pack to get started."` with `"Go Pro — ${PRO_MONTHLY_GLOWUPS} glow-ups a month. Free: ${SIGNUP_GLOWUPS} to start${weeklyRegenSuffix}."` (pack clause removed; weekly-regen suffix gated per R-Weekly-Regen-Flag-Gated).
+    - `mobile/constants/premium-benefits.ts:3` — replace `"Unlimited glow-up analyses"` with `"${PRO_MONTHLY_GLOWUPS} glow-ups every month"` and add bullet `"Shared with Ada — about ${PRO_MONTHLY_ADA_APPROX} advisor messages"` (200 at the current rate; UI must derive from entitlement divisors, not hardcode).
+    - `mobile/components/subscription/PremiumUpsell.tsx:88` — replace `"Go Unlimited"` CTA with `"Go Pro"`.
+    - `app/services/limits.py:11` — delete `UNLIMITED = "unlimited"` tier-enum residue (this enum is legacy pre-credits-only and should be dropped in the Phase B cleanup pass; at minimum the name must not land in any user-facing path).
+  - **Grep gate**: `rg -i "unlimited" mobile/ app/ card-web/` returns zero hits in user-facing paths after this change; any remaining hit is in an internal comment and must be triaged in the same PR.
+  - **Tone**: per R24, copy remains female-first. Example empty-state: `"You're out of glow-ups. Your next free one drops {days_until_regen}${orGoProClause}."` — no male-coded phrasing.
+
+- R-Weekly-Regen-Flag-Gated. The "+1 free glow-up every week" phrasing renders ONLY when the backing cron job is live. Source of truth: `app_kill_switches` row where `key = 'weekly_free_grant'`.
+  - **Semantic**: `app_kill_switches.enabled = TRUE` means the switch is ENGAGED and the job is PAUSED (per migration `0057_app_kill_switches.sql` and `is_kill_switch_enabled` in `app/runtime_flags.py`). Copy must hide the weekly-regen line when the switch is ENGAGED and show it when DISENGAGED (default seeded state).
+  - **Wire-through**: backend exposes a boolean `weekly_free_grant_enabled` (meaning "the regen is live and will grant", i.e., `NOT is_kill_switch_enabled('weekly_free_grant')`) through the capabilities module. Choose ONE of:
+    - Add field to `GET /v1/features` capabilities response (preferred — aligns with feature-gating rule: `useCapabilities()` / `require_app_feature()` module). Planning picks final location.
+    - OR embed in `EntitlementState` (R14) if paywall copy already consumes entitlement.
+  - **Mobile**: copy helpers (`paywall.ts`, `premium-benefits.ts` Free section, empty-state hints on balance-zero screens) read `useCapabilities().weekly_free_grant_enabled` and conditionally concatenate the `"+ 1 free glow-up every week"` / `"Your next free one drops {days}"` clauses. When false, Free copy shrinks to `"Free: 3 glow-ups to start. Go Pro for 30 a month."` with no regen mention and empty-state CTA becomes purchase-only.
+  - **No defaults**: if the capabilities field is missing (schema bug), mobile treats it as FALSE (hide regen copy) rather than guessing true. Aligns with napkin rule "no env fallbacks" applied to runtime flags.
+  - **Test**: add unit test covering both flag states — paywall copy with regen ON and OFF. Integration test asserting `app_kill_switches` UPDATE propagates to `/v1/features` response within the capabilities-module TTL.
 
 **Delete-account wiring**
 
@@ -147,11 +199,14 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
 - A `dispute.created` webhook locks the user within 5 seconds; `dispute.closed_won` unlocks automatically; `dispute.closed_lost` holds the user in locked state pending staff review.
 - A deleted account leaves no Stripe customer id, ledger row, subscription row, or device-cached balance behind, **except** the `signup_grants_issued` fingerprint record which is by design and documented in Dependencies.
 - Mobile and backend agree on entitlement state across every billable surface: the single `EntitlementState` shape is the only contract; no client-side derivation of tier, balance, or `blocked_reason`.
+- **[Added 2026-04-20]** `rg -i "unlimited" mobile/ app/ card-web/` returns zero user-facing hits. Pro paywall/benefits/CTA surfaces state the concrete cap (30 glow-ups/mo, ~200 Ada msgs from shared pool, $9.99/mo).
+- **[Added 2026-04-20]** Pack-SKU surfaces are fully gone: no `CreditPackGrid`, no `CreditPackCard`, no pack branch in `use-purchase-flow.ts`, no pack branch in `_handle_payment_intent_succeeded`, no `credit_pack_purchase` enum value, no pack tests. A grep for "pack" in the payments surfaces returns only historical doc references marked SUPERSEDED.
+- **[Added 2026-04-20]** Toggling `app_kill_switches.weekly_free_grant.enabled` propagates to mobile copy within the capabilities-module TTL: when ENGAGED, no "+1/week" line renders on Free paywall or empty states; when DISENGAGED, the line renders.
 
 ## Scope Boundaries
 
 - Multiple Pro SKUs (Pro Lite / Pro / Pro Max) are excluded from v1. Exactly one Pro tier with one plan version at launch.
-- Multiple pack SKUs are excluded from v1. Exactly one pack SKU per R7-Pack at launch.
+- **[Updated 2026-04-20]** Credit pack SKU is excluded from v1 entirely. No pack of any count. Pro subscription is the only paid SKU.
 - Annual-billing Pro is excluded from v1.
 - Rollover of unused monthly allotment credits is **not** a requirement. Each billing period resets.
 - Feature-set freeze beyond quota costs is excluded. Non-quota feature changes deploy globally.
@@ -167,12 +222,12 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
 ## Key Decisions
 
 - **Tiers visible, credits invisible (engine)** — Marketing labels (Free/Pro) stay as derived-from-subscription. All quota logic is ledger-based. Tier label never gates actions; the ledger does.
-- **Signup grant + weekly_free_grant for Free; no one-time packs in v1** — Signup grant (one-time, fingerprint-bound) gives day-1 product experience; weekly_free_grant creates a habit loop for non-converters. One cheap decision with two compounding effects on top-of-funnel health.
+- **Signup grant + weekly_free_grant for Free; NO packs at all in v1 (2026-04-20 revision)** — Signup grant (one-time, fingerprint-bound) gives day-1 product experience; weekly_free_grant creates a habit loop for non-converters (copy gated on live `weekly_free_grant` kill-switch per R-Weekly-Regen-Flag-Gated). Previous "one pack SKU" stance removed — see R-Pack-Removal.
 - **Ada is ledger-gated, not tier-gated** — Any user with sufficient milli-credits can send Ada messages. Resolves the two-truth-sources tension by construction. Pro is a refill rate, not a feature gate for Ada.
 - **Milli-credit internal unit** — 1 glow-up = 100 milli, 1 Ada message = 5 milli. Integer math only; `credit_ledger.delta` stays INTEGER. User-facing display converts to glow-ups + approximate Ada messages.
-- **Subscription + one pack SKU** — Pro subscription for predictable MRR; one-time pack SKU as the impulse-buyer on-ramp (captures intermediate willingness-to-pay without multi-SKU sophistication).
+- **Subscription-only, no packs (2026-04-20 revision)** — Pro subscription is the only paid SKU at launch. Pack SKU removed to simplify paywall, eliminate REPLACE-vs-ADD ledger split, and remove cap-bypass edge cases. Re-evaluate pack post-launch if impulse-purchase demand is proven.
 - **Grace + retain balance on payment fail** — Industry norm (RevenueCat model). Stripe Smart Retries handle retries.
-- **REPLACE-not-ADD on every allotment event** — R7 monthly refill and R11 retry-success both REPLACE the balance with `plan_version.monthly_allotment_milli`. Pack purchases (R7-Pack) are the only ADD case. By construction, cancel→resub and fail-retry stacking exploits are impossible. No 30-day cooldown machinery needed.
+- **REPLACE-not-ADD on every allotment event (2026-04-20 simplified)** — R7 monthly refill and R11 retry-success both REPLACE the balance with `plan_version.monthly_allotment_milli`. With pack removal (R-Pack-Removal), REPLACE is unconditional — there are no ADD-preserved ledger types. Signup grant and weekly regen remain grants (ADD into a non-active-subscription balance) but are wiped by Pro REPLACE on subscription activation. Cancel→resub and fail-retry stacking impossible by construction. No 30-day cooldown machinery needed.
 - **Grandfather price + allotment + per-action costs** — A plan version freezes price, monthly allotment, glow-up cost, and Ada cost. New rates → new plan version. Non-quota feature changes still deploy globally.
 - **Two-phase migration** — Phase A additive-only (safe to land concurrently with bug-fix agent); Phase B destructive, gated on read-path cutover.
 - **Derive status from dates, with drift protection** — Subscription status derived from dates. `get_entitlement` applies a 1-hour sticky buffer past `period_end` with authoritative Stripe fetch to tolerate event-delivery jitter.
@@ -233,14 +288,14 @@ Note: per R4a, Ada access follows the ledger, not the label. The "label" column 
 
 ### Resolve Before Planning
 
-- [Affects R2, R6, R7, R12] [User decision] Concrete numbers, in milli-credits where applicable:
-  - Signup grant (recommendation: 300 milli = 3 glow-ups)
-  - Weekly free regen (recommendation: 100 milli = 1 glow-up/week)
-  - Pro monthly allotment (recommendation: 3000 milli = 30 glow-ups/month)
-  - Pro monthly price (recommendation: $9.99/mo)
-  - Ada cost per message (recommendation: 5 milli ≈ 600 messages/month on Pro)
-  - Glow-up cost (anchor: 100 milli per generation)
-  These must land in the Phase A migration's first `plan_versions` row and the corresponding Stripe Product/Price objects.
+- [Affects R2, R6, R7, R12] [RESOLVED 2026-04-20] Concrete numbers locked in, in milli-credits where applicable:
+  - Signup grant: **300 milli = 3 glow-ups** (OR ~20 Ada msgs from shared pool)
+  - Weekly free regen: **100 milli = 1 glow-up/week** (OR ~6 Ada msgs)
+  - Pro monthly allotment: **3000 milli = 30 glow-ups/month** (OR ~200 Ada msgs)
+  - Pro monthly price: **$9.99/mo**
+  - Ada cost per message: **15 milli** (revised from original 5 — 600 msgs underwater on inference cost; 200 msgs hits ~50% gross margin at realistic 20-gen + 60-Ada mix)
+  - Glow-up cost: **100 milli** per generation
+  These land in the Phase A migration's first `plan_versions` row and the corresponding Stripe Product/Price objects. Future re-rates create a NEW `plan_versions` row per R12 — existing Pro subscribers stay grandfathered to the row they subscribed to.
 
 ### Deferred to Planning
 
@@ -253,15 +308,17 @@ Note: per R4a, Ada access follows the ledger, not the label. The "label" column 
 - [Affects R3] [UX] Unified-currency display vs separate-pool framing. The mobile balance display must make the shared-pool nature explicit; designer decides final copy.
 - [Affects R3] [Technical] Free users have no active subscription row, so `plan_version.glowup_cost_milli / ada_cost_milli` divisors must come from a default/v1 `plan_versions` row. Planning to confirm the resolution: either Free users reference the current `plan_versions.version_num = 'v1_free_default'`, or divisors fall back to app-config constants when no subscription row exists. Pick during planning.
 - [Affects R7/R11] [UX] R7 REPLACE may punish light Pro users who consume <50% of allotment — they see 'credits disappeared' at every renewal. Mitigation options: (a) UI cue "X unused credits will refresh on {date}", (b) bounded rollover up to 1× (cap at 2× allotment). Planning decides with designer input.
-- [Affects R7-Pack + R14a] [Product] Paywall CTA ordering is a matrix: (Free + insufficient) = Pro primary + pack secondary; (Pro-active + insufficient) = pack primary; (Pro-grace + insufficient) = update-card primary + pack secondary. Encode in mobile paywall component.
+- [Affects R7-Pack + R14a] **[SUPERSEDED 2026-04-20 — DELETED]** Paywall CTA matrix for pack ordering moot. New matrix: (Free + insufficient) = Pro CTA; (Pro-active + insufficient) = "next refill on {date}" (no purchase CTA, user is maxed); (Pro-grace + insufficient) = "update card" CTA.
 - [Affects R18] [Technical] Webhook signing-secret rotation: Stripe supports multiple active secrets during rotation. Planning decides between (a) trust ingest-time verification and drop re-verification at worker pickup (accept the DB-forgery risk), or (b) rotation-aware verifier that accepts multiple secrets during a transition window.
-- [Affects R7-Pack + R15] [Product] Pack refund on fully-consumed pack produces negative balance that silently paywalls until balance > 0. Options: (a) cap compensating delta at current balance, (b) lock user for staff review, (c) allow negative + surface "refund in progress" UI. Decision needed before refund flow ships.
-- [Affects R16] [Observability] `credit_pack_purchase` bypasses the 2× guest merge cap. A legitimate guest who stacks packs + survives merge is fine, but volumetric telemetry (guest purchases $X across Y packs) helps catch abuse post-launch.
+- [Affects R7-Pack + R15] **[SUPERSEDED 2026-04-20 — DELETED]** Pack-refund negative-balance question moot with pack removal. Only R15 (Stripe-initiated refunds on Pro subscription charges) remains; same compensating-ledger-entry primitive applies.
+- [Affects R16] **[SUPERSEDED 2026-04-20 — DELETED]** Guest-pack observability moot: guest mode removed (PR #171) and pack removed.
 - [Affects R17] [Technical] Enumerate every new user-owned surface introduced by this feature and wire into `delete_account` + `wipeLocalDeviceState` per `account-delete-hard-reset-invariant-2026-04-18` registry pattern. Known list: `users.locked_at`, `users.monthly_allotment_milli`, `subscriptions.plan_version_id / grace_until / last_authoritative_fetch_at`, `guest_tokens` (scoped to session), new ledger-entry types. `signup_grants_issued` is the one SURVIVES exception (documented).
 - [Affects R22] [Technical] `DEBUG_BEARER_TOKEN` scheme: how is the token generated, rotated, and scoped? Pick during planning.
 - [Affects R13] [Product] The grandfathering guarantee is narrower than it reads — it covers price + monthly allotment + glow-up cost + Ada cost but not success rate, moderation strictness, or model quality. Decide whether to document this limitation in user-facing copy or keep it silent. If user-facing, mobile billing screen needs a corresponding disclosure.
 
 ## Next Steps
 
-→ Resume `/ce:brainstorm` to agree concrete numbers (R2/R3) if required, or note them as a planning-time product decision.
+→ **[2026-04-20] Concrete numbers are locked** (see resolved Outstanding Question on R2/R6/R7/R12). No further brainstorm cycle needed before planning.
+→ Update `docs/plans/2026-04-19-002-feat-payments-credits-only-engine-plan.md`: delete pack units, add unit for "unlimited" copy rip + Pro copy rewrite, add unit for capabilities-module `weekly_free_grant_enabled` field + mobile copy gating.
+→ Separate `/hunt` follow-up: **new-account 0-glow-ups bug** — triage via `credit_ledger` rows for the affected user_id. If `signup_grant_suppressed_by_fingerprint` present → expected behavior (fingerprint dedup). If no signup_grant row → `credit_apply_signup_grant` RPC failure (check server logs at `auth.py:530-535`). If ledger has `signup_grant +300` but UI shows 0 → `get_entitlement` divisor bug (R3 Outstanding Question on Free-user `glowup_cost_milli` resolution).
 → Then `/ce:plan` for structured implementation planning, phased per the concurrent-agent coordination constraint in Dependencies.
