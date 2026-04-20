@@ -20,7 +20,7 @@ class TestSettings:
         assert settings.FREE_TRIAL_ANALYSES == 2
 
     def test_identity_similarity_threshold_default(self):
-        assert settings.IDENTITY_SIMILARITY_THRESHOLD == 0.80
+        assert settings.IDENTITY_SIMILARITY_THRESHOLD == 0.45
 
     def test_max_concurrent_generations_default(self):
         assert settings.MAX_CONCURRENT_GENERATIONS_PER_USER == 3

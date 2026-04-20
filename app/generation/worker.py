@@ -426,32 +426,10 @@ async def _generate_and_validate(
     resp.raise_for_status()
     source_image_bytes = resp.content
 
-    # G-6: Per-tier identity threshold — look up from tier config if available,
-    # fall back to global IDENTITY_SIMILARITY_THRESHOLD.
+    # Global identity threshold — per-tier overrides lived on the now-dropped
+    # ``tiers`` table (migration 0054). The credits-only world treats every
+    # user the same here; override via ``IDENTITY_SIMILARITY_THRESHOLD``.
     identity_threshold = settings.IDENTITY_SIMILARITY_THRESHOLD
-    if supabase and user_id:
-        try:
-            tier_row = (
-                supabase.table("users")
-                .select("tiers!inner(identity_similarity_threshold)")
-                .eq("id", user_id)
-                .maybe_single()
-                .execute()
-            )
-            if (
-                tier_row
-                and tier_row.data
-                and tier_row.data.get("tiers", {}).get("identity_similarity_threshold")
-                is not None
-            ):
-                identity_threshold = float(
-                    tier_row.data["tiers"]["identity_similarity_threshold"]
-                )
-        except Exception:
-            logger.debug(
-                "Could not fetch per-tier identity threshold for user %s — using global",
-                user_id,
-            )
 
     # Identity check — uses in-memory bytes, not provider URLs
     loop = asyncio.get_running_loop()
