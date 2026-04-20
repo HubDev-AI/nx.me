@@ -6,11 +6,6 @@ jest.mock("./auth", () => ({
   clearAllTokens: jest.fn(),
 }));
 
-jest.mock("./guest-session", () => ({
-  getStoredGuestToken: jest.fn(),
-  getOrCreateGuestToken: jest.fn(),
-}));
-
 jest.mock("./secure-storage", () => ({
   getItem: jest.fn(),
   setItem: jest.fn(),
@@ -25,19 +20,6 @@ const auth = require("./auth") as {
   clearAllTokens: jest.Mock;
 };
 
-const guestSession = require("./guest-session") as {
-  getStoredGuestToken: jest.Mock;
-  getOrCreateGuestToken: jest.Mock;
-};
-
-const secureStorage = require("./secure-storage") as {
-  deleteItem: jest.Mock;
-};
-
-const featuresState = require("./features-state") as {
-  setAuthRequired: (v: boolean) => void;
-};
-
 const apiModule = require("./api") as typeof import("./api") & {
   restoreStoredSession?: () => Promise<string | null>;
 };
@@ -46,31 +28,10 @@ describe("apiFetch", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     global.fetch = jest.fn();
-    featuresState.setAuthRequired(true);
   });
 
-  it("does not provision a guest session when auth is required (prod default)", async () => {
-    auth.getStoredJwt.mockResolvedValue(null);
-    guestSession.getStoredGuestToken.mockResolvedValue(null);
-    guestSession.getOrCreateGuestToken.mockResolvedValue("guest-token");
-    (global.fetch as jest.Mock).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ ok: true }),
-    });
-
-    await apiModule.apiFetch("/v1/public/cards/alice");
-
-    expect(guestSession.getOrCreateGuestToken).not.toHaveBeenCalled();
-    const [, options] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(options.headers["X-Guest-Token"]).toBeUndefined();
-  });
-
-  it("auto-provisions a guest token when auth_required is false and none stored", async () => {
-    featuresState.setAuthRequired(false);
-    auth.getStoredJwt.mockResolvedValue(null);
-    guestSession.getStoredGuestToken.mockResolvedValue(null);
-    guestSession.getOrCreateGuestToken.mockResolvedValue("fresh-guest-token");
+  it("attaches JWT when one is stored", async () => {
+    auth.getStoredJwt.mockResolvedValue("user-jwt");
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       status: 200,
@@ -79,21 +40,27 @@ describe("apiFetch", () => {
 
     await apiModule.apiFetch("/v1/entitlement");
 
-    expect(guestSession.getOrCreateGuestToken).toHaveBeenCalledTimes(1);
     const [, options] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(options.headers["X-Guest-Token"]).toBe("fresh-guest-token");
+    expect(options.headers["Authorization"]).toBe("Bearer user-jwt");
   });
 
-  it("rotates a stale guest token on 401 and retries once", async () => {
-    featuresState.setAuthRequired(false);
+  it("sends no Authorization header when no JWT is stored", async () => {
     auth.getStoredJwt.mockResolvedValue(null);
-    guestSession.getStoredGuestToken.mockResolvedValue("stale-token");
-    guestSession.getOrCreateGuestToken.mockResolvedValue("new-token");
-    // The 401 response is cloned in __DEV__ for error-body logging
-    // (see lib/api.ts:198). The mock must satisfy the Response.clone()
-    // shape so the dev branch doesn't TypeError; returning the same
-    // object back is sufficient because the cloned body is consumed
-    // exactly once via .text().
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    });
+
+    await apiModule.apiFetch("/v1/features");
+
+    const [, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(options.headers["Authorization"]).toBeUndefined();
+  });
+
+  it("refreshes on 401 and retries the original request", async () => {
+    auth.getStoredJwt.mockResolvedValue("stale-jwt");
+    auth.getRefreshToken.mockResolvedValue("refresh-token");
     const stale401 = {
       ok: false,
       status: 401,
@@ -107,6 +74,13 @@ describe("apiFetch", () => {
       .mockResolvedValueOnce(stale401)
       .mockResolvedValueOnce({
         ok: true,
+        json: async () => ({
+          access_token: "fresh-jwt",
+          refresh_token: "fresh-refresh",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         status: 200,
         json: async () => ({ ok: true }),
       });
@@ -114,11 +88,10 @@ describe("apiFetch", () => {
     const result = await apiModule.apiFetch<{ ok: boolean }>("/v1/entitlement");
 
     expect(result).toEqual({ ok: true });
-    expect(secureStorage.deleteItem).toHaveBeenCalledWith("nxme_guest_token");
-    expect(guestSession.getOrCreateGuestToken).toHaveBeenCalledTimes(1);
-    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
-    const [, retryOptions] = (global.fetch as jest.Mock).mock.calls[1];
-    expect(retryOptions.headers["X-Guest-Token"]).toBe("new-token");
+    // First call = stale, second call = /auth/refresh, third call = retry with fresh JWT.
+    expect((global.fetch as jest.Mock).mock.calls).toHaveLength(3);
+    const [, retryOptions] = (global.fetch as jest.Mock).mock.calls[2];
+    expect(retryOptions.headers["Authorization"]).toBe("Bearer fresh-jwt");
   });
 
   it("restores the stored session from the refresh token", async () => {

@@ -89,7 +89,7 @@ forgot the dep or the allowlist entry — finish step 1.
 `mobile/.env`:
 
 ```
-DEV_DISABLE_FEATURES=auth,social
+DEV_DISABLE_FEATURES=social,onboarding
 ```
 
 Comma-separated short names from `DEV_SHORT_NAME_TO_FLAG`. Applied in
@@ -103,7 +103,6 @@ Backend overrides are environment-driven — set `FEATURE_<NAME>=false` in
 
 | Flag                  | Off-state behavior                                |
 | --------------------- | ------------------------------------------------- |
-| `auth_required`       | Mobile provisions guest tokens; UI accepts them.  |
 | `social_enabled`      | Hides feed/reactions/blocks; gates social routes. |
 | `share_enabled`       | Hides share-glowup CTA.                           |
 | `onboarding_enabled`  | Skips onboarding flow on first sign-in.           |

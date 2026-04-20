@@ -165,7 +165,6 @@ function setCaps(overrides: Partial<Capabilities> = {}) {
     canSubscribe: true,
     canReact: true,
     canViewBlockedUsers: true,
-    requiresAuth: true,
   };
   capsMod.useCapabilities.mockReturnValue({ ...base, ...overrides });
 }
@@ -244,7 +243,7 @@ describe("ShareDialog — row visibility", () => {
   });
 
   it("guest + not saved → Save + Share; Publish hidden", () => {
-    // Guest with auth_required=false: canEditProfile=true, canPublishGlowup=false.
+    // Guest session: canEditProfile=true, canPublishGlowup=false (publish needs a real user).
     setCaps({ canPublishGlowup: false, canEditProfile: true });
     const { queryByTestId } = renderDialog({
       job: makeJob({ saved_at: null, post_id: null }),

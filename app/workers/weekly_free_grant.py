@@ -2,7 +2,7 @@
 
 Scheduled cron: Monday 02:30 UTC (unused slot per orphan-DLQ-symmetry guidance).
 
-Each Monday the worker iterates every non-guest, non-Pro user and calls
+Each Monday the worker iterates every non-Pro user and calls
 ``credit_apply_weekly_free_grant`` with the current ISO-week string.  The RPC
 is idempotent via a partial UNIQUE index on ``reference_id WHERE
 type='weekly_free_grant'`` — running the worker twice in the same week for
@@ -82,7 +82,6 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
             page_result = (
                 supabase.table("users")
                 .select("id")
-                .eq("is_guest", False)
                 .range(offset, offset + _PAGE_SIZE - 1)
                 .execute()
             )

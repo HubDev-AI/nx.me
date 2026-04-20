@@ -56,25 +56,6 @@ cd mobile && npx expo lint      # ESLint
 
 When working inside any of `app/`, `mobile/`, or `card-web/`, read that module's `AGENTS.md` first — it has module-specific commands, layout, and gotchas not covered here.
 
-## Dev Feature Focus (test a screen without login)
-
-Skip login entirely and land directly on a specific screen — useful for iterating on the glow-up upload/generation flow.
-
-**Enable:**
-1. Open `mobile/.env` — set `DEV_FEATURE_FOCUS=upload`
-2. Restart: `cd mobile && npx expo run:ios` (first time) or `npx expo start` (JS reload only)
-3. The app bypasses login and opens the upload screen directly. API calls use guest tokens.
-
-**Disable:**
-1. Set `DEV_FEATURE_FOCUS=` (empty) in `mobile/.env`
-2. Restart the dev server
-
-**How it works:** `AuthGuard` in `app/_layout.tsx` checks `DEV_FEATURE_FOCUS` before any auth logic. If set, it redirects to that route unconditionally. `apiFetch` already falls back to `X-Guest-Token` when no JWT is present, so API calls work without a logged-in user. The constant is always `null` in production (guarded by `__DEV__`).
-
-**Other routes you can focus on:** any valid Expo Router path, e.g. `/(tabs)`, `/onboarding`, `/(auth)/login`.
-
-> Heads up: end-to-end generation requires the backend to accept guest tokens on `POST /v1/analyses`. If you hit 401s, you're authenticated-only on that endpoint.
-
 ## Memory
 
 Architecture decisions and project context: `~/.claude/projects/.../memory/MEMORY.md`

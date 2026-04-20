@@ -3,7 +3,7 @@
  *
  * Mobile fetches flags once per cold start; on failure falls back to
  * PROD_DEFAULT_FEATURES so the app still boots with sane production defaults.
- * Dev builds can force-disable flags via `DEV_DISABLE_FEATURES=auth,social,...`
+ * Dev builds can force-disable flags via `DEV_DISABLE_FEATURES=social,share,...`
  * in `mobile/.env` — the list is merged on top of the backend response.
  */
 import Constants from "expo-constants";
@@ -11,7 +11,6 @@ import Constants from "expo-constants";
 const extra = Constants.expoConfig?.extra ?? {};
 
 export interface FeatureFlags {
-  auth_required: boolean;
   social_enabled: boolean;
   share_enabled: boolean;
   onboarding_enabled: boolean;
@@ -19,7 +18,6 @@ export interface FeatureFlags {
 }
 
 export const PROD_DEFAULT_FEATURES: FeatureFlags = {
-  auth_required: true,
   social_enabled: false,
   share_enabled: true,
   onboarding_enabled: true,
@@ -33,7 +31,6 @@ export const FEATURES_ENDPOINT = "/v1/features";
  * Unknown names are ignored (noop) so typos don't break the app.
  */
 const DEV_SHORT_NAME_TO_FLAG: Record<string, keyof FeatureFlags> = {
-  auth: "auth_required",
   social: "social_enabled",
   share: "share_enabled",
   onboarding: "onboarding_enabled",

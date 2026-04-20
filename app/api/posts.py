@@ -542,10 +542,11 @@ async def get_comments(
         pattern="^(newest|oldest)$",
         description="Sort order: oldest or newest",
     ),
+    claims: UserClaims = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
     post_repo: PostRepository = Depends(get_post_repo),
 ) -> CommentsListResponse:
-    """List comments on a post. Public read — no auth required (FR-22)."""
+    """List comments on a post. JWT required."""
     fetch_limit = limit + 1
 
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop

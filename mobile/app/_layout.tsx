@@ -12,10 +12,6 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 
-import {
-  getOrCreateGuestToken,
-  purgeGuestSessionIfNeeded,
-} from "../lib/guest-session";
 import { fetchMe } from "../lib/me";
 import { getStoredJwt } from "../lib/auth";
 import { restoreStoredSession } from "../lib/api";
@@ -31,8 +27,6 @@ import {
   STRIPE_PUBLISHABLE_KEY,
   APPLE_MERCHANT_ID,
   SECURE_STORE_KEYS,
-  DEV_FEATURE_FOCUS,
-  GUEST_ME_TIMEOUT_MS,
 } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
@@ -54,91 +48,38 @@ initSentry();
 SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { session, setSessionMode, setUsername, markSessionReady } = useAuth();
-  // The session-bootstrap effect below reads `features.auth_required` raw —
-  // that runs before `useAuth()` is "ready" so it cannot consume capabilities
-  // (which compose useSession). All other gating routes through
-  // `useCapabilities()`. See mobile/lib/capabilities.ts for the contract.
-  const { features, isLoading: featuresLoading } = useFeatures();
+  const { session, setUsername, markSessionReady } = useAuth();
+  const { isLoading: featuresLoading } = useFeatures();
   const caps = useCapabilities();
   const { markConsentGranted } = useConsent();
   const router = useRouter();
   const segments = useSegments();
-  const guestInitRef = useRef(false);
+  const meFetchRef = useRef(false);
 
-  // In guest mode, provision the backend guest token once and promote the
-  // session to "guest" so downstream UI knows it can talk to guest-friendly
-  // endpoints (entitlement, uploads, advisor reads).
+  // On a real JWT-backed session, hydrate /me once so the UI has the
+  // canonical username + consent state. Anon sessions just release the splash.
   useEffect(() => {
     if (featuresLoading) return;
-    if (features.auth_required) {
-      // Real-auth mode — purge any stale guest token left over from a
-      // prior dev-mode session so the credential leaves the device.
-      // Idempotent via the GUEST_PURGED_AT sentinel; safe to fire on
-      // every cold start under auth_required=true.
-      //
-      // Fire-and-forget is safe here because the next effect below
-      // redirects unauthenticated users to /(auth)/login before any
-      // apiFetch call could read the stale token. If we ever introduce
-      // a pre-login network call, await this first or guard apiFetch
-      // on the GUEST_PURGED_AT sentinel.
-      purgeGuestSessionIfNeeded().catch((err) => {
-        if (__DEV__) console.warn("Guest purge failed:", err);
-      });
-      // Real-auth mode — bootstrap is done once we know the JWT result.
+    if (!session.isUser) {
       markSessionReady();
       return;
     }
-    if (guestInitRef.current) return;
-    guestInitRef.current = true;
-    getOrCreateGuestToken()
-      .then(async () => {
-        // Promote to "guest" first so apiFetch picks the X-Guest-Token branch
-        // for the /me call (it reads the token from SecureStore, not from
-        // session mode, but ordering keeps state coherent for any other
-        // listeners that may fire on the mode transition).
-        setSessionMode("guest");
-        try {
-          // Bound the /me wait so a stalled network can't block the splash
-          // screen indefinitely. On timeout the screen mounts without an
-          // authUsername; the profile load effect stays inert until the user
-          // backgrounds/foregrounds and the AuthGuard re-runs.
-          const me = await Promise.race([
-            fetchMe(),
-            new Promise<never>((_, reject) =>
-              setTimeout(
-                () => reject(new Error("Guest /me timed out")),
-                GUEST_ME_TIMEOUT_MS,
-              ),
-            ),
-          ]);
-          setUsername(me.username);
-          // Hydrate ConsentProvider from the server's source of truth so
-          // subsequent Analyze taps trust the server state rather than
-          // whatever hasConsent happened to be cached on this device.
-          // Without this, a DB reset (pre-launch this happens often)
-          // leaves the client believing consent is granted while the
-          // server 428s the analyze call.
-          markConsentGranted(me.face_mod_consent_at !== null);
-        } catch (err) {
-          // Non-fatal — profile screens fall back to the "complete your
-          // profile" stub when authUsername is null. Log so dev can debug.
-          if (__DEV__) console.warn("Guest /me lookup failed:", err);
-        } finally {
-          // Always release the splash, even on /me timeout or failure.
-          markSessionReady();
-        }
+    if (meFetchRef.current) return;
+    meFetchRef.current = true;
+    fetchMe()
+      .then((me) => {
+        setUsername(me.username);
+        markConsentGranted(me.face_mod_consent_at !== null);
       })
       .catch((err) => {
-        if (__DEV__) console.warn("Guest session init failed:", err);
-        // Leave session as anon; allow retry on the next connectivity recovery.
-        guestInitRef.current = false;
+        if (__DEV__) console.warn("/me lookup failed:", err);
+      })
+      .finally(() => {
         markSessionReady();
       });
   }, [
     featuresLoading,
-    features.auth_required,
-    setSessionMode,
+    session.isUser,
     setUsername,
     markSessionReady,
     markConsentGranted,
@@ -147,23 +88,6 @@ function AuthGuard() {
   useEffect(() => {
     if (featuresLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
-    const currentRoute = segments.join("/");
-
-    // Dev shortcut: jump straight to a specific route for iteration.
-    if (DEV_FEATURE_FOCUS) {
-      const focusBase = DEV_FEATURE_FOCUS.replace(/^\//, "");
-      const onAllowedRoute = [focusBase, "result"].some((p) =>
-        currentRoute.startsWith(p),
-      );
-      if (!onAllowedRoute) router.replace(DEV_FEATURE_FOCUS as never);
-      return;
-    }
-
-    // Guest mode: never land on the auth screens.
-    if (!caps.requiresAuth) {
-      if (inAuthGroup) router.replace("/(tabs)");
-      return;
-    }
 
     if (!session.isUser) {
       if (!inAuthGroup) router.replace("/(auth)/login");
@@ -182,7 +106,6 @@ function AuthGuard() {
     });
   }, [
     featuresLoading,
-    caps.requiresAuth,
     caps.canSeeOnboarding,
     session.isUser,
     segments,
@@ -230,8 +153,6 @@ export default function RootLayout() {
         authed = Boolean(await restoreStoredSession());
       }
 
-      // Guest token provisioning happens inside AuthGuard once feature flags
-      // resolve, so we avoid hitting POST /auth/guest when auth is required.
       setInitialMode(authed ? "user" : "anon");
     }
 

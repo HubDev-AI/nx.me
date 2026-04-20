@@ -4,14 +4,11 @@ Exercises:
   - app/features/__init__.py — get_features(), is_enabled()
   - app/api/deps.py — require_app_feature()
   - app/api/features.py — GET /v1/features response shape
-  - app/db/guest.py — create_guest_user, resolve_guest_by_token
-  - app/api/auth.py — POST /auth/guest endpoint (config gating)
 """
 
 from __future__ import annotations
 
 from unittest.mock import patch
-from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
@@ -31,10 +28,9 @@ class TestGetFeatures:
         features = get_features()
         assert isinstance(features, FeatureFlags)
 
-    def test_all_five_flags_present(self):
+    def test_all_flags_present(self):
         features = get_features()
         for flag in (
-            "auth_required",
             "social_enabled",
             "share_enabled",
             "onboarding_enabled",
@@ -42,13 +38,6 @@ class TestGetFeatures:
         ):
             assert hasattr(features, flag), f"missing {flag}"
             assert isinstance(getattr(features, flag), bool)
-
-    def test_reads_auth_required_from_settings(self):
-        from app.config import settings as real_settings
-
-        with patch.object(real_settings, "FEATURE_AUTH_REQUIRED", False):
-            features = get_features()
-        assert features.auth_required is False
 
     def test_reads_advisor_from_legacy_setting(self):
         """advisor_enabled maps to the pre-existing ADVISOR_ENABLED setting."""
@@ -120,53 +109,3 @@ class TestRequireAppFeature:
         detail = exc_info.value.detail
         assert "error" in detail
         assert set(detail["error"].keys()) == {"code", "message", "detail"}
-
-
-# ===========================================================================
-# Guest user helpers
-# ===========================================================================
-
-
-class TestGuestHelpers:
-    """Unit tests for app/db/guest.py — no real Supabase required."""
-
-    def test_generate_guest_token_shape(self):
-        from app.db.guest import _generate_guest_token
-
-        token = _generate_guest_token()
-        assert len(token) == 64
-        assert all(c in "0123456789abcdef" for c in token)
-
-    def test_generate_guest_token_unique(self):
-        from app.db.guest import _generate_guest_token
-
-        tokens = {_generate_guest_token() for _ in range(50)}
-        assert len(tokens) == 50  # vanishingly rare to collide
-
-    def test_create_guest_user_inserts_correct_row(self):
-        from app.db.guest import create_guest_user
-        from unittest.mock import MagicMock
-
-        # Hand-rolled spy: record the dict passed to insert().
-        inserted: list[dict] = []
-        supabase = MagicMock()
-        builder = MagicMock()
-
-        def capture_insert(row):
-            inserted.append(row)
-            return builder
-
-        builder.insert = capture_insert
-        builder.execute = MagicMock(return_value=None)
-        supabase.table.return_value = builder
-
-        user_id, token = create_guest_user(supabase)
-
-        assert isinstance(user_id, UUID)
-        assert len(token) == 64
-        assert len(inserted) == 1
-        row = inserted[0]
-        assert row["is_guest"] is True
-        assert row["guest_session_token"] == token
-        assert row["display_name"] == "Guest"
-        assert row["username"].startswith("guest-")

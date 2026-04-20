@@ -1,41 +1,37 @@
 """Social Feed & Reactions API.
 
 Story 5-1:
-  GET /feed — paginated feed with newest, trending, biggest_improvements sort.
-  No auth required — guest users can browse the feed (AC-FR6).
+  GET /feed — paginated feed (JWT required).
 
 Story 5-2:
-  POST /posts/{id}/react — react with guest token or JWT auth.
+  POST /posts/{id}/react — react as an authenticated user (JWT required).
   Redis INCR (optimistic) + background DB write via ARQ.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
-from typing import Annotated
 from uuid import UUID
 
-import hashlib
-
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from supabase import Client
 
 from app.api.deps import (
     get_block_repo,
     get_client_ip,
+    get_current_user,
     get_feed_repo,
     get_redis,
     get_supabase,
     require_app_feature,
 )
+from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
-from app.db.guest import resolve_guest_by_token
 from app.repositories.block_repo import BlockRepository
 from app.repositories.feed_repo import FeedRepository
 from app.services.public_url import build_avatar_url
@@ -47,8 +43,6 @@ router = APIRouter(
     dependencies=[Depends(require_app_feature("social_enabled"))],
 )
 
-
-_GUEST_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
 
 # Lua script: atomic INCR + conditional EXPIRE + limit check (L-2).
 # Returns the new count if within limit, or 0 if the limit is exceeded.
@@ -131,34 +125,21 @@ async def get_feed(
     limit: int = Query(
         _DEFAULT_PAGE_SIZE, ge=1, le=_MAX_PAGE_SIZE, description="Page size"
     ),
-    authorization: Annotated[str | None, Header()] = None,
+    claims: UserClaims = Depends(get_current_user),
     feed_repo: FeedRepository = Depends(get_feed_repo),
     block_repo: BlockRepository = Depends(get_block_repo),
     supabase: Client = Depends(get_supabase),
 ) -> FeedResponse:
-    """Public feed endpoint — no auth required.
+    """Feed endpoint — JWT required.
 
-    AC-FR6: Zero authenticated API calls required.
     AC-D7: Posts with non-cleared images excluded.
     AC-U10: biggest_improvements uses reaction_count only, no AI scores.
 
-    If the caller provides a valid JWT, posts from blocked/blocking users
-    are excluded from the results.
+    Posts from blocked/blocking users are excluded from the results.
     """
-    # Optional auth: if a valid JWT is present, resolve blocked user IDs
-    excluded_user_ids: set[str] = set()
-    if authorization and authorization.startswith("Bearer "):
-        try:
-            from app.api.middleware.auth import validate_jwt
-
-            claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
-            user_id = claims["sub"]
-            excluded_user_ids = await run_sync(
-                block_repo.get_all_hidden_user_ids, user_id
-            )
-        except Exception:
-            # Invalid/expired token on a public endpoint — proceed without filtering
-            pass
+    excluded_user_ids: set[str] = await run_sync(
+        block_repo.get_all_hidden_user_ids, claims["sub"]
+    )
 
     # Fetch limit+1 to determine has_more
     fetch_limit = limit + 1
@@ -242,39 +223,6 @@ _REACTION_RATE_LIMIT = 10
 _REACTION_RATE_WINDOW_SECONDS = 300
 
 
-async def validate_guest_token(
-    redis_client: aioredis.Redis, supabase: Client, token: str
-) -> bool:
-    """Register a guest session token on first use and enforce per-token rate limit.
-
-    Tokens are stored as SHA-256 hashes (first 32 hex chars) so raw tokens are
-    never persisted in Redis.
-
-    Returns True if the token is valid and within the per-token reaction limit.
-    Returns False if the token has exceeded GUEST_REACTION_LIMIT reactions within
-    GUEST_TOKEN_TTL_SECONDS.
-    """
-    guest_user_id = await run_sync(resolve_guest_by_token, supabase, token)
-    if guest_user_id is None:
-        return False
-
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-
-    # Register token idempotently — NX means "only set if not exists"
-    registration_key = f"guest_token:{token_hash}"
-    await redis_client.set(
-        registration_key, "1", ex=settings.GUEST_TOKEN_TTL_SECONDS, nx=True
-    )
-
-    # Rate limit counter — expire on first write to align with registration window
-    count_key = f"guest_reactions:{token_hash}"
-    count = await redis_client.incr(count_key)
-    if count == 1:
-        await redis_client.expire(count_key, settings.GUEST_TOKEN_TTL_SECONDS)
-
-    return count <= settings.GUEST_REACTION_LIMIT
-
-
 class ReactionResponse(BaseModel):
     reaction_count: int
 
@@ -283,56 +231,16 @@ class ReactionResponse(BaseModel):
 async def react_to_post(
     post_id: UUID,
     request: Request,
-    x_guest_token: Annotated[str | None, Header()] = None,
-    authorization: Annotated[str | None, Header()] = None,
+    claims: UserClaims = Depends(get_current_user),
     feed_repo: FeedRepository = Depends(get_feed_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
-    supabase: Client = Depends(get_supabase),
 ) -> ReactionResponse:
-    """React to a post — guest (X-Guest-Token) or authenticated (JWT).
+    """React to a post — JWT required.
 
     AC-U9: Duplicate reactions deduplicated via UNIQUE constraint.
     AC-A12: Rate limited at 10 reactions per IP per 5 minutes.
     """
-    # --- Identify reactor: guest token or JWT ---
-    user_id: str | None = None
-    guest_token: str | None = None
-
-    if authorization and authorization.startswith("Bearer "):
-        from app.api.middleware.auth import validate_jwt
-
-        claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
-        user_id = claims["sub"]
-    elif x_guest_token and not settings.FEATURE_AUTH_REQUIRED:
-        # Guest reactions are only allowed when the auth feature is OFF.
-        # With FEATURE_AUTH_REQUIRED=true (production), the X-Guest-Token
-        # path is closed even though this handler does inline validation
-        # (rather than going through get_user_or_guest). Mirrors the gate
-        # that get_user_or_guest applies in app/api/deps.py.
-        # Validate format: must be 64-char hex (32 bytes CSPRNG)
-        if not _GUEST_TOKEN_RE.fullmatch(x_guest_token):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid guest token format",
-            )
-        guest_token = x_guest_token
-        # Server-side token registry + per-token rate limit (LR-8)
-        token_allowed = await validate_guest_token(redis_client, supabase, guest_token)
-        if not token_allowed:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={
-                    "error": {
-                        "code": "GUEST_RATE_LIMIT_EXCEEDED",
-                        "message": "Guest reaction limit reached. Try again later.",
-                    }
-                },
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Provide Authorization header or X-Guest-Token",
-        )
+    user_id = claims["sub"]
 
     # --- Rate limit by IP (atomic Lua script to avoid TOCTOU — L-2) ---
     client_ip = get_client_ip(request)
@@ -382,7 +290,6 @@ async def react_to_post(
     reaction_data = {
         "post_id": str(post_id),
         "user_id": user_id,
-        "guest_session_token": guest_token,
     }
 
     arq_pool = request.app.state.arq_pool
@@ -404,21 +311,17 @@ async def react_to_post(
 async def react_to_post_deprecated(
     post_id: UUID,
     request: Request,
-    x_guest_token: Annotated[str | None, Header()] = None,
-    authorization: Annotated[str | None, Header()] = None,
+    claims: UserClaims = Depends(get_current_user),
     feed_repo: FeedRepository = Depends(get_feed_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
-    supabase: Client = Depends(get_supabase),
 ) -> ReactionResponse:
     """Deprecated alias — use POST /posts/{post_id}/reactions instead."""
     return await react_to_post(
         post_id=post_id,
         request=request,
-        x_guest_token=x_guest_token,
-        authorization=authorization,
+        claims=claims,
         feed_repo=feed_repo,
         redis_client=redis_client,
-        supabase=supabase,
     )
 
 
@@ -453,7 +356,6 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
             feed_repo.persist_reaction_atomic,
             post_id,
             reaction_data.get("user_id"),
-            reaction_data.get("guest_session_token"),
         )
 
         if not result:

@@ -134,8 +134,7 @@ class FeedRepository:
     def persist_reaction_atomic(
         self,
         p_post_id: str,
-        p_user_id: str | None,
-        p_guest_session_token: str | None,
+        p_user_id: str,
     ) -> list[dict]:
         """Atomically insert reaction + update counter.
 
@@ -146,7 +145,6 @@ class FeedRepository:
             {
                 "p_post_id": p_post_id,
                 "p_user_id": p_user_id,
-                "p_guest_session_token": p_guest_session_token,
             },
         ).execute()
         return result.data or []

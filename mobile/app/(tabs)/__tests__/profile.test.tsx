@@ -79,7 +79,6 @@ const analysisMod = require("../../../lib/analysis") as { saveJob: jest.Mock };
 const toastMod = require("../../../lib/toast") as { showToast: jest.Mock };
 
 const BASE_FEATURES: FeatureFlags = {
-  auth_required: true,
   social_enabled: false,
   share_enabled: true,
   onboarding_enabled: true,
@@ -111,18 +110,8 @@ beforeEach(() => {
 // =============================================================================
 
 describe("profile screen — capability-driven gating", () => {
-  it("guest + auth_required=false renders full-profile menu (Edit, no Sign In, no Log Out)", () => {
-    setSession("guest", { auth_required: false });
-    const caps = renderHook(() => useCapabilities()).result.current;
-
-    expect(caps.canViewOwnProfile).toBe(true);
-
-    const labels = buildProfileMenu(caps, HANDLERS).map((i) => i.label);
-    expect(labels).toEqual(["Edit Profile", "Subscription", "Settings"]);
-  });
-
-  it("user + auth_required=true renders full-profile menu (Edit + Log Out, no Sign In)", () => {
-    setSession("user", { auth_required: true });
+  it("user renders full-profile menu (Edit + Log Out, no Sign In)", () => {
+    setSession("user");
     const caps = renderHook(() => useCapabilities()).result.current;
 
     expect(caps.canViewOwnProfile).toBe(true);
@@ -136,8 +125,8 @@ describe("profile screen — capability-driven gating", () => {
     ]);
   });
 
-  it("anon + auth_required=true → no profile, sign-in offered", () => {
-    setSession("anon", { auth_required: true });
+  it("anon → no profile, sign-in offered", () => {
+    setSession("anon");
     const caps = renderHook(() => useCapabilities()).result.current;
 
     expect(caps.canViewOwnProfile).toBe(false);
@@ -147,18 +136,11 @@ describe("profile screen — capability-driven gating", () => {
     expect(labels).not.toContain("Log Out");
   });
 
-  it("guest + auth_required=true (impossible at runtime) → screen falls through to sign-in CTA", () => {
-    setSession("guest", { auth_required: true });
+  it("load-effect predicate (canViewOwnProfile && authUsername) fires for users with username", () => {
+    setSession("user");
     const caps = renderHook(() => useCapabilities()).result.current;
 
-    expect(caps.canViewOwnProfile).toBe(false);
-  });
-
-  it("load-effect predicate (canViewOwnProfile && authUsername) fires for guests with username", () => {
-    setSession("guest", { auth_required: false });
-    const caps = renderHook(() => useCapabilities()).result.current;
-
-    const authUsername = "guest-abc123def456";
+    const authUsername = "alice";
     const profile = null;
     const shouldLoad =
       caps.canViewOwnProfile && Boolean(authUsername) && profile === null;
@@ -166,8 +148,8 @@ describe("profile screen — capability-driven gating", () => {
     expect(shouldLoad).toBe(true);
   });
 
-  it("load-effect predicate suppresses when guest has no username yet", () => {
-    setSession("guest", { auth_required: false });
+  it("load-effect predicate suppresses when user has no username yet", () => {
+    setSession("user");
     const caps = renderHook(() => useCapabilities()).result.current;
 
     const authUsername: string | null = null;

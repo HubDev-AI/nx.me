@@ -21,32 +21,15 @@ import { useSession } from "./auth-context";
 export interface Capabilities {
   /** Can view their own profile screen (full view with glowups + menu). */
   canViewOwnProfile: boolean;
-  /**
-   * Can edit profile (display name, username, avatar). Real users always
-   * can; guests can while `auth_required` is false — in that mode the
-   * guest row on the server is the real identity, and the owner-match
-   * check on PATCH /v1/users/{username} accepts X-Guest-Token.
-   */
+  /** Can edit profile (display name, username, avatar). */
   canEditProfile: boolean;
-  /**
-   * Can view real account details (email, plan, etc.) — only meaningful for
-   * signed-in users. Guests have no account record server-side.
-   */
+  /** Can view real account details (email, plan, etc.). */
   canViewAccountDetails: boolean;
-  /**
-   * Can permanently delete their account — only meaningful for signed-in
-   * users. Guests have no server-side record to delete.
-   */
+  /** Can permanently delete their account. */
   canDeleteAccount: boolean;
-  /**
-   * Can sign out — only meaningful when auth is enabled AND the user is
-   * actually signed in. With auth off the concept doesn't apply.
-   */
+  /** Can sign out — only meaningful when the user is signed in. */
   canSignOut: boolean;
-  /**
-   * Can sign in — only meaningful when auth is enabled AND the user is
-   * not already signed in. With auth off the concept doesn't apply.
-   */
+  /** Can sign in — only meaningful when the user is not signed in. */
   canSignIn: boolean;
   /** Social feed tab visible + reachable. */
   canSeeFeed: boolean;
@@ -67,8 +50,7 @@ export interface Capabilities {
    * and `canSeeFeed` (viewing the feed, keyed to `social_enabled`
    * alone): publishing creates server-side content attributed to an
    * account, so it requires a real signed-in user on top of the
-   * social surface being enabled — guests have no durable identity
-   * to publish under.
+   * social surface being enabled.
    */
   canPublishGlowup: boolean;
   /** Onboarding flow runs after login. */
@@ -78,13 +60,10 @@ export interface Capabilities {
   /** React to glowups in the feed (tied to social_enabled). */
   canReact: boolean;
   /**
-   * Blocked-users screen reachable — needs both auth (to have users at all)
-   * and social (to have the concept of blocking someone). With either off,
-   * the screen has nothing to show.
+   * Blocked-users screen reachable — needs social (to have the concept of
+   * blocking someone). Without it the screen has nothing to show.
    */
   canViewBlockedUsers: boolean;
-  /** Raw `auth_required` passthrough for flow-level gating (AuthGuard). */
-  requiresAuth: boolean;
 }
 
 /**
@@ -98,34 +77,28 @@ export function useCapabilities(): Capabilities {
 
   return useMemo<Capabilities>(
     () => ({
-      canViewOwnProfile:
-        session.isUser || (session.isGuest && !features.auth_required),
-      canEditProfile:
-        session.isUser || (session.isGuest && !features.auth_required),
+      canViewOwnProfile: session.isUser,
+      canEditProfile: session.isUser,
       canViewAccountDetails: session.isUser,
       canDeleteAccount: session.isUser,
-      canSignOut: features.auth_required && session.isUser,
-      canSignIn: features.auth_required && !session.isUser,
+      canSignOut: session.isUser,
+      canSignIn: !session.isUser,
       canSeeFeed: features.social_enabled,
       canUseAdvisor: features.advisor_enabled,
       canShareGlowup: features.share_enabled,
       canShareProfile: features.social_enabled,
-      canPublishGlowup:
-        features.social_enabled && session.isUser && !session.isGuest,
+      canPublishGlowup: features.social_enabled && session.isUser,
       canSeeOnboarding: features.onboarding_enabled,
       canSubscribe: true,
       canReact: features.social_enabled,
-      canViewBlockedUsers: features.auth_required && features.social_enabled,
-      requiresAuth: features.auth_required,
+      canViewBlockedUsers: features.social_enabled,
     }),
     [
-      features.auth_required,
       features.social_enabled,
       features.advisor_enabled,
       features.share_enabled,
       features.onboarding_enabled,
       session.isUser,
-      session.isGuest,
     ],
   );
 }

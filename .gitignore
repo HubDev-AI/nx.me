@@ -76,6 +76,7 @@ CODE_REVIEW_FINDINGS.md
 .claude/worktrees/
 .claude/gsd-file-manifest.json
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Local tool caches
 .letta/

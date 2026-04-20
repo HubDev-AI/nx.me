@@ -165,18 +165,6 @@ class TestRegisterRequest:
                 birth_year=1899,
             )
 
-    def test_guest_session_token_optional(self):
-        from app.api.auth import RegisterRequest
-
-        req = RegisterRequest(
-            email="user@example.com",
-            password="longpassword",
-            username="user123",
-            display_name="User",
-            guest_session_token="abc123",
-        )
-        assert req.guest_session_token == "abc123"
-
 
 # ===========================================================================
 # Age gate constant test

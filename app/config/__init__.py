@@ -1,4 +1,4 @@
-from pydantic import field_validator, model_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -352,8 +352,6 @@ class Settings(BaseSettings):
     TRUST_PROXY_HEADERS: bool = False
 
     # Guest reaction token registry (LR-8)
-    GUEST_TOKEN_TTL_SECONDS: int = 86_400  # 24 hours — registration window per token
-    GUEST_REACTION_LIMIT: int = 50  # max reactions per guest token per 24h
 
     # Account deletion (Story 2-2 AC-FR5)
     USERNAME_RESERVATION_DAYS: int = 180  # days username is reserved post-deletion
@@ -399,10 +397,8 @@ class Settings(BaseSettings):
     # Feature flags — unified registry exposed via GET /v1/features.
     # Prod-safe defaults. Override per-env via app/.env.
     # In development, typical dev overrides are:
-    #   FEATURE_AUTH_REQUIRED=false
     #   FEATURE_ONBOARDING_ENABLED=false
     #   FEATURE_SOCIAL_ENABLED=false  (already default)
-    FEATURE_AUTH_REQUIRED: bool = True
     FEATURE_SOCIAL_ENABLED: bool = False  # post-poned — flip when launching social
     FEATURE_SHARE_ENABLED: bool = True
     FEATURE_ONBOARDING_ENABLED: bool = True
@@ -410,32 +406,8 @@ class Settings(BaseSettings):
 
     # Bypass all per-tier `require_feature` gates. Default False (prod-safe).
     # Set to True only in dev/staging to exercise premium-gated endpoints
-    # (e.g., POST /v1/advisor/messages) with guest or free-tier accounts.
+    # (e.g., POST /v1/advisor/messages) with free-tier accounts.
     FEATURE_PREMIUM_BYPASS: bool = False
-
-    @model_validator(mode="after")
-    def _refuse_prod_with_guest_mode(self) -> "Settings":
-        """Hard-fail at settings load when prod is configured to accept guests.
-
-        Guest mode (`FEATURE_AUTH_REQUIRED=false`) is a local-dev convenience.
-        Allowing it in production would let anyone create a `users.is_guest=true`
-        row and use the app without an account, which is not the prod product.
-        Re-enabling it later (when "real guest" ships) means loosening this
-        check or splitting it into a dedicated flag — explicit, code-visible.
-
-        APP_ENV is normalized (lowercase + strip) so `Production` or
-        ` production ` cannot bypass the gate via casing/whitespace typos.
-        """
-        if (
-            self.APP_ENV.strip().lower() == "production"
-            and not self.FEATURE_AUTH_REQUIRED
-        ):
-            raise ValueError(
-                "FEATURE_AUTH_REQUIRED=false is not allowed when APP_ENV=production. "
-                "Guest mode is a local-dev convenience; production must require auth. "
-                "Set FEATURE_AUTH_REQUIRED=true or change APP_ENV."
-            )
-        return self
 
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""

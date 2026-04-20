@@ -1,14 +1,12 @@
 """User Profile & History API.
 
 Story 6-3:
-  GET  /users/{username}/profile  — public, no auth required
+  GET  /users/{username}/profile  — JWT required
   GET  /users/{username}/history  — private, owner only
   PATCH /users/{username}         — update display_name, avatar, and/or username, owner only
   POST  /users/{username}/avatar   — multipart avatar upload, owner only
 
-Owner-only write paths accept both JWT users and guest tokens (via
-`get_user_or_guest`) so guest-mode sessions can edit their own row while
-FEATURE_AUTH_REQUIRED is false.
+Owner-only write paths require a JWT (via `get_current_user`).
 """
 
 from __future__ import annotations
@@ -38,7 +36,7 @@ from app.api.deps import (
     get_job_repo,
     get_redis,
     get_upload_repo,
-    get_user_or_guest,
+    get_current_user,
     get_user_repo,
 )
 from app.api.public import RecommendationItem
@@ -225,7 +223,7 @@ def _lookup_user(user_repo: UserRepository, username: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# GET /users/check-username  (public, no auth)
+# GET /users/check-username
 # ---------------------------------------------------------------------------
 
 
@@ -235,12 +233,13 @@ async def check_username(
     username: str = Query(
         min_length=_USERNAME_MIN_LENGTH, max_length=_USERNAME_MAX_LENGTH
     ),
+    claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     r: aioredis.Redis = Depends(get_redis),
 ) -> UsernameAvailabilityResponse:
-    """Check if a username is available (case-insensitive).
+    """Check if a username is available (case-insensitive). JWT required.
 
-    No auth required. Per-IP rate limited to prevent username enumeration.
+    Per-IP rate limited to prevent username enumeration.
     """
     # Per-IP rate limit to prevent enumeration
     client_ip = get_client_ip(request) or "unknown"
@@ -270,16 +269,14 @@ async def check_username(
 
 @router.get("/users/me", response_model=MeResponse)
 async def get_me(
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> MeResponse:
     """Return the current session's identity (username, display_name, avatar).
 
-    Accepts either a JWT (real user) or X-Guest-Token (guest, when
-    FEATURE_AUTH_REQUIRED=false). Mobile uses this to learn its own username
-    after guest provisioning so screens like profile.tsx can call
-    /users/{username}/profile.
+    JWT required. Mobile uses this to learn its own username after login so
+    screens like profile.tsx can call /users/{username}/profile.
     """
     user = await run_sync(user_repo.get_profile_by_id, claims["sub"])
     if not user:
@@ -306,7 +303,7 @@ async def get_me(
 
 
 # ---------------------------------------------------------------------------
-# GET /users/{username}/profile  (public)
+# GET /users/{username}/profile
 # ---------------------------------------------------------------------------
 
 
@@ -317,16 +314,15 @@ async def get_me(
 async def get_user_profile(
     request: Request,
     username: str,
+    claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
     r: aioredis.Redis = Depends(get_redis),
 ) -> ProfileResponse:
-    """Return public profile stats for the given username.
+    """Return profile stats for the given username. JWT required.
 
-    No auth required. Per-IP rate limited to prevent username enumeration —
-    the route is reachable in any feature-flag configuration (no longer
-    gated on social_enabled, which used to provide an indirect cap), so the
-    same throttle as check-username applies here.
+    Per-IP rate limited to prevent username enumeration — the same throttle
+    as check-username applies here.
 
     Returns 404 for deleted or non-existent users.
     """
@@ -393,7 +389,7 @@ async def get_user_history(
     # Accept both JWT and guest tokens — guests are real DB rows and own their
     # uploads. The owner check below (`claims["sub"] != user_id`) still gates
     # cross-user access; both auth shapes resolve to the same kind of `sub`.
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     upload_repo: UploadRepository = Depends(get_upload_repo),
     job_repo: JobRepository = Depends(get_job_repo),
@@ -602,15 +598,14 @@ async def get_user_history(
 async def update_user_profile(
     username: str,
     body: UpdateProfileRequest,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> UpdateProfileResponse:
     """Update the authenticated user's profile (display_name, avatar, username).
 
     Owner only — returns 404 if the token does not belong to the requested user.
-    Accepts JWT (real user) or X-Guest-Token (guest, when FEATURE_AUTH_REQUIRED
-    is false). Username changes are subject to a 24-hour cooldown enforced via
+    Username changes are subject to a 24-hour cooldown enforced via
     username_changed_at.
     """
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
@@ -749,7 +744,7 @@ _AVATAR_MIME_TO_EXT: dict[str, str] = {
 async def upload_user_avatar(
     username: str,
     file: UploadFile,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     image_repo: ImageRepository = Depends(get_image_repo),
 ) -> UpdateProfileResponse:
@@ -758,8 +753,7 @@ async def upload_user_avatar(
     Multipart form field `file` is written to Supabase bucket `avatars` at
     `avatars/{user_id}/{uuid}.{ext}`. users.avatar_storage_key swings to the
     new key, users.updated_at bumps, and the previous object (if any) is
-    removed best-effort. Accepts JWT (real user) or X-Guest-Token (guest,
-    when FEATURE_AUTH_REQUIRED is false).
+    removed best-effort.
 
     Owner only — returns 404 if the token does not belong to the requested
     user, mirroring the PATCH endpoint to avoid leaking ownership.

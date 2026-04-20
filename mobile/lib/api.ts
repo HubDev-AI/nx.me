@@ -1,4 +1,4 @@
-import { API_BASE_URL, AUTH_ENDPOINTS, SECURE_STORE_KEYS } from "../constants/config";
+import { API_BASE_URL, AUTH_ENDPOINTS } from "../constants/config";
 import {
   getStoredJwt,
   storeJwt,
@@ -6,10 +6,7 @@ import {
   storeRefreshToken,
   clearAllTokens,
 } from "./auth";
-import { getOrCreateGuestToken, getStoredGuestToken } from "./guest-session";
 import { getOrCreateInstallUuid } from "./install-uuid";
-import { getAuthRequired } from "./features-state";
-import { deleteItem } from "./secure-storage";
 
 /**
  * Auth endpoint paths that receive the `X-Install-UUID` header.
@@ -28,9 +25,6 @@ type RequestOptions = Omit<RequestInit, "headers"> & {
 
 /** Coalesced refresh promise — all concurrent 401 handlers share this */
 let refreshPromise: Promise<string | null> | null = null;
-
-/** Coalesced guest-token rotation promise — mirrors refreshPromise for the guest path. */
-let guestRotatePromise: Promise<string | null> | null = null;
 
 /** Callback invoked when the refresh token is expired / revoked */
 let onSessionExpired: (() => void) | null = null;
@@ -105,65 +99,14 @@ export async function restoreStoredSession(): Promise<string | null> {
 
 /**
  * Authenticated fetch wrapper.
- * Attaches JWT if available, otherwise attaches an already-provisioned guest token.
- * On 401, attempts a single token refresh before retrying.
- * All requests go to API_BASE_URL.
+ * Attaches JWT if available. On 401 with a JWT, attempts a single token
+ * refresh before retrying. All requests go to API_BASE_URL.
  */
-/**
- * Resolve a guest token for the current request.
- *
- * - When backend guest mode is off (`auth_required=true`), returns any stored
- *   token but never provisions a new one.
- * - When guest mode is on, provisions a token on first use so every guest
- *   request carries `X-Guest-Token` even before `AuthGuard`'s bootstrap lands.
- *
- * Returns null on any provisioning failure — the caller will surface the
- * original 401/403 rather than crash.
- */
-async function resolveGuestToken(): Promise<string | null> {
-  const stored = await getStoredGuestToken();
-  if (stored) return stored;
-  if (getAuthRequired()) return null;
-  try {
-    return await getOrCreateGuestToken();
-  } catch (err) {
-    if (__DEV__) console.warn("Guest token provisioning failed:", err);
-    return null;
-  }
-}
-
-/**
- * Clear the stored guest token and provision a fresh one. Used when the
- * backend rejects a stored guest token (e.g., after a local DB reset wipes
- * the `users` row the token pointed at).
- *
- * Coalesces concurrent rotations so a burst of 401s issues one
- * `POST /v1/auth/guest`, not N.
- */
-async function rotateGuestToken(): Promise<string | null> {
-  if (!guestRotatePromise) {
-    guestRotatePromise = (async () => {
-      await deleteItem(SECURE_STORE_KEYS.GUEST_TOKEN);
-      if (getAuthRequired()) return null;
-      try {
-        return await getOrCreateGuestToken();
-      } catch (err) {
-        if (__DEV__) console.warn("Guest token rotation failed:", err);
-        return null;
-      }
-    })().finally(() => {
-      guestRotatePromise = null;
-    });
-  }
-  return guestRotatePromise;
-}
-
 export async function apiFetch<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
   const jwt = await getStoredJwt();
-  const guestToken = jwt ? null : await resolveGuestToken();
 
   const headers: Record<string, string> = {
     ...options.headers,
@@ -178,8 +121,6 @@ export async function apiFetch<T = unknown>(
 
   if (jwt) {
     headers["Authorization"] = `Bearer ${jwt}`;
-  } else if (guestToken) {
-    headers["X-Guest-Token"] = guestToken;
   }
 
   // Attach stable install UUID on auth endpoints so the backend can
@@ -206,7 +147,7 @@ export async function apiFetch<T = unknown>(
   // history when sharing screenshots.
   if (__DEV__) {
     const method = options.method ?? "GET";
-    const auth = jwt ? "JWT" : guestToken ? "Guest" : "none";
+    const auth = jwt ? "JWT" : "none";
     const bodyPreview =
       typeof options.body === "string"
         ? options.body.slice(0, 500)
@@ -245,27 +186,6 @@ export async function apiFetch<T = unknown>(
         return undefined as T;
       }
 
-      return retryResponse.json() as Promise<T>;
-    }
-
-    // Refresh failed — fall through to guest mode error
-  }
-
-  // On 401 with a guest token, the stored token is stale (e.g. DB reset).
-  // Rotate and retry once — fixes the case where a dev wipes Supabase but
-  // the mobile client still holds the old session token in SecureStore.
-  if (response.status === 401 && !jwt && guestToken) {
-    const freshGuestToken = await rotateGuestToken();
-    if (freshGuestToken) {
-      const retryHeaders = { ...headers, "X-Guest-Token": freshGuestToken };
-      const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
-      if (!retryResponse.ok) {
-        const body = await retryResponse.text().catch(() => "");
-        throw new ApiError(retryResponse.status, body, url, retryResponse.headers);
-      }
-      if (retryResponse.status === 204) {
-        return undefined as T;
-      }
       return retryResponse.json() as Promise<T>;
     }
   }

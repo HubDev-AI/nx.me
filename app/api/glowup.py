@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from app.analytics import events
 from app.api.deps import (
-    get_user_or_guest,
+    get_current_user,
     get_credit_ledger,
     get_glowup_service,
     get_job_repo,
@@ -166,7 +166,7 @@ async def _check_idempotency(
 async def analyze_glowup(
     upload_id: UUID,
     request: Request,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     glowup_svc: GlowupService = Depends(get_glowup_service),
 ) -> AnalyzeResponse:
     """Run face analysis on an existing upload.
@@ -290,7 +290,7 @@ async def generate_glowup(
     body: GenerateRequest,
     request: Request,
     idempotency_key_header: str | None = Header(None, alias="idempotency-key"),
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),

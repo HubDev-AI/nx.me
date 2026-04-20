@@ -431,15 +431,11 @@ class TestDeleteGlowupCascade:
         deps.image_repo.remove.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_edge_g_guest_caller_same_as_real_user(self, monkeypatch):
-        """G: guest caller with X-Guest-Token — same behavior as real user.
-
-        The auth dep is `get_user_or_guest`; guest claims look identical
-        ({"sub": guest_uuid}). Mirror that at the test layer.
-        """
+    async def test_edge_g_owner_still_authorized(self, monkeypatch):
+        """G: authenticated owner with arbitrary uuid — handler cascade works."""
         monkeypatch.setattr("app.api.jobs.run_sync", _passthrough_run_sync)
 
-        guest_id = "guest-uuid-1"
+        guest_id = "owner-uuid-1"
         job = _make_job(user_id=guest_id)
         deps = _make_deps(job=job, post=None)
 
