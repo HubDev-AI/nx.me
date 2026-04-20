@@ -20,7 +20,7 @@ import psycopg2
 
 MIGRATIONS_DIR = Path(__file__).parent
 
-DOWN_MARKER = "-- DOWN:"
+DOWN_MARKER_RE = re.compile(r"^-- DOWN:?\s*$", re.MULTILINE)
 
 
 def _get_dsn() -> str:
@@ -97,12 +97,20 @@ def _discover_migrations() -> list[tuple[str, Path]]:
 
 
 def _split_sql(path: Path) -> tuple[str, str]:
-    """Split a migration file into up and down SQL using the -- DOWN: marker."""
+    """Split a migration file into up and down SQL using the -- DOWN[:] marker.
+
+    Accepts both ``-- DOWN`` and ``-- DOWN:`` as the marker line. A missing
+    colon previously caused the entire file — including the DOWN section — to
+    execute during apply, silently self-destroying the migration's own table
+    (see regression in 0052 before 2026-04-20).
+    """
     content = path.read_text()
-    if DOWN_MARKER in content:
-        up_sql, down_sql = content.split(DOWN_MARKER, 1)
-        return up_sql.strip(), down_sql.strip()
-    return content.strip(), ""
+    match = DOWN_MARKER_RE.search(content)
+    if match is None:
+        return content.strip(), ""
+    up_sql = content[: match.start()]
+    down_sql = content[match.end():]
+    return up_sql.strip(), down_sql.strip()
 
 
 def _apply_migration(conn, migration_id: str, path: Path) -> None:
