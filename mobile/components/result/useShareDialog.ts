@@ -431,12 +431,53 @@ export function useShareDialog(
   // POST /v1/posts. On 201, merge post_id + share_hash via
   // `onPublishSuccess` and close the dialog. On 4xx, surface the error
   // inline inside the confirm panel and keep the dialog open for retry.
+  //
+  // Publish implies Save: if the job isn't saved yet, we block on
+  // `saveJobFn` first (mirrors the Share-path R5/R8 invariant). Posting
+  // to the social feed without a corresponding profile entry would leave
+  // the user with a public link they never implicitly approved, and
+  // divergent state between profile and feed. On save failure/timeout
+  // we surface the error inline and do NOT create the post.
   const handlePublish = useCallback(async () => {
     if (!job) return;
     if (isPublishing) return; // Re-entry guard — no double-submit.
     setIsPublishing(true);
     setPublishError(null);
     try {
+      // Step 1 — block on auto-save when the job isn't saved yet.
+      // Same single save codepath as Share: everything routes through
+      // `saveJobFn` so cache invalidation + onSaveSuccess stay unified.
+      //
+      // Concurrency guard: if a standalone Save is already in flight
+      // (`saveState === "saving"`) we'd otherwise fire a second POST
+      // /v1/jobs/{id}/save and race its onSaveSuccess callback. Abort
+      // publish with an inline error and let the user retry once the
+      // primary Save settles.
+      if (job.saved_at === null && saveState === "saving") {
+        setPublishError("Saving… try again in a moment.");
+        return;
+      }
+      if (job.saved_at === null) {
+        setSaveState("saving");
+        try {
+          const { saved_at } = await raceWithTimeout(
+            saveJobFn(job.id),
+            SAVE_TIMEOUT_MS,
+          );
+          setSaveState("saved");
+          onSaveSuccess?.(saved_at);
+        } catch (err) {
+          setSaveState("pending");
+          const msg =
+            err instanceof SaveTimeoutError
+              ? SAVE_TIMEOUT_MESSAGE
+              : parseApiError(err).message;
+          setPublishError(msg);
+          return; // Abort — do NOT create the post on save failure/timeout.
+        }
+      }
+
+      // Step 2 — POST /v1/posts.
       const body: CreatePostRequest = { glow_up_job_id: job.id };
       const res = await apiFetch<PostCreateResponse>(POSTS_CREATE_PATH, {
         method: "POST",
@@ -450,7 +491,7 @@ export function useShareDialog(
     } finally {
       setIsPublishing(false);
     }
-  }, [job, isPublishing, onDialogClose, onPublishSuccess]);
+  }, [job, isPublishing, saveState, onDialogClose, onPublishSuccess, saveJobFn, onSaveSuccess]);
 
   return {
     saveState,
