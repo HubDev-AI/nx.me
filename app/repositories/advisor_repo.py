@@ -828,10 +828,16 @@ class AdvisorRepository:
         return self._sb.storage.from_(bucket).download(path)
 
     def get_cleared_images(self, user_id: str, limit: int = 2) -> list[dict[str, Any]]:
-        """Fetch the most recent cleared images for a user."""
+        """Fetch the most recent cleared images for a user.
+
+        The ``images`` table stores the path-within-bucket under
+        ``storage_key`` (see migration 0001). There is no ``storage_path``
+        column — selecting it raised 42703 and silently failed the
+        post-glow-up nudge worker.
+        """
         result = (
             self._sb.table("images")
-            .select("id, storage_path")
+            .select("id, storage_key")
             .eq("user_id", user_id)
             .eq("status", "cleared")
             .order("created_at", desc=True)

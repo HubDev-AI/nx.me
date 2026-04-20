@@ -123,18 +123,19 @@ export const HTTP_FACE_MOD_CONSENT_REQUIRED = 428;
 /**
  * Retention disclosure — shown on upload screen.
  *
- * Backed by the policy in app/workers/retention.py:
+ * Backed by the policy in app/workers/retention.py + app/services/public_url.py:
  *   - Uploaded source photos: 30 days since last access. Clock resets
  *     on every user read, so "you last open it" is literal.
  *   - Unsaved results: 7 days after creation.
  *   - Saved results (tapping "Keep on profile"): indefinite.
+ *   - Published posts: copied to a public bucket and persist until
+ *     the user deletes the post.
  *
- * Wording spells out subject ("your uploaded photo"), clock ("you
- * last open it"), and outcome ("deleted"), then reassures the user
- * that the Saved action is forever.
+ * Three retention classes spelled out so the upload-screen copy
+ * never contradicts the consent-modal copy.
  */
 export const RETENTION_DISCLOSURE =
-  "Your uploaded photo is deleted 30 days after you last open it. Saved results stay on your profile.";
+  "Your photo is deleted 30 days after you last open it. Unsaved results delete after 7 days. Saved results and shared posts stay until you remove them.";
 
 /** Analysis polling configuration */
 export const ANALYSIS_POLLING = {

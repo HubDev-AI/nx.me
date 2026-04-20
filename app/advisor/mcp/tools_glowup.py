@@ -291,8 +291,8 @@ async def _handle_get_latest_photo(ctx: McpContext) -> dict[str, Any]:
         }
 
     row = rows[0]
-    storage_path = str(row.get("storage_path") or "")
-    if not storage_path:
+    storage_key = str(row.get("storage_key") or "")
+    if not storage_key:
         return {
             "content": [
                 {
@@ -305,7 +305,7 @@ async def _handle_get_latest_photo(ctx: McpContext) -> dict[str, Any]:
 
     try:
         img_bytes = await run_sync(
-            ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, storage_path
+            ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, storage_key
         )
     except Exception as exc:
         ctx.logger.warning("get_latest_photo: failed to fetch source image: %s", exc)
@@ -324,7 +324,7 @@ async def _handle_get_latest_photo(ctx: McpContext) -> dict[str, Any]:
 
     return {
         "content": [
-            _encode_image_block(img_bytes, storage_path),
+            _encode_image_block(img_bytes, storage_key),
             {
                 "type": CONTENT_BLOCK_TYPE_TEXT,
                 "text": f"feature={FEATURE_TAG_SOURCE_PHOTO}",
