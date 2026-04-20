@@ -28,6 +28,7 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
 
@@ -86,6 +87,20 @@ interface PublicCard {
 const USERNAME_RE = AUTH_VALIDATION.USERNAME_PATTERN;
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Post-type label shown in the screen header. Currently all cards are
+ * glow-ups; when we ship additional post types (make-up, style, etc.)
+ * this will come from the card response and select between labels.
+ */
+const CARD_TITLE_GLOW_UP = "Glow Up";
+
+/** Feed query key prefix — matches `useFeed()`'s useInfiniteQuery key. */
+const FEED_QUERY_KEY_PREFIX = ["feed"] as const;
+
+// ---------------------------------------------------------------------------
 // API helper (no auth — public endpoint)
 // ---------------------------------------------------------------------------
 
@@ -110,6 +125,7 @@ export default function CardDetailScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { username: currentUsername } = useAuth();
+  const queryClient = useQueryClient();
 
   const [card, setCard] = useState<PublicCard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -251,6 +267,14 @@ export default function CardDetailScreen() {
                 method: "DELETE",
               });
               hapticLight();
+              // Invalidate every feed sort variant so the feed refetches
+              // (and the deleted post disappears) the moment the user pops
+              // back to the list. Without this, `staleTime: 30s` in useFeed
+              // would leave the deleted card in the UI until manual pull-
+              // to-refresh.
+              queryClient.invalidateQueries({
+                queryKey: FEED_QUERY_KEY_PREFIX.slice(),
+              });
               router.back();
             } catch (err) {
               hapticError();
@@ -267,7 +291,7 @@ export default function CardDetailScreen() {
         },
       ],
     );
-  }, [postId, isDeleting, router]);
+  }, [postId, isDeleting, router, queryClient]);
 
   const handleBlockUser = useCallback(() => {
     if (!userId) return;
@@ -421,7 +445,7 @@ export default function CardDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
           <PageBackground overlayOpacity={0.88} />
-          {renderHeader(username ? `@${username}` : "Card")}
+          {renderHeader(CARD_TITLE_GLOW_UP)}
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={theme.accent} />
             <Body color="secondary">Loading card…</Body>
@@ -437,7 +461,7 @@ export default function CardDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
           <PageBackground overlayOpacity={0.88} />
-          {renderHeader(username ? `@${username}` : "Card")}
+          {renderHeader(CARD_TITLE_GLOW_UP)}
           <View style={styles.centered}>
             <Ionicons name="alert-circle-outline" size={48} color={THEME.colors.destructive} />
             <Body color="secondary" style={styles.errorText}>
@@ -463,7 +487,7 @@ export default function CardDetailScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safeArea} edges={["bottom"]}>
         <PageBackground overlayOpacity={0.88} />
-        {renderHeader(`@${card.username}`)}
+        {renderHeader(CARD_TITLE_GLOW_UP)}
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -471,9 +495,6 @@ export default function CardDetailScreen() {
           <Heading size="md" color="primary" style={styles.usernameHeading}>
             {card.display_name}
           </Heading>
-          <Caption color="secondary" style={styles.usernameSub}>
-            @{card.username}
-          </Caption>
 
           <BeforeAfterSlider
             beforeUrl={card.before_image_url}
@@ -579,11 +600,7 @@ const styles = StyleSheet.create({
   usernameHeading: {
     textAlign: "center",
     paddingTop: THEME.spacing.xl,
-    paddingHorizontal: THEME.spacing.lg,
-  },
-  usernameSub: {
-    textAlign: "center",
-    paddingTop: THEME.spacing.xs,
+    paddingBottom: THEME.spacing.sm,
     paddingHorizontal: THEME.spacing.lg,
   },
   statsRow: {
