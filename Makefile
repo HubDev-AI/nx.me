@@ -1,4 +1,4 @@
-.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-ios-device mobile-android mobile-android-device mobile-start mobile-lint card-web-start card-web-lint stripe-dev stripe-bootstrap
+.PHONY: up down reset nuke nuke-keep migrate worker test lint format mobile-ios mobile-ios-device mobile-android mobile-android-device mobile-start mobile-lint card-web-start card-web-lint stripe-dev stripe-bootstrap kill-switch-status kill-switch-pause kill-switch-resume
 
 # ── Start everything (first-time safe) ────────────────────────────────────────
 up: .venv app/.env
@@ -99,3 +99,21 @@ stripe-dev:
 
 stripe-bootstrap: app/.env
 	@set -a && . ./app/.env && set +a && uv run python -m app.services.stripe_dev_bootstrap
+
+# ── Runtime kill-switches (pause/resume cron jobs without a redeploy) ─────────
+# Override KEY to target a different switch; override NOTE to add context.
+#   make kill-switch-status
+#   make kill-switch-status KEY=weekly_free_grant
+#   make kill-switch-pause  KEY=weekly_free_grant NOTE="incident #42"
+#   make kill-switch-resume KEY=weekly_free_grant
+KEY  ?= weekly_free_grant
+NOTE ?=
+
+kill-switch-status: app/.env
+	@set -a && . ./app/.env && set +a && scripts/kill-switch.sh status $(KEY)
+
+kill-switch-pause: app/.env
+	@set -a && . ./app/.env && set +a && scripts/kill-switch.sh pause $(KEY) $(if $(NOTE),"$(NOTE)")
+
+kill-switch-resume: app/.env
+	@set -a && . ./app/.env && set +a && scripts/kill-switch.sh resume $(KEY) $(if $(NOTE),"$(NOTE)")
