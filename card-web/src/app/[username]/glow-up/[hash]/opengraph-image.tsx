@@ -5,15 +5,14 @@ import {
   OG_IMAGE_HEIGHT,
   SITE_NAME,
   CARD_REVALIDATE_SECONDS,
+  IMAGE_CDN_HOSTS,
 } from '@/config/constants';
 import { getCardData } from '@/lib/api';
-
-const ALLOWED_IMAGE_HOSTS = ["supabase.co", "fal.ai", "fal.media", "fal.run", "images.unsplash.com"];
 
 function isAllowedImageUrl(url: string): boolean {
   try {
     const hostname = new URL(url).hostname;
-    return ALLOWED_IMAGE_HOSTS.some(
+    return IMAGE_CDN_HOSTS.some(
       (h) => hostname === h || hostname.endsWith(`.${h}`)
     );
   } catch {

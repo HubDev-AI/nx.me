@@ -125,10 +125,34 @@ export const SITEMAP_REVALIDATE_SECONDS = 86400;
 export const PUBLIC_CARDS_LIST_PATH = '/v1/public/cards';
 
 /**
+ * Accent palette rotated per-request by `buildTheme()`. Typed as a non-empty
+ * tuple so `THEME_ACCENTS[0]` is non-optional and `DEFAULT_ACCENT` can derive
+ * from it without a fallback literal.
+ */
+export const THEME_ACCENTS: readonly [string, ...string[]] = [
+  '#F43F5E', '#14B8A6', '#D4A060', '#38BDF8', '#FB923C',
+  '#6366F1', '#EF4444', '#A78BFA', '#F472B6', '#E879F9',
+  '#34D399', '#F59E0B', '#EC4899', '#8B5CF6', '#10B981',
+  '#0EA5E9', '#F97316', '#84CC16', '#E11D48', '#7C3AED',
+];
+
+/**
  * Fallback accent colour used when the `--accent` CSS custom property is not
  * set (e.g. error pages rendered before the theme provider runs, icon assets,
- * SSR paths that bypass `buildTheme()`). Kept in parity with the first entry
- * in `theme-provider.ACCENTS` so the fallback visually matches the default
- * theme rotation.
+ * SSR paths that bypass `buildTheme()`). First entry of `THEME_ACCENTS` so the
+ * fallback visually matches the default theme rotation.
  */
-export const DEFAULT_ACCENT = '#F43F5E';
+export const DEFAULT_ACCENT: string = THEME_ACCENTS[0];
+
+/**
+ * Image CDN hostnames trusted by the OG image renderer. URLs whose host
+ * matches (exact or sub-domain) are passed through to satori; everything else
+ * is dropped to `""` so the renderer falls back to the placeholder layout.
+ */
+export const IMAGE_CDN_HOSTS: ReadonlyArray<string> = [
+  'supabase.co',
+  'fal.ai',
+  'fal.media',
+  'fal.run',
+  'images.unsplash.com',
+];
