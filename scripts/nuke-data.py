@@ -136,6 +136,24 @@ def main() -> None:
         cur.execute(f"DELETE FROM users WHERE id IN ({id_list})")
         print(f"  Wiped users ({cur.rowcount} rows)")
 
+    # ── 3b. Wipe device-fingerprint anti-abuse table (dev-only) ──────────
+    # ``signup_grants_issued`` is anonymized (no user_id column) and, in
+    # production, survives ``delete_account`` by design so a re-signup on
+    # the same device cannot re-claim the free grant (napkin #1 "device-
+    # fingerprint exception is the only hard-reset override"). The local
+    # ``make nuke`` is a dev-time full reset — without this wipe a simulator
+    # gets 0 glow-ups on the next login because the RPC still sees the
+    # previous install's hash and silently skips the grant.
+    #
+    # ``--keep-demo`` preserves the fingerprint rows so demo users keep
+    # their anti-abuse baseline.
+    if not args.keep_demo:
+        try:
+            cur.execute("TRUNCATE TABLE signup_grants_issued")
+            print("  Wiped signup_grants_issued (fingerprint anti-abuse reset)")
+        except Exception as e:
+            print(f"  Skip  signup_grants_issued: {e}")
+
     cur.close()
     conn.close()
 
