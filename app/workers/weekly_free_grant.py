@@ -46,7 +46,12 @@ def _current_iso_week() -> str:
     return datetime.now(tz=timezone.utc).strftime("%G-W%V")
 
 
-def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) -> None:
+def _run_grant_sync(
+    supabase: Client,
+    iso_week: str,
+    weekly_grant_milli: int,
+    min_balance_milli: int,
+) -> None:
     """Sync implementation of the grant loop — runs in a thread pool via
     ``asyncio.to_thread`` so the event loop is never blocked by supabase-py's
     synchronous HTTP calls.
@@ -98,6 +103,7 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
 
     granted = 0
     skipped_pro = 0
+    skipped_balance = 0
     errors = 0
     offset = 0
 
@@ -129,15 +135,22 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
                 continue
 
             try:
-                supabase.rpc(
+                rpc_result = supabase.rpc(
                     "credit_apply_weekly_free_grant",
                     {
                         "p_user_id": user_id,
                         "p_iso_week": iso_week,
                         "p_weekly_grant_milli": weekly_grant_milli,
+                        "p_min_balance_milli": min_balance_milli,
                     },
                 ).execute()
-                granted += 1
+                # RPC returns TRUE when it inserted a grant, FALSE when the
+                # user's balance was already at/above the threshold or the
+                # (user, iso_week) dedup row already existed.
+                if rpc_result.data:
+                    granted += 1
+                else:
+                    skipped_balance += 1
             except Exception:
                 logger.exception(
                     "weekly_free_grant: RPC failed for user=%s iso_week=%s",
@@ -151,10 +164,12 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
         offset += _PAGE_SIZE
 
     logger.info(
-        "weekly_free_grant: done iso_week=%s granted=%d skipped_pro=%d errors=%d",
+        "weekly_free_grant: done iso_week=%s granted=%d skipped_pro=%d"
+        " skipped_balance=%d errors=%d",
         iso_week,
         granted,
         skipped_pro,
+        skipped_balance,
         errors,
     )
 
@@ -168,6 +183,11 @@ async def run_weekly_free_grant(ctx: dict) -> None:
     supabase: Client = ctx["supabase"]
     iso_week = _current_iso_week()
     weekly_grant_milli = settings.WEEKLY_FREE_GRANT_MILLI
+    # Cap stockpiling: skip users who already hold at least one glow-up's
+    # worth of credits. Ledger is append-only and credits never expire,
+    # so without this gate a dormant free user would accumulate one grant
+    # per week indefinitely.
+    min_balance_milli = settings.GLOWUP_COST_MILLI
 
     # Kill-switch — operator can flip `app_kill_switches.enabled=false` for
     # key='weekly_free_grant' to pause the job without a redeploy. Read fresh
@@ -180,9 +200,16 @@ async def run_weekly_free_grant(ctx: dict) -> None:
         return
 
     logger.info(
-        "weekly_free_grant: starting for iso_week=%s grant_milli=%d",
+        "weekly_free_grant: starting iso_week=%s grant_milli=%d min_balance_milli=%d",
         iso_week,
         weekly_grant_milli,
+        min_balance_milli,
     )
 
-    await asyncio.to_thread(_run_grant_sync, supabase, iso_week, weekly_grant_milli)
+    await asyncio.to_thread(
+        _run_grant_sync,
+        supabase,
+        iso_week,
+        weekly_grant_milli,
+        min_balance_milli,
+    )
