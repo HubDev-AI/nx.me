@@ -322,3 +322,5 @@ Note: per R4a, Ada access follows the ledger, not the label. The "label" column 
 → Update `docs/plans/2026-04-19-002-feat-payments-credits-only-engine-plan.md`: delete pack units, add unit for "unlimited" copy rip + Pro copy rewrite, add unit for capabilities-module `weekly_free_grant_enabled` field + mobile copy gating.
 → Separate `/hunt` follow-up: **new-account 0-glow-ups bug** — triage via `credit_ledger` rows for the affected user_id. If `signup_grant_suppressed_by_fingerprint` present → expected behavior (fingerprint dedup). If no signup_grant row → `credit_apply_signup_grant` RPC failure (check server logs at `auth.py:530-535`). If ledger has `signup_grant +300` but UI shows 0 → `get_entitlement` divisor bug (R3 Outstanding Question on Free-user `glowup_cost_milli` resolution).
 → Then `/ce:plan` for structured implementation planning, phased per the concurrent-agent coordination constraint in Dependencies.
+
+→ **Make-up feature (upcoming):** see `docs/research/ai-makeup-mapping.md § Payments Integration` for paid-only commitment + review findings that feed Stage 2 brainstorm/plan.
