@@ -70,7 +70,7 @@ _SUBSCRIPTION_PROVIDER_STRIPE = "stripe"
 _PARTIAL_UNIQUE_ACTIVE_SUB_INDEX = "idx_subscriptions_one_active_per_user"
 _STRIPE_CUSTOMER_ID_UNIQUE_CONSTRAINT = "users_stripe_customer_id_key"
 
-# Types introduced by 0048.
+# Types introduced by 0048; guest_merge_* entries dropped by 0056.
 _NEW_LEDGER_TYPES = (
     "signup_grant",
     "signup_grant_suppressed_by_fingerprint",
@@ -79,8 +79,6 @@ _NEW_LEDGER_TYPES = (
     "credit_pack_purchase",
     "ada_message",
     "dispute_compensation",
-    "guest_merge_non_pack",
-    "guest_merge_truncated",
 )
 # Explicitly excluded per the plan (single-entry REPLACE decision).
 _REJECTED_LEDGER_TYPE = "retained_preserved"
