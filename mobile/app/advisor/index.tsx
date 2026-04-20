@@ -5,9 +5,10 @@
  * Nudges: Ada's tips and check-ins, available to all tiers.
  * Memories: user memories that Ada uses for personalisation.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
@@ -53,6 +54,33 @@ const TABS: TabConfig[] = [
 export default function AdvisorScreen() {
   const [activeTab, setActiveTab] = useState<AdvisorTab>("chat");
   const { theme } = useTheme();
+  const router = useRouter();
+  const rawParams = useLocalSearchParams<{ seedText?: string | string[] }>();
+  // `useLocalSearchParams` can surface a param as `string | string[]`
+  // (when the same key repeats). The nudge CTA only ever sets a single
+  // value, so we normalise to the first string.
+  const seedText: string | undefined = Array.isArray(rawParams.seedText)
+    ? rawParams.seedText[0]
+    : rawParams.seedText;
+
+  // One-shot consumption: remember the seed the first time we see it,
+  // then clear the route param so a tab switch away + back doesn't
+  // re-seed the composer. The ChatView's own mount-time `useState`
+  // initializer is what actually captures the text; clearing the URL
+  // param here just prevents the param from re-arriving as a prop on
+  // ChatView's next remount.
+  const consumedSeedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!seedText) return;
+    if (consumedSeedRef.current === seedText) return;
+    consumedSeedRef.current = seedText;
+    // A seed means the user explicitly invoked Ada — switch the tab
+    // even if they were viewing Nudges when they tapped the CTA.
+    setActiveTab("chat");
+    // Drop the param so subsequent remounts of AdvisorScreen (background
+    // kill + restore, deep-link back) don't re-seed the composer.
+    router.setParams({ seedText: undefined });
+  }, [seedText, router]);
 
   const handleTabChange = useCallback((tab: AdvisorTab) => {
     hapticLight();
@@ -103,7 +131,7 @@ export default function AdvisorScreen() {
 
       {/* Content */}
       <View style={styles.content}>
-        {activeTab === "chat" && <ChatView />}
+        {activeTab === "chat" && <ChatView seedText={seedText} />}
         {activeTab === "nudges" && <NudgeFeed />}
         {activeTab === "memories" && <MemoryList />}
       </View>

@@ -9,18 +9,22 @@
  * passes `bottomPadding` for the floating tab-bar offset; memories does
  * neither because the form sits above the list.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
+  Text as RNText,
   TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
-import { MIN_TOUCH_TARGET } from "../../constants/config";
+import {
+  COMPOSER_PREFILL_MICROCOPY,
+  MIN_TOUCH_TARGET,
+} from "../../constants/config";
 import { FONTS } from "../../hooks/useFonts";
 import { useTheme } from "../../lib/theme-context";
 
@@ -50,6 +54,19 @@ export interface AdvisorComposerProps {
    * the floating tab bar; memories passes nothing.
    */
   bottomPadding?: number;
+  /**
+   * Read-only signal for the "Ada suggested this question — edit or send"
+   * microcopy. When non-empty AND the current `value` equals it exactly,
+   * the microcopy is shown above the input. The first character-level
+   * divergence from `initialText` (keystroke, backspace) dismisses the
+   * microcopy for the lifetime of this component — re-typing the exact
+   * prefill string does NOT re-activate it (one-shot).
+   *
+   * The parent owns the text state; the composer never seeds `value`
+   * itself. That keeps the composer reusable by the memories add-form
+   * without adding implicit state.
+   */
+  initialText?: string;
 }
 
 export function AdvisorComposer({
@@ -63,21 +80,44 @@ export function AdvisorComposer({
   accessibilityLabel,
   submitAccessibilityLabel,
   bottomPadding,
+  initialText,
 }: AdvisorComposerProps) {
   const { theme } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
 
+  // -------------------------------------------------------------------------
+  // Prefill microcopy — one-shot. Starts `true` iff `initialText` is
+  // provided AND matches `value` on mount; flips `false` on the first
+  // divergence and never flips back for this composer's lifetime.
+  // -------------------------------------------------------------------------
+  const initialTextRef = useRef(initialText ?? "");
+  const [prefillActive, setPrefillActive] = useState<boolean>(
+    () =>
+      (initialText ?? "").length > 0 && (initialText ?? "") === value,
+  );
+
   const canSubmit = value.trim().length > 0 && !disabled;
   const iconName = submitIcon === "add" ? "add" : "send";
   const iconSize = submitIcon === "add" ? ADD_ICON_SIZE : SEND_ICON_SIZE;
+  const showPrefillMicrocopy =
+    prefillActive && value === initialTextRef.current;
 
   return (
     <View
       style={[
-        styles.bar,
+        styles.wrapper,
         bottomPadding !== undefined && { paddingBottom: bottomPadding },
       ]}
     >
+      {showPrefillMicrocopy && (
+        <RNText
+          style={styles.prefillMicrocopy}
+          accessibilityLabel={COMPOSER_PREFILL_MICROCOPY}
+        >
+          {COMPOSER_PREFILL_MICROCOPY}
+        </RNText>
+      )}
+      <View style={styles.bar}>
       <TextInput
         style={[styles.input, isFocused && { borderColor: theme.accent }]}
         value={value}
@@ -93,6 +133,12 @@ export function AdvisorComposer({
               onSubmit();
             }
             return;
+          }
+          // Any divergence from the prefilled string dismisses the
+          // microcopy for this composer's lifetime. One-shot — re-typing
+          // the exact prefill text does not re-activate it.
+          if (prefillActive && next !== initialTextRef.current) {
+            setPrefillActive(false);
           }
           onChangeText(next);
         }}
@@ -133,11 +179,24 @@ export function AdvisorComposer({
           />
         )}
       </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    backgroundColor: "transparent",
+  },
+  prefillMicrocopy: {
+    fontFamily: FONTS.body,
+    fontSize: THEME.typography.caption.fontSize,
+    lineHeight: THEME.typography.caption.lineHeight,
+    letterSpacing: THEME.typography.caption.letterSpacing,
+    color: THEME.colors.textSecondary,
+    paddingHorizontal: THEME.spacing.lg,
+    paddingBottom: THEME.spacing.xs,
+  },
   bar: {
     flexDirection: "row",
     alignItems: "flex-end",

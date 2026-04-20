@@ -235,9 +235,48 @@ export const ADVISOR_ENDPOINTS = {
   MESSAGES: "/v1/advisor/messages",
   NUDGES: "/v1/advisor/nudges",
   NUDGE_READ: (id: string) => `/v1/advisor/nudges/${id}`,
+  /**
+   * POST — exchanges a nudge's seed for the chat-open seed text. Fires
+   * only when the user taps the card's CTA chip, so we don't pay the
+   * lookup for nudges the user never actions.
+   */
+  NUDGE_NEXT_STEP: (id: string) => `/v1/advisor/nudges/${id}/next-step`,
+  /**
+   * GET — chat-seed chips shown on the Ada chat empty state. Reserved
+   * here so Unit 7 and Unit 8 don't race on the same file; wired up by
+   * `fetchChatSeeds` in Unit 8.
+   */
+  CHAT_SEEDS: "/v1/advisor/chat-seeds",
   MEMORIES: "/v1/memories",
   MEMORY_DELETE: (id: string) => `/v1/memories/${id}`,
 } as const;
+
+/**
+ * Static label shown above every `post_glowup` nudge. The backend collapsed
+ * to a single trigger in Unit 3; the mobile surface mirrors that with a
+ * fixed label + icon rather than per-trigger chrome.
+ */
+export const POST_GLOWUP_LABEL = "After your glow-up";
+
+/**
+ * Only the `n` newest nudges render the actionable CTA chip. Older cards
+ * render a "quieter" variant — body + static chrome, no chip, no empty
+ * space where the chip would have sat. Newest-first by `created_at`, set
+ * once per fetch — infinite scroll does NOT promote older nudges into
+ * the top slot.
+ */
+export const NUDGES_CTA_VISIBLE_RECENT_CAP = 5;
+
+/**
+ * Microcopy shown above the composer while the prefilled text is
+ * untouched. First keystroke / backspace dismisses it for the session;
+ * one-shot, never re-activates.
+ */
+export const COMPOSER_PREFILL_MICROCOPY = "Ada suggested this question — edit or send";
+
+/** Toast copy for nudge CTA failure paths. */
+export const NUDGE_CTA_ERROR_TOAST = "Couldn't open chat. Try again.";
+export const NUDGE_CTA_STALE_TOAST = "This nudge is no longer available.";
 
 /**
  * Advisor Chat scoped seed-state copy. Replaces the generic

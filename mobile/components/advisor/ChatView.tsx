@@ -81,7 +81,18 @@ const skeletonStyles = StyleSheet.create({
   },
 });
 
-export function ChatView() {
+export interface ChatViewProps {
+  /**
+   * Seed text forwarded from the Ada chat route's `seedText` search
+   * param. Consumed one-shot on mount — subsequent re-renders (e.g.
+   * tab switch away + back, background-kill restore) do NOT re-seed
+   * the composer. Unit 7 plumbs this in for nudge CTA presses; Unit 8
+   * will reuse the same prop for chat-seed chips.
+   */
+  seedText?: string;
+}
+
+export function ChatView({ seedText }: ChatViewProps = {}) {
   const { theme } = useTheme();
   const {
     keyboardVerticalOffset,
@@ -95,7 +106,15 @@ export function ChatView() {
   const [messages, setMessages] = useState<AdvisorMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [inputText, setInputText] = useState("");
+  // One-shot seed: the initializer only runs on the first render. Any
+  // later `seedText` prop change (Expo Router re-reading the same
+  // param after a tab switch) is ignored, matching the plan's
+  // "navigate away and back → composer is empty" invariant.
+  const [inputText, setInputText] = useState<string>(() => seedText ?? "");
+  // Frozen at mount so the AdvisorComposer microcopy comparison
+  // (`value === initialText`) stays stable even if the route param
+  // changes later.
+  const initialSeedRef = useRef<string>(seedText ?? "");
   const [isSending, setIsSending] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -398,6 +417,7 @@ export function ChatView() {
         accessibilityLabel="Message input"
         submitAccessibilityLabel="Send message"
         bottomPadding={inputBottomPadding}
+        initialText={initialSeedRef.current}
       />
 
       {/* Paywall modal — shown on 402 */}

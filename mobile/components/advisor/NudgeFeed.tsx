@@ -13,16 +13,29 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 
-import { ADVISOR_CONFIG, PAGINATION_CONFIG } from "../../constants/config";
+import {
+  ADVISOR_CONFIG,
+  NUDGE_CTA_ERROR_TOAST,
+  NUDGE_CTA_STALE_TOAST,
+  PAGINATION_CONFIG,
+} from "../../constants/config";
 import { THEME } from "../../constants/theme";
-import { fetchNudges, markNudgeRead } from "../../lib/advisor";
+import { ApiError } from "../../lib/api";
+import { fetchNudges, markNudgeRead, requestNudgeNextStep } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
 import { useTheme } from "../../lib/theme-context";
 import { showToast } from "../../lib/toast";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { NudgeCard } from "./NudgeCard";
 import { NudgeDetailSheet } from "./NudgeDetailSheet";
+
+/** HTTP status code surfaced when a nudge has been deleted server-side. */
+const HTTP_STALE_NUDGE = 404;
+
+/** Expo Router pathname for the Ada advisor screen. */
+const ADVISOR_ROUTE = "/advisor" as const;
 
 /** Skeleton for loading state */
 function NudgeSkeleton() {
@@ -77,6 +90,7 @@ const Separator = () => <View style={styles.separator} />;
 
 export function NudgeFeed() {
   const { theme } = useTheme();
+  const router = useRouter();
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -213,15 +227,55 @@ export function NudgeFeed() {
   const handleCloseSheet = useCallback(() => setSelectedNudge(null), []);
 
   // -------------------------------------------------------------------------
+  // CTA press → seed the chat composer via Expo Router search params.
+  //
+  // Happy path: navigate to the advisor screen with `seedText` param.
+  // ChatView.handleSeedText (Unit 7) consumes the param one-shot and
+  // forwards it to AdvisorComposer.initialText. We intentionally `push`
+  // even when already on /advisor so `useLocalSearchParams` picks up
+  // the new seed; the advisor screen effect force-selects the chat tab
+  // whenever a seed param arrives.
+  //
+  // 404 path: the nudge was deleted server-side between the list fetch
+  // and the tap. Toast + refresh so the stale card drops out of the
+  // feed without the user having to pull-to-refresh manually.
+  // -------------------------------------------------------------------------
+  const handleCtaPress = useCallback(
+    async (nudge: Nudge) => {
+      try {
+        const response = await requestNudgeNextStep(nudge.id);
+        router.push({
+          pathname: ADVISOR_ROUTE,
+          params: { seedText: response.seed_text },
+        });
+      } catch (err) {
+        if (err instanceof ApiError && err.status === HTTP_STALE_NUDGE) {
+          showToast({ kind: "warning", message: NUDGE_CTA_STALE_TOAST });
+          // Refresh so the stale card disappears from the list.
+          void handleRefresh();
+          return;
+        }
+        showToast({ kind: "error", message: NUDGE_CTA_ERROR_TOAST });
+      }
+    },
+    [handleRefresh, router],
+  );
+
+  // -------------------------------------------------------------------------
   // Render helpers
   // -------------------------------------------------------------------------
   const keyExtractor = useCallback((item: Nudge) => item.id, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: Nudge }) => (
-      <NudgeCard nudge={item} onPress={handleCardPress} />
+    ({ item, index }: { item: Nudge; index: number }) => (
+      <NudgeCard
+        nudge={item}
+        index={index}
+        onPress={handleCardPress}
+        onCtaPress={handleCtaPress}
+      />
     ),
-    [handleCardPress],
+    [handleCardPress, handleCtaPress],
   );
 
   const renderFooter = useCallback(() => {
@@ -290,7 +344,11 @@ export function NudgeFeed() {
         />
       )}
 
-      <NudgeDetailSheet nudge={selectedNudge} onClose={handleCloseSheet} />
+      <NudgeDetailSheet
+        nudge={selectedNudge}
+        onClose={handleCloseSheet}
+        onCtaPress={handleCtaPress}
+      />
     </View>
   );
 }

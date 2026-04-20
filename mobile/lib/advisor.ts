@@ -24,10 +24,26 @@ export interface MessagesResponse {
   has_more: boolean;
 }
 
+/**
+ * Actionable `post_glowup` nudge — the single nudge shape shipped in Nudges v2.
+ *
+ * Backend contract (`/v1/advisor/nudges`) returns `body` plus a
+ * `next_step.{label, seed}` pair; the client flattens the nested pair
+ * into `next_step_label` / `next_step_seed` for ergonomic rendering. The
+ * `trigger` / `observation_tag` fields were deleted in Unit 3 along with
+ * the four legacy trigger paths — do not re-introduce them.
+ */
 export interface Nudge {
   id: string;
-  trigger: string;
-  content: string;
+  /** Primary copy rendered on the card and in the detail sheet. */
+  body: string;
+  /** CTA chip text. Always non-empty in well-formed payloads. */
+  next_step_label: string;
+  /**
+   * Seed text committed server-side when the user taps the CTA. Sent to
+   * the backend via `requestNudgeNextStep`; not rendered directly.
+   */
+  next_step_seed: string;
   read_at: string | null;
   created_at: string;
 }
@@ -36,6 +52,11 @@ export interface NudgesResponse {
   nudges: Nudge[];
   next_cursor: string | null;
   has_more: boolean;
+}
+
+/** Response shape for `POST /v1/advisor/nudges/{id}/next-step`. */
+export interface NudgeNextStepResponse {
+  seed_text: string;
 }
 
 export type MemoryType =
@@ -116,6 +137,26 @@ export async function markNudgeRead(nudgeId: string): Promise<void> {
     method: "PATCH",
     body: JSON.stringify({ read: true }),
   });
+}
+
+/**
+ * Exchange a nudge's CTA tap for chat-open seed text.
+ *
+ * Fires only on user intent (CTA chip press) so the backend Haiku
+ * call doesn't run for nudges the user never actions. Throws
+ * `ApiError` on failure — callers map 404 → "stale nudge" toast,
+ * other errors → generic failure toast.
+ */
+export async function requestNudgeNextStep(
+  nudgeId: string,
+): Promise<NudgeNextStepResponse> {
+  return apiFetch<NudgeNextStepResponse>(
+    ADVISOR_ENDPOINTS.NUDGE_NEXT_STEP(nudgeId),
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
