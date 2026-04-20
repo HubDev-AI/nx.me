@@ -109,7 +109,7 @@ def _split_sql(path: Path) -> tuple[str, str]:
     if match is None:
         return content.strip(), ""
     up_sql = content[: match.start()]
-    down_sql = content[match.end():]
+    down_sql = content[match.end() :]
     return up_sql.strip(), down_sql.strip()
 
 

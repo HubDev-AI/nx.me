@@ -29,6 +29,7 @@ import {
   sendMessage,
   isPremiumRequired,
 } from "../../lib/advisor";
+import { parseApiError } from "../../lib/errors";
 import type { AdvisorMessage } from "../../lib/advisor";
 import { MessageBubble } from "./MessageBubble";
 import { TypingIndicator } from "./TypingIndicator";
@@ -124,9 +125,10 @@ export function ChatView() {
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "We couldn't load your messages.";
-      setError(message);
+      // Route through parseApiError so the overlay shows a user-friendly
+      // message, not `err.message` (which looked like `API 502` or worse
+      // when raw).
+      setError(parseApiError(err).message);
     } finally {
       setIsLoading(false);
     }

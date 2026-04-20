@@ -153,9 +153,22 @@ async def get_current_user(
             )
         )
         if not user_row or not user_row.data:
-            is_banned = False
-        else:
-            is_banned = bool(user_row.data.get("is_banned"))
+            # JWT is signature-valid but the `users` row is gone (account
+            # deleted, DB reset, or never provisioned). Reject as 401 so
+            # mobile clears tokens and redirects to login cleanly. Prior
+            # behavior silently allowed the request through and caused
+            # downstream 502s (orphan user_id on joins/FKs).
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={
+                    "error": {
+                        "code": "ACCOUNT_NOT_FOUND",
+                        "message": "Account no longer exists. Please sign in again.",
+                    }
+                },
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        is_banned = bool(user_row.data.get("is_banned"))
         await redis_client.set(ban_key, "1" if is_banned else "0", ex=60)
         cached = "1" if is_banned else "0"
 

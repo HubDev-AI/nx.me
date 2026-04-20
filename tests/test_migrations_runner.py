@@ -9,8 +9,6 @@ _schema_migrations flagged as applied while the table did not exist.
 
 from pathlib import Path
 
-import pytest
-
 from app.migrations.run import _split_sql
 
 

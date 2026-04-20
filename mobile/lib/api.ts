@@ -215,8 +215,12 @@ export class ApiError extends Error {
     url: string,
     headers: Headers | null = null,
   ) {
-    const message = __DEV__ ? `API ${status}: ${url}` : `API ${status}`;
-    super(message);
+    // Never include `url` in the Error message — callers sometimes render
+    // `err.message` directly on the UI (e.g. ChatView.loadMessages catch),
+    // and leaking the backend URL onto the screen is a UX bug.
+    // `url` remains available via `err.url` for dev console inspection and
+    // `[api] ← ${status} ${url}` already logs it separately.
+    super(`API ${status}`);
     this.status = status;
     this.body = body;
     this.url = url;
