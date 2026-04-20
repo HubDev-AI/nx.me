@@ -157,6 +157,7 @@ export const IMAGE_PICKER = {
 export const FEED_ENDPOINTS = {
   FEED: "/v1/feed",
   REACT: (postId: string) => `/v1/posts/${postId}/reactions`,
+  REACTION_STATE: (postId: string) => `/v1/posts/${postId}/reactions/me`,
   COMMENTS: (postId: string) => `/v1/posts/${postId}/comments`,
   DELETE_POST: (postId: string) => `/v1/posts/${postId}`,
 } as const;

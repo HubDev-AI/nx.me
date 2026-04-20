@@ -203,7 +203,7 @@ Units ordered by dependency. Unit 1 (migration) gates every backend unit that to
 **Dependencies:** None
 
 **Files:**
-- Create: `app/migrations/0059_advisor_nudges_actionable_contract.sql`
+- Create: `app/migrations/0062_advisor_nudges_actionable_contract.sql`
 - Test: `tests/test_migrations_runner.py` (no new assertions; existing guard must still pass)
 
 **Approach:**

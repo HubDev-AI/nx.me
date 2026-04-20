@@ -102,24 +102,16 @@ export const FeedCard = React.memo(function FeedCard({
   }, [commentScale]);
 
   const handlePostPress = useCallback(() => {
+    if (!post.username) return;
     router.push({
-      pathname: "/post/[postId]",
+      pathname: "/card/[username]",
       params: {
+        username: post.username,
         postId: post.post_id,
-        beforeImage: post.before_image_url,
-        afterImage: post.after_image_url,
-        caption: post.caption ?? "",
-        displayName: post.display_name ?? "",
-        username: post.username ?? "",
-        avatarUrl: post.avatar_url ?? "",
         userId: post.user_id,
-        reactionCount: String(post.reaction_count),
-        commentCount: String(post.comment_count),
-        timeAgo: formatTimeAgo(post.created_at),
-        hasReacted: String(hasReacted),
       },
     });
-  }, [router, post, hasReacted]);
+  }, [router, post.username, post.post_id, post.user_id]);
 
   // ─── Long-press dropdown menu ────────────────────────────────────────────
   const [menuVisible, setMenuVisible] = useState(false);
@@ -206,7 +198,11 @@ export const FeedCard = React.memo(function FeedCard({
       doubleTapFiredRef.current = true;
       setTimeout(() => { doubleTapFiredRef.current = false; }, 600);
       hapticMedium();
-      onReact(post.post_id);
+      // Instagram-style double-tap: always LIKE, never unlike. Unliking
+      // happens via the explicit heart button in the actions row.
+      if (!hasReacted) {
+        onReact(post.post_id);
+      }
       setShowHeartOverlay(true);
       setTimeout(() => setShowHeartOverlay(false), 600);
     } else {
@@ -221,18 +217,13 @@ export const FeedCard = React.memo(function FeedCard({
         }
       }, DOUBLE_TAP_DELAY_MS);
     }
-  }, [onReact, post.post_id, handlePostPress]);
+  }, [hasReacted, onReact, post.post_id, handlePostPress]);
 
-  // ─── Navigate to user profile ────────────────────────────────────────────
+  // ─── Navigate to post detail (slider view with comments/actions) ─────────
   const handleUserPress = useCallback(() => {
     hapticLight();
-    if (post.username) {
-      router.push({
-        pathname: "/card/[username]",
-        params: { username: post.username },
-      });
-    }
-  }, [router, post.username]);
+    handlePostPress();
+  }, [handlePostPress]);
 
   const timeAgo = formatTimeAgo(post.created_at);
   const staggerDelay = Math.min(index, FEED_CONFIG.MAX_STAGGER_ITEMS) * 50;

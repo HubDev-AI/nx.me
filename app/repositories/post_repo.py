@@ -243,10 +243,14 @@ class PostRepository:
         return data[0] if data else None
 
     def get_active_post(self, post_id: str) -> dict | None:
-        """Fetch post id only, filtering out deleted posts."""
+        """Fetch post id + owner, filtering out deleted posts.
+
+        Callers (comments, reports) need ``user_id`` to run author/block
+        checks, so include it alongside ``id`` in the narrow projection.
+        """
         result = (
             self._sb.table("posts")
-            .select("id")
+            .select("id, user_id")
             .eq("id", post_id)
             .eq("is_deleted", False)
             .maybe_single()

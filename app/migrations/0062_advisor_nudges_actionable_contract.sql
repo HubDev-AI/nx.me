@@ -1,4 +1,4 @@
--- 0059_advisor_nudges_actionable_contract.sql
+-- 0062_advisor_nudges_actionable_contract.sql
 -- Nudges v2: actionable nudges + novelty dedup.
 --
 -- Reshapes advisor_nudges for the new {body, next_step.{label, seed}} contract.
@@ -14,6 +14,11 @@
 --   - Add next_step_seed VARCHAR(140) NOT NULL.
 --   - Add body_hash VARCHAR(64) NOT NULL.
 --   - Add index (user_id, body_hash) for the 30-day dedup lookup.
+--
+-- Idempotent: every step guards against re-application. Originally numbered
+-- 0059; renamed to 0062 after a merge with dev added three new migrations
+-- in the 0059-0061 slots. Environments that already applied the 0059
+-- version can re-run this as 0062 without error.
 
 TRUNCATE TABLE advisor_nudges;
 
@@ -21,16 +26,33 @@ ALTER TABLE advisor_nudges
     DROP COLUMN IF EXISTS observation_tag,
     DROP COLUMN IF EXISTS trigger;
 
-ALTER TABLE advisor_nudges
-    RENAME COLUMN content TO body;
+-- Rename content -> body (idempotent via column-existence check).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM   information_schema.columns
+        WHERE  table_name  = 'advisor_nudges'
+          AND  column_name = 'content'
+    ) THEN
+        ALTER TABLE advisor_nudges RENAME COLUMN content TO body;
+    END IF;
+END$$;
 
 ALTER TABLE advisor_nudges
     ALTER COLUMN body TYPE VARCHAR(160);
 
 ALTER TABLE advisor_nudges
-    ADD COLUMN next_step_label VARCHAR(24) NOT NULL,
-    ADD COLUMN next_step_seed  VARCHAR(140) NOT NULL,
-    ADD COLUMN body_hash       VARCHAR(64)  NOT NULL;
+    ADD COLUMN IF NOT EXISTS next_step_label VARCHAR(24),
+    ADD COLUMN IF NOT EXISTS next_step_seed  VARCHAR(140),
+    ADD COLUMN IF NOT EXISTS body_hash       VARCHAR(64);
+
+-- NOT NULL applied in a second pass so IF NOT EXISTS + NOT NULL both hold.
+-- The TRUNCATE above leaves the table empty, so no backfill is needed.
+ALTER TABLE advisor_nudges
+    ALTER COLUMN next_step_label SET NOT NULL,
+    ALTER COLUMN next_step_seed  SET NOT NULL,
+    ALTER COLUMN body_hash       SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS ix_advisor_nudges_user_body_hash
     ON advisor_nudges (user_id, body_hash);

@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -31,8 +32,8 @@ import { Button } from "../ui/Button";
 // Constants
 // ---------------------------------------------------------------------------
 
-const ENTER_DURATION_MS = 280;
-const EXIT_DURATION_MS = 220;
+const ENTER_DURATION_MS = 320;
+const EXIT_DURATION_MS = 240;
 const SCRIM_OPACITY = 0.6;
 const BOTTOM_SHEET_RADIUS = THEME.radius.xl;
 const ICON_SIZE = 56;
@@ -42,6 +43,14 @@ const CLOSE_HIT_SLOP = 16;
  * the sheet hidden for tall device viewports without measuring.
  */
 const SHEET_OFFSCREEN_Y = 600;
+/**
+ * iOS-style "decelerate" curve for bottom-sheet entry — fast start,
+ * gentle settle, zero overshoot. The prior spring (press preset:
+ * stiffness 200 / damping 15) oscillated on the 600px translate, which
+ * read as a jumpy pop.
+ */
+const SHEET_ENTER_EASING = Easing.bezier(0.2, 0.0, 0.0, 1.0);
+const SHEET_EXIT_EASING = Easing.in(Easing.cubic);
 
 // ---------------------------------------------------------------------------
 // Copy
@@ -96,17 +105,22 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
   useEffect(() => {
     if (visible) {
       setMounted(true);
+      // Reset offscreen so a quick re-open from a previous fade still
+      // slides in from the bottom instead of popping from mid-screen.
+      sheetTranslateY.setValue(SHEET_OFFSCREEN_Y);
+      backdropOpacity.setValue(0);
       Animated.parallel([
         Animated.timing(backdropOpacity, {
           toValue: SCRIM_OPACITY,
           duration: ENTER_DURATION_MS,
+          easing: SHEET_ENTER_EASING,
           useNativeDriver: true,
         }),
-        Animated.spring(sheetTranslateY, {
+        Animated.timing(sheetTranslateY, {
           toValue: 0,
+          duration: ENTER_DURATION_MS,
+          easing: SHEET_ENTER_EASING,
           useNativeDriver: true,
-          damping: THEME.animation.press.damping,
-          stiffness: THEME.animation.press.stiffness,
         }),
       ]).start();
     } else {
@@ -114,11 +128,13 @@ export function FaceModConsent({ visible, onAccept, onDismiss }: FaceModConsentP
         Animated.timing(backdropOpacity, {
           toValue: 0,
           duration: EXIT_DURATION_MS,
+          easing: SHEET_EXIT_EASING,
           useNativeDriver: true,
         }),
         Animated.timing(sheetTranslateY, {
           toValue: SHEET_OFFSCREEN_Y,
           duration: EXIT_DURATION_MS,
+          easing: SHEET_EXIT_EASING,
           useNativeDriver: true,
         }),
       ]).start(({ finished }) => {

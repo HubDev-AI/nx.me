@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/api";
@@ -80,6 +80,25 @@ export function useFeed(): UseFeedReturn {
     [query.data],
   );
 
+  // Seed reactedPostIds from the server's has_reacted flag on every fetch so
+  // the heart renders filled on initial load and survives refresh. Any posts
+  // the server says are reacted are added to the set; keeping existing
+  // entries means a just-clicked like is not clobbered by an in-flight
+  // refetch that hasn't seen the write yet.
+  useEffect(() => {
+    setReactedPostIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const post of posts) {
+        if (post.has_reacted && !next.has(post.post_id)) {
+          next.add(post.post_id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [posts]);
+
   // Derived state: paginationFailed when there's an error and not currently fetching
   const paginationFailed = !!query.error && !query.isFetching && posts.length > 0;
 
@@ -134,8 +153,17 @@ export function useFeed(): UseFeedReturn {
       if (reactingRef.current.has(postId)) return;
       reactingRef.current.add(postId);
 
-      // Optimistic update: increment count and mark as reacted
-      setReactedPostIds((prev) => new Set(prev).add(postId));
+      // Snapshot state BEFORE the optimistic flip so rollback restores truth.
+      const wasReacted = reactedPostIds.has(postId);
+      const delta = wasReacted ? -1 : 1;
+
+      // Optimistic: flip reacted state and adjust count by ±1.
+      setReactedPostIds((prev) => {
+        const next = new Set(prev);
+        if (wasReacted) next.delete(postId);
+        else next.add(postId);
+        return next;
+      });
       updateCache((old) => {
         if (!old) return old;
         return {
@@ -144,7 +172,11 @@ export function useFeed(): UseFeedReturn {
             ...page,
             posts: page.posts.map((p) =>
               p.post_id === postId
-                ? { ...p, reaction_count: p.reaction_count + 1 }
+                ? {
+                    ...p,
+                    reaction_count: Math.max(0, p.reaction_count + delta),
+                    has_reacted: !wasReacted,
+                  }
                 : p,
             ),
           })),
@@ -157,27 +189,11 @@ export function useFeed(): UseFeedReturn {
           { method: "POST" },
         );
 
-        // Reconcile with server count
-        updateCache((old) => {
-          if (!old) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              posts: page.posts.map((p) =>
-                p.post_id === postId
-                  ? { ...p, reaction_count: response.reaction_count }
-                  : p,
-              ),
-            })),
-          };
-        });
-      } catch (err) {
-        // Rollback optimistic update on failure
-        reactingRef.current.delete(postId);
+        // Server is truth — reconcile count AND reacted state.
         setReactedPostIds((prev) => {
           const next = new Set(prev);
-          next.delete(postId);
+          if (response.has_reacted) next.add(postId);
+          else next.delete(postId);
           return next;
         });
         updateCache((old) => {
@@ -188,7 +204,37 @@ export function useFeed(): UseFeedReturn {
               ...page,
               posts: page.posts.map((p) =>
                 p.post_id === postId
-                  ? { ...p, reaction_count: Math.max(0, p.reaction_count - 1) }
+                  ? {
+                      ...p,
+                      reaction_count: response.reaction_count,
+                      has_reacted: response.has_reacted,
+                    }
+                  : p,
+              ),
+            })),
+          };
+        });
+      } catch (err) {
+        // Rollback optimistic update on failure
+        setReactedPostIds((prev) => {
+          const next = new Set(prev);
+          if (wasReacted) next.add(postId);
+          else next.delete(postId);
+          return next;
+        });
+        updateCache((old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              posts: page.posts.map((p) =>
+                p.post_id === postId
+                  ? {
+                      ...p,
+                      reaction_count: Math.max(0, p.reaction_count - delta),
+                      has_reacted: wasReacted,
+                    }
                   : p,
               ),
             })),
@@ -199,7 +245,7 @@ export function useFeed(): UseFeedReturn {
         reactingRef.current.delete(postId);
       }
     },
-    [updateCache],
+    [reactedPostIds, updateCache],
   );
 
   const incrementCommentCount = useCallback(

@@ -1,11 +1,17 @@
 """Social Feed & Reactions API.
 
 Story 5-1:
-  GET /feed — paginated feed (JWT required).
+  GET /feed — paginated feed (JWT required). Each post carries
+  ``has_reacted`` so the client can render the heart filled on load.
 
 Story 5-2:
-  POST /posts/{id}/react — react as an authenticated user (JWT required).
-  Redis INCR (optimistic) + background DB write via ARQ.
+  POST /posts/{id}/reactions — toggle a reaction for the authed user.
+  Second call from the same user unlikes the post. The RPC updates the
+  ``posts.reaction_count`` column atomically, so no Redis optimistic path
+  and no background ARQ worker is needed.
+  GET /posts/{id}/reactions/me — per-user reaction state for pages that
+  need to render the heart correctly without going through the feed
+  (e.g. the post detail / card screen).
 """
 
 from __future__ import annotations
@@ -58,18 +64,6 @@ end
 return 1
 """
 
-# H-4: Atomic seed-and-increment Lua script for reaction counters.
-# If the key does not exist, seed it from the DB value (ARGV[1]) and then
-# increment by 1. If the key already exists, just increment.
-# This eliminates the race window between SETNX and INCR.
-_REACTION_SEED_AND_INCR_SCRIPT = """
-local exists = redis.call('EXISTS', KEYS[1])
-if exists == 0 then
-    redis.call('SET', KEYS[1], tonumber(ARGV[1]))
-end
-return redis.call('INCR', KEYS[1])
-"""
-
 _DEFAULT_PAGE_SIZE = 10
 _MAX_PAGE_SIZE = 50
 
@@ -103,6 +97,7 @@ class FeedPostResponse(BaseModel):
     reaction_count: int
     comment_count: int
     created_at: str
+    has_reacted: bool = False
 
 
 class FeedResponse(BaseModel):
@@ -173,6 +168,14 @@ async def get_feed(
         if key and key not in unique_avatar_keys:
             unique_avatar_keys[key] = build_avatar_url(supabase, key)
 
+    # Look up which posts on this page the current user has reacted to so
+    # the heart renders filled on initial load. One batched query regardless
+    # of page size.
+    post_ids_in_page = [p["id"] for p in posts]
+    reacted_post_ids = await run_sync(
+        feed_repo.get_reacted_post_ids, claims["sub"], post_ids_in_page
+    )
+
     # URLs are now stable public CDN paths (no signing needed)
     feed_posts = [
         FeedPostResponse(
@@ -187,6 +190,7 @@ async def get_feed(
             reaction_count=p["reaction_count"],
             comment_count=p["comment_count"],
             created_at=p["created_at"],
+            has_reacted=p["id"] in reacted_post_ids,
         )
         for p in posts
     ]
@@ -225,6 +229,7 @@ _REACTION_RATE_WINDOW_SECONDS = 300
 
 class ReactionResponse(BaseModel):
     reaction_count: int
+    has_reacted: bool
 
 
 @router.post("/posts/{post_id}/reactions", response_model=ReactionResponse)
@@ -235,9 +240,12 @@ async def react_to_post(
     feed_repo: FeedRepository = Depends(get_feed_repo),
     redis_client: aioredis.Redis = Depends(get_redis),
 ) -> ReactionResponse:
-    """React to a post — JWT required.
+    """Toggle a reaction for the authed user — JWT required.
 
-    AC-U9: Duplicate reactions deduplicated via UNIQUE constraint.
+    First call likes the post; second call from the same user unlikes it.
+    The counter and reaction row are updated in a single RPC, so there's
+    no optimistic Redis path to reconcile.
+
     AC-A12: Rate limited at 10 reactions per IP per 5 minutes.
     """
     user_id = claims["sub"]
@@ -273,33 +281,17 @@ async def react_to_post(
             detail="Post not found",
         )
 
-    # --- Optimistic Redis INCR ---
-    redis_counter_key = f"posts:{post_id}:reactions"
-
-    # H-4: Atomic seed-and-increment via Lua script. If the key does not exist,
-    # seeds from the DB count and increments in one atomic operation, eliminating
-    # the race window between SETNX and INCR.
-    new_count = await redis_client.eval(
-        _REACTION_SEED_AND_INCR_SCRIPT,
-        1,
-        redis_counter_key,
-        str(post["reaction_count"]),
+    # --- Toggle reaction atomically at the DB layer ---
+    state = await run_sync(
+        feed_repo.toggle_reaction_atomic,
+        str(post_id),
+        user_id,
     )
 
-    # --- Background DB write via ARQ ---
-    reaction_data = {
-        "post_id": str(post_id),
-        "user_id": user_id,
-    }
-
-    arq_pool = request.app.state.arq_pool
-    await arq_pool.enqueue_job(
-        "persist_reaction",
-        reaction_data,
-        _queue_name="default",
+    return ReactionResponse(
+        reaction_count=int(state["reaction_count"]),
+        has_reacted=bool(state["has_reacted"]),
     )
-
-    return ReactionResponse(reaction_count=new_count)
 
 
 @router.post(
@@ -325,65 +317,34 @@ async def react_to_post_deprecated(
     )
 
 
-# ---------------------------------------------------------------------------
-# ARQ worker functions for reactions (Story 5-2)
-# ---------------------------------------------------------------------------
+@router.get(
+    "/posts/{post_id}/reactions/me",
+    response_model=ReactionResponse,
+)
+async def get_my_reaction_state(
+    post_id: UUID,
+    claims: UserClaims = Depends(get_current_user),
+    feed_repo: FeedRepository = Depends(get_feed_repo),
+) -> ReactionResponse:
+    """Return the authed user's reaction state for a single post.
 
-
-async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
-    """Background task: atomically insert reaction + update counter.
-
-    On duplicate (UNIQUE constraint), RPC returns empty set — decrement Redis.
+    Needed by the post detail / card screen so the heart renders correctly
+    when the user arrives via deep link (no feed cache to seed from).
     """
-    # Validate payload BEFORE loading the Supabase client so a malformed
-    # job fails loudly without paying the cost of a DB connection and so
-    # the error isn't masked by an env-loading exception.
-    post_id = reaction_data.get("post_id")
-    if not post_id:
-        logger.error(
-            "persist_reaction received payload without post_id: %r", reaction_data
-        )
-        raise ValueError("persist_reaction: post_id is required")
-
-    user_id = reaction_data.get("user_id")
-    if not user_id:
-        # Defensive — reaction endpoint always sets user_id from claims["sub"].
-        # A missing user_id would hit the reactions.user_id NOT NULL constraint
-        # at the DB and each ARQ retry would over-decrement the Redis counter.
-        # Fail loudly here so ARQ drops the job instead.
-        logger.error(
-            "persist_reaction received payload without user_id: %r", reaction_data
-        )
-        raise ValueError("persist_reaction: user_id is required")
-
-    from app.db.client import get_supabase_service
-    from app.repositories.feed_repo import FeedRepository
-
-    supabase = get_supabase_service()
-    feed_repo = FeedRepository(supabase)
-
-    try:
-        result = await run_sync(
-            feed_repo.persist_reaction_atomic,
-            post_id,
-            reaction_data.get("user_id"),
+    post = await run_sync(feed_repo.get_post_for_reaction, str(post_id))
+    if not post:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Post not found",
         )
 
-        if not result:
-            # Duplicate reaction — undo optimistic Redis INCR
-            redis_client = ctx.get("redis")
-            if redis_client:
-                await redis_client.decr(f"posts:{post_id}:reactions")
-            logger.info(
-                "Duplicate reaction for post %s — Redis counter decremented", post_id
-            )
-
-    except Exception:
-        # Transient failure: undo Redis optimistic increment before retry
-        redis_client = ctx.get("redis")
-        if redis_client:
-            await redis_client.decr(f"posts:{post_id}:reactions")
-        raise  # Let ARQ retry
+    reacted_post_ids = await run_sync(
+        feed_repo.get_reacted_post_ids, claims["sub"], [str(post_id)]
+    )
+    return ReactionResponse(
+        reaction_count=int(post["reaction_count"]),
+        has_reacted=str(post_id) in reacted_post_ids,
+    )
 
 
 async def reconcile_reaction_counts(ctx: dict) -> None:

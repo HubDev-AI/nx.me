@@ -18,7 +18,7 @@ from app.config import settings
 from app.db.client import get_supabase_service
 from app.logging_config import configure_logging
 from app.generation.worker import process_generation_job, watchdog_stuck_jobs
-from app.api.social import persist_reaction, reconcile_reaction_counts
+from app.api.social import reconcile_reaction_counts
 from app.advisor.nudge_scheduler import (
     generate_nudge,
     write_analysis_insight_job,
@@ -143,7 +143,6 @@ class WorkerSettings:
 
     functions = [
         process_generation_job,
-        persist_reaction,
         generate_nudge,
         write_analysis_insight_job,
         reconcile_reaction_counts,
