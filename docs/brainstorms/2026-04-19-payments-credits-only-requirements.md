@@ -79,6 +79,13 @@ Referenced context: ideation doc at `docs/ideation/2026-04-19-payments-subscript
 
 **Guest users**
 
+> **SUPERSEDED 2026-04-20** by `docs/brainstorms/2026-04-19-B-delete-guest-merge-plumbing-requirements.md`.
+> The guest-merge pathway is deleted. New signups receive the flat
+> `signup_grant` with no merge transfer from prior anonymous sessions. The
+> 2× cap, pack-bypass, install-UUID binding, and guest ledger entries
+> (`guest_merge_non_pack`, `guest_merge_truncated`) no longer exist.
+> Weekly-free-grant applies to every non-Pro user (is_guest column dropped).
+
 - R16. Guest users receive the same ledger shape as authenticated users, keyed by guest token, from the first billable action.
   - **Existing infrastructure**: the `app/db/guest.py` module already generates 256-bit tokens via `secrets.token_hex(32)` and stores them on `users.guest_session_token` with `is_guest = true`. Mobile SecureStore + `X-Guest-Token` header delivery already exists per `mobile/lib/guest-session.ts`. This brainstorm does NOT introduce a new `guest_tokens` table; it reuses existing primitives with the additions below.
   - **Session binding**: the existing `X-Guest-Token` header mechanism is the session binding (naturally ties token to the device's SecureStore). No cookie primitive — React Native has no first-class cookie jar. The token is delivered in one request header; tampering is detected by invalid-token rejection at merge time. 128-bit entropy (existing 256-bit exceeds) already makes cross-token substitution infeasible by enumeration.

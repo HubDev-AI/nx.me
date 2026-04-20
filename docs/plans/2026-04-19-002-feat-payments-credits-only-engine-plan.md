@@ -833,7 +833,16 @@ Units are grouped into Phase A (additive, safe to interleave with bug-fix agent)
 
 ---
 
-- [ ] **Unit 10: Guest merge-on-signup (2× cap + pack-bypass)**
+- [ ] **Unit 10: Guest merge-on-signup (2× cap + pack-bypass)** — SUPERSEDED 2026-04-20
+
+> **SUPERSEDED** by the 2026-04-20 guest-removal PR (`feat/remove-guest-and-close-anon`).
+> The guest-merge primitive is deleted outright. New signups get the flat
+> `signup_grant` (Unit 9) with no carry-over from any anonymous session. The
+> `merge_guest_ledger` RPC, `guest_install_uuid_hash` column, and
+> `guest_merge_non_pack` / `guest_merge_truncated` ledger types have been
+> dropped from the schema. `app/db/guest.py`, `app/repositories/guest_merge_repo.py`,
+> the merge wiring in register/social_login/tiktok_login, and the mobile
+> guest-session module are all gone.
 
 **Goal:** Atomic merge of guest ledger into authenticated ledger at registration time.
 

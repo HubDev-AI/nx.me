@@ -73,8 +73,8 @@
    Do instead: `mcp__context7__resolve-library-id` + `mcp__context7__query-docs` for current API; never guess or rely on training cutoff.
 7. **[2026-04-19] Female-first copy and targeting**
    Do instead: write all user-facing copy, nudges, and Ada prompts for a majority-female user base; no male/beard-coded examples.
-8. **[2026-04-19] Guest mode is first-class except for account mutations**
-   Do instead: test guest paths (via `X-Guest-Token`) before declaring any non-account surface done.
+8. **[2026-04-20] Guest mode removed — auth is invariant**
+   Do instead: every route requires JWT except the 13 allowlisted public paths in `tests/test_auth_invariants.py::PUBLIC_ROUTE_ALLOWLIST` (health/readiness, /v1/features, /v1/auth/*, card-web public prefixes, /webhooks/stripe). No `X-Guest-Token`, no `is_guest` column, no `SessionMode = 'guest'`.
 9. **[2026-04-19] Disabled UI buttons are a bug**
    Do instead: cancel/retry/close/back must stay CLICKABLE whenever the action is available; never disable, never hide.
 10. **[2026-04-19] UI work must route through a UI/UX skill or design agent**
