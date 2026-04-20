@@ -25,7 +25,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,6 +43,7 @@ import {
 import { DropdownMenu, type DropdownMenuItem } from "../../components/ui/DropdownMenu";
 import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
+import { useBackToActiveTab } from "../../lib/last-tab";
 import {
   AUTH_VALIDATION,
   CARD_ENDPOINTS,
@@ -119,20 +120,11 @@ async function fetchPublicCard(username: string): Promise<PublicCard> {
 // ---------------------------------------------------------------------------
 
 export default function CardDetailScreen() {
-  const { username, postId, userId, from } = useLocalSearchParams<{
+  const { username, postId, userId } = useLocalSearchParams<{
     username: string;
     postId?: string;
     userId?: string;
-    /**
-     * Which screen pushed us here. Currently: "feed" from the home/social
-     * feed. Unset for deep-link visitors. The back button uses this to
-     * route back to the caller tab — `router.back()` alone lands on
-     * whichever tab was most recently active, which isn't always the
-     * tab the user came from.
-     */
-    from?: string;
   }>();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { username: currentUsername } = useAuth();
@@ -243,21 +235,12 @@ export default function CardDetailScreen() {
     load();
   }, [load]);
 
-  // Pop the native stack when we have one. This pops back to whichever
-  // tab pushed the card (feed for an in-app tap, profile for a glow-up
-  // share tap). Deep-link entries without a stack fall through to the
-  // tab named in the `from` param, or the feed as a last resort.
-  const navigateBackToOrigin = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-    if (from === "profile") {
-      router.replace("/(tabs)/profile");
-      return;
-    }
-    router.replace("/(tabs)");
-  }, [router, from]);
+  // Back navigation that works across any tab. Pops the native stack
+  // when we have one (preserves tab state on in-app pushes); on deep-
+  // link entries with no stack, replaces to whichever tab is active in
+  // the mounted tabs navigator — so a user tapping a share link while
+  // on /profile lands back on profile, not on the default feed tab.
+  const navigateBackToOrigin = useBackToActiveTab();
 
   const handleBack = useCallback(() => {
     // Don't pop the screen mid-delete — the DELETE request would be

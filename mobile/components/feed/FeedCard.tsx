@@ -109,7 +109,6 @@ export const FeedCard = React.memo(function FeedCard({
         username: post.username,
         postId: post.post_id,
         userId: post.user_id,
-        from: "feed",
       },
     });
   }, [router, post.username, post.post_id, post.user_id]);
