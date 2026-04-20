@@ -243,24 +243,19 @@ export default function CardDetailScreen() {
     load();
   }, [load]);
 
-  // When the screen was pushed from a known tab, route back to that tab
-  // explicitly. `router.back()` alone relies on whichever tab was most
-  // recently focused, which produced "back from feed → profile" when the
-  // user had visited profile earlier in the session.
+  // Pop the native stack when we have one. This pops back to whichever
+  // tab pushed the card (feed for an in-app tap, profile for a glow-up
+  // share tap). Deep-link entries without a stack fall through to the
+  // tab named in the `from` param, or the feed as a last resort.
   const navigateBackToOrigin = useCallback(() => {
-    if (from === "feed") {
-      router.replace("/(tabs)");
+    if (router.canGoBack()) {
+      router.back();
       return;
     }
     if (from === "profile") {
       router.replace("/(tabs)/profile");
       return;
     }
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-    // Deep-link entry with no back stack — land on the feed.
     router.replace("/(tabs)");
   }, [router, from]);
 
