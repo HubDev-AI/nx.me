@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     )
     ADVISOR_MAX_MESSAGE_LENGTH: int = 2000  # Max chars per user message
     ADVISOR_CHAT_RATE_LIMIT: int = 30  # Max messages per hour per user
+    ADVISOR_NEXT_STEP_RL_LIMIT: int = 60  # Max next-step calls per window per user
+    ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS: int = 60  # Window for next-step rate limit (s)
     ADVISOR_DEGRADATION_THRESHOLD: int = 50  # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30  # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7  # Days before auto-new conversation

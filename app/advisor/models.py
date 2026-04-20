@@ -113,3 +113,7 @@ class MemoryListPageResponse(BaseModel):
     memories: list[MemoryResponse]
     next_cursor: str | None = None
     has_more: bool = False
+
+
+class NudgeNextStepResponse(BaseModel):
+    seed_text: str

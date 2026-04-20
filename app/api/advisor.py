@@ -32,6 +32,7 @@ from app.advisor.models import (
     MessageRequest,
     MessageResponse,
     NudgeFeedResponse,
+    NudgeNextStepResponse,
     NudgeResponse,
 )
 from app.advisor.service import AdvisorService
@@ -43,6 +44,7 @@ from app.api.deps import (
     require_feature,
 )
 from app.api.middleware.auth import UserClaims
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
@@ -307,6 +309,59 @@ async def mark_nudge_read(
             detail="Nudge not found",
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/advisor/nudges/{nudge_id}/next-step — return seed text (Unit 4)
+# ---------------------------------------------------------------------------
+
+_NEXT_STEP_RL_KEY_TEMPLATE = "advisor:next_step_rl:{user_id}"
+
+
+@router.post(
+    "/advisor/nudges/{nudge_id}/next-step",
+    response_model=NudgeNextStepResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_nudge_next_step(
+    nudge_id: UUID,
+    claims: UserClaims = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> NudgeNextStepResponse:
+    """Return the next-step seed text for a nudge owned by the current user.
+
+    IDOR-gated: returns 404 (not 403) for foreign or unknown nudge IDs to
+    avoid acting as an existence oracle.  Rate-limited per user.
+    No conversation is created and no message row is inserted.
+    """
+    from app.config import settings as _settings
+
+    user_id = UUID(claims["sub"])
+
+    # Rate limit: 60 calls per 60 s per user (INCR-first, atomic).
+    rl_key = _NEXT_STEP_RL_KEY_TEMPLATE.format(user_id=user_id)
+    new_count: int = await redis_client.incr(rl_key)
+    if new_count == 1:
+        await redis_client.expire(rl_key, _settings.ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS)
+    if new_count > _settings.ADVISOR_NEXT_STEP_RL_LIMIT:
+        logger.warning(
+            "next-step rate limit hit for user=%s count=%d", user_id, new_count
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"error": {"code": "rate_limited", "message": "Too many requests"}},
+        )
+
+    repo = AdvisorRepository(supabase)
+    row = await run_sync(repo.get_nudge_by_id, str(nudge_id), str(user_id))
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "nudge_not_found", "message": "Nudge not found"}},
+        )
+
+    return NudgeNextStepResponse(seed_text=row["next_step_seed"])
 
 
 # ---------------------------------------------------------------------------
