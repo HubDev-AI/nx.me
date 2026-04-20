@@ -142,18 +142,16 @@ class JobRepository:
     def get_jobs_for_post(self, job_id: str) -> dict | None:
         """Fetch job fields needed for post creation. Returns None if not found.
 
-        Must include ``original_image_id`` and ``generated_image_id`` because
-        ``api/posts.py::create_post`` reads both to copy blobs from the
-        private ``raw-selfies`` / ``generated-images`` buckets to the public
-        post bucket. Omitting them surfaces as a spurious
-        ``NO_GENERATED_IMAGE`` 422 on every publish.
+        The tier-3 schema (migration 0034) replaced the old
+        ``original_image_id`` / ``generated_image_id`` FK columns with
+        the storage-key strings ``before_image_url`` / ``after_image_url``.
+        Callers resolve the matching ``images`` rows via
+        ``image_repo.get_by_user_storage_key`` to reach the FK IDs
+        ``posts`` still expects.
         """
         result = (
             self._sb.table("jobs")
-            .select(
-                "id, user_id, status, before_image_url, after_image_url,"
-                " original_image_id, generated_image_id"
-            )
+            .select("id, user_id, status, before_image_url, after_image_url")
             .eq("id", job_id)
             .maybe_single()
             .execute()

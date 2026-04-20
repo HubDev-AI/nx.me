@@ -56,6 +56,25 @@ class ImageRepository:
         )
         return result.data
 
+    def get_by_user_storage_key(self, user_id: str, storage_key: str) -> dict | None:
+        """Fetch an image row by ``(user_id, storage_key)``.
+
+        The jobs table stores storage keys as ``before_image_url`` /
+        ``after_image_url`` instead of FK IDs (since migration 0034). The
+        post-creation flow still needs the matching ``images`` row to link
+        the public post back and to source the ``bucket`` for the blob
+        copy, so the lookup goes through storage_key + user_id.
+        """
+        result = (
+            self._sb.table("images")
+            .select("id, storage_key, bucket")
+            .eq("user_id", user_id)
+            .eq("storage_key", storage_key)
+            .maybe_single()
+            .execute()
+        )
+        return result.data if result else None
+
     def get_by_ids(self, image_ids: list[str]) -> list[dict]:
         """Batch-fetch image rows by IDs."""
         result = (
