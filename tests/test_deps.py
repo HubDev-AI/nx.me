@@ -211,6 +211,53 @@ class TestGetCurrentUser:
             )
         assert exc_info.value.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_orphan_user_jwt_raises_401_account_not_found(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Signature-valid JWT for a user that no longer exists in the
+        `users` table must return 401, not silently pass through (which
+        caused downstream 502s on advisor/messages after DB reset).
+        """
+        from app.api import deps
+
+        user_id = "00000000-0000-0000-0000-000000000001"
+
+        def _fake_validate(_token: str):
+            return {"sub": user_id}
+
+        monkeypatch.setattr(deps, "validate_jwt", _fake_validate)
+
+        # Redis cache miss → path takes the DB lookup branch.
+        redis_client = AsyncMock()
+        redis_client.get = AsyncMock(return_value=None)
+        redis_client.set = AsyncMock()
+
+        # Supabase lookup returns an object with `data = None` (no row).
+        # `run_sync(lambda: ...)` executes the inner callable, which
+        # produces this mock directly.
+        supabase = MagicMock()
+        query = MagicMock()
+        query.select.return_value = query
+        query.eq.return_value = query
+        query.maybe_single.return_value = query
+        result = MagicMock()
+        result.data = None
+        query.execute.return_value = result
+        supabase.table.return_value = query
+
+        with pytest.raises(HTTPException) as exc_info:
+            await deps.get_current_user(
+                authorization="Bearer fake-token",
+                supabase=supabase,
+                redis_client=redis_client,
+            )
+
+        assert exc_info.value.status_code == 401
+        detail = exc_info.value.detail
+        assert isinstance(detail, dict)
+        assert detail["error"]["code"] == "ACCOUNT_NOT_FOUND"
+
 
 # ---------------------------------------------------------------------------
 # Repository factory deps
