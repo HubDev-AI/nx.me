@@ -46,17 +46,13 @@ class JobRepository:
     # jobs — read
     # ------------------------------------------------------------------
 
-    def get_by_id(self, job_id: str) -> dict | None:
-        """Fetch a single job by ID. Returns None if not found."""
-        result = (
-            self._sb.table("jobs").select("*").eq("id", job_id).maybe_single().execute()
-        )
-        if not result or not result.data:
-            return None
-        return result.data
+    def _fetch_by_id(self, job_id: str, fields: str) -> dict | None:
+        """Shared shape for every ``jobs`` by-id read using ``.maybe_single()``.
 
-    def get_by_id_with_fields(self, job_id: str, fields: str) -> dict | None:
-        """Fetch a job by ID selecting specific fields. Returns None if not found."""
+        Returns ``None`` when the row does not exist (``result`` may itself be
+        ``None`` when supabase-py returns no row for ``maybe_single``, so both
+        null-paths must be guarded).
+        """
         result = (
             self._sb.table("jobs")
             .select(fields)
@@ -67,6 +63,14 @@ class JobRepository:
         if not result or not result.data:
             return None
         return result.data
+
+    def get_by_id(self, job_id: str) -> dict | None:
+        """Fetch a single job by ID. Returns None if not found."""
+        return self._fetch_by_id(job_id, "*")
+
+    def get_by_id_with_fields(self, job_id: str, fields: str) -> dict | None:
+        """Fetch a job by ID selecting specific fields. Returns None if not found."""
+        return self._fetch_by_id(job_id, fields)
 
     def get_by_id_single(self, job_id: str) -> dict:
         """Fetch a single job by ID using .single() (raises if not found)."""
@@ -89,55 +93,22 @@ class JobRepository:
 
     def get_for_status_poll(self, job_id: str) -> dict | None:
         """Fetch job fields needed for GET /jobs/{job_id} status polling."""
-        result = (
-            self._sb.table("jobs")
-            .select(JOB_STATUS_SELECT)
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
-        )
-        if not result or not result.data:
-            return None
-        return result.data
+        return self._fetch_by_id(job_id, JOB_STATUS_SELECT)
 
     def get_for_cancel(self, job_id: str) -> dict | None:
         """Fetch job fields needed for cancel operation."""
-        result = (
-            self._sb.table("jobs")
-            .select("id, user_id, status, credit_reservation_id")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
-        )
-        if not result or not result.data:
-            return None
-        return result.data
+        return self._fetch_by_id(job_id, "id, user_id, status, credit_reservation_id")
 
     def get_for_refund(self, job_id: str) -> dict | None:
         """Fetch job fields needed for refund operation."""
-        result = (
-            self._sb.table("jobs")
-            .select("id, user_id, status, credit_reservation_id, failure_reason")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
+        return self._fetch_by_id(
+            job_id,
+            "id, user_id, status, credit_reservation_id, failure_reason",
         )
-        if not result or not result.data:
-            return None
-        return result.data
 
     def get_for_save(self, job_id: str) -> dict | None:
         """Fetch job fields needed for the save operation."""
-        result = (
-            self._sb.table("jobs")
-            .select("id, user_id, status, saved_at")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
-        )
-        if not result or not result.data:
-            return None
-        return result.data
+        return self._fetch_by_id(job_id, "id, user_id, status, saved_at")
 
     def get_jobs_for_post(self, job_id: str) -> dict | None:
         """Fetch job fields needed for post creation. Returns None if not found.
@@ -149,16 +120,10 @@ class JobRepository:
         ``image_repo.get_by_user_storage_key`` to reach the FK IDs
         ``posts`` still expects.
         """
-        result = (
-            self._sb.table("jobs")
-            .select("id, user_id, status, before_image_url, after_image_url")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
+        return self._fetch_by_id(
+            job_id,
+            "id, user_id, status, before_image_url, after_image_url",
         )
-        if not result or not result.data:
-            return None
-        return result.data
 
     def get_completed_jobs_for_source(self, source_ids: list[str]) -> list[dict]:
         """Fetch latest completed jobs for a list of source_ids (e.g. for history)."""
@@ -374,29 +339,44 @@ class JobRepository:
 
         Returns ``[]`` when the job does not exist. Safe to call multiple
         times; idempotent because every call re-queries from source.
+
+        Delegates to ``_job_own_blob_keys`` (``None`` signals a missing job
+        so the live-post lookup is skipped, preserving the single-query
+        behaviour for that branch) and ``_live_post_blob_keys``.
         """
+        job_keys = self._job_own_blob_keys(job_id)
+        if job_keys is None:
+            # Job does not exist — preserve the empty-list contract and skip
+            # the post lookup so we issue a single query for the missing-job case.
+            return []
+        return job_keys + self._live_post_blob_keys(job_id)
+
+    def _job_own_blob_keys(self, job_id: str) -> list[tuple[str, str]] | None:
+        """Keys for the job's own ``before_image_url`` + ``after_image_url``.
+
+        Returns ``None`` when the job row is missing so the caller can
+        distinguish "no job" from "job exists but has no image URLs yet".
+        """
+        row = self._fetch_by_id(job_id, "before_image_url, after_image_url")
+        if row is None:
+            return None
         keys: list[tuple[str, str]] = []
-
-        job_row = (
-            self._sb.table("jobs")
-            .select("before_image_url, after_image_url")
-            .eq("id", job_id)
-            .maybe_single()
-            .execute()
-        )
-        if not job_row or not job_row.data:
-            return keys
-
-        before = job_row.data.get("before_image_url")
-        after = job_row.data.get("after_image_url")
+        before = row.get("before_image_url")
+        after = row.get("after_image_url")
         if before:
             keys.append((RAW_SELFIES_BUCKET, before))
         if after:
             keys.append((GENERATED_IMAGES_BUCKET, after))
+        return keys
 
-        # Live post lookup — partial unique index (migration 0046) means at
-        # most one row. Skip deleted/hidden per the plan's enumeration rule.
-        post_row = (
+    def _live_post_blob_keys(self, job_id: str) -> list[tuple[str, str]]:
+        """Keys for the live public post row (if any) linked to this job.
+
+        Partial unique index (migration 0046) guarantees at most one row;
+        deleted/hidden posts are skipped — their blobs are reclaimed by
+        nightly retention, not the per-job delete path.
+        """
+        result = (
             self._sb.table("posts")
             .select("before_image_url, after_image_url")
             .eq("glow_up_job_id", job_id)
@@ -405,16 +385,17 @@ class JobRepository:
             .limit(1)
             .execute()
         )
-        post_rows = post_row.data or []
-        if post_rows:
-            row = post_rows[0]
-            post_before = row.get("before_image_url")
-            post_after = row.get("after_image_url")
-            if post_before:
-                keys.append((PUBLIC_BUCKET, post_before))
-            if post_after:
-                keys.append((PUBLIC_BUCKET, post_after))
-
+        rows = result.data or []
+        if not rows:
+            return []
+        row = rows[0]
+        keys: list[tuple[str, str]] = []
+        before = row.get("before_image_url")
+        after = row.get("after_image_url")
+        if before:
+            keys.append((PUBLIC_BUCKET, before))
+        if after:
+            keys.append((PUBLIC_BUCKET, after))
         return keys
 
     def count_peer_jobs_for_source(
