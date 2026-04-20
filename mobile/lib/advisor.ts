@@ -59,6 +59,24 @@ export interface NudgeNextStepResponse {
   seed_text: string;
 }
 
+/**
+ * Chat-seed chip rendered on the Ada chat empty-conversation state.
+ *
+ * `label` is the compact text shown inside the chip (e.g. "Hair colour?").
+ * `text` is the full prompt that prefills the composer when the chip is
+ * tapped and is also used as the chip's `accessibilityLabel` so VoiceOver
+ * reads the full seed rather than the shortened chip label.
+ */
+export interface ChatSeed {
+  label: string;
+  text: string;
+}
+
+/** Response shape for `GET /v1/advisor/chat-seeds`. */
+export interface ChatSeedsResponse {
+  seeds: ChatSeed[];
+}
+
 export type MemoryType =
   | "goal"
   | "user_note"
@@ -157,6 +175,26 @@ export async function requestNudgeNextStep(
       body: JSON.stringify({}),
     },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Chat seeds
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch chat-seed chips for the Ada chat empty-conversation state.
+ *
+ * Backed by a Haiku-generated + Redis-cached endpoint (24 h TTL). Returns
+ * up to 3 seeds — callers still enforce the cap client-side. `signal` lets
+ * `ChatSeedChips` abort the fetch on unmount / timeout so late responses
+ * don't update state after the component is gone.
+ */
+export async function fetchChatSeeds(opts?: {
+  signal?: AbortSignal;
+}): Promise<ChatSeedsResponse> {
+  return apiFetch<ChatSeedsResponse>(ADVISOR_ENDPOINTS.CHAT_SEEDS, {
+    signal: opts?.signal,
+  });
 }
 
 // ---------------------------------------------------------------------------

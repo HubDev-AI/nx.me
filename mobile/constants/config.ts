@@ -284,28 +284,13 @@ export const NUDGE_CTA_STALE_TOAST = "This nudge is no longer available.";
  * the Chat tab so first-time users see what Ada actually does. Other
  * advisor tabs (Nudges, Memories) still use AdvisorEmptyOverlay.
  *
- * The body's italic trailing clause is non-negotiable: the chip list
- * shouldn't read as exhaustive (Ada handles anything). If SOUL.md
- * persona lanes change, update this text and the chips below in lockstep
- * — see ADVISOR_PERSONA_NAME and app/advisor/SOUL.md.
+ * Chip seeds are no longer hardcoded — they're fetched from
+ * `GET /v1/advisor/chat-seeds` (Haiku-backed, Redis-cached 24 h) by the
+ * `ChatSeedChips` component. See `components/advisor/ChatSeedChips.tsx`.
  */
 export const ADVISOR_CHAT_EMPTY_TITLE = "Hi, I'm Ada.";
 export const ADVISOR_CHAT_EMPTY_BODY =
   "I can help with hair, skin, fit, grooming, or style — or ask me anything else you're thinking about.";
-
-/**
- * Starter chips for the Chat empty state. Tap → handleSend(chipText)
- * fires the LLM call immediately (no extra Send tap). Keep these
- * short, conversational, and aligned with SOUL.md's lanes. Must stay
- * gender-agnostic — no prompts assuming facial hair, body type, or
- * wardrobe category a user might not have.
- */
-export const ADVISOR_CHAT_STARTER_CHIPS: readonly string[] = [
-  "What hairstyle would suit me?",
-  "How's my overall style?",
-  "How do I fix the fit of my clothes?",
-  "What should I focus on next?",
-] as const;
 
 /** Advisor configuration */
 export const ADVISOR_CONFIG = {

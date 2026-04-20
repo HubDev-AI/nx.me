@@ -381,12 +381,11 @@ export function ChatView({ seedText }: ChatViewProps = {}) {
             AdvisorEmptyOverlay on the Chat tab so first-time users see
             what Ada actually does. Pure function of `messages.length`,
             so a paywall-dismissed-without-purchase send naturally
-            re-renders the card. */}
+            re-renders the card. Chip tap prefills the composer via
+            `setInputText`; the user still taps send — no auto-submit,
+            matching the Unit 8 spec. */}
         {!error && messages.length === 0 && (
-          <AdvisorChatEmpty
-            onChipPress={(text) => handleSend(text)}
-            isSending={isSending}
-          />
+          <AdvisorChatEmpty onChipPress={setInputText} />
         )}
       </View>
 
