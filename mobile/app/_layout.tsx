@@ -12,10 +12,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 
-import {
-  getOrCreateGuestToken,
-  purgeGuestSessionIfNeeded,
-} from "../lib/guest-session";
+import { getOrCreateGuestToken } from "../lib/guest-session";
 import { fetchMe } from "../lib/me";
 import { getStoredJwt } from "../lib/auth";
 import { restoreStoredSession } from "../lib/api";
@@ -31,7 +28,6 @@ import {
   STRIPE_PUBLISHABLE_KEY,
   APPLE_MERCHANT_ID,
   SECURE_STORE_KEYS,
-  DEV_FEATURE_FOCUS,
   GUEST_ME_TIMEOUT_MS,
 } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
@@ -55,37 +51,19 @@ SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
   const { session, setSessionMode, setUsername, markSessionReady } = useAuth();
-  // The session-bootstrap effect below reads `features.auth_required` raw —
-  // that runs before `useAuth()` is "ready" so it cannot consume capabilities
-  // (which compose useSession). All other gating routes through
-  // `useCapabilities()`. See mobile/lib/capabilities.ts for the contract.
-  const { features, isLoading: featuresLoading } = useFeatures();
+  const { isLoading: featuresLoading } = useFeatures();
   const caps = useCapabilities();
   const { markConsentGranted } = useConsent();
   const router = useRouter();
   const segments = useSegments();
   const guestInitRef = useRef(false);
 
-  // In guest mode, provision the backend guest token once and promote the
-  // session to "guest" so downstream UI knows it can talk to guest-friendly
-  // endpoints (entitlement, uploads, advisor reads).
+  // Provision the backend guest token once for non-user sessions and
+  // promote to "guest" so downstream UI can talk to guest-friendly endpoints
+  // (entitlement, uploads, advisor reads). Real-user sessions skip this.
   useEffect(() => {
     if (featuresLoading) return;
-    if (features.auth_required) {
-      // Real-auth mode — purge any stale guest token left over from a
-      // prior dev-mode session so the credential leaves the device.
-      // Idempotent via the GUEST_PURGED_AT sentinel; safe to fire on
-      // every cold start under auth_required=true.
-      //
-      // Fire-and-forget is safe here because the next effect below
-      // redirects unauthenticated users to /(auth)/login before any
-      // apiFetch call could read the stale token. If we ever introduce
-      // a pre-login network call, await this first or guard apiFetch
-      // on the GUEST_PURGED_AT sentinel.
-      purgeGuestSessionIfNeeded().catch((err) => {
-        if (__DEV__) console.warn("Guest purge failed:", err);
-      });
-      // Real-auth mode — bootstrap is done once we know the JWT result.
+    if (session.isUser) {
       markSessionReady();
       return;
     }
@@ -137,7 +115,7 @@ function AuthGuard() {
       });
   }, [
     featuresLoading,
-    features.auth_required,
+    session.isUser,
     setSessionMode,
     setUsername,
     markSessionReady,
@@ -147,20 +125,9 @@ function AuthGuard() {
   useEffect(() => {
     if (featuresLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
-    const currentRoute = segments.join("/");
 
-    // Dev shortcut: jump straight to a specific route for iteration.
-    if (DEV_FEATURE_FOCUS) {
-      const focusBase = DEV_FEATURE_FOCUS.replace(/^\//, "");
-      const onAllowedRoute = [focusBase, "result"].some((p) =>
-        currentRoute.startsWith(p),
-      );
-      if (!onAllowedRoute) router.replace(DEV_FEATURE_FOCUS as never);
-      return;
-    }
-
-    // Guest mode: never land on the auth screens.
-    if (!caps.requiresAuth) {
+    // Guest sessions reach the app; the auth screens are only for anon.
+    if (session.isGuest) {
       if (inAuthGroup) router.replace("/(tabs)");
       return;
     }
@@ -182,9 +149,9 @@ function AuthGuard() {
     });
   }, [
     featuresLoading,
-    caps.requiresAuth,
     caps.canSeeOnboarding,
     session.isUser,
+    session.isGuest,
     segments,
     router,
   ]);

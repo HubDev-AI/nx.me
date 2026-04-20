@@ -21,7 +21,6 @@ import {
   applyDevOverrides,
   type FeatureFlags,
 } from "../constants/features";
-import { setAuthRequired } from "./features-state";
 
 interface FeaturesContextValue {
   features: FeatureFlags;
@@ -52,7 +51,6 @@ export function FeaturesProvider({ children }: { children: ReactNode }) {
         if (!cancelled) {
           const resolved = applyDevOverrides(data);
           setFeatures(resolved);
-          setAuthRequired(resolved.auth_required);
         }
       } catch (err) {
         if (__DEV__) {

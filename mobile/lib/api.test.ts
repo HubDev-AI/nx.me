@@ -34,10 +34,6 @@ const secureStorage = require("./secure-storage") as {
   deleteItem: jest.Mock;
 };
 
-const featuresState = require("./features-state") as {
-  setAuthRequired: (v: boolean) => void;
-};
-
 const apiModule = require("./api") as typeof import("./api") & {
   restoreStoredSession?: () => Promise<string | null>;
 };
@@ -46,28 +42,27 @@ describe("apiFetch", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     global.fetch = jest.fn();
-    featuresState.setAuthRequired(true);
   });
 
-  it("does not provision a guest session when auth is required (prod default)", async () => {
-    auth.getStoredJwt.mockResolvedValue(null);
+  it("attaches JWT (not guest token) when a JWT is stored", async () => {
+    auth.getStoredJwt.mockResolvedValue("user-jwt");
     guestSession.getStoredGuestToken.mockResolvedValue(null);
-    guestSession.getOrCreateGuestToken.mockResolvedValue("guest-token");
+    guestSession.getOrCreateGuestToken.mockResolvedValue("should-not-provision");
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       status: 200,
       json: async () => ({ ok: true }),
     });
 
-    await apiModule.apiFetch("/v1/public/cards/alice");
+    await apiModule.apiFetch("/v1/entitlement");
 
     expect(guestSession.getOrCreateGuestToken).not.toHaveBeenCalled();
     const [, options] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(options.headers["Authorization"]).toBe("Bearer user-jwt");
     expect(options.headers["X-Guest-Token"]).toBeUndefined();
   });
 
-  it("auto-provisions a guest token when auth_required is false and none stored", async () => {
-    featuresState.setAuthRequired(false);
+  it("auto-provisions a guest token when no JWT and none stored", async () => {
     auth.getStoredJwt.mockResolvedValue(null);
     guestSession.getStoredGuestToken.mockResolvedValue(null);
     guestSession.getOrCreateGuestToken.mockResolvedValue("fresh-guest-token");
@@ -85,7 +80,6 @@ describe("apiFetch", () => {
   });
 
   it("rotates a stale guest token on 401 and retries once", async () => {
-    featuresState.setAuthRequired(false);
     auth.getStoredJwt.mockResolvedValue(null);
     guestSession.getStoredGuestToken.mockResolvedValue("stale-token");
     guestSession.getOrCreateGuestToken.mockResolvedValue("new-token");

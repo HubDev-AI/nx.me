@@ -8,7 +8,6 @@ import {
 } from "./auth";
 import { getOrCreateGuestToken, getStoredGuestToken } from "./guest-session";
 import { getOrCreateInstallUuid } from "./install-uuid";
-import { getAuthRequired } from "./features-state";
 import { deleteItem } from "./secure-storage";
 
 /**
@@ -110,20 +109,13 @@ export async function restoreStoredSession(): Promise<string | null> {
  * All requests go to API_BASE_URL.
  */
 /**
- * Resolve a guest token for the current request.
- *
- * - When backend guest mode is off (`auth_required=true`), returns any stored
- *   token but never provisions a new one.
- * - When guest mode is on, provisions a token on first use so every guest
- *   request carries `X-Guest-Token` even before `AuthGuard`'s bootstrap lands.
- *
- * Returns null on any provisioning failure — the caller will surface the
- * original 401/403 rather than crash.
+ * Resolve a guest token for the current request. Returns the stored token
+ * if present, otherwise provisions a new one. Returns null on provisioning
+ * failure — the caller surfaces the original 401/403 rather than crash.
  */
 async function resolveGuestToken(): Promise<string | null> {
   const stored = await getStoredGuestToken();
   if (stored) return stored;
-  if (getAuthRequired()) return null;
   try {
     return await getOrCreateGuestToken();
   } catch (err) {
@@ -144,7 +136,6 @@ async function rotateGuestToken(): Promise<string | null> {
   if (!guestRotatePromise) {
     guestRotatePromise = (async () => {
       await deleteItem(SECURE_STORE_KEYS.GUEST_TOKEN);
-      if (getAuthRequired()) return null;
       try {
         return await getOrCreateGuestToken();
       } catch (err) {

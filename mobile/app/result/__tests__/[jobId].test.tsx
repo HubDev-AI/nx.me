@@ -438,7 +438,6 @@ const BASE_CAPS: Capabilities = {
   canSubscribe: true,
   canReact: true,
   canViewBlockedUsers: true,
-  requiresAuth: true,
 };
 
 function setCaps(overrides: Partial<Capabilities> = {}) {

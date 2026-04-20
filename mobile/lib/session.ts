@@ -1,9 +1,8 @@
 /**
  * Session mode — single source of truth for "what kind of session is this".
  *
- * Replaces ad-hoc reads of `features.auth_required` + the overloaded
- * `isAuthenticated` boolean. Consumers pick the predicate that matches what
- * they actually need:
+ * Replaces the overloaded `isAuthenticated` boolean. Consumers pick the
+ * predicate that matches what they actually need:
  *
  *   isUser   — has a real JWT-backed account (premium gates, posting, etc.)
  *   isGuest  — backend is in guest mode and we hold an X-Guest-Token

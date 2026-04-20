@@ -2,9 +2,7 @@
  * Matrix tests for useCapabilities() — pure `(features × session)` derivation.
  *
  * Mocks features-context + auth-context at the module boundary so each case
- * sets the two inputs explicitly. Exercises every row of the result matrix in
- * docs/plans/2026-04-15-001-feat-feature-flags-redesign-plan.md §High-Level
- * Technical Design.
+ * sets the two inputs explicitly.
  */
 import { renderHook } from "@testing-library/react-native";
 
@@ -28,7 +26,6 @@ const authMod = require("./auth-context") as { useSession: jest.Mock };
 type FlagOverrides = Partial<FeatureFlags>;
 
 const BASE_FEATURES: FeatureFlags = {
-  auth_required: true,
   social_enabled: false,
   share_enabled: true,
   onboarding_enabled: true,
@@ -54,8 +51,8 @@ describe("useCapabilities", () => {
 
   // ---------- Happy paths ----------
 
-  it("user + auth_required=true → full profile access + sign-out, no sign-in", () => {
-    setInputs("user", { auth_required: true });
+  it("user → full profile access + sign-out, no sign-in", () => {
+    setInputs("user");
     const caps = render();
 
     expect(caps.canViewOwnProfile).toBe(true);
@@ -64,64 +61,37 @@ describe("useCapabilities", () => {
     expect(caps.canDeleteAccount).toBe(true);
     expect(caps.canSignOut).toBe(true);
     expect(caps.canSignIn).toBe(false);
-    expect(caps.requiresAuth).toBe(true);
   });
 
-  it("guest + auth_required=false + social_enabled=false → guest profile without sign-in/sign-out UI", () => {
-    setInputs("guest", { auth_required: false, social_enabled: false });
+  it("guest → profile view/edit, no account details, no sign-out", () => {
+    setInputs("guest", { social_enabled: false });
     const caps = render();
 
     expect(caps.canViewOwnProfile).toBe(true);
-    // In guest mode (auth_required=false) the guest user row IS the identity
-    // — backend PATCH /v1/users/{username} accepts X-Guest-Token, so the UI
-    // surfaces Edit Profile for guests too.
+    // Guest row IS the identity — backend PATCH accepts X-Guest-Token, so the
+    // UI surfaces Edit Profile for guests too.
     expect(caps.canEditProfile).toBe(true);
     // Guests have no account record — no account details to view or delete.
     expect(caps.canViewAccountDetails).toBe(false);
     expect(caps.canDeleteAccount).toBe(false);
-    // Auth feature off → neither sign-in nor sign-out make sense.
+    // Signed out (no user), but sign-in offered; sign-out not meaningful.
     expect(caps.canSignOut).toBe(false);
-    expect(caps.canSignIn).toBe(false);
+    expect(caps.canSignIn).toBe(true);
     expect(caps.canViewBlockedUsers).toBe(false);
     expect(caps.canSeeFeed).toBe(false);
     expect(caps.canReact).toBe(false);
-    expect(caps.requiresAuth).toBe(false);
   });
 
   // ---------- Edge cases ----------
 
-  it("user + auth_required=false → user retains profile access but auth actions hide", () => {
-    setInputs("user", { auth_required: false });
-    const caps = render();
-
-    expect(caps.canViewOwnProfile).toBe(true);
-    expect(caps.canEditProfile).toBe(true);
-    // Even though the user is signed in, the feature is off — UI shouldn't
-    // offer log-out. (Impossible runtime combo but the derivation stays pure.)
-    expect(caps.canSignOut).toBe(false);
-    expect(caps.canSignIn).toBe(false);
-    expect(caps.canViewBlockedUsers).toBe(false);
-  });
-
-  it("anon + auth_required=true → no profile access, sign-in offered", () => {
-    setInputs("anon", { auth_required: true });
+  it("anon → no profile access, sign-in offered", () => {
+    setInputs("anon");
     const caps = render();
 
     expect(caps.canViewOwnProfile).toBe(false);
     expect(caps.canSignIn).toBe(true);
     expect(caps.canSignOut).toBe(false);
     expect(caps.canEditProfile).toBe(false);
-  });
-
-  it("guest + auth_required=true (impossible at runtime) → capability layer stays pure", () => {
-    // Guest tokens are not issued when auth_required=true; this row exercises
-    // derivation purity rather than a real runtime state.
-    setInputs("guest", { auth_required: true });
-    const caps = render();
-
-    expect(caps.canViewOwnProfile).toBe(false);
-    expect(caps.canSignIn).toBe(true);
-    expect(caps.canSignOut).toBe(false);
   });
 
   // ---------- Flag matrix (representative rows) ----------
@@ -168,17 +138,15 @@ describe("useCapabilities", () => {
     },
   );
 
-  // ---------- Blocked users: requires auth AND social ----------
+  // ---------- Blocked users: tied to social_enabled ----------
 
   it.each([
-    { auth: true, social: true, expected: true },
-    { auth: true, social: false, expected: false },
-    { auth: false, social: true, expected: false },
-    { auth: false, social: false, expected: false },
+    { social: true, expected: true },
+    { social: false, expected: false },
   ])(
-    "canViewBlockedUsers needs both auth and social (auth=$auth, social=$social)",
-    ({ auth, social, expected }) => {
-      setInputs("user", { auth_required: auth, social_enabled: social });
+    "canViewBlockedUsers tracks social_enabled (social=$social)",
+    ({ social, expected }) => {
+      setInputs("user", { social_enabled: social });
       expect(render().canViewBlockedUsers).toBe(expected);
     },
   );
