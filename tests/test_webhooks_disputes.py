@@ -230,7 +230,7 @@ class TestHandleDisputeClosed:
         sub_repo = _make_sub_repo(applied=True)
 
         with patch("app.api.webhooks.settings") as mock_settings:
-            mock_settings.CREDIT_PACK_V1_CREDITS_MILLI = _FIXED_CREDITS_MILLI
+            mock_settings.MONTHLY_ALLOTMENT_MILLI = _FIXED_CREDITS_MILLI
             _handle_dispute_closed(sub_repo, user_repo, dispute, "evt_lost_001")
 
         kwargs = sub_repo.call_apply_dispute_event.call_args.kwargs
@@ -305,7 +305,7 @@ class TestHandleChargeRefunded:
         sub_repo = MagicMock()
 
         with patch("app.api.webhooks.settings") as mock_settings:
-            mock_settings.CREDIT_PACK_V1_CREDITS_MILLI = _FIXED_CREDITS_MILLI
+            mock_settings.MONTHLY_ALLOTMENT_MILLI = _FIXED_CREDITS_MILLI
             _handle_charge_refunded(sub_repo, user_repo, charge, "evt_refund_001")
 
         sub_repo.record_refund_compensating_entry.assert_called_once_with(
@@ -441,7 +441,7 @@ class TestDisputeLifecycleIntegration:
         dispute_closed = {**dispute, "created": _NOW_TS + 60, "status": "lost"}
 
         with patch("app.api.webhooks.settings") as mock_settings:
-            mock_settings.CREDIT_PACK_V1_CREDITS_MILLI = _FIXED_CREDITS_MILLI
+            mock_settings.MONTHLY_ALLOTMENT_MILLI = _FIXED_CREDITS_MILLI
             _handle_dispute_closed(
                 sub_repo, user_repo, dispute_closed, "evt_lost_closed"
             )

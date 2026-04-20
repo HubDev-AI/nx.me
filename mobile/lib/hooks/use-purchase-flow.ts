@@ -1,34 +1,26 @@
 /**
  * usePurchaseFlow — single source of truth for entitlement fetching +
- * credit pack / pro subscription / cancel actions.
+ * Pro subscription / cancel actions.
  *
  * Used by both `subscription.tsx` and `PaywallModal.tsx` so duplicated
  * purchase logic and state stays in one place.
  *
- * Credit packs use the in-app Stripe Payment Sheet. Pro subscriptions keep
- * the `Linking.openURL` redirect flow. Cancel confirmation is driven by
- * `isCancelSheetOpen` / `openCancelSheet` / `confirmCancel` /
- * `dismissCancelSheet`; the consumer screen renders `<CancelSubscriptionSheet>`
- * wired to that state.
+ * Pro subscriptions use the `Linking.openURL` redirect flow. Cancel
+ * confirmation is driven by `isCancelSheetOpen` / `openCancelSheet` /
+ * `confirmCancel` / `dismissCancelSheet`; the consumer screen renders
+ * `<CancelSubscriptionSheet>` wired to that state.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking } from "react-native";
 
 import {
-  STRIPE_PAYMENT_SHEET,
-  STRIPE_PUBLISHABLE_KEY,
-} from "../../constants/config";
-import {
   cancelSubscription,
-  createCreditPurchaseIntent,
   createSubscription,
   fetchEntitlement,
   SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED,
   type EntitlementState,
-  type PackOption,
 } from "../entitlement";
 import { parseApiError } from "../errors";
-import { useStripe } from "../stripe-web-shim";
 import { showToast } from "../toast";
 
 /** Sentinel `purchasingId` used while the pro subscribe call is in flight. */
@@ -45,7 +37,6 @@ export interface UsePurchaseFlowReturn {
   isLoading: boolean;
   error: string | null;
   /**
-   * `price_id` of the pack currently being purchased,
    * `PURCHASING_PREMIUM_ID` while the subscribe call is in flight,
    * or `null` when no purchase is active.
    */
@@ -54,7 +45,6 @@ export interface UsePurchaseFlowReturn {
   /** True while the confirm-cancel bottom sheet is visible. */
   isCancelSheetOpen: boolean;
   refresh: () => Promise<void>;
-  buyCredits: (pack: PackOption) => Promise<void>;
   subscribe: () => Promise<void>;
   /** Open the confirm-cancel bottom sheet (no API call yet). */
   openCancelSheet: () => void;
@@ -68,9 +58,9 @@ interface UsePurchaseFlowOptions {
   /** Auto-load entitlement on mount. Default true. */
   autoLoad?: boolean;
   /**
-   * Fires after a successful credit pack purchase or new pro subscription
-   * with the latest entitlement state. Does NOT fire for `already_subscribed`
-   * responses or cancels — those callers shouldn't show "Purchase complete!" UX.
+   * Fires after a new Pro subscription with the latest entitlement state.
+   * Does NOT fire for `already_subscribed` responses or cancels — those
+   * callers shouldn't show "Purchase complete!" UX.
    */
   onPurchaseComplete?: (state: EntitlementState) => void;
 }
@@ -79,7 +69,6 @@ export function usePurchaseFlow({
   autoLoad = true,
   onPurchaseComplete,
 }: UsePurchaseFlowOptions = {}): UsePurchaseFlowReturn {
-  const stripe = useStripe();
   const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
   const [isLoading, setIsLoading] = useState(autoLoad);
   const [error, setError] = useState<string | null>(null);
@@ -132,65 +121,6 @@ export function usePurchaseFlow({
       refresh();
     }
   }, [autoLoad, refresh]);
-
-  // ---------------------------------------------------------------------
-  // Buy credits — in-app Stripe Payment Sheet.
-  // Bootstrap a PaymentIntent on the server (keyed by price_id), init the
-  // sheet, present it, then refresh entitlement on success.
-  // ---------------------------------------------------------------------
-  const buyCredits = useCallback(
-    async (pack: PackOption) => {
-      setPurchasingId(pack.price_id);
-      try {
-        const intent = await createCreditPurchaseIntent(pack.pack_id);
-
-        if (__DEV__ && intent.publishable_key !== STRIPE_PUBLISHABLE_KEY) {
-          console.warn(
-            "[stripe] publishable key mismatch between backend and mobile build",
-          );
-        }
-
-        const initRes = await stripe.initPaymentSheet({
-          merchantDisplayName: STRIPE_PAYMENT_SHEET.MERCHANT_DISPLAY_NAME,
-          customerId: intent.customer_id,
-          customerEphemeralKeySecret: intent.ephemeral_key,
-          paymentIntentClientSecret: intent.payment_intent_client_secret,
-          applePay: {
-            merchantCountryCode: STRIPE_PAYMENT_SHEET.MERCHANT_COUNTRY_CODE,
-          },
-          defaultBillingDetails: {},
-          allowsDelayedPaymentMethods: false,
-        });
-        if (initRes.error) {
-          throw new Error(initRes.error.message);
-        }
-
-        const presentRes = await stripe.presentPaymentSheet();
-        if (presentRes.error) {
-          if (
-            presentRes.error.code ===
-            STRIPE_PAYMENT_SHEET.USER_CANCELED_ERROR_CODE
-          ) {
-            return;
-          }
-          throw new Error(presentRes.error.message);
-        }
-
-        const updated = await refetch();
-        onPurchaseComplete?.(updated);
-        showToast({
-          kind: "success",
-          message: STRIPE_PAYMENT_SHEET.SUCCESS_MESSAGE,
-        });
-      } catch (err) {
-        const appError = parseApiError(err);
-        showToast({ kind: "error", message: appError.message });
-      } finally {
-        setPurchasingId(null);
-      }
-    },
-    [stripe, refetch, onPurchaseComplete],
-  );
 
   // ---------------------------------------------------------------------
   // Subscribe to Pro
@@ -266,7 +196,6 @@ export function usePurchaseFlow({
     isCancelling,
     isCancelSheetOpen,
     refresh,
-    buyCredits,
     subscribe,
     openCancelSheet,
     dismissCancelSheet,

@@ -52,16 +52,6 @@ class BlockedReason(str, Enum):
 # ---------------------------------------------------------------------------
 
 
-class PackOption(BaseModel):
-    """A single credit-pack purchase option."""
-
-    pack_id: str
-    milli_credits: int
-    price_id: str
-    amount_cents: int
-    currency: str
-
-
 class ProOption(BaseModel):
     """Pro subscription purchase option."""
 
@@ -73,7 +63,6 @@ class ProOption(BaseModel):
 class PurchaseOptions(BaseModel):
     """All available purchase options returned with entitlement state."""
 
-    pack: PackOption | None = None
     pro: ProOption | None = None
 
 

@@ -20,8 +20,7 @@ Subscription-lifecycle semantics (Unit 8a):
   - 5xx on out-of-order subscription.updated (Stripe retry handles ordering).
   - No tier-gating reads; Pro is a marketing label derived from dates.
 
-Credit-pack + dispute + refund handlers (Unit 8b):
-  - payment_intent.succeeded with flow=payment_sheet → credit_apply_pack_purchase.
+Dispute + refund handlers (Unit 8b):
   - charge.refunded → compensating ledger entry (type='refund').
   - charge.dispute.created/closed/funds_withdrawn → apply_dispute_event CAS
     state machine; 500 on out-of-order so Stripe retries.
@@ -44,7 +43,6 @@ from app.api.deps import (
     get_subscription_repo,
     get_user_repo,
 )
-from app.api.entitlement import FLOW_PAYMENT_SHEET
 from app.config import settings
 from app.constants.webhooks import (
     DISPUTE_EVENT_CLOSED_LOST,
@@ -60,7 +58,6 @@ from app.constants.webhooks import (
     EVT_CHECKOUT_SESSION_COMPLETED,
     EVT_INVOICE_PAYMENT_FAILED,
     EVT_INVOICE_PAYMENT_SUCCEEDED,
-    EVT_PAYMENT_INTENT_SUCCEEDED,
     EVT_SUBSCRIPTION_CREATED,
     EVT_SUBSCRIPTION_DELETED,
     EVT_SUBSCRIPTION_UPDATED,
@@ -152,8 +149,6 @@ async def stripe_webhook(
             await _handle_payment_succeeded(sub_repo, plan_repo, data)
         elif event_type == EVT_INVOICE_PAYMENT_FAILED:
             _handle_payment_failed(sub_repo, data)
-        elif event_type == EVT_PAYMENT_INTENT_SUCCEEDED:
-            await _handle_payment_intent_succeeded(sub_repo, data, event_id)
         elif event_type == EVT_CHARGE_REFUNDED:
             _handle_charge_refunded(sub_repo, user_repo, data, event_id)
         elif event_type == EVT_CHARGE_DISPUTE_CREATED:
@@ -230,20 +225,6 @@ async def _handle_checkout_completed(
             "Subscription checkout completed for user=%s customer=%s",
             user_id,
             customer_id,
-        )
-
-    elif mode == "payment":
-        # Credit-pack purchase — call credit_apply_pack_purchase RPC (Unit 8b).
-        sub_repo.call_credit_apply_pack_purchase(
-            user_id=user_id,
-            event_id=event_id,
-            credits_milli=settings.CREDIT_PACK_V1_CREDITS_MILLI,
-        )
-        logger.info(
-            "Credit pack purchase (checkout): user=%s, credits_milli=%d, event=%s",
-            user_id,
-            settings.CREDIT_PACK_V1_CREDITS_MILLI,
-            event_id,
         )
 
 
@@ -494,64 +475,6 @@ def _handle_payment_failed(sub_repo: SubscriptionRepository, invoice: dict) -> N
 
 
 # ---------------------------------------------------------------------------
-# Payment-sheet / PaymentIntent handler (Unit 8b)
-# ---------------------------------------------------------------------------
-
-
-async def _handle_payment_intent_succeeded(
-    sub_repo: SubscriptionRepository, intent: dict, event_id: str
-) -> None:
-    """Handle payment_intent.succeeded — credit grant from Payment Sheet.
-
-    Only processes intents stamped with ``metadata.flow=payment_sheet``
-    so legacy Checkout-created PaymentIntents are ignored here (the
-    ``checkout.session.completed`` handler owns those).
-
-    Calls credit_apply_pack_purchase RPC with CREDIT_PACK_V1_CREDITS_MILLI
-    from settings, ignoring the intent's metadata.credits field, so the
-    server is the single source of truth for pack size (R7-Pack).
-    """
-    metadata = intent.get("metadata") or {}
-    if metadata.get("flow") != FLOW_PAYMENT_SHEET:
-        logger.info(
-            "payment_intent.succeeded: non-payment-sheet flow, skipping (event=%s)",
-            event_id,
-        )
-        return
-
-    user_id = metadata.get("user_id")
-    if not user_id:
-        logger.warning(
-            "payment_intent.succeeded missing user_id in metadata (event=%s)",
-            event_id,
-        )
-        return
-    try:
-        UUID(user_id)
-    except ValueError:
-        logger.error(
-            "Invalid user_id UUID in payment_intent.succeeded: %s (event=%s)",
-            user_id,
-            event_id,
-        )
-        return
-
-    credits_milli = settings.CREDIT_PACK_V1_CREDITS_MILLI
-    sub_repo.call_credit_apply_pack_purchase(
-        user_id=user_id,
-        event_id=event_id,
-        credits_milli=credits_milli,
-    )
-
-    logger.info(
-        "PaymentIntent credit pack purchase: user=%s, credits_milli=%d, event=%s",
-        user_id,
-        credits_milli,
-        event_id,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Charge refund handler (Unit 8b)
 # ---------------------------------------------------------------------------
 
@@ -567,9 +490,10 @@ def _handle_charge_refunded(
     Looks up user_id via users.stripe_customer_id (backfilled in Unit 1).
     Writes a negative ledger entry (type='refund') keyed on charge_id so
     duplicate charge.refunded deliveries are no-ops via outer dedup.
-    Amount is the refund amount_refunded in pence/cents; we store a
-    milli-credit equivalent of CREDIT_PACK_V1_CREDITS_MILLI (one pack)
-    per refund regardless of the monetary amount, as packs are atomic.
+    Pro subscription is the only paid SKU (2026-04-20 pack removal), so
+    the compensating amount is MONTHLY_ALLOTMENT_MILLI — the full
+    allotment for the refunded billing period. Partial-refund accounting
+    is v1.1 work.
     """
     customer_id = charge.get("customer")
     charge_id = charge.get("id", "")
@@ -592,7 +516,7 @@ def _handle_charge_refunded(
         return
 
     user_id = user_row["id"]
-    amount_milli = settings.CREDIT_PACK_V1_CREDITS_MILLI
+    amount_milli = settings.MONTHLY_ALLOTMENT_MILLI
 
     sub_repo.record_refund_compensating_entry(
         user_id=user_id,
@@ -752,7 +676,7 @@ def _handle_dispute_closed(
             sub_repo.call_credit_dispute_compensate(
                 user_id=user_id,
                 charge_id=charge_id,
-                amount_milli=settings.CREDIT_PACK_V1_CREDITS_MILLI,
+                amount_milli=settings.MONTHLY_ALLOTMENT_MILLI,
             )
             logger.info(
                 "Dispute closed_lost compensating entry: user=%s charge=%s event=%s",

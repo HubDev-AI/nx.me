@@ -13,17 +13,6 @@ import { ENTITLEMENT_ENDPOINTS } from "../constants/config";
 // Response types (mirror backend Pydantic models)
 // ---------------------------------------------------------------------------
 
-/** Single credit pack purchase option returned by the backend. */
-export interface PackOption {
-  pack_id: string;
-  price_id: string;
-  amount_cents: number;
-  /** ISO 4217 currency code, lowercase (e.g. "usd"). */
-  currency: string;
-  /** Milli-credits granted on purchase (divide by 1000 for display credits). */
-  milli_credits: number;
-}
-
 /** Pro subscription purchase option returned by the backend. */
 export interface ProOption {
   price_id: string;
@@ -33,7 +22,6 @@ export interface ProOption {
 }
 
 export interface PurchaseOptions {
-  pack: PackOption;
   pro: ProOption;
 }
 
@@ -53,13 +41,6 @@ export interface EntitlementState {
   /** UUID of the plan version backing this entitlement. */
   plan_version_id: string;
   purchase_options: PurchaseOptions | null;
-}
-
-export interface CreditPurchaseIntentResponse {
-  payment_intent_client_secret: string;
-  ephemeral_key: string;
-  customer_id: string;
-  publishable_key: string;
 }
 
 export interface SubscriptionResponse {
@@ -83,25 +64,6 @@ export const SUBSCRIPTION_STATUS_ALREADY_SUBSCRIBED = "already_subscribed";
 /** Fetch current user entitlement snapshot. */
 export async function fetchEntitlement(): Promise<EntitlementState> {
   return apiFetch<EntitlementState>(ENTITLEMENT_ENDPOINTS.GET);
-}
-
-/**
- * Create a Stripe PaymentIntent bundle for the in-app Payment Sheet.
- * The returned secrets bootstrap `initPaymentSheet` + `presentPaymentSheet`
- * from `@stripe/stripe-react-native`.
- *
- * @param packId  The credit pack ID from `PurchaseOptions.pack.pack_id`.
- */
-export async function createCreditPurchaseIntent(
-  packId: string,
-): Promise<CreditPurchaseIntentResponse> {
-  return apiFetch<CreditPurchaseIntentResponse>(
-    ENTITLEMENT_ENDPOINTS.PURCHASE_CREDITS_INTENT,
-    {
-      method: "POST",
-      body: JSON.stringify({ credit_pack_id: packId }),
-    },
-  );
 }
 
 /** Create a Stripe checkout session for Pro subscription. */

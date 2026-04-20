@@ -164,8 +164,6 @@ class TestSubscriptionDeleted:
         _handle_subscription_deleted(sub_repo, {"id": "sub_del2"})
 
         sub_repo.call_credit_apply_monthly_allotment.assert_not_called()
-        # Credit-pack RPC must also not be called on subscription deletion.
-        sub_repo.call_credit_apply_pack_purchase.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
