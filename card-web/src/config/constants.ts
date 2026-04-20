@@ -8,11 +8,10 @@
 export const CARD_REVALIDATE_SECONDS = 60;
 
 /**
- * HTTP 410 Gone — kept for migration safety in case older backend versions
- * still emit it.  As of PR #166 the current backend returns 404 instead.
- * Remove once all environments have been updated.
+ * HTTP 404 Not Found — emitted by the public cards API when a username or
+ * share hash does not resolve to a visible card.
  */
-export const HTTP_GONE = 410;
+export const HTTP_NOT_FOUND = 404;
 
 /** OG image dimensions (pixels) */
 export const OG_IMAGE_WIDTH = 1200;
