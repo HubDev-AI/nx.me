@@ -1,27 +1,11 @@
 """Nudge scheduler — thin orchestrator for advisor-initiated nudges.
 
-Wires together policy, templates, eligibility scans, and queue dispatch.
-The public interface (ARQ job names) is unchanged:
+Plan 2026-04-17-003 Unit 2: removed generic trigger functions and
+eligibility cron. Only post_glowup vision-grounded path remains.
 
 Jobs:
-  generate_nudge            — generate + save a single nudge via Haiku
-  schedule_post_analysis_nudge — lightweight wrapper called from analyses endpoint
-  check_nudge_eligibility   — daily cron: scans all active users, enqueues eligible nudges
-
-Plan 2026-04-17-003 Unit 8: ``post_analysis`` and ``post_glowup``
-nudges now flow through a vision-grounded path. The nudge worker
-fetches the user's before/after images via the MCP registry (same
-handler Ada chat uses), pairs them with the stable ``style_profile``
-and the last N nudge bodies + ``observation_tag``s, and calls the
-vision-capable Haiku model. The model returns strict JSON
-``{"body", "observation_tag"}`` which is parsed + persisted. Parse
-failure drops the nudge with a ``nudge_invalid_json`` metric — no
-retry, next generation gets its own chance. No fixed topic taxonomy
-and no server-side rotation; dedup emerges from the model's own
-access to prior observations.
-
-See nudge_policy.py, nudge_templates.py, nudge_eligibility.py for the
-extracted concerns.
+  generate_nudge           — generate + save a single nudge via Haiku
+  write_analysis_insight_job — persist analysis insight memory row
 """
 
 from __future__ import annotations
@@ -32,7 +16,6 @@ from typing import Any
 from uuid import UUID
 
 import redis.asyncio as aioredis
-from arq import ArqRedis
 from supabase import Client
 
 from app.advisor._hashing import hash_user_id
@@ -42,23 +25,14 @@ from app.advisor.mcp.tools_glowup import (
     _handle_get_latest_glowup,
     _handle_get_latest_photo,
 )
-from app.advisor.nudge_eligibility import (
-    find_milestone_eligible,
-    find_re_engagement_eligible,
-    find_weekly_checkin_eligible,
-)
 from app.advisor.persona import SOUL_MD
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 from app.advisor.nudge_policy import (
     MAX_TOKENS_NUDGE,
-    TRIGGER_MILESTONE,
-    TRIGGER_POST_ANALYSIS,
     TRIGGER_POST_GLOWUP,
-    TRIGGER_RE_ENGAGEMENT,
-    TRIGGER_WEEKLY_CHECKIN,
 )
-from app.advisor.nudge_templates import build_vision_nudge_prompt, get_prompt
+from app.advisor.nudge_templates import build_vision_nudge_prompt
 from app.api.deps import get_llm_adapter as _get_llm_adapter
 from app.config import settings
 
@@ -83,12 +57,6 @@ _RAPID_RETRY_VALUE = "1"
 _SECONDS_PER_MINUTE = 60
 
 
-# Triggers that flow through the vision-grounded path (Unit 8).
-_VISION_TRIGGERS: frozenset[str] = frozenset(
-    {TRIGGER_POST_ANALYSIS, TRIGGER_POST_GLOWUP}
-)
-
-
 # ---------------------------------------------------------------------------
 # ARQ job: generate_nudge
 # ---------------------------------------------------------------------------
@@ -103,39 +71,16 @@ async def generate_nudge(
 ) -> None:
     """Generate and save a single nudge for a user.
 
-    Entitlement is checked before generation. Skips silently if the user
-    has hit their nudge cap for the current period (spec Section 3).
-
-    Plan 2026-04-17-003 Unit 8 — ``post_analysis`` and ``post_glowup``
-    branch into a vision-grounded flow that:
-
-    1. Fails fast if no ``style_profile`` exists (the prompt's "stable
-       facts" block cannot render without it).
-    2. Applies a rapid-retry Redis guard for ``post_glowup`` keyed by
-       ``(user_id, upload_id)``.
-    3. Fetches images via the MCP tool handlers directly — same code
-       path Ada chat uses, but called in-process from the worker.
-    4. Calls the vision-capable Haiku model with the images + the
-       ``build_vision_nudge_prompt`` text.
-    5. Parses strict JSON ``{"body", "observation_tag"}``. On parse
-       failure the nudge is dropped with ``nudge_invalid_json``
-       metric — no retry, next generation gets its own chance.
-
-    Other triggers (``weekly_checkin``, ``milestone``,
-    ``re_engagement``) keep the generic text-only path unchanged.
+    Plan 2026-04-17-003 Unit 2: only the post_glowup vision-grounded
+    path remains. All generic triggers have been removed.
 
     Args:
         ctx:     ARQ worker context (supabase, redis injected at startup).
         user_id: UUID string of the target user.
-        trigger: One of the TRIGGER_* constants.
-        insight: Legacy kwarg from the analysis endpoint carrying the
-                 fresh analysis result. Not used by the vision path
-                 (the model reads the image + the stable profile), but
-                 kept on the signature so existing callers remain
-                 wire-compatible.
+        trigger: Must be TRIGGER_POST_GLOWUP.
+        insight: Legacy kwarg — unused, kept for wire compatibility.
         job_id:  Source job_id for ``post_glowup`` — used to resolve
-                 the ``upload_id`` for rapid-retry dedup. Ignored on
-                 other triggers.
+                 the ``upload_id`` for rapid-retry dedup.
     """
     if not settings.ADVISOR_ENABLED:
         logger.debug(
@@ -147,89 +92,14 @@ async def generate_nudge(
     redis: aioredis.Redis = ctx["redis"]
     advisor_repo = AdvisorRepository(supabase)
 
-    # R4a: Ada is ledger-gated, not tier-gated. ADVISOR_ENABLED (checked
-    # above) is the only gate here. Per-nudge credit charging is deferred
-    # to a later unit.
-    if trigger in _VISION_TRIGGERS:
-        await _generate_vision_nudge(
-            advisor_repo=advisor_repo,
-            redis=redis,
-            supabase=supabase,
-            user_id=user_id,
-            trigger=trigger,
-            job_id=job_id,
-        )
-        return
-
-    await _generate_generic_nudge(
-        advisor_repo=advisor_repo, user_id=user_id, trigger=trigger
+    await _generate_vision_nudge(
+        advisor_repo=advisor_repo,
+        redis=redis,
+        supabase=supabase,
+        user_id=user_id,
+        trigger=trigger,
+        job_id=job_id,
     )
-
-
-async def _generate_generic_nudge(
-    *,
-    advisor_repo: AdvisorRepository,
-    user_id: str,
-    trigger: str,
-) -> None:
-    """Text-only path for ``weekly_checkin`` / ``milestone`` / ``re_engagement``.
-
-    Unchanged from the pre-Unit-8 generic-trigger flow.
-    """
-    user_id_hash = hash_user_id(user_id)
-    user_content = (
-        "Write a brief check-in nudge in your voice. "
-        "One or two sentences, no greeting.\n\n" + get_prompt(trigger)
-    )
-    llm = _get_llm_adapter()
-    try:
-        response = await llm.create_message(
-            model=settings.ADVISOR_MODEL_HAIKU,
-            system=SOUL_MD,
-            messages=[{"role": "user", "content": user_content}],
-            max_tokens=MAX_TOKENS_NUDGE,
-        )
-        from app.advisor.payload_logger import log_llm_response
-
-        log_llm_response(
-            None,
-            model=settings.ADVISOR_MODEL_HAIKU,
-            user_id=user_id,
-            conversation_id="-",
-            response=response,
-            purpose=f"nudge:{trigger}",
-        )
-        nudge_content = response.content.strip()
-    except Exception as exc:
-        logger.error(
-            "LLM call failed for nudge (user=%s, trigger=%s): %s",
-            user_id_hash,
-            trigger,
-            exc,
-        )
-        return
-
-    if not nudge_content:
-        logger.warning(
-            "Empty nudge content from LLM — skipping (user=%s, trigger=%s)",
-            user_id_hash,
-            trigger,
-        )
-        return
-
-    try:
-        advisor_repo.insert_nudge(
-            {
-                "user_id": user_id,
-                "trigger": trigger,
-                "content": nudge_content,
-            }
-        )
-    except Exception as exc:
-        logger.error("Failed to save nudge for user=%s: %s", user_id_hash, exc)
-        return
-
-    logger.info("Nudge saved: user=%s trigger=%s", user_id_hash, trigger)
 
 
 async def _generate_vision_nudge(
@@ -610,136 +480,3 @@ async def write_analysis_insight_job(
                 "user_id_hash": user_id_hash,
             },
         )
-
-
-# ---------------------------------------------------------------------------
-# ARQ job: schedule_post_analysis_nudge
-# ---------------------------------------------------------------------------
-
-
-async def schedule_post_analysis_nudge(
-    ctx: dict,
-    user_id: str,
-    face_shape: str,
-    symmetry_score: float,
-    recommendations: list[str],
-) -> None:
-    """Enqueue a post-analysis nudge for a user.
-
-    Called from the analysis endpoint after a successful analysis (spec
-    Section 16: one integration point guarded by ADVISOR_ENABLED).
-
-    Plan 2026-04-17-003 Unit 8: the nudge generator no longer consumes
-    the analysis facts directly — the model reads them from the stable
-    ``style_profile`` row that ``write_analysis_insight_job`` upserts in
-    parallel. We keep the wrapper's signature stable for API compat
-    (the endpoint already passes these four args and we avoid a
-    dual-PR migration), but they are dropped on the enqueue side.
-
-    This is a thin wrapper that immediately enqueues ``generate_nudge``
-    so the analysis endpoint does not block on LLM latency.
-
-    Args:
-        ctx:             ARQ worker context.
-        user_id:         UUID string of the user who completed the analysis.
-        face_shape:      Detected face shape (unused by vision path).
-        symmetry_score:  Symmetry score the analysis produced (unused).
-        recommendations: Raw suggestion strings from the analysis (unused).
-    """
-    if not settings.ADVISOR_ENABLED:
-        return
-
-    # Unit 8: the legacy ``insight`` payload is dropped — the model
-    # now reads stable facts from ``style_profile`` and the actual
-    # image via the MCP handlers.
-    del face_shape, symmetry_score, recommendations
-
-    user_id_hash = hash_user_id(user_id)
-    arq_pool: ArqRedis = ctx.get("arq_pool")
-    if arq_pool is None:
-        # Fallback: run inline if no pool is available in context (e.g. tests)
-        logger.debug(
-            "No arq_pool in ctx — running generate_nudge inline for user=%s",
-            user_id_hash,
-        )
-        await generate_nudge(ctx, user_id, TRIGGER_POST_ANALYSIS)
-        return
-
-    await arq_pool.enqueue_job("generate_nudge", user_id, TRIGGER_POST_ANALYSIS)
-    logger.debug("Enqueued post-analysis nudge for user=%s", user_id_hash)
-
-
-# ---------------------------------------------------------------------------
-# Queue dispatch helper
-# ---------------------------------------------------------------------------
-
-
-async def _dispatch(
-    ctx: dict,
-    arq_pool: ArqRedis | None,
-    user_id: str,
-    trigger: str,
-) -> None:
-    """Dispatch a nudge job via ARQ pool or run inline as fallback."""
-    if arq_pool is not None:
-        await arq_pool.enqueue_job("generate_nudge", user_id, trigger)
-    else:
-        await generate_nudge(ctx, user_id, trigger)
-
-
-# ---------------------------------------------------------------------------
-# ARQ cron job: check_nudge_eligibility
-# ---------------------------------------------------------------------------
-
-
-async def check_nudge_eligibility(ctx: dict) -> None:
-    """Daily cron: scan active users and enqueue nudge jobs for eligible ones.
-
-    Delegates eligibility queries to nudge_eligibility module, then dispatches
-    generate_nudge jobs for each eligible user.
-
-    Post-analysis nudges are triggered directly from the analysis endpoint,
-    not from this cron job. Post-glow-up nudges are enqueued by the
-    generation worker's completion path.
-
-    Args:
-        ctx: ARQ worker context (supabase, redis, arq_pool).
-    """
-    if not settings.ADVISOR_ENABLED:
-        logger.debug("Advisor disabled — skipping nudge eligibility check")
-        return
-
-    supabase: Client = ctx["supabase"]
-    arq_pool: ArqRedis | None = ctx.get("arq_pool")
-    advisor_repo = AdvisorRepository(supabase)
-
-    enqueued = 0
-
-    # 1. Weekly check-in
-    try:
-        weekly_users = await find_weekly_checkin_eligible(advisor_repo)
-        for uid_str in weekly_users:
-            await _dispatch(ctx, arq_pool, uid_str, TRIGGER_WEEKLY_CHECKIN)
-            enqueued += 1
-    except Exception as exc:
-        logger.error("Weekly check-in eligibility scan failed: %s", exc)
-
-    # 2. Milestone
-    try:
-        milestone_users = await find_milestone_eligible(advisor_repo)
-        for uid_str in milestone_users:
-            await _dispatch(ctx, arq_pool, uid_str, TRIGGER_MILESTONE)
-            enqueued += 1
-    except Exception as exc:
-        logger.error("Milestone eligibility scan failed: %s", exc)
-
-    # 3. Re-engagement
-    try:
-        re_engagement_users = await find_re_engagement_eligible(advisor_repo)
-        for uid_str in re_engagement_users:
-            await _dispatch(ctx, arq_pool, uid_str, TRIGGER_RE_ENGAGEMENT)
-            enqueued += 1
-    except Exception as exc:
-        logger.error("Re-engagement eligibility scan failed: %s", exc)
-
-    logger.info("Nudge eligibility check complete: enqueued=%d", enqueued)

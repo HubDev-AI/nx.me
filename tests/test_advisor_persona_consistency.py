@@ -30,31 +30,51 @@ async def test_nudge_uses_soul_md_as_system(monkeypatch):
 
     async def _capturing_create(**kwargs):
         captured.update(kwargs)
-        return LLMResponse(content="short nudge", input_tokens=1, output_tokens=1)
+        return LLMResponse(
+            content='{"body": "warm.", "observation_tag": "clean look"}',
+            input_tokens=1,
+            output_tokens=1,
+        )
 
     fake_llm = SimpleNamespace(create_message=_capturing_create)
 
     monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: fake_llm)
 
-    fake_ent = MagicMock()
-    fake_ent.check = AsyncMock(
-        return_value=SimpleNamespace(allowed=True, error_code=None)
-    )
-    monkeypatch.setattr(
-        "app.entitlement.service.EntitlementService",
-        MagicMock(return_value=fake_ent),
-    )
-
     fake_repo = MagicMock()
     fake_repo.insert_nudge = MagicMock(return_value={"id": str(uuid4())})
+    fake_repo.get_style_profile = MagicMock(
+        return_value={"content": {"face_shape": "oval"}, "created_at": "2026-01-01"}
+    )
+    fake_repo.get_recent_nudge_context = MagicMock(return_value=[])
     monkeypatch.setattr(
         nudge_scheduler, "AdvisorRepository", MagicMock(return_value=fake_repo)
     )
 
+    # Patch image handlers to return one image block so vision path proceeds.
+    async def _fake_glowup(_ctx):
+        return {
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "abc",
+                    },
+                }
+            ],
+            "is_error": False,
+        }
+
+    monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _fake_glowup)
+
+    redis = AsyncMock()
+    redis.set = AsyncMock(return_value=True)
+
     await nudge_scheduler.generate_nudge(
-        {"supabase": object(), "redis": object()},
+        {"supabase": MagicMock(), "redis": redis},
         str(uuid4()),
-        nudge_scheduler.TRIGGER_WEEKLY_CHECKIN,
+        nudge_scheduler.TRIGGER_POST_GLOWUP,
     )
 
     assert captured, "LLM adapter was not called"

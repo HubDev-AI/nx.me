@@ -351,23 +351,6 @@ class AdvisorRepository:
         )
         return result.data or []
 
-    def get_user_ids_with_nudge_since(
-        self, since: str, trigger: str | None = None
-    ) -> set[str]:
-        """Batch version of ``find_recent_nudges`` — one query, any user.
-
-        Returns the set of user IDs that have at least one nudge (optionally
-        filtered by ``trigger``) created after ``since``. Callers use set
-        membership to dedup eligibility scans in O(1) instead of N queries.
-        """
-        query = (
-            self._sb.table("advisor_nudges").select("user_id").gt("created_at", since)
-        )
-        if trigger is not None:
-            query = query.eq("trigger", trigger)
-        result = query.execute()
-        return {row["user_id"] for row in (result.data or [])}
-
     # ------------------------------------------------------------------
     # Memories
     # ------------------------------------------------------------------
@@ -583,52 +566,6 @@ class AdvisorRepository:
             .execute()
         )
         return result.data or []
-
-    def get_all_insights_with_timestamps(self) -> list[dict[str, Any]]:
-        """Fetch (user_id, created_at) for all analysis_insight rows.
-
-        Used by nudge eligibility scans across all users.
-        """
-        result = (
-            self._sb.table("user_memories")
-            .select("user_id, created_at")
-            .eq("type", "analysis_insight")
-            .execute()
-        )
-        return result.data or []
-
-    def count_insights_by_user(self) -> dict[str, int]:
-        """Return a mapping of user_id → analysis_insight count for all users.
-
-        Uses a COUNT query grouped by user_id to avoid fetching every row.
-        """
-        result = (
-            self._sb.table("user_memories")
-            .select("user_id", count="exact")
-            .eq("type", "analysis_insight")
-            .execute()
-        )
-        # PostgREST does not support GROUP BY directly; fall back to Python grouping
-        # on the minimal (user_id-only) payload — significantly less data than
-        # fetching created_at for every row.
-        counts: dict[str, int] = {}
-        for row in result.data or []:
-            uid = row["user_id"]
-            counts[uid] = counts.get(uid, 0) + 1
-        return counts
-
-    def get_all_goal_user_ids(self) -> set[str]:
-        """Fetch distinct user IDs that have at least one goal memory.
-
-        Used by the weekly check-in eligibility scan.
-        """
-        result = (
-            self._sb.table("user_memories")
-            .select("user_id")
-            .eq("type", "goal")
-            .execute()
-        )
-        return {row["user_id"] for row in (result.data or [])}
 
     def get_latest_nudge_for_user(self, user_id: str) -> dict[str, Any] | None:
         """Return the most recent nudge (any trigger) for a user, or None."""

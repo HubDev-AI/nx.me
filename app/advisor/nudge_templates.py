@@ -1,64 +1,19 @@
-"""Nudge prompt templates — one per trigger type.
+"""Nudge prompt templates — vision-grounded path only.
 
-Spec Section 7.3: inline for MVP, will move to prompts/*.txt files later.
-
-Plan 2026-04-17-003 Unit 8 — ``post_analysis`` and ``post_glowup`` are
-both served by the vision-grounded builder
-:func:`build_vision_nudge_prompt`. The model looks at the attached
-before/after images (fetched via the MCP registry — same code path Ada
-chat uses), sees the user's stable ``style_profile``, and the last N
-nudge bodies + model-authored ``observation_tag``s, then decides what
-to say. There is no fixed topic taxonomy and no server-side rotation.
-The earlier ``FOCUS_TOPICS = (hair, beard, brows, skin, fit,
-accessories)`` rotation was culturally wrong on a women-primary
-audience and has been removed entirely.
+Plan 2026-04-17-003 Unit 2: dropped NUDGE_PROMPTS dict + get_prompt()
+for the deleted generic triggers (weekly_checkin, milestone,
+re_engagement). Only the vision-grounded builder remains.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.advisor.nudge_policy import (
-    TRIGGER_MILESTONE,
-    TRIGGER_RE_ENGAGEMENT,
-    TRIGGER_WEEKLY_CHECKIN,
-)
-
 # How many of the user's top recommendations to echo back in the
 # vision-grounded prompt. Matches ``_USER_DATA_MAX_RECOMMENDATIONS`` in
 # ``context_builder`` + ``summarize_memory_content`` so the "stable
 # facts" block reads consistent across chat user_data and nudges.
 _VISION_PROMPT_RECS_LIMIT = 3
-
-NUDGE_PROMPTS: dict[str, str] = {
-    TRIGGER_WEEKLY_CHECKIN: (
-        "It has been a week since the user's last nudge. "
-        "They have active style goals. "
-        "Check in with a brief, motivating observation. "
-        "One sentence. No greetings. No sign-offs."
-    ),
-    TRIGGER_MILESTONE: (
-        "The user has just reached an analysis milestone. "
-        "Celebrate their consistency with one warm sentence. "
-        "No greetings. No sign-offs."
-    ),
-    TRIGGER_RE_ENGAGEMENT: (
-        "The user has been away for two weeks. "
-        "Gently invite them back with something fresh to try. "
-        "One sentence. No greetings. No sign-offs."
-    ),
-}
-
-
-def get_prompt(trigger: str) -> str:
-    """Return the prompt template for a generic trigger type.
-
-    Raises KeyError for ``post_analysis`` / ``post_glowup`` — those two
-    triggers are served by :func:`build_vision_nudge_prompt` with the
-    actual before/after images attached, and should never flow through
-    this generic template path.
-    """
-    return NUDGE_PROMPTS[trigger]
 
 
 def _render_profile_block(profile: dict[str, Any] | None) -> str:

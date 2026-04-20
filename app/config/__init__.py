@@ -101,9 +101,6 @@ class Settings(BaseSettings):
     ADVISOR_DEGRADATION_THRESHOLD: int = 50  # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30  # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7  # Days before auto-new conversation
-    ADVISOR_MILESTONE_DEDUP_HOURS: int = (
-        48  # Hours before a duplicate milestone nudge is allowed
-    )
     # DEPRECATED — Plan 2026-04-17-003 Unit 8. The vision-grounded
     # nudge redesign dropped the fixed 60-min cooldown entirely: dedup
     # now emerges from the model's own access to prior nudge bodies +

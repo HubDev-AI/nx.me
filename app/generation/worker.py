@@ -779,8 +779,7 @@ async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> No
     if arq_pool is None:
         # Defense in depth: if worker_settings.startup ever regresses and
         # stops populating ctx["arq_pool"], run the nudge inline so users
-        # still receive post-glow-up guidance. Matches the fallback shape
-        # in advisor/nudge_scheduler.py::schedule_post_analysis_nudge.
+        # still receive post-glow-up guidance.
         # WARN (not DEBUG) because a missing pool is always a bug —
         # production logs must surface it.
         logger.warning(
