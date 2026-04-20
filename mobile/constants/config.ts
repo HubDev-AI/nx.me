@@ -504,3 +504,10 @@ export const AUTH_VALIDATION = {
   USERNAME_PATTERN: /^[a-zA-Z][a-zA-Z0-9_]*$/,
   EMAIL_PATTERN: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
 } as const;
+
+/**
+ * HTTP status codes the client branches on directly (rate-limit toast,
+ * soft-delete detection, etc). Declared here so route files never embed
+ * the raw integer.
+ */
+export const HTTP_STATUS_RATE_LIMIT = 429;
