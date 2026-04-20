@@ -79,7 +79,6 @@ async def test_nudge_uses_soul_md_as_system(monkeypatch):
     await nudge_scheduler.generate_nudge(
         {"supabase": MagicMock(), "redis": redis},
         str(uuid4()),
-        nudge_scheduler.TRIGGER_POST_GLOWUP,
     )
 
     assert captured, "LLM adapter was not called"

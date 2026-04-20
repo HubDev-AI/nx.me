@@ -359,9 +359,15 @@ async def test_single_flight_concurrent_requests_call_haiku_once():
 
     # Exactly one Haiku call.
     assert call_count["n"] == 1
-    # Both results are valid; each has 3 seeds.
+    # Both results must be the fresh Haiku payload, not the fallback — the
+    # second coroutine hits the cache that the first one wrote.
+    _fallback_labels = {s["label"] for s in FALLBACK_SEEDS}
     assert len(r1.seeds) == SEEDS_COUNT
     assert len(r2.seeds) == SEEDS_COUNT
+    assert r1.seeds[0].label == "Face shape"
+    assert r2.seeds[0].label == "Face shape"
+    assert not _fallback_labels.intersection({s.label for s in r1.seeds})
+    assert not _fallback_labels.intersection({s.label for s in r2.seeds})
 
 
 # ---------------------------------------------------------------------------

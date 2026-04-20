@@ -16,7 +16,7 @@ from typing import Any
 from app.advisor.nudge_templates import (
     IMAGE_TEXT_GUARD,
     VOICE_TONE_BLOCK,
-    _render_profile_block,
+    render_profile_block,
 )
 
 
@@ -37,7 +37,7 @@ def build_chat_seeds_prompt(profile: dict[str, Any] | None) -> str:
     ``{"seeds": [{"label": "...", "text": "..."}, ...]}`` with exactly 3
     seeds and nothing else outside the JSON.
     """
-    profile_block = _render_profile_block(profile)
+    profile_block = render_profile_block(profile)
     return (
         "Stable facts about this user:\n"
         f"{profile_block}\n\n"

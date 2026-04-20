@@ -104,8 +104,10 @@ def _seed_users(repo: _IsolatingFakeRepo) -> tuple[str, str, str, str]:
         {
             "id": nudge_b,
             "user_id": b,
-            "trigger": "weekly_checkin",
-            "content": "b's nudge",
+            "body": "b's nudge",
+            "next_step_label": "Ask Ada",
+            "next_step_seed": "What should I try next?",
+            "body_hash": "b" * 64,
             "read_at": None,
             "created_at": "2026-04-15T00:00:00+00:00",
         }

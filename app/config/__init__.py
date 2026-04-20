@@ -112,16 +112,6 @@ class Settings(BaseSettings):
     ADVISOR_DEGRADATION_THRESHOLD: int = 50  # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30  # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7  # Days before auto-new conversation
-    # DEPRECATED — Plan 2026-04-17-003 Unit 8. The vision-grounded
-    # nudge redesign dropped the fixed 60-min cooldown entirely: dedup
-    # now emerges from the model's own access to prior nudge bodies +
-    # model-authored ``observation_tag``s in the prompt's "do not
-    # repeat" block. Kept at 0 as a rollback knob — set to a positive
-    # value to temporarily gate post_analysis / post_glowup on a time
-    # window if the vision path ever misbehaves. A rapid-retry dedup
-    # (same upload_id within 5 min) still fires at the scheduler level.
-    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 0
-
     # Plan 2026-04-17-003 Unit 8. How many prior nudges (body +
     # observation_tag) are included in the vision-nudge prompt's
     # "do not repeat" block. The cap keeps the prompt compact — the

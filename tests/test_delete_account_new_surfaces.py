@@ -302,6 +302,7 @@ _CHAT_SEEDS_CACHE_PREFIX = "advisor:chat_seeds"
 _CHAT_SEEDS_COOLDOWN_PREFIX = "advisor:chat_seeds:cooldown"
 _CHAT_SEEDS_LOCK_PREFIX = "advisor:chat_seeds:lock"
 _POST_GLOWUP_RAPID_RETRY_PREFIX = "advisor:nudge:post_glowup"
+_NEXT_STEP_RL_PREFIX = "advisor:next_step_rl"
 _OTHER_USER_ID = "u-other-isolation"
 
 
@@ -360,14 +361,16 @@ class TestRedisSweepCoversNewPrefixes:
         monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
 
         store: dict[str, str] = {
-            # Target user — all four prefixes must be cleared.
+            # Target user — all five new prefixes must be cleared.
             f"{_CHAT_SEEDS_CACHE_PREFIX}:{_USER_ID}:g1": "1",
             f"{_CHAT_SEEDS_COOLDOWN_PREFIX}:{_USER_ID}": "1",
             f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g1": "1",
             f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g2": "1",
             f"{_POST_GLOWUP_RAPID_RETRY_PREFIX}:{_USER_ID}:u1": "1",
-            # Isolation — another user's key must survive.
+            f"{_NEXT_STEP_RL_PREFIX}:{_USER_ID}": "1",
+            # Isolation — another user's keys must survive.
             f"{_CHAT_SEEDS_CACHE_PREFIX}:{_OTHER_USER_ID}:g1": "1",
+            f"{_NEXT_STEP_RL_PREFIX}:{_OTHER_USER_ID}": "1",
         }
 
         user_repo = _make_user_repo()
@@ -393,5 +396,7 @@ class TestRedisSweepCoversNewPrefixes:
         assert f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g1" not in store
         assert f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g2" not in store
         assert f"{_POST_GLOWUP_RAPID_RETRY_PREFIX}:{_USER_ID}:u1" not in store
-        # Isolation — other user's key must survive.
+        assert f"{_NEXT_STEP_RL_PREFIX}:{_USER_ID}" not in store
+        # Isolation — other user's keys must survive.
         assert f"{_CHAT_SEEDS_CACHE_PREFIX}:{_OTHER_USER_ID}:g1" in store
+        assert f"{_NEXT_STEP_RL_PREFIX}:{_OTHER_USER_ID}" in store

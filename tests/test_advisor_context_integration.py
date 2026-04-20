@@ -116,16 +116,20 @@ _STYLE_PROFILE_ROW: dict[str, Any] = {
     "created_at": "2026-04-17T00:00:00+00:00",
 }
 
-# Two nudges — one post_analysis + one weekly_checkin — so nudge_count
-# lands at exactly 2 in scenario 1.
+# Two nudges in the feed context block — both use the v2 actionable
+# contract (body + next_step_{label,seed}). Reshaped from the legacy
+# trigger-scoped shape when migration 0062 dropped the `trigger` and
+# `observation_tag` columns.
 _POST_ANALYSIS_NUDGE: dict[str, Any] = {
-    "content": "oval face shapes are versatile — bangs could land well",
-    "trigger": "post_analysis",
+    "body": "oval face shapes are versatile — bangs could land well",
+    "next_step_label": "Try bangs?",
+    "next_step_seed": "what kind of bangs would suit my face?",
     "created_at": "2026-04-17T00:00:00+00:00",
 }
 _WEEKLY_CHECKIN_NUDGE: dict[str, Any] = {
-    "content": "weekly check-in: what's been landing this week?",
-    "trigger": "weekly_checkin",
+    "body": "weekly check-in: what's been landing this week?",
+    "next_step_label": "Share an update",
+    "next_step_seed": "what new thing should I try this week?",
     "created_at": "2026-04-16T00:00:00+00:00",
 }
 
@@ -390,9 +394,11 @@ async def test_canonical_happy_path_all_four_signals_present(
 
     # --- Nudges block is the 3rd system block (Unit 4) -----------------
     nudges_block = system_blocks[2]
-    assert "nudge (post_analysis)" in nudges_block
-    assert "nudge (weekly_checkin)" in nudges_block
+    # Post-Unit-3 prompt shape: all nudges render as ``nudge: <body>`` —
+    # the legacy ``(trigger)`` prefix went away with the trigger column.
+    assert nudges_block.count("nudge:") == 2
     assert "oval face shapes are versatile" in nudges_block
+    assert "weekly check-in" in nudges_block
 
     # --- Model-driven tool dispatch fetched the glow-up (Units 2, 9) ---
     assert mock_llm.tool_dispatch_log == [("get_latest_glowup", {})]

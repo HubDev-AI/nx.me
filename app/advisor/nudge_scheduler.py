@@ -31,7 +31,7 @@ from app.advisor.mcp.tools_glowup import _handle_get_latest_glowup
 from app.advisor.persona import SOUL_MD
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
-from app.advisor.nudge_policy import MAX_TOKENS_NUDGE, TRIGGER_POST_GLOWUP  # noqa: F401
+from app.advisor.nudge_policy import MAX_TOKENS_NUDGE
 from app.advisor.nudge_templates import build_vision_nudge_prompt
 from app.api.deps import get_llm_adapter as _get_llm_adapter
 from app.config import settings
@@ -61,6 +61,14 @@ _SECONDS_PER_MINUTE = 60
 # Body dedup lookback window: drop nudges whose body_hash was seen within
 # this many days to prevent repeating identical observations.
 _BODY_DEDUP_DAYS = 30
+
+# Schema length caps — mirror the VARCHAR(160)/(24)/(140) constraints added
+# in migration 0062 and the advisor_nudges.body_hash column. Kept here so
+# the JSON-parse validation and the DB constraint share a single source of
+# truth (project rule: no magic numbers).
+_NUDGE_BODY_MAX_LEN = 160
+_NUDGE_NEXT_STEP_LABEL_MAX_LEN = 24
+_NUDGE_NEXT_STEP_SEED_MAX_LEN = 140
 
 
 # ---------------------------------------------------------------------------
@@ -356,9 +364,9 @@ def _parse_nudge_json(raw: str) -> tuple[dict | None, str | None]:
     - Valid JSON after stripping code-fence.
     - Keys: ``body`` (str, non-empty), ``next_step`` (dict with ``label``
       str and ``seed`` str).
-    - ``len(body) <= 160``.
-    - ``len(next_step.label) <= 24``.
-    - ``len(next_step.seed) <= 140``.
+    - ``len(body) <= _NUDGE_BODY_MAX_LEN``.
+    - ``len(next_step.label) <= _NUDGE_NEXT_STEP_LABEL_MAX_LEN``.
+    - ``len(next_step.seed) <= _NUDGE_NEXT_STEP_SEED_MAX_LEN``.
     - ``next_step.seed.strip()`` must end with ``?``.
     """
     try:
@@ -389,7 +397,11 @@ def _parse_nudge_json(raw: str) -> tuple[dict | None, str | None]:
     label = label.strip()
     seed = seed.strip()
 
-    if len(body) > 160 or len(label) > 24 or len(seed) > 140:
+    if (
+        len(body) > _NUDGE_BODY_MAX_LEN
+        or len(label) > _NUDGE_NEXT_STEP_LABEL_MAX_LEN
+        or len(seed) > _NUDGE_NEXT_STEP_SEED_MAX_LEN
+    ):
         return None, "length"
 
     if not seed.endswith("?"):

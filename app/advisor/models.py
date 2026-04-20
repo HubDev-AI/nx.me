@@ -90,8 +90,9 @@ class ConversationHistoryResponse(BaseModel):
 
 class NudgeResponse(BaseModel):
     id: str
-    trigger: str
-    content: str
+    body: str
+    next_step_label: str
+    next_step_seed: str
     read_at: str | None
     created_at: str
 

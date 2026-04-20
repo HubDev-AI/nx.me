@@ -1317,6 +1317,7 @@ _SWEEP_CHAT_SEEDS_COOLDOWN_FMT = "advisor:chat_seeds:cooldown:{user_id}"
 _SWEEP_CHAT_SEEDS_PREFIX_FMT = "advisor:chat_seeds:{user_id}:*"
 _SWEEP_CHAT_SEEDS_LOCK_PREFIX_FMT = "advisor:chat_seeds:lock:{user_id}:*"
 _SWEEP_POST_GLOWUP_RAPID_RETRY_PREFIX_FMT = "advisor:nudge:post_glowup:{user_id}:*"
+_SWEEP_NEXT_STEP_RL_FMT = "advisor:next_step_rl:{user_id}"
 _SWEEP_SCAN_COUNT = 100
 
 
@@ -1529,6 +1530,7 @@ async def delete_account(
             f"advisor_chat_rate:{user_id}",
             f"concurrent:{user_id}",
             _SWEEP_CHAT_SEEDS_COOLDOWN_FMT.format(user_id=user_id),
+            _SWEEP_NEXT_STEP_RL_FMT.format(user_id=user_id),
         ]
         async for key in redis_client.scan_iter(
             match=f"gen:user_daily:{user_id}:*", count=_SWEEP_SCAN_COUNT

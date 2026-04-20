@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 # ``tests/test_advisor_style_profile.py::test_repo_type_constant_matches_enum``.
 STYLE_PROFILE_TYPE = "style_profile"
 
+# ``jobs.source_type`` + ``jobs.status`` literals used by the glow-up
+# lookup. Named constants rather than inline strings (project rule: no
+# magic strings) so a rename of the canonical value is a single edit.
+_SOURCE_TYPE_GLOWUP_ANALYSIS = "glowup_analysis"
+_JOB_STATUS_COMPLETED = "completed"
+
 
 class AdvisorRepository:
     """Encapsulates all DB queries for the advisor module."""
@@ -278,43 +284,6 @@ class AdvisorRepository:
         """
         self._sb.table("advisor_nudges").insert(nudge_data).execute()
 
-    def find_last_nudge(self, user_id: str, trigger: str) -> dict[str, Any] | None:
-        """Return the most recent nudge for a user, or None.
-
-        The ``trigger`` arg is kept for call-site compatibility but is no
-        longer filtered on — the ``trigger`` column was dropped in the
-        Unit 3 migration.
-        """
-        result = (
-            self._sb.table("advisor_nudges")
-            .select("created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        return rows[0] if rows else None
-
-    def find_recent_nudges(
-        self, user_id: str, trigger: str, since: str
-    ) -> list[dict[str, Any]]:
-        """Return nudges for user created after ``since`` (ISO timestamp).
-
-        The ``trigger`` arg is kept for call-site compatibility but is no
-        longer filtered on — the ``trigger`` column was dropped in the
-        Unit 3 migration.
-        """
-        result = (
-            self._sb.table("advisor_nudges")
-            .select("id")
-            .eq("user_id", user_id)
-            .gt("created_at", since)
-            .limit(1)
-            .execute()
-        )
-        return result.data or []
-
     def find_duplicate_body(
         self, user_id: str, body_hash: str, since: datetime
     ) -> bool:
@@ -346,8 +315,8 @@ class AdvisorRepository:
             self._sb.table("jobs")
             .select("id")
             .eq("user_id", user_id)
-            .eq("source_type", "glowup_analysis")
-            .eq("status", "completed")
+            .eq("source_type", _SOURCE_TYPE_GLOWUP_ANALYSIS)
+            .eq("status", _JOB_STATUS_COMPLETED)
             .order("updated_at", desc=True)
             .limit(1)
             .execute()

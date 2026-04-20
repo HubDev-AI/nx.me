@@ -240,13 +240,30 @@ async def get_nudges(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
+    except Exception as exc:
+        logger.error(
+            "Failed to fetch advisor nudges for user %s: %s",
+            user_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": {
+                    "code": "ADVISOR_ERROR",
+                    "message": "Failed to load nudges",
+                }
+            },
+        ) from exc
 
     return NudgeFeedResponse(
         nudges=[
             NudgeResponse(
                 id=n["id"],
-                trigger=n["trigger"],
-                content=n["content"],
+                body=n["body"],
+                next_step_label=n["next_step_label"],
+                next_step_seed=n["next_step_seed"],
                 read_at=n.get("read_at"),
                 created_at=n["created_at"],
             )
@@ -286,7 +303,7 @@ async def update_nudge(
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Nudge not found",
+            detail={"error": {"code": "nudge_not_found", "message": "Nudge not found"}},
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -308,7 +325,7 @@ async def mark_nudge_read(
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Nudge not found",
+            detail={"error": {"code": "nudge_not_found", "message": "Nudge not found"}},
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -341,11 +358,17 @@ async def get_nudge_next_step(
 
     user_id = UUID(claims["sub"])
 
-    # Rate limit: 60 calls per 60 s per user (INCR-first, atomic).
+    # Rate limit: 60 calls per 60 s per user. INCR + EXPIRE(NX) dispatched as
+    # a single pipeline so a process crash between the two commands cannot
+    # leave the key without a TTL (which would otherwise lock the user out
+    # permanently). EXPIRE NX ensures the TTL is only set when none exists,
+    # preserving fixed-window (not sliding-window) semantics.
     rl_key = _NEXT_STEP_RL_KEY_TEMPLATE.format(user_id=user_id)
-    new_count: int = await redis_client.incr(rl_key)
-    if new_count == 1:
-        await redis_client.expire(rl_key, _settings.ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS)
+    pipe = redis_client.pipeline(transaction=False)
+    pipe.incr(rl_key)
+    pipe.expire(rl_key, _settings.ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    new_count: int = int(results[0])
     if new_count > _settings.ADVISOR_NEXT_STEP_RL_LIMIT:
         logger.warning(
             "next-step rate limit hit for user=%s count=%d", user_id, new_count

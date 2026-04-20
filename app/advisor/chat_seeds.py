@@ -38,6 +38,7 @@ from app.advisor.mcp.tools_glowup import _handle_get_latest_glowup
 from app.advisor.payload_logger import log_llm_response
 from app.advisor.persona import SOUL_MD
 from app.config import settings
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
@@ -66,8 +67,14 @@ SEEDS_COUNT = 3
 # 3 × (≤24 + ≤140) comfortably fits in 256 tokens with JSON overhead.
 MAX_TOKENS_CHAT_SEEDS = 256
 
-# Time to wait before re-checking cache when lock is held by another coroutine.
-_LOCK_WAIT_SECONDS = 0.5
+# Time to wait before re-checking cache when lock is held by another
+# coroutine. The product of _LOCK_WAIT_SECONDS * _LOCK_WAIT_MAX_ATTEMPTS
+# should comfortably cover typical Haiku latency (~2-3 s).
+_LOCK_WAIT_SECONDS = 0.25
+# Max attempts to poll the cache while another coroutine holds the lock.
+# Bounded so a stuck holder cannot make the waiter block forever — after
+# _LOCK_WAIT_MAX_ATTEMPTS misses the waiter gives up and returns fallback.
+_LOCK_WAIT_MAX_ATTEMPTS = 20
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +166,7 @@ async def build_chat_seeds(
     # Step 1: no completed glow-up → return fallback immediately
     # ------------------------------------------------------------------
     try:
-        glowup_id = advisor_repo.get_latest_completed_glowup_id(user_id)
+        glowup_id = await run_sync(advisor_repo.get_latest_completed_glowup_id, user_id)
     except Exception:
         logger.warning(
             "chat_seeds: failed to resolve glowup_id for user=%s — returning fallback",
@@ -206,6 +213,25 @@ async def build_chat_seeds(
         cooldown_active = None
 
     if cooldown_active is not None:
+        # Cooldown alone does NOT guarantee a parse failure — a concurrent
+        # single-flight holder sets the cooldown BEFORE calling Haiku, so
+        # a waiter that reaches Step 3 between the holder's cooldown SET
+        # and cache SET would incorrectly fall back. Poll the cache first
+        # so the second caller reliably picks up the freshly-cached seeds.
+        for _attempt in range(_LOCK_WAIT_MAX_ATTEMPTS):
+            try:
+                cached_during_cooldown = await redis.get(cache_key)
+            except Exception:
+                cached_during_cooldown = None
+            if cached_during_cooldown is not None:
+                try:
+                    seeds_data = json.loads(cached_during_cooldown)
+                    return ChatSeedsResponse(
+                        seeds=[ChatSeed(**s) for s in seeds_data]
+                    )
+                except Exception:
+                    break
+            await asyncio.sleep(_LOCK_WAIT_SECONDS)
         logger.debug("chat_seeds: cooldown active for user=%s — fallback", user_id)
         return _fallback()
 
@@ -224,19 +250,25 @@ async def build_chat_seeds(
         logger.warning("chat_seeds: redis.set(lock) failed — continuing", exc_info=True)
 
     if not lock_acquired:
-        # Another coroutine is generating. Wait then re-check cache.
-        await asyncio.sleep(_LOCK_WAIT_SECONDS)
-        try:
-            cached_after_wait = await redis.get(cache_key)
-        except Exception:
-            cached_after_wait = None
-
-        if cached_after_wait is not None:
+        # Another coroutine is generating. Poll the cache up to
+        # _LOCK_WAIT_MAX_ATTEMPTS times so the second caller reliably
+        # picks up the fresh seeds rather than falling back to the static
+        # list while the first caller is still mid-Haiku.
+        for _attempt in range(_LOCK_WAIT_MAX_ATTEMPTS):
+            await asyncio.sleep(_LOCK_WAIT_SECONDS)
+            try:
+                cached_after_wait = await redis.get(cache_key)
+            except Exception:
+                cached_after_wait = None
+            if cached_after_wait is None:
+                continue
             try:
                 seeds_data = json.loads(cached_after_wait)
                 return ChatSeedsResponse(seeds=[ChatSeed(**s) for s in seeds_data])
             except Exception:
-                pass
+                # Cache parse failed — treat as unrecoverable for the
+                # waiter; the holder already owns retry semantics.
+                break
         return _fallback()
 
     # Lock acquired — run Haiku generation.
@@ -326,7 +358,7 @@ async def _generate_seeds(
     # Step 7: fetch style_profile
     # ------------------------------------------------------------------
     try:
-        profile_row = advisor_repo.get_style_profile(user_id)
+        profile_row = await run_sync(advisor_repo.get_style_profile, user_id)
         profile_content = (profile_row or {}).get("content") or None
     except Exception:
         logger.warning(

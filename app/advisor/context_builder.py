@@ -133,12 +133,13 @@ def format_nudges_block(nudges: list[dict[str, Any]] | None) -> str:
     """Render a nudges list as the 4th system block text.
 
     Each nudge becomes one line:
-        ``nudge (<trigger>): <body>``
+        ``nudge: <body>``
 
+    After the v2 actionable-nudges rewrite (migration 0062) there is only
+    one nudge trigger (``post_glowup``), so the trigger prefix was dropped.
     Newlines inside ``body`` are replaced with spaces so a single block
-    stays a single logical line per nudge — preserves the overall block
-    structure when the LLM parses it as role=system text. Empty / missing
-    fields cause the nudge to be skipped rather than rendered with gaps.
+    stays a single logical line per nudge. Empty / missing fields cause the
+    nudge to be skipped rather than rendered with gaps.
 
     Returns ``""`` when no renderable nudges remain.
     """
@@ -149,17 +150,13 @@ def format_nudges_block(nudges: list[dict[str, Any]] | None) -> str:
     for nudge in nudges:
         if not isinstance(nudge, dict):
             continue
-        body = nudge.get("content") or nudge.get("body") or ""
+        body = nudge.get("body") or ""
         if not isinstance(body, str):
             body = str(body)
         body = body.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
         if not body:
             continue
-        trigger = str(nudge.get("trigger", "")).strip().lower()
-        if trigger:
-            lines.append(f"nudge ({trigger}): {body}")
-        else:
-            lines.append(f"nudge: {body}")
+        lines.append(f"nudge: {body}")
     return "\n".join(lines)
 
 

@@ -37,7 +37,7 @@ IMAGE_TEXT_GUARD = (
 )
 
 
-def _render_profile_block(profile: dict[str, Any] | None) -> str:
+def render_profile_block(profile: dict[str, Any] | None) -> str:
     """Render a ``style_profile.content`` dict into the same compact
     multi-line fragment the chat ``user_data`` block uses.
 
@@ -124,7 +124,7 @@ def build_vision_nudge_prompt(
     ``{"body": "...", "next_step": {"label": "...", "seed": "..."}}``
     with nothing else.
     """
-    profile_block = _render_profile_block(profile)
+    profile_block = render_profile_block(profile)
     recent_block = _render_recent_nudges_block(recent_nudges)
     return (
         "Stable facts about this user:\n"

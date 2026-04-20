@@ -17,7 +17,17 @@ Shape invariants (validated by tests/test_advisor_chat_seeds.py):
 
 from __future__ import annotations
 
-FALLBACK_SEEDS: tuple[dict, ...] = (
+from typing import TypedDict
+
+
+class _FallbackSeed(TypedDict):
+    """Shape of a single fallback seed — mirrors the ChatSeed Pydantic model."""
+
+    label: str
+    text: str
+
+
+FALLBACK_SEEDS: tuple[_FallbackSeed, ...] = (
     {
         "label": "Where to start?",
         "text": "what's one quick change I could try before my next glow-up?",
