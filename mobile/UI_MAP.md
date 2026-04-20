@@ -241,37 +241,6 @@ Header: BrandLabel (standard tab header)
 
 ---
 
-## 8. Post Detail — `/post/[postId]`
-Header: None (custom floating header)
-
-### Floating Header (over image)
-- [ ] Close (X) button | Style: OVERLAY_LIGHT circle | Top-right
-- [ ] Share button | Style: OVERLAY_LIGHT circle
-- [ ] Menu (3-dot) button | Style: OVERLAY_LIGHT circle
-
-### Before Image
-- [ ] Full-width image
-- [ ] "BEFORE" label | Font: bodySemiBold 10px | Style: OVERLAY_LIGHT badge
-
-### Divider
-- [ ] 2px gap | Color: bg
-
-### After Image
-- [ ] Full-width image
-- [ ] "AFTER" label | Font: bodySemiBold 10px | Style: accent badge
-
-### Footer
-- [ ] Reaction button (heart + count) | Animated
-- [ ] Comment button (bubble + count) | Opens CommentsSheet
-- [ ] Timestamp | Right-aligned
-- [ ] Caption text (if present) | Font: body 15px
-
-### Modals
-- [ ] CommentsSheet
-- [ ] DropdownMenu (Block/Report/Delete)
-
----
-
 ## 9. Upload — `/upload`
 Header: "Upload" navigation title
 
@@ -387,11 +356,28 @@ Header: "Blocked Users" title
 
 ---
 
-## 14. Public Card — `/card/[username]`
-Header: "@username" title
+## 14. Post Detail / Public Card — `/card/[username]`
+Header: Custom row — HeaderBackButton + "@username" + 3-dots (ellipsis)
+
+In-app feed taps (image or header) navigate here with extra `postId` + `userId`
+params so the 3-dots menu can action the post. Deep-link visitors hit the same
+screen with just `username`; menu items gate on available params.
+
+### Custom Header
+- [ ] HeaderBackButton (chevron) | Left
+- [ ] "@username" title | Centered
+- [ ] 3-dots ellipsis | Right — opens DropdownMenu
+
+### 3-dots DropdownMenu
+- [ ] Share (always) — native share sheet with hash URL
+- [ ] Copy Link (card loaded) — copies card-web hash URL to clipboard
+- [ ] Open in Browser (card loaded) — opens card-web hash URL in OS browser
+- [ ] Delete Post (owner + postId) | destructive
+- [ ] Block User (non-owner + userId)
+- [ ] Report Post (non-owner + postId) | destructive
 
 ### Before/After Reveal
-- [ ] BeforeAfterReveal component with glow ring
+- [ ] BeforeAfterSlider component
 
 ### Stats Row
 - [ ] Heart + count | Style: glass pill
@@ -399,6 +385,9 @@ Header: "@username" title
 
 ### Recommendation Pills
 - [ ] Horizontal pill badges | Style: glass outline
+
+### Overlays
+- [ ] Deleting overlay (spinner + "Deleting…") when delete in flight
 
 ---
 

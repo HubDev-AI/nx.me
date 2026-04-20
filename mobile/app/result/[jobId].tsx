@@ -615,9 +615,9 @@ export default function ResultScreen() {
   return (
     <View style={styles.screen}>
       {/* Root layout is <Slot/>, not <Stack/>, so this Stack.Screen is
-          an inert defensive marker — matches post/[postId].tsx:273.
-          The visible header is the custom row below, which mirrors the
-          Upload-screen header (Heading size="md", manual top inset). */}
+          an inert defensive marker. The visible header is the custom row
+          below, which mirrors the Upload-screen header (Heading size="md",
+          manual top inset). */}
       <Stack.Screen options={{ headerShown: false }} />
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <HeaderBackButton onPress={handleBack} />

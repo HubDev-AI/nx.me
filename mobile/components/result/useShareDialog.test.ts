@@ -442,17 +442,20 @@ describe("useShareDialog — handleShare (R5/R8)", () => {
 // ---------- handlePublish ----------
 
 describe("useShareDialog — handlePublish", () => {
-  it("success: POSTs /v1/posts, fires onPublishSuccess(post_id, share_hash), closes dialog, resets flag", async () => {
+  it("unsaved job: blocking auto-save runs first, then POSTs /v1/posts, fires onPublishSuccess + onSaveSuccess, closes dialog", async () => {
     apiFetch.mockResolvedValue({
       post_id: "post-xyz",
       share_hash: "abc123",
     });
-    const { result, onPublishSuccess, onDialogClose } = setup();
+    const { result, saveJobFn, onSaveSuccess, onPublishSuccess, onDialogClose } = setup();
 
     await act(async () => {
       await result.current.handlePublish();
     });
 
+    // Blocking auto-save invariant: saveJobFn MUST fire before apiFetch.
+    expect(saveJobFn).toHaveBeenCalledWith("job-1");
+    expect(onSaveSuccess).toHaveBeenCalledWith("2026-04-18T12:00:00Z");
     expect(apiFetch).toHaveBeenCalledWith(
       "/v1/posts",
       expect.objectContaining({
@@ -462,13 +465,54 @@ describe("useShareDialog — handlePublish", () => {
     );
     expect(onPublishSuccess).toHaveBeenCalledWith("post-xyz", "abc123");
     expect(onDialogClose).toHaveBeenCalledTimes(1);
+    expect(result.current.saveState).toBe("saved");
     expect(result.current.isPublishing).toBe(false);
     expect(result.current.publishError).toBeNull();
   });
 
-  it("4xx: sets publishError, resets isPublishing, keeps dialog open", async () => {
+  it("already-saved job: skips auto-save and POSTs /v1/posts directly", async () => {
+    apiFetch.mockResolvedValue({
+      post_id: "post-xyz",
+      share_hash: "abc123",
+    });
+    const { result, saveJobFn, onPublishSuccess } = setup({
+      job: makeJob({ saved_at: "2026-04-17T00:00:00Z" }),
+    });
+
+    await act(async () => {
+      await result.current.handlePublish();
+    });
+
+    expect(saveJobFn).not.toHaveBeenCalled();
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/v1/posts",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(onPublishSuccess).toHaveBeenCalledWith("post-xyz", "abc123");
+  });
+
+  it("save failure aborts: no POST /v1/posts, publishError set, dialog stays open", async () => {
+    const saveJobFnImpl = jest.fn(async (_id: string) => {
+      throw new Error("save-failed");
+    });
+    const { result, onDialogClose, onPublishSuccess } = setup({ saveJobFnImpl });
+
+    await act(async () => {
+      await result.current.handlePublish();
+    });
+
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(result.current.publishError).toBe("save-failed");
+    expect(result.current.saveState).toBe("pending");
+    expect(onPublishSuccess).not.toHaveBeenCalled();
+    expect(onDialogClose).not.toHaveBeenCalled();
+  });
+
+  it("4xx on POST /v1/posts: sets publishError, resets isPublishing, keeps dialog open", async () => {
     apiFetch.mockRejectedValue(new Error("already published"));
-    const { result, onDialogClose, onPublishSuccess } = setup();
+    const { result, onDialogClose, onPublishSuccess } = setup({
+      job: makeJob({ saved_at: "2026-04-17T00:00:00Z" }),
+    });
 
     await act(async () => {
       await result.current.handlePublish();
@@ -489,7 +533,10 @@ describe("useShareDialog — handlePublish", () => {
           resolveFirst = resolve;
         }),
     );
-    const { result } = setup();
+    // Pre-saved job → skip auto-save so apiFetch is the first hop.
+    const { result } = setup({
+      job: makeJob({ saved_at: "2026-04-17T00:00:00Z" }),
+    });
 
     await act(async () => {
       void result.current.handlePublish();
@@ -514,7 +561,9 @@ describe("useShareDialog — handlePublish", () => {
 
   it("resetPublishError clears a prior error", async () => {
     apiFetch.mockRejectedValue(new Error("boom"));
-    const { result } = setup();
+    const { result } = setup({
+      job: makeJob({ saved_at: "2026-04-17T00:00:00Z" }),
+    });
 
     await act(async () => {
       await result.current.handlePublish();
@@ -535,6 +584,41 @@ describe("useShareDialog — handlePublish", () => {
     });
 
     expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("aborts when a standalone Save is already in flight — no double POST /save", async () => {
+    // Never-resolving save so saveState stays "saving" for the publish attempt.
+    let resolveSave: ((value: { saved_at: string }) => void) | null = null;
+    const saveJobFnImpl = jest.fn(
+      () =>
+        new Promise<{ saved_at: string }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const { result, saveJobFn } = setup({ saveJobFnImpl });
+
+    // Kick off the standalone Save first — leaves saveState === "saving".
+    await act(async () => {
+      void result.current.handleSave();
+      await Promise.resolve();
+    });
+    expect(result.current.saveState).toBe("saving");
+    expect(saveJobFn).toHaveBeenCalledTimes(1);
+
+    // Publish while Save is in flight — must abort instead of racing a
+    // second saveJobFn call.
+    await act(async () => {
+      await result.current.handlePublish();
+    });
+    expect(saveJobFn).toHaveBeenCalledTimes(1);
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(result.current.publishError).toBe("Saving… try again in a moment.");
+
+    // Cleanup — let the first save finish so act queue drains.
+    await act(async () => {
+      resolveSave?.({ saved_at: "2026-04-20T00:00:00Z" });
+      await Promise.resolve();
+    });
   });
 });
 
