@@ -82,6 +82,29 @@ Opens on http://localhost:3006. Copy `card-web/.env.local.example` to `card-web/
 | `make card-web-start` | Next dev server on port 3006 (auto-installs deps on first run) |
 | `make card-web-lint` | `next lint` on web code |
 
+### Runtime kill-switches
+
+Pause/resume background cron jobs via the `app_kill_switches` table —
+takes effect on the next fire, no redeploy. Backed by
+`scripts/kill-switch.sh` + `psql` against `$DATABASE_URL`.
+
+| Command | What it does |
+|---------|-------------|
+| `make kill-switch-status` | Show current state of the default switch (`weekly_free_grant`) |
+| `make kill-switch-status KEY=<name>` | Show state of a specific switch |
+| `make kill-switch-pause [KEY=<name>] [NOTE="reason"]` | Disable the switch |
+| `make kill-switch-resume [KEY=<name>] [NOTE="reason"]` | Re-enable the switch |
+
+Known keys:
+
+| Key | Gates |
+|-----|-------|
+| `weekly_free_grant` | Monday 02:30 UTC weekly free-credit grant cron |
+
+Missing row or DB lookup error ⇒ fail-open (treated as enabled) — a
+forgotten seed never silently skips a production job. See
+`docs/runbooks/payments.md` §5 for the full story.
+
 ## Configuration
 
 On first `make up`, a `.env` is generated with local Supabase defaults and all adapters mocked (no external API calls). Edit `.env` to plug in real API keys for fal.ai, Stripe, AWS, or Anthropic.

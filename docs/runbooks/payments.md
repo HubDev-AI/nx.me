@@ -147,22 +147,32 @@ The cron is gated by a DB kill-switch row in `app_kill_switches`. The
 worker reads the flag at every fire — flipping it takes effect on the
 next Monday 02:30 UTC tick (no restart needed).
 
+Preferred — wrapped make targets (source `app/.env` automatically):
+
+```bash
+make kill-switch-status                                   # show current state
+make kill-switch-pause  NOTE="incident #42"               # disable
+make kill-switch-resume NOTE="post-incident"              # re-enable
+```
+
+The default `KEY=weekly_free_grant`; override `KEY=<other>` for future
+switches.
+
+Raw SQL (e.g. from prod-only psql access):
+
 ```sql
--- Pause
 UPDATE app_kill_switches
    SET enabled = FALSE,
        note = 'paused YYYY-MM-DD — <reason>',
        updated_at = now()
  WHERE key = 'weekly_free_grant';
 
--- Resume
 UPDATE app_kill_switches
    SET enabled = TRUE,
        note = 'resumed YYYY-MM-DD',
        updated_at = now()
  WHERE key = 'weekly_free_grant';
 
--- Current state
 SELECT key, enabled, note, updated_at
   FROM app_kill_switches
  WHERE key = 'weekly_free_grant';
