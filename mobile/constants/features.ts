@@ -15,6 +15,18 @@ export interface FeatureFlags {
   share_enabled: boolean;
   onboarding_enabled: boolean;
   advisor_enabled: boolean;
+  /**
+   * Reflects the backend `app_kill_switches.weekly_free_grant.enabled`
+   * row (plan 2026-04-20-002 Unit 3). TRUE when the weekly free-credit
+   * cron is live — paywall / empty-state copy may promise "+1 free
+   * glow-up every week". FALSE (or missing) means the cron is paused;
+   * the promise must be hidden so we do not mislead users.
+   *
+   * Fail-CLOSED on mobile: if the field is absent from the response
+   * (older backend rollout), treat as FALSE per the no-env-fallbacks
+   * rule — the UI never promises a refill we cannot deliver.
+   */
+  weekly_free_grant_enabled: boolean;
 }
 
 export const PROD_DEFAULT_FEATURES: FeatureFlags = {
@@ -22,6 +34,12 @@ export const PROD_DEFAULT_FEATURES: FeatureFlags = {
   share_enabled: true,
   onboarding_enabled: true,
   advisor_enabled: true,
+  // Defaulted to TRUE for the pre-fetch window (boot latency): the flag is
+  // backed by a seed row with `enabled = true`, and a brief pre-fetch
+  // promise of "+1 glow-up / week" is acceptable. Once the response lands
+  // the real value (potentially FALSE) takes over before the paywall
+  // actually renders.
+  weekly_free_grant_enabled: true,
 };
 
 export const FEATURES_ENDPOINT = "/v1/features";

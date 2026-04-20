@@ -35,9 +35,17 @@ class TestGetFeatures:
             "share_enabled",
             "onboarding_enabled",
             "advisor_enabled",
+            "weekly_free_grant_enabled",
         ):
             assert hasattr(features, flag), f"missing {flag}"
             assert isinstance(getattr(features, flag), bool)
+
+    def test_weekly_free_grant_defaults_enabled(self):
+        """Synchronous get_features() defaults to True (fail-open) so callers
+        that do not need the live kill-switch value still produce valid
+        output without a DB round-trip."""
+        features = get_features()
+        assert features.weekly_free_grant_enabled is True
 
     def test_reads_advisor_from_legacy_setting(self):
         """advisor_enabled maps to the pre-existing ADVISOR_ENABLED setting."""
@@ -46,6 +54,41 @@ class TestGetFeatures:
         with patch.object(real_settings, "ADVISOR_ENABLED", False):
             features = get_features()
         assert features.advisor_enabled is False
+
+
+class TestGetFeaturesAsync:
+    """get_features_async() reflects the live app_kill_switches row."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_switch_enabled(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from app import features as features_module
+
+        async def _fake(_sb, key):
+            assert key == "weekly_free_grant"
+            return True
+
+        from app import runtime_flags
+
+        monkeypatch.setattr(runtime_flags, "is_kill_switch_enabled", _fake)
+        result = await features_module.get_features_async(AsyncMock())
+        assert result.weekly_free_grant_enabled is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_switch_disabled(self, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        from app import features as features_module
+
+        async def _fake(_sb, _key):
+            return False
+
+        from app import runtime_flags
+
+        monkeypatch.setattr(runtime_flags, "is_kill_switch_enabled", _fake)
+        result = await features_module.get_features_async(AsyncMock())
+        assert result.weekly_free_grant_enabled is False
 
 
 class TestIsEnabled:
