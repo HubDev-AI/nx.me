@@ -280,7 +280,7 @@ def memories_client(app_under_test):
     from fastapi.testclient import TestClient
 
     from app.api.advisor import get_advisor_service
-    from app.api.deps import get_user_or_guest
+    from app.api.deps import get_current_user
     from app.api.middleware.auth import UserClaims
 
     # Stand in for app.state.* that lifespan would normally populate.
@@ -300,7 +300,7 @@ def memories_client(app_under_test):
         return_value={"memories": [], "next_cursor": None, "has_more": False}
     )
 
-    app_under_test.dependency_overrides[get_user_or_guest] = _fake_user
+    app_under_test.dependency_overrides[get_current_user] = _fake_user
     app_under_test.dependency_overrides[get_advisor_service] = lambda: fake_svc
 
     try:
@@ -312,7 +312,7 @@ def memories_client(app_under_test):
             client = TestClient(app_under_test)
             yield client, fake_svc
     finally:
-        app_under_test.dependency_overrides.pop(get_user_or_guest, None)
+        app_under_test.dependency_overrides.pop(get_current_user, None)
         app_under_test.dependency_overrides.pop(get_advisor_service, None)
         for attr in ("supabase", "redis"):
             try:

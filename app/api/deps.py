@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from app.repositories.block_repo import BlockRepository
     from app.repositories.feed_repo import FeedRepository
     from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
-    from app.repositories.guest_merge_repo import GuestMergeRepository
     from app.repositories.image_repo import ImageRepository
     from app.repositories.job_repo import JobRepository
     from app.repositories.orphaned_analyses_repo import OrphanedAnalysesRepository
@@ -172,39 +171,6 @@ async def get_current_user(
         )
 
     return claims
-
-
-async def get_user_or_guest(
-    authorization: Annotated[str | None, Header()] = None,
-    x_guest_token: Annotated[str | None, Header(alias="X-Guest-Token")] = None,
-    supabase: Client = Depends(get_supabase),
-    redis_client: aioredis.Redis = Depends(get_redis),
-) -> UserClaims:
-    """Auth dep accepting JWT or X-Guest-Token.
-
-    The token is resolved against the users.guest_session_token column — no
-    Redis lookup, no tier-1 cache yet (cold path, one lookup per request).
-
-    Falls through to normal JWT validation otherwise.
-    """
-    from app.db.guest import is_valid_guest_token_format, resolve_guest_by_token
-
-    if x_guest_token and is_valid_guest_token_format(x_guest_token):
-        guest_user_id = await run_sync(resolve_guest_by_token, supabase, x_guest_token)
-        if guest_user_id is not None:
-            return UserClaims(
-                sub=str(guest_user_id),
-                role="authenticated",
-                exp=9999999999,
-            )
-        # Fall through to JWT — avoids leaking whether the token existed.
-
-    # Fall through to normal JWT validation
-    return await get_current_user(
-        authorization=authorization,
-        supabase=supabase,
-        redis_client=redis_client,
-    )
 
 
 def require_admin(
@@ -478,13 +444,6 @@ def require_app_feature(feature: str):
             )
 
     return _check
-
-
-def get_guest_merge_repo(request: Request) -> "GuestMergeRepository":
-    """Return a GuestMergeRepository wired to the app's Supabase client."""
-    from app.repositories.guest_merge_repo import GuestMergeRepository
-
-    return GuestMergeRepository(request.app.state.supabase)
 
 
 def get_stripe_customer_dlq_repo(request: Request) -> "StripeCustomerDLQRepository":

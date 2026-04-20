@@ -2,7 +2,7 @@
 
 Exercises production code in:
   - app/api/users.py (_lookup_user, models, constants, get_me)
-  - app/api/deps.py (get_current_user, get_user_or_guest)
+  - app/api/deps.py (get_current_user)
 
 Note: We import models and helpers carefully to avoid triggering FastAPI
 route registration which can fail on FastAPI 0.104 / Python 3.10.
@@ -962,12 +962,9 @@ class TestGetUserHistoryHandler:
 class TestUpdateUserProfileHandler:
     """Handler-level tests for PATCH /users/{username}.
 
-    Covers the dep-swap regression: the handler was previously wired to
-    `get_current_user` (JWT only). Guest sessions sending X-Guest-Token hit
-    the dep's 401 before reaching the handler, so display-name / username
-    edits died for anyone in guest mode. The swap to `get_user_or_guest`
-    means the guest's resolved claims reach this handler and the existing
-    owner-match (`claims["sub"] == user.id`) still gates cross-user access.
+    Covers owner-match gating: the handler is wired to `get_current_user`
+    (JWT only). The owner-match check (`claims["sub"] == user.id`) gates
+    cross-user access.
     """
 
     @staticmethod

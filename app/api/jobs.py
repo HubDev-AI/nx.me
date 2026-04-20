@@ -21,7 +21,6 @@ from pydantic import BaseModel
 
 from app.analytics import events
 from app.api.deps import (
-    get_user_or_guest,
     get_credit_ledger,
     get_current_user,
     get_image_repo,
@@ -126,7 +125,7 @@ class RefundResponse(BaseModel):
 async def get_job(
     job_id: UUID,
     request: Request,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
     post_repo: PostRepository = Depends(get_post_repo),
@@ -275,7 +274,7 @@ async def get_job(
 )
 async def save_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     job_repo: JobRepository = Depends(get_job_repo),
 ) -> SaveResponse:
     """Mark a completed generation job as saved (indefinite retention, Q12).
@@ -314,7 +313,7 @@ async def save_job(
 )
 async def cancel_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     job_repo: JobRepository = Depends(get_job_repo),
     ledger: CreditLedger = Depends(get_credit_ledger),
 ) -> CancelResponse:
@@ -493,7 +492,7 @@ async def refund_job(
 @router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_job(
     job_id: UUID,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     redis_client: aioredis.Redis = Depends(get_redis),
     job_repo: JobRepository = Depends(get_job_repo),
     image_repo: ImageRepository = Depends(get_image_repo),

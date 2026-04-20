@@ -38,7 +38,7 @@ from app.advisor.service import AdvisorService
 from app.api.deps import (
     get_redis,
     get_supabase,
-    get_user_or_guest,
+    get_current_user,
     require_app_feature,
     require_feature,
 )
@@ -87,7 +87,7 @@ def get_advisor_service(
 async def send_advisor_message(
     body: MessageRequest,
     _: None = Depends(require_feature("advisor_chat")),
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Send a message to Ada (premium tier only).
@@ -162,7 +162,7 @@ async def get_advisor_messages(
         None, description="Cursor ({created_at}|{id} composite)"
     ),
     limit: int = Query(50, ge=1, le=100),
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> ConversationHistoryPageResponse:
     """Return the active conversation history for the current user (paginated)."""
@@ -223,7 +223,7 @@ async def get_nudges(
     unread: bool = Query(
         False, description="When true, return only unread nudges (read_at IS NULL)"
     ),
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> NudgeFeedResponse:
     """Return the nudge feed for the current user (all tiers, paginated)."""
@@ -275,7 +275,7 @@ async def update_nudge(
     # the mark-as-read path must accept guest tokens. The repo's
     # mark_nudge_read already scopes by (user_id, nudge_id) so there is
     # no cross-user exposure.
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Update a nudge. Currently supports marking as read (idempotent)."""
@@ -297,7 +297,7 @@ async def update_nudge(
 )
 async def mark_nudge_read(
     nudge_id: UUID,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Deprecated alias — use PATCH /advisor/nudges/{nudge_id} instead."""
@@ -321,7 +321,7 @@ async def mark_nudge_read(
 )
 async def add_memory(
     body: MemoryCreateRequest,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Add a user-authored memory (goal or note). All tiers.
@@ -378,7 +378,7 @@ async def list_memories(
     type: Literal["goal", "user_note"] | None = Query(
         None, description="Filter by memory type (goal or user_note only)"
     ),
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> MemoryListPageResponse:
     """List user-authored memories (paginated). All tiers.
@@ -430,7 +430,7 @@ async def list_memories(
 )
 async def delete_memory(
     memory_id: UUID,
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:
     """Delete a user-owned memory. All tiers."""

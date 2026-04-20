@@ -16,7 +16,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.deps import (
-    get_user_or_guest,
     get_current_user,
     get_entitlement_service,
     get_payment_adapter,
@@ -86,7 +85,7 @@ async def _build_purchase_options(payment: PaymentPort) -> PurchaseOptions:
 
 @router.get("/entitlement")
 async def get_entitlement(
-    claims: UserClaims = Depends(get_user_or_guest),
+    claims: UserClaims = Depends(get_current_user),
     svc: EntitlementService = Depends(get_entitlement_service),
     payment: PaymentPort = Depends(get_payment_adapter),
 ) -> dict:

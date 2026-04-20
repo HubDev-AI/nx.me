@@ -18,14 +18,13 @@ import pytest
 
 from app.api.deps import (
     get_current_user,
-    get_user_or_guest,
     require_admin,
 )
 
 
 # ---------------------------------------------------------------------------
 # Public-route allowlist — paths intentionally reachable without auth.
-# R3 skips these when verifying every route has an auth dep.
+# The test skips these when verifying every route has an auth dep.
 # Patterns use FastAPI path-template syntax with `{param}` placeholders.
 # ---------------------------------------------------------------------------
 
@@ -44,27 +43,13 @@ PUBLIC_ROUTE_ALLOWLIST: frozenset[str] = frozenset(
         "/v1/auth/email-login",
         "/v1/auth/login",
         "/v1/auth/tiktok-login",
-        "/v1/auth/guest",
         "/v1/auth/providers",
         "/v1/auth/refresh",
-        # Public profile view (no auth required by design; rate-limited).
-        "/v1/users/{username}/profile",
-        # Username availability check (used by sign-up flow before auth).
-        "/v1/users/check-username",
-        # Public feed + post read surfaces — share-link reachable.
-        "/v1/feed",
-        "/v1/posts/{post_id}/comments",
         # Public glowup card surfaces — share URLs, intentionally unauth.
         "__PREFIX__/v1/public/cards",
         "__PREFIX__/api/public/cards",
         # Provider webhooks (signed at HMAC layer, not FastAPI deps).
         "/webhooks/stripe",
-        # Reactions endpoints inline-validate the X-Guest-Token via
-        # validate_guest_token() in social.py instead of using
-        # get_user_or_guest. They live on the allowlist because R3 walks
-        # the FastAPI dependency tree, which cannot see inline branching.
-        "/v1/posts/{post_id}/reactions",
-        "/v1/posts/{post_id}/react",
     }
 )
 
@@ -103,13 +88,11 @@ def _collect_dependency_callables(route: APIRoute) -> set[object]:
     return seen
 
 
-_APPROVED_AUTH_DEPS: frozenset[object] = frozenset(
-    {get_current_user, get_user_or_guest, require_admin}
-)
+_APPROVED_AUTH_DEPS: frozenset[object] = frozenset({get_current_user, require_admin})
 
 
 # ---------------------------------------------------------------------------
-# R3 — Structural test: routes must use an approved auth dep
+# Structural test: routes must use an approved auth dep
 # ---------------------------------------------------------------------------
 
 
@@ -123,14 +106,9 @@ def app_under_test() -> FastAPI:
 
 class TestRoutesUseApprovedAuthDep:
     """Every authenticated route's dependency tree includes one of
-    get_current_user / get_user_or_guest / require_admin, OR its path is on
-    the public allowlist.
+    get_current_user / require_admin, OR its path is on the public allowlist.
 
-    The test catches unguarded routes (the dangerous direction). The
-    inverse — a path on the public allowlist that also has an auth dep on
-    some HTTP method — is benign (e.g., GET /posts/{id}/comments is
-    public but POST is auth-gated). We deliberately don't flag that
-    asymmetry; it's correct by design.
+    The test catches unguarded routes (the dangerous direction).
     """
 
     def test_at_least_one_protected_route_exists(self, app_under_test: FastAPI) -> None:

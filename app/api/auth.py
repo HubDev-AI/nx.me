@@ -39,7 +39,6 @@ from app.api.deps import (
     get_client_ip,
     get_credit_ledger,
     get_current_user,
-    get_guest_merge_repo,
     get_image_repo,
     get_orphaned_storage_repo,
     get_payment_adapter,
@@ -52,7 +51,6 @@ from app.entitlement.ledger import CreditLedger
 from app.api.middleware.auth import UserClaims
 from app.config import settings
 from app.db.async_helpers import run_sync
-from app.repositories.guest_merge_repo import GuestMergeRepository
 from app.repositories.image_repo import ImageRepository
 from app.repositories.orphaned_storage_repo import OrphanedStorageKeyRepository
 from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
@@ -137,39 +135,6 @@ async def get_providers() -> ProvidersResponse:
 
 
 # ---------------------------------------------------------------------------
-# POST /auth/guest — create ephemeral guest user (only when auth is off)
-# ---------------------------------------------------------------------------
-
-
-class GuestResponse(BaseModel):
-    user_id: str
-    guest_token: str
-
-
-@router.post(
-    "/guest", response_model=GuestResponse, status_code=status.HTTP_201_CREATED
-)
-async def create_guest(
-    x_install_uuid: Annotated[str | None, Header()] = None,
-    supabase: Client = Depends(get_supabase),
-) -> GuestResponse:
-    """Create a guest user session.
-
-    Returns a token the mobile client persists in SecureStore and sends via
-    X-Guest-Token.
-
-    When X-Install-UUID is present, the guest row records a deterministic
-    hash of it so a later merge_guest_ledger can verify device ownership
-    (security review HIGH — prevents pack-drain via guest-token theft).
-    """
-    from app.db.async_helpers import run_sync
-    from app.db.guest import create_guest_user
-
-    user_id, token = await run_sync(create_guest_user, supabase, x_install_uuid)
-    return GuestResponse(user_id=str(user_id), guest_token=token)
-
-
-# ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
 
@@ -180,7 +145,6 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_]+$")
     display_name: str = Field(min_length=1, max_length=50)
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
-    guest_session_token: str | None = None
 
     @field_validator("display_name")
     @classmethod
@@ -216,7 +180,6 @@ async def register(
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
-    guest_merge_repo: GuestMergeRepository = Depends(get_guest_merge_repo),
 ) -> RegisterResponse:
     """Register a new account with email + password.
 
@@ -311,7 +274,6 @@ async def register(
         "display_name": body.display_name,
         "email": str(body.email),
         "email_verified": True,  # auto-confirmed via admin API
-        "guest_session_token": body.guest_session_token,
     }
     if is_minor is not None:
         user_row["is_minor"] = is_minor
@@ -334,19 +296,6 @@ async def register(
 
     # Trial credit grant removed — signup grants are handled by Unit 9
     # (fingerprint-based signup grant via ARQ job). No trial credits here.
-
-    # --- Guest ledger merge (Unit 10) ------------------------------------
-    # If the client carried a guest session token, merge that guest's
-    # ledger into the new account BEFORE the signup grant (Unit 9) runs
-    # so the 2x-cap accounting is correct.
-    if body.guest_session_token:
-        await _merge_guest_ledger(
-            body.guest_session_token,
-            user_id,
-            x_install_uuid,
-            supabase,
-            guest_merge_repo,
-        )
 
     # --- Signup grant (Unit 9) -------------------------------------------
     # Fire after merge so the 2x-cap accounting in the RPC is correct.
@@ -527,100 +476,6 @@ def _handle_supabase_auth_error(exc: Exception) -> NoReturn:
     )
 
 
-async def _merge_guest_ledger(
-    guest_session_token: str,
-    new_user_id: str,
-    x_install_uuid: str | None,
-    supabase: Client,
-    guest_merge_repo: GuestMergeRepository,
-) -> None:
-    """Resolve the guest token and invoke merge_guest_ledger RPC.
-
-    Raises HTTP 400 on invalid token, HTTP 403 on install-UUID mismatch or
-    forbidden, HTTP 409 on already-merged guest.  Other RPC errors bubble
-    as HTTP 500.
-
-    Unit 9 (signup_grant) MUST run after this helper so the 2x cap uses
-    the correct signup_grant_milli value.
-    """
-    from app.db.guest import is_valid_guest_token_format, resolve_guest_by_token
-    from app.entitlement.fingerprint import (
-        compute_deterministic_hash,
-        get_primary_secret,
-    )
-
-    if not is_valid_guest_token_format(guest_session_token):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid guest_session_token format.",
-        )
-
-    guest_user_id = await run_sync(
-        resolve_guest_by_token, supabase, guest_session_token
-    )
-    if guest_user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Guest session not found or already converted.",
-        )
-
-    # Compute install-UUID hash for the RPC binding check.
-    install_uuid_hash: bytes | None = None
-    if x_install_uuid is not None:
-        server_secret = get_primary_secret()
-        install_uuid_hash = compute_deterministic_hash(x_install_uuid, server_secret)
-
-    try:
-        await run_sync(
-            guest_merge_repo.merge,
-            guest_user_id,
-            UUID(new_user_id),
-            settings.SIGNUP_GRANT_MILLI,
-            install_uuid_hash,
-        )
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "install_uuid_mismatch" in msg or "42501" in msg or "forbidden" in msg:
-            logger.warning(
-                "Guest merge forbidden: install-UUID mismatch or cross-user attempt "
-                "for guest=%s new_user=%s",
-                guest_user_id,
-                new_user_id,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "error": {
-                        "code": "GUEST_MERGE_FORBIDDEN",
-                        "message": "Guest merge rejected: device mismatch.",
-                    }
-                },
-            ) from exc
-        if "already_merged" in msg:
-            logger.warning(
-                "Guest merge attempted on already-merged guest=%s", guest_user_id
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "error": {
-                        "code": "GUEST_ALREADY_MERGED",
-                        "message": "This guest session has already been merged.",
-                    }
-                },
-            ) from exc
-        logger.error(
-            "merge_guest_ledger failed for guest=%s new_user=%s: %s",
-            guest_user_id,
-            new_user_id,
-            exc,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Guest ledger merge failed.",
-        ) from exc
-
-
 async def _apply_signup_grant(
     supabase: Client,
     user_id: str,
@@ -701,7 +556,6 @@ class LoginRequest(BaseModel):
     provider: Literal["google", "apple"]
     id_token: str = Field(min_length=1)
     nonce: str | None = None  # required by Apple; optional for Google
-    guest_session_token: str | None = None  # Unit 10: guest ledger merge on login
 
 
 class LoginResponse(BaseModel):
@@ -749,7 +603,6 @@ async def social_login(
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
-    guest_merge_repo: GuestMergeRepository = Depends(get_guest_merge_repo),
 ) -> LoginResponse:
     """Authenticate via a social provider id_token (Google or Apple).
 
@@ -889,16 +742,6 @@ async def social_login(
                 detail="Failed to create user profile. Please try again.",
             ) from exc
 
-    # --- Guest ledger merge (Unit 10) ------------------------------------
-    if body.guest_session_token:
-        await _merge_guest_ledger(
-            body.guest_session_token,
-            user_id,
-            x_install_uuid,
-            supabase,
-            guest_merge_repo,
-        )
-
     # --- Signup grant (Unit 9) — new accounts only -----------------------
     # Supabase upsert (ignore_duplicates=True) gives no "was inserted" signal.
     # Use created_at recency: if the auth account was created within the last
@@ -1036,7 +879,6 @@ class TikTokLoginRequest(BaseModel):
 
     auth_code: str = Field(min_length=1)
     code_verifier: str | None = None  # Provided by Android SDK for PKCE
-    guest_session_token: str | None = None  # Unit 10: guest ledger merge on login
 
 
 @router.post("/tiktok-login", response_model=LoginResponse)
@@ -1047,7 +889,6 @@ async def tiktok_login(
     supabase: Client = Depends(get_supabase),
     r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
-    guest_merge_repo: GuestMergeRepository = Depends(get_guest_merge_repo),
 ) -> LoginResponse:
     """Authenticate via TikTok OAuth2 authorization code.
 
@@ -1145,16 +986,6 @@ async def tiktok_login(
             )
 
         session = session_response.session
-
-        # --- Guest ledger merge for existing TikTok users (Unit 10) -----
-        if body.guest_session_token:
-            await _merge_guest_ledger(
-                body.guest_session_token,
-                existing_user["id"],
-                x_install_uuid,
-                supabase,
-                guest_merge_repo,
-            )
 
         logger.info("TikTok login successful for existing user %s", existing_user["id"])
         existing_username = await _resolve_login_username(
@@ -1294,16 +1125,6 @@ async def tiktok_login(
             ) from exc
 
     # Trial credit grant removed — signup grants handled by Unit 9 (fingerprint-based ARQ job).
-
-    # --- Guest ledger merge for new TikTok users (Unit 10) ---------------
-    if body.guest_session_token:
-        await _merge_guest_ledger(
-            body.guest_session_token,
-            user_id,
-            x_install_uuid,
-            supabase,
-            guest_merge_repo,
-        )
 
     # --- Signup grant (Unit 9) -------------------------------------------
     await _apply_signup_grant(supabase, user_id, x_install_uuid)
