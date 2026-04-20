@@ -69,5 +69,5 @@ CREATE POLICY signup_grants_deny_all ON signup_grants_issued
     FOR ALL TO anon, authenticated
     USING (false) WITH CHECK (false);
 
--- DOWN
+-- DOWN:
 DROP TABLE signup_grants_issued;
