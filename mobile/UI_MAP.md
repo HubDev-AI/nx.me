@@ -355,7 +355,7 @@ Header: Back + "Subscription" title
 - [ ] Plan subtitle | Font: body
 
 ### Stats Row
-- [ ] Credit count / "Unlimited" | Large bold number
+- [ ] Credit count (glow-ups remaining) | Large bold number
 - [ ] Renewal date | Large bold
 
 ### Trial Timeline (FREE tier)
@@ -363,7 +363,7 @@ Header: Back + "Subscription" title
 
 ### Premium Upsell (non-premium)
 - [ ] "PREMIUM" badge + diamond icon
-- [ ] "Go Unlimited" title | Font: display
+- [ ] "Go Pro" title | Font: display
 - [ ] Price text | Color: accent
 - [ ] "Subscribe Now" button | Style: accent solid
 

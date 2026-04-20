@@ -85,7 +85,7 @@ export function PremiumUpsell({
           </Label>
         </View>
         <Heading size="md" style={styles.title}>
-          Go Unlimited
+          Go Pro
         </Heading>
         <Body color="secondary" style={styles.description}>
           Get {PREMIUM_BENEFITS_PROSE}

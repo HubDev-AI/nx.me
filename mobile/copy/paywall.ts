@@ -6,6 +6,11 @@
  *
  * Keep all user-facing strings here — no magic strings in UI components.
  */
+import {
+  FREE_SIGNUP_GLOWUPS,
+  PRO_MONTHLY_GLOWUPS,
+  PRO_MONTHLY_PRICE_USD,
+} from "../constants/pricing";
 
 // ---------------------------------------------------------------------------
 // Subscribe CTA
@@ -33,10 +38,9 @@ export const PAYWALL_CONTACT_SUPPORT_PRIMARY_ACTION = "contact_support";
 // ---------------------------------------------------------------------------
 
 export const PAYWALL_HEADER_SUBSCRIBE = "Ready for your glow-up?";
-// NOTE: the concrete Pro cap ("30 glow-ups a month…") lands in Unit 2 of
-// plan 2026-04-20-002 alongside the MONTHLY_ALLOTMENT_MILLI / ADA_COST_MILLI
-// constants. This line will be replaced there.
-export const PAYWALL_SUBHEADER_SUBSCRIBE = "Go Pro for unlimited looks.";
+// Unit 3 will extend this with an optional `"+ 1 free glow-up every week"`
+// clause when `app_kill_switches.weekly_free_grant.enabled = FALSE`.
+export const PAYWALL_SUBHEADER_SUBSCRIBE = `Free: ${FREE_SIGNUP_GLOWUPS} glow-ups to start. Pro: ${PRO_MONTHLY_GLOWUPS} a month for ${PRO_MONTHLY_PRICE_USD}.`;
 
 export const PAYWALL_HEADER_UPDATE_CARD = "Let's sort out your billing";
 export const PAYWALL_SUBHEADER_UPDATE_CARD =

@@ -27,8 +27,6 @@
    Do instead: for nxme.ai, do NOT set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` on the full suite; run tests with the repo's normal plugin loading, and force `APP_ENV=test` if local `.env` is development-flavored.
 3. **[2026-04-19] Mobile Jest hits Watchman permission errors in sandbox**
    Do instead: run `cd mobile && npm test -- --runInBand --watchman=false` in Codex sandbox sessions.
-2. **[2026-03-17] code-review-graph MCP sometimes unavailable but DB is**
-   Do instead: when MCP tools fail, query `.code-review-graph/graph.db` directly via `sqlite3` for nodes/risk/community.
 3. **[2026-03-20] `cryptography` absent in project venv breaks PyJWT ES256 silently**
    Do instead: verify `cryptography` is in the project venv (not system Python) for any non-HS256 JWT algo. Never use `PyJWKClient` inside async handlers — use httpx + PyJWK.
 4. **[2026-04-19] Never push directly to dev/main**
