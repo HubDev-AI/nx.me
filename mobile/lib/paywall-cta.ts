@@ -1,32 +1,26 @@
 /**
  * paywall-cta — pure function mapping entitlement state to paywall CTA.
  *
- * Implements the CTA matrix from the credits-only payments spec (Unit 12).
+ * Implements the post-pack-removal CTA matrix (plan 2026-04-20-002 Unit 1).
  * No React, no side effects — testable in isolation.
  *
  * Matrix:
- * | tier | subscription_status     | blocked_reason                        | Primary CTA      | Secondary CTA |
- * |------|-------------------------|---------------------------------------|------------------|---------------|
- * | Free | none / canceled         | insufficient_credits                  | Subscribe to Pro | Buy pack      |
- * | Free | none                    | none                                  | (no paywall)     | —             |
- * | Pro  | active                  | insufficient_credits                  | Buy pack         | —             |
- * | Pro  | grace                   | insufficient_credits                  | Update card      | Buy pack      |
- * | any  | locked                  | subscription_locked_by_dispute        | Contact support  | —             |
+ * | tier | subscription_status | blocked_reason                 | CTA                  |
+ * |------|---------------------|--------------------------------|----------------------|
+ * | Free | none / canceled     | insufficient_credits           | Subscribe to Pro     |
+ * | Free | none                | none                           | (no paywall)         |
+ * | Pro  | active              | insufficient_credits           | Wait for next refill |
+ * | Pro  | grace               | insufficient_credits           | Update card          |
+ * | any  | locked              | subscription_locked_by_dispute | Contact support      |
  */
 
 import {
-  PAYWALL_BUY_PACK_PRIMARY_ACTION,
-  PAYWALL_BUY_PACK_PRIMARY_LABEL,
   PAYWALL_CONTACT_SUPPORT_PRIMARY_ACTION,
   PAYWALL_CONTACT_SUPPORT_PRIMARY_LABEL,
   PAYWALL_SUBSCRIBE_PRIMARY_ACTION,
   PAYWALL_SUBSCRIBE_PRIMARY_LABEL,
-  PAYWALL_SUBSCRIBE_SECONDARY_ACTION,
-  PAYWALL_SUBSCRIBE_SECONDARY_LABEL,
   PAYWALL_UPDATE_CARD_PRIMARY_ACTION,
   PAYWALL_UPDATE_CARD_PRIMARY_LABEL,
-  PAYWALL_UPDATE_CARD_SECONDARY_ACTION,
-  PAYWALL_UPDATE_CARD_SECONDARY_LABEL,
 } from "../copy/paywall";
 import type { EntitlementState } from "./entitlement";
 
@@ -36,9 +30,9 @@ import type { EntitlementState } from "./entitlement";
 
 export type CtaAction =
   | "subscribe"
-  | "buy_pack"
   | "update_card"
-  | "contact_support";
+  | "contact_support"
+  | "wait_for_refill";
 
 export interface CtaButton {
   label: string;
@@ -47,9 +41,9 @@ export interface CtaButton {
 
 export type PaywallCta =
   | { type: "no_paywall" }
-  | { type: "subscribe"; primary: CtaButton; secondary: CtaButton }
-  | { type: "buy_pack"; primary: CtaButton }
-  | { type: "update_card"; primary: CtaButton; secondary: CtaButton }
+  | { type: "subscribe"; primary: CtaButton }
+  | { type: "wait_for_refill" }
+  | { type: "update_card"; primary: CtaButton }
   | { type: "contact_support"; primary: CtaButton };
 
 // ---------------------------------------------------------------------------
@@ -67,7 +61,7 @@ export function getPaywallCta(
   subscription_status: EntitlementState["subscription_status"],
   blocked_reason: EntitlementState["blocked_reason"],
 ): PaywallCta {
-  // Locked by dispute — highest priority, any tier
+  // Locked by dispute — highest priority, any tier.
   if (subscription_status === "locked") {
     return {
       type: "contact_support",
@@ -78,12 +72,12 @@ export function getPaywallCta(
     };
   }
 
-  // No block — no paywall needed
+  // No block — no paywall needed.
   if (blocked_reason === "none") {
     return { type: "no_paywall" };
   }
 
-  // blocked_reason === "insufficient_credits" from here on
+  // blocked_reason === "insufficient_credits" from here on.
 
   if (tier === "Pro") {
     if (subscription_status === "grace") {
@@ -93,32 +87,20 @@ export function getPaywallCta(
           label: PAYWALL_UPDATE_CARD_PRIMARY_LABEL,
           action: PAYWALL_UPDATE_CARD_PRIMARY_ACTION,
         },
-        secondary: {
-          label: PAYWALL_UPDATE_CARD_SECONDARY_LABEL,
-          action: PAYWALL_UPDATE_CARD_SECONDARY_ACTION,
-        },
       };
     }
-    // Pro active (or active + insufficient_credits edge case)
-    return {
-      type: "buy_pack",
-      primary: {
-        label: PAYWALL_BUY_PACK_PRIMARY_LABEL,
-        action: PAYWALL_BUY_PACK_PRIMARY_ACTION,
-      },
-    };
+    // Pro active + insufficient — user is maxed; no pack SKU to top up
+    // with, the credits will refill on the next billing cycle. Caller
+    // surfaces the refill date from EntitlementState.period_end.
+    return { type: "wait_for_refill" };
   }
 
-  // Free tier (none / canceled) with insufficient_credits
+  // Free tier (none / canceled) with insufficient_credits.
   return {
     type: "subscribe",
     primary: {
       label: PAYWALL_SUBSCRIBE_PRIMARY_LABEL,
       action: PAYWALL_SUBSCRIBE_PRIMARY_ACTION,
-    },
-    secondary: {
-      label: PAYWALL_SUBSCRIBE_SECONDARY_LABEL,
-      action: PAYWALL_SUBSCRIBE_SECONDARY_ACTION,
     },
   };
 }

@@ -156,23 +156,6 @@ class SubscriptionRepository:
         return bool(result.data)
 
     # ------------------------------------------------------------------
-    # RPC — credit-pack purchase (Unit 8b)
-    # ------------------------------------------------------------------
-
-    def call_credit_apply_pack_purchase(
-        self, user_id: str, event_id: str, credits_milli: int
-    ) -> None:
-        """Invoke credit_apply_pack_purchase DB RPC (idempotent via uuid5 ref)."""
-        self._sb.rpc(
-            "credit_apply_pack_purchase",
-            {
-                "p_user_id": user_id,
-                "p_event_id": event_id,
-                "p_credits_milli": credits_milli,
-            },
-        ).execute()
-
-    # ------------------------------------------------------------------
     # RPC — dispute event state machine (Unit 8b)
     # ------------------------------------------------------------------
 

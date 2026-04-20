@@ -293,14 +293,8 @@ class Settings(BaseSettings):
     STRIPE_SUCCESS_URL: str = "https://nxme.ai/payment/success"
     STRIPE_CANCEL_URL: str = "https://nxme.ai/payment/cancel"
 
-    # Stripe credit pack price IDs (Story 4-4 — set per-environment)
-    STRIPE_PRICE_CREDITS_10: str = ""
-    STRIPE_PRICE_CREDITS_25: str = ""
-    STRIPE_PRICE_CREDITS_50: str = ""
-
     # Credits-only engine (Unit 7 — plan 2026-04-19-002)
     # Required — fail-fast at settings load if missing or blank.
-    STRIPE_PRICE_CREDITS_PACK_V1: str
     STRIPE_PRICE_PRO_V1: str
 
     # ── Payments — Credits engine (plan 2026-04-19-002) ────────────────────
@@ -321,9 +315,12 @@ class Settings(BaseSettings):
     # 100 milli = 1 glow-up. Scheduled ARQ worker delivers it on a 7-day cadence.
     WEEKLY_FREE_GRANT_MILLI: int = 100
 
-    # Credit-pack grant — milli-credits issued per CREDIT_PACK_V1 purchase.
-    # 500 milli = 5 glow-ups at 100 milli/glow-up.
-    CREDIT_PACK_V1_CREDITS_MILLI: int = 500
+    # Pro monthly allotment — milli-credits granted per billing period on
+    # subscription.created / invoice.payment_succeeded (REPLACE semantics, R7).
+    # Also used by charge.refunded + dispute.closed_lost compensating entries
+    # as the atomic refund amount for a full-period Pro subscription charge.
+    # 3000 milli = 30 glow-ups OR ~200 Ada messages (shared pool per R3).
+    MONTHLY_ALLOTMENT_MILLI: int = 3000
 
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3  # max attempts per device fingerprint

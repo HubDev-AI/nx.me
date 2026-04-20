@@ -1,14 +1,13 @@
 /**
- * Subscription screen — view current plan, credit balance, upgrade options.
+ * Subscription screen — view current plan, credit balance, Pro upgrade.
  *
  * Route: /subscription (Stack.Screen)
  * Auth: required — fetches GET /v1/entitlement for tier + balance + purchase options.
  *
- * Tiers: FREE, CREDITS, PREMIUM.
+ * Tiers: Free, Pro.
  *
- * Orchestration only — purchase + cancel + entitlement fetching live in
- * `usePurchaseFlow`; rendering lives in `PlanCard` / `PremiumUpsell` /
- * `CreditPackGrid`.
+ * Orchestration only — subscribe + cancel + entitlement fetching live in
+ * `usePurchaseFlow`; rendering lives in `PlanCard` / `PremiumUpsell`.
  */
 import { useState, useCallback } from "react";
 import {
@@ -36,7 +35,6 @@ import {
 } from "../lib/hooks/use-purchase-flow";
 import { PlanCard, PlanCardSkeleton } from "../components/subscription/PlanCard";
 import { PremiumUpsell } from "../components/subscription/PremiumUpsell";
-import { CreditPackGrid } from "../components/subscription/CreditPackGrid";
 import { CancelSubscriptionSheet } from "../components/subscription/CancelSubscriptionSheet";
 import {
   SubscriptionEmptyHint,
@@ -47,7 +45,6 @@ const TIER_PRO = "Pro";
 
 const ENTRANCE_DELAY_PLAN_MS = 0;
 const ENTRANCE_DELAY_PREMIUM_MS = 60;
-const ENTRANCE_DELAY_PACKS_MS = 120;
 const ENTRANCE_DURATION_MS = 240;
 
 const HEADER_TITLE_FONT_SIZE = 20;
@@ -69,7 +66,6 @@ export default function SubscriptionScreen() {
     isCancelling,
     isCancelSheetOpen,
     refresh,
-    buyCredits,
     subscribe,
     openCancelSheet,
     dismissCancelSheet,
@@ -89,11 +85,10 @@ export default function SubscriptionScreen() {
   const tier = entitlement?.tier ?? "Free";
   const isPro = tier === TIER_PRO;
   const purchaseOptions = entitlement?.purchase_options;
-  const packOption = purchaseOptions?.pack ?? null;
   const proOption = purchaseOptions?.pro ?? null;
 
   const isSubscribing = purchasingId === PURCHASING_PREMIUM_ID;
-  const showHint = !isPro && proOption == null && packOption == null;
+  const showHint = !isPro && proOption == null;
   const hintMessage = HINT_LOADING;
 
   return (
@@ -163,21 +158,6 @@ export default function SubscriptionScreen() {
                 premium={proOption}
                 isSubscribing={isSubscribing}
                 onSubscribe={subscribe}
-              />
-            </Animated.View>
-          )}
-
-          {packOption != null && (
-            <Animated.View
-              entering={fadeInDown(
-                ENTRANCE_DELAY_PACKS_MS,
-                ENTRANCE_DURATION_MS,
-              )}
-            >
-              <CreditPackGrid
-                pack={packOption}
-                purchasingId={purchasingId}
-                onBuy={buyCredits}
               />
             </Animated.View>
           )}

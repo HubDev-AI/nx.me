@@ -36,7 +36,6 @@ import {
 } from "../../lib/hooks/use-purchase-flow";
 import { getPaywallCta } from "../../lib/paywall-cta";
 import { CreditBadge } from "./CreditBadge";
-import { CreditPackCard } from "./CreditPackCard";
 import { PremiumCard } from "./PremiumCard";
 
 interface PaywallModalProps {
@@ -69,7 +68,6 @@ export function PaywallModal({
     error: fetchError,
     purchasingId,
     refresh,
-    buyCredits,
     subscribe,
   } = usePurchaseFlow({
     autoLoad: false,
@@ -182,7 +180,6 @@ export function PaywallModal({
   // ---------------------------------------------------------------------------
   const remainingGlowups = entitlement?.remaining_glowups ?? 0;
   const purchaseOptions = entitlement?.purchase_options;
-  const packOption = purchaseOptions?.pack ?? null;
   const proOption = purchaseOptions?.pro ?? null;
 
   const cta =
@@ -193,13 +190,6 @@ export function PaywallModal({
           entitlement.blocked_reason,
         )
       : null;
-
-  const showPackCard =
-    !isFetching &&
-    !fetchError &&
-    packOption != null &&
-    cta != null &&
-    cta.type !== "no_paywall";
 
   const showProCard =
     !isFetching &&
@@ -262,14 +252,13 @@ export function PaywallModal({
         </View>
 
         {/* CTA label when loaded */}
-        {cta != null && cta.type !== "no_paywall" && (
-          <View style={styles.ctaRow}>
-            <Label>{cta.primary.label}</Label>
-            {cta.type !== "buy_pack" && cta.type !== "contact_support" && (
-              <Caption color="muted">{cta.secondary.label}</Caption>
-            )}
-          </View>
-        )}
+        {cta != null &&
+          cta.type !== "no_paywall" &&
+          cta.type !== "wait_for_refill" && (
+            <View style={styles.ctaRow}>
+              <Label>{cta.primary.label}</Label>
+            </View>
+          )}
 
         {/* Content */}
         <ScrollView
@@ -316,19 +305,6 @@ export function PaywallModal({
             </View>
           )}
 
-          {/* Credit pack */}
-          {showPackCard && packOption != null && (
-            <View style={styles.section}>
-              <Label>Credit Pack</Label>
-              <CreditPackCard
-                pack={packOption}
-                onPurchase={buyCredits}
-                isLoading={purchasingId === packOption.price_id}
-                disabled={isPurchasing && purchasingId !== packOption.price_id}
-              />
-            </View>
-          )}
-
           {/* Pro subscription */}
           {showProCard && proOption != null && (
             <View style={styles.section}>
@@ -353,13 +329,23 @@ export function PaywallModal({
             </View>
           )}
 
+          {/* Pro + insufficient — maxed until next refill */}
+          {!isFetching && !fetchError && cta?.type === "wait_for_refill" && (
+            <View style={styles.centerState}>
+              <Body color="secondary" style={styles.centerStateText}>
+                You&rsquo;re all set on Pro — credits refresh on the next
+                billing period.
+              </Body>
+            </View>
+          )}
+
           {/* Empty state — no options available */}
           {!isFetching &&
             !fetchError &&
             entitlement &&
-            !showPackCard &&
             !showProCard &&
-            cta?.type !== "contact_support" && (
+            cta?.type !== "contact_support" &&
+            cta?.type !== "wait_for_refill" && (
               <View style={styles.centerState}>
                 <Body color="secondary" style={styles.centerStateText}>
                   No purchase options available right now.

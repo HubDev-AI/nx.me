@@ -70,13 +70,13 @@ _SUBSCRIPTION_PROVIDER_STRIPE = "stripe"
 _PARTIAL_UNIQUE_ACTIVE_SUB_INDEX = "idx_subscriptions_one_active_per_user"
 _STRIPE_CUSTOMER_ID_UNIQUE_CONSTRAINT = "users_stripe_customer_id_key"
 
-# Types introduced by 0048; guest_merge_* entries dropped by 0056.
+# Types introduced by 0048; guest_merge_* entries dropped by 0056;
+# credit_pack_purchase dropped by 0058 (plan 2026-04-20-002 Unit 1).
 _NEW_LEDGER_TYPES = (
     "signup_grant",
     "signup_grant_suppressed_by_fingerprint",
     "weekly_free_grant",
     "monthly_allotment",
-    "credit_pack_purchase",
     "ada_message",
     "dispute_compensation",
 )

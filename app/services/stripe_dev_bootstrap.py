@@ -6,11 +6,6 @@ Unit 13): after `make migrate` seeds `plan_versions` the operator runs
 matching Products and Prices. Results are written back to
 `plan_versions.stripe_price_id`.
 
-Additionally creates a one-time Product+Price for the ``CREDIT_PACK_V1``
-SKU ($4.99 / 500 milli-credits). The resulting Price ID is printed to
-stdout for the operator to paste into ``app/.env`` as
-``CREDIT_PACK_STRIPE_PRICE_ID``.
-
 Design:
   * Iterates all ``plan_versions`` rows where ``price_usd_cents > 0``
     (Free-default has price 0 — Stripe has no free-product concept that
@@ -20,8 +15,6 @@ Design:
   * Creates Product then recurring Price, writes the Price ID back via
     a conditional UPDATE (IS NULL guard, same pattern as
     backfill_stripe_customer_ids).
-  * ``CREDIT_PACK_V1`` is separate from plan_versions: creates a
-    one-time Product+Price and prints the ID — no DB write needed.
   * Idempotent by design: re-running without ``--force`` skips rows
     that already have a price.
   * ``--dry-run`` shows what would happen without touching Stripe or DB.
@@ -53,11 +46,9 @@ _PV_VERSION_NUM_KEY = "version_num"
 _PV_PRICE_CENTS_KEY = "price_usd_cents"
 _PV_STRIPE_PRICE_ID_KEY = "stripe_price_id"
 
-# Credit-pack SKU — one-time purchase, separate from plan_versions.
-_CREDIT_PACK_VERSION_NUM = "CREDIT_PACK_V1"
-_CREDIT_PACK_NAME = "NXME Credit Pack — 500 milli-credits"
-_CREDIT_PACK_PRICE_CENTS = 499  # $4.99 in cents
-_CREDIT_PACK_CURRENCY = "usd"
+# Stripe currency for minted Products/Prices (plan_versions has no currency
+# column; a single currency is sufficient pre-launch).
+_STRIPE_CURRENCY = "usd"
 
 # Stripe Product/Price metadata key used to recover existing objects.
 _STRIPE_METADATA_VERSION_NUM = "nxme_version_num"
@@ -128,7 +119,7 @@ def _create_product_and_price(
     price_kwargs: dict = {
         "product": product["id"],
         "unit_amount": price_cents,
-        "currency": _CREDIT_PACK_CURRENCY,
+        "currency": _STRIPE_CURRENCY,
         "metadata": {_STRIPE_METADATA_VERSION_NUM: version_num},
     }
     if is_recurring:
@@ -219,29 +210,6 @@ def _bootstrap(dry_run: bool, force: bool) -> tuple[int, int, int]:
     return processed, seeded, skipped
 
 
-def _bootstrap_credit_pack(dry_run: bool, force: bool) -> str | None:
-    """Create the CREDIT_PACK_V1 one-time Product+Price.
-
-    Returns the Price ID (None on dry-run) for the operator to paste into
-    ``CREDIT_PACK_STRIPE_PRICE_ID`` in app/.env.
-    """
-    stripe = _require_stripe()
-    price_id = _create_product_and_price(
-        stripe,
-        product_name=_CREDIT_PACK_NAME,
-        version_num=_CREDIT_PACK_VERSION_NUM,
-        price_cents=_CREDIT_PACK_PRICE_CENTS,
-        is_recurring=False,
-        dry_run=dry_run,
-    )
-    if not dry_run:
-        logger.info(
-            "seeded credit pack stripe_price_id=%s (paste into app/.env as CREDIT_PACK_STRIPE_PRICE_ID)",
-            price_id,
-        )
-    return price_id
-
-
 # ---------------------------------------------------------------------------
 # Entry-point.
 # ---------------------------------------------------------------------------
@@ -250,9 +218,9 @@ def _bootstrap_credit_pack(dry_run: bool, force: bool) -> str | None:
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Bootstrap Stripe Products + Prices for paid plan_versions rows "
-            "and the CREDIT_PACK_V1 one-time SKU. Idempotent — skips rows "
-            "whose stripe_price_id is already set. Pass --force to recreate."
+            "Bootstrap Stripe Products + Prices for paid plan_versions rows. "
+            "Idempotent — skips rows whose stripe_price_id is already set. "
+            "Pass --force to recreate."
         ),
     )
     parser.add_argument(
@@ -284,9 +252,6 @@ def main() -> int:
 
     try:
         processed, seeded, skipped = _bootstrap(dry_run=args.dry_run, force=args.force)
-        credit_pack_price_id = _bootstrap_credit_pack(
-            dry_run=args.dry_run, force=args.force
-        )
     except RuntimeError as exc:
         sys.stderr.write(f"{exc}\n")
         return _EXIT_CONFIG
@@ -302,10 +267,6 @@ def main() -> int:
         seeded,
         skipped,
     )
-
-    if not args.dry_run and credit_pack_price_id:
-        print("\nPaste into app/.env:")
-        print(f"  CREDIT_PACK_STRIPE_PRICE_ID={credit_pack_price_id}")
 
     print("\nStripe test cards:")
     print(f"  {_TEST_CARD_SUCCESS}           — success")
