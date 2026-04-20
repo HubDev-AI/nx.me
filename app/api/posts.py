@@ -170,7 +170,13 @@ async def create_post(
                 }
             },
         )
-    if not job_data.get("generated_image_id"):
+    # The jobs table stores storage keys directly (migration 0034). Resolve
+    # the matching images rows so we can keep writing FK IDs into ``posts``
+    # and pass the existing ``{storage_key, bucket}`` shape to
+    # ``publish_post_images``.
+    before_storage_key = job_data.get("before_image_url")
+    after_storage_key = job_data.get("after_image_url")
+    if not after_storage_key:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -180,11 +186,7 @@ async def create_post(
                 }
             },
         )
-    # ``original_image_id`` is nullable in the schema. Guard the same way
-    # as ``generated_image_id`` — otherwise a completed job with a null
-    # original would pass through to ``image_repo.get_by_id_with_fields
-    # (None, ...)`` and insert ``before_image_id=NULL`` into the post.
-    if not job_data.get("original_image_id"):
+    if not before_storage_key:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
@@ -195,17 +197,32 @@ async def create_post(
             },
         )
 
-    # Get image storage keys from private buckets
     before_img_data = await run_sync(
-        image_repo.get_by_id_with_fields,
-        job_data["original_image_id"],
-        "storage_key, bucket",
+        image_repo.get_by_user_storage_key, user_id, before_storage_key
     )
     after_img_data = await run_sync(
-        image_repo.get_by_id_with_fields,
-        job_data["generated_image_id"],
-        "storage_key, bucket",
+        image_repo.get_by_user_storage_key, user_id, after_storage_key
     )
+    if not before_img_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "NO_ORIGINAL_IMAGE",
+                    "message": "Job's original image isn't registered.",
+                }
+            },
+        )
+    if not after_img_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": {
+                    "code": "NO_GENERATED_IMAGE",
+                    "message": "Job's generated image isn't registered.",
+                }
+            },
+        )
 
     # Copy images from private buckets to public bucket and get CDN URLs
     try:
@@ -269,8 +286,8 @@ async def create_post(
         "user_id": user_id,
         "glow_up_job_id": body.glow_up_job_id,
         "caption": body.caption,
-        "before_image_id": job_data["original_image_id"],
-        "after_image_id": job_data["generated_image_id"],
+        "before_image_id": before_img_data["id"],
+        "after_image_id": after_img_data["id"],
         "before_image_url": before_url,
         "after_image_url": after_url,
         "created_at": now_utc,

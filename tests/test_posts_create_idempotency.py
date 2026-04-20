@@ -12,11 +12,12 @@ Why mock-based and not live-DB:
   - ``publish_post_images`` performs real storage downloads/uploads on
     every request. A live-DB test would require seeding real image blobs
     and a running Supabase Storage — excess scaffolding for a logic test.
-  - The ``select`` list in ``job_repo.get_jobs_for_post`` now includes
-    ``original_image_id`` and ``generated_image_id`` (required by the
-    endpoint to copy blobs from the private buckets to the public post
-    bucket). The mock row below still sets them explicitly so this file
-    stays self-contained.
+  - ``job_repo.get_jobs_for_post`` no longer returns FK image IDs — the
+    tier-3 jobs schema (migration 0034) keeps only ``before_image_url`` /
+    ``after_image_url`` storage keys. ``create_post`` resolves the
+    matching ``images`` rows via
+    ``image_repo.get_by_user_storage_key``, which the mocks below stub
+    to feed synthetic FK IDs into the downstream publish + insert steps.
 
 DB-level partial-uniqueness behaviour is covered in
 ``tests/test_posts_unique_constraint.py`` (Unit 1) against a real
@@ -98,21 +99,18 @@ async def _passthrough_run_sync(fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
-def _build_job_row(user_id: str = _USER_A_ID) -> dict:
-    """Return the job dict as the endpoint expects it from get_jobs_for_post.
+_BEFORE_STORAGE_KEY = f"{_RAW_SELFIES_BUCKET}/before.jpg"
+_AFTER_STORAGE_KEY = f"{_GENERATED_IMAGES_BUCKET}/after.jpg"
 
-    Extended with ``original_image_id`` / ``generated_image_id`` so the
-    code path under test doesn't KeyError on the pre-existing select-list
-    gap in ``job_repo.get_jobs_for_post``. See module docstring.
-    """
+
+def _build_job_row(user_id: str = _USER_A_ID) -> dict:
+    """Return the job dict as the endpoint expects it from get_jobs_for_post."""
     return {
         "id": _JOB_ID,
         "user_id": user_id,
         "status": _JOB_STATUS_COMPLETED,
-        "before_image_url": f"{_RAW_SELFIES_BUCKET}/before.jpg",
-        "after_image_url": f"{_GENERATED_IMAGES_BUCKET}/after.jpg",
-        "original_image_id": _BEFORE_IMG_ID,
-        "generated_image_id": _AFTER_IMG_ID,
+        "before_image_url": _BEFORE_STORAGE_KEY,
+        "after_image_url": _AFTER_STORAGE_KEY,
     }
 
 
@@ -142,10 +140,21 @@ def _build_mocks(*, job_row: dict | None = None) -> SimpleNamespace:
     job_repo.get_jobs_for_post.return_value = job_row
 
     image_repo = MagicMock()
-    image_repo.get_by_id_with_fields.side_effect = lambda img_id, _fields: {
-        "storage_key": f"{_RAW_SELFIES_BUCKET}/x-{img_id}.jpg",
-        "bucket": _RAW_SELFIES_BUCKET,
-    }
+
+    def _fake_get_by_user_storage_key(user_id: str, storage_key: str) -> dict:
+        if storage_key == _BEFORE_STORAGE_KEY:
+            return {
+                "id": _BEFORE_IMG_ID,
+                "storage_key": storage_key,
+                "bucket": _RAW_SELFIES_BUCKET,
+            }
+        return {
+            "id": _AFTER_IMG_ID,
+            "storage_key": storage_key,
+            "bucket": _GENERATED_IMAGES_BUCKET,
+        }
+
+    image_repo.get_by_user_storage_key.side_effect = _fake_get_by_user_storage_key
 
     post_repo = MagicMock()
     orphan_repo = MagicMock()
