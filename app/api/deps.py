@@ -423,7 +423,7 @@ def require_feature(feature: str):
     """
 
     async def _check() -> None:
-        return
+        pass
 
     return _check
 

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # cached for 24h). TODO: replace this Python-side aggregation with a Postgres
 # RPC (SELECT username, MAX(updated_at) ... GROUP BY user_id) once the user
 # base approaches this cap.
-_PUBLIC_USER_CURSOR_FETCH_CAP = 100_000
+_SITEMAP_USER_CURSOR_MAX_ROWS = 100_000
 
 
 def _parse_iso_datetime(value: str | datetime) -> datetime:
@@ -133,7 +133,7 @@ class PostRepository:
         if cursor_updated_at is not None:
             query = query.lte("updated_at", cursor_updated_at.isoformat())
 
-        query = query.limit(_PUBLIC_USER_CURSOR_FETCH_CAP)
+        query = query.limit(_SITEMAP_USER_CURSOR_MAX_ROWS)
         rows = query.execute().data or []
 
         # Fold posts → latest per user (username, max updated_at).

@@ -42,6 +42,19 @@ _MODEL_URL = (
     "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
 
+# MediaPipe FaceLandmarker tuning. Caps at 2 so the second face triggers the
+# "multiple faces detected" error path instead of silently detecting only one.
+_MAX_FACES_TO_DETECT = 2
+# Confidence thresholds — MediaPipe defaults; adjust with downstream telemetry.
+_MIN_DETECTION_CONFIDENCE = 0.5
+_MIN_PRESENCE_CONFIDENCE = 0.5
+_MIN_TRACKING_CONFIDENCE = 0.5
+# Tasks API returns 478 landmarks (468 face + 10 iris refinement); downstream
+# classifier/scorer expects 468.
+_FACE_LANDMARK_COUNT = 468
+# Representative symmetry score for the local mock adapter only.
+_MOCK_SYMMETRY_SCORE = 0.85
+
 
 # ---------------------------------------------------------------------------
 # Types
@@ -86,10 +99,10 @@ def _make_landmarker_options(model_path: str):  # type: ignore[return]
     return mp.tasks.vision.FaceLandmarkerOptions(
         base_options=mp.tasks.BaseOptions(model_asset_path=model_path),
         running_mode=mp.tasks.vision.RunningMode.IMAGE,
-        num_faces=2,
-        min_face_detection_confidence=0.5,
-        min_face_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
+        num_faces=_MAX_FACES_TO_DETECT,
+        min_face_detection_confidence=_MIN_DETECTION_CONFIDENCE,
+        min_face_presence_confidence=_MIN_PRESENCE_CONFIDENCE,
+        min_tracking_confidence=_MIN_TRACKING_CONFIDENCE,
     )
 
 
@@ -209,10 +222,8 @@ class LandmarkExtractor:
             )
 
         face_landmarks = result.face_landmarks[0]
-        # Tasks API returns 478 landmarks (468 face + 10 iris refinement).
-        # Slice to first 468 to match downstream classifier/scorer expectations.
         points = np.array(
-            [[lm.x, lm.y, lm.z] for lm in face_landmarks[:468]],
+            [[lm.x, lm.y, lm.z] for lm in face_landmarks[:_FACE_LANDMARK_COUNT]],
             dtype=np.float64,
         )
 
@@ -230,7 +241,7 @@ class MockFaceAnalysisAdapter:
     async def analyze(self, image_bytes: bytes) -> AnalysisResult:  # noqa: ARG002
         return AnalysisResult(
             face_shape=FaceShape.OVAL,
-            symmetry_score=0.85,
+            symmetry_score=_MOCK_SYMMETRY_SCORE,
             recommendations=[
                 Suggestion(
                     rank=1,
