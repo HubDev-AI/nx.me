@@ -432,7 +432,7 @@ export const REFUND_TOAST_CANCELLED = "Cancelled — your credit's back.";
 /** Errored-cell dismiss action sheet copy. */
 export const DISMISS_ERRORED_JOB_TITLE = "Remove from profile?";
 export const DISMISS_ERRORED_JOB_BODY =
-  "Hides this glow-up from your grid on this device. The credit refund still stands.";
+  "Hides this glow-up from your grid on this device.";
 export const DISMISS_ERRORED_JOB_REMOVE_LABEL = "Remove from profile";
 export const DISMISS_ERRORED_JOB_CANCEL_LABEL = "Cancel";
 
