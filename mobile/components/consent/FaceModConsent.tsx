@@ -54,7 +54,9 @@ const SUBTITLE =
 const CONSENT_BULLETS: readonly string[] = [
   "Detect and analyze facial features",
   "Apply AI style enhancements",
-  "Auto-delete results after 7 days (unless saved)",
+  "Unsaved results auto-delete after 7 days",
+  "Your photo auto-deletes 30 days after last use",
+  "Shared posts stay public until you delete them",
 ];
 
 const PRIVACY_HEADLINE = "Private & secure";
