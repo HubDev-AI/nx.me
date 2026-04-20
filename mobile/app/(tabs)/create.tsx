@@ -124,8 +124,8 @@ function FeatureCard({
             isActive
               ? [
                   {
-                    borderColor: accent + "4D",
-                    backgroundColor: accent + "0F",
+                    borderColor: accent + THEME.alpha.strong,
+                    backgroundColor: accent + THEME.alpha.faint,
                   },
                   THEME.shadow.glow(accent),
                 ]
@@ -144,7 +144,7 @@ function FeatureCard({
             style={[
               styles.iconWrapper,
               isActive
-                ? { backgroundColor: accent + "1A" }
+                ? { backgroundColor: accent + THEME.alpha.soft }
                 : { backgroundColor: INACTIVE_ICON_BG },
             ]}
           >
