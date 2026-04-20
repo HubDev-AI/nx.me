@@ -19,6 +19,8 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 
+import { THEME } from "../../constants/theme";
+
 const PARTICLE_COUNT = 14;
 
 /** Generate stable random config for each particle on mount. */
@@ -119,7 +121,7 @@ function Particle({
           width: size,
           height: size,
           borderRadius: size / 2,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: THEME.colors.white,
         },
         animatedStyle,
       ]}

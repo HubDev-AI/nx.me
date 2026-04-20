@@ -348,7 +348,7 @@ export function CommentsSheet({
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000000",
+    backgroundColor: THEME.colors.backdrop,
   },
   keyboardAvoid: {
     flex: 1,
