@@ -9,6 +9,29 @@ origin: docs/brainstorms/2026-04-19-payments-credits-only-requirements.md
 
 # feat: Payments & Subscriptions — Credits-Only Engine
 
+## 2026-04-20 Partial Supersession — Pack Removal + Pro Cap Copy + Weekly-Regen Capability
+
+The following slices of this plan are SUPERSEDED by
+`docs/plans/2026-04-20-002-feat-payments-pack-removal-and-copy-rewrite-plan.md`
+(see the corresponding brainstorm revision in
+`docs/brainstorms/2026-04-19-payments-credits-only-requirements.md`, 2026-04-20
+header section):
+
+| This plan references… | Reality after 2026-04-20-002 |
+|---|---|
+| **R7-Pack** + any "credit pack", "credits_pack_v1", \$4.99 / 500-milli SKU language | Pack SKU DELETED. Pro subscription is the only paid SKU at launch. See Unit 1 of 2026-04-20-002. |
+| **Unit 3** `credit_apply_pack_purchase` RPC + `credit_pack_purchase` ledger type | RPC dropped + enum value narrowed in migration `0058_remove_credit_pack_artifacts.sql`. |
+| **Unit 8b** pack branch of `_handle_payment_intent_succeeded` + `EVT_PAYMENT_INTENT_SUCCEEDED` dispatch | Branch + handler removed; webhook router is subscription-only. |
+| **Purchase options shape** with `pack` field + "Buy pack" CTA matrix | `PurchaseOptions.pack` deleted; new CTA matrix with `wait_for_refill` variant. |
+| `ada_cost_milli = 5` | Revised to `15` (margin protection). ~200 Ada msgs/mo on Pro, not 600. |
+| Paywall "Go Unlimited" / "Unlimited glow-up analyses" copy | Banned by CI `make copy-lint`. Pro marketing states the concrete cap (`MONTHLY_ALLOTMENT_MILLI=3000` = 30 glow-ups) at `PRO_MONTHLY_PRICE_USD = "\$9.99"`. |
+| Weekly-regen copy (`+1 free glow-up every week`) always shown | Gated on `FeatureFlags.weekly_free_grant_enabled` (sourced from `app_kill_switches.weekly_free_grant`). Hidden when the cron is paused. |
+| Guest-merge pack-bypass bullet in R16 | Already SUPERSEDED earlier (2026-04-20 guest removal, PR #171). |
+
+Units 1, 2, 3, and 4 of the superseding plan have shipped and been merged — see PRs #181, #182, #183, and this PR. The rest of this 2026-04-19-002 plan (subscription lifecycle, grace, disputes, delete-account wiring, migrations Phase A, fingerprint registry, weekly-free ARQ worker, debug endpoint, female-audience copy) remains authoritative.
+
+---
+
 ## Overview
 
 Collapse the three parallel billing systems (tiers, trial counters, credit ledger) into one credit-ledger source of truth denominated in milli-credits. Tiers become marketing labels derived from subscription lifecycle; quota gating is always ledger-based. Lands as a two-phase migration that coexists with a concurrent bug-fix agent working on `app/api/entitlement.py`, `app/api/webhooks.py`, `app/entitlement/service.py`.
