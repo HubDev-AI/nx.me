@@ -115,11 +115,6 @@ export interface JobResult {
   share_hash?: string | null;
 }
 
-export interface EntitlementInfo {
-  remaining_trials: number;
-  total_trials: number;
-}
-
 // ---------------------------------------------------------------------------
 // Tier-3 types (Glow Up tier3 API — PR #56)
 // ---------------------------------------------------------------------------
@@ -378,13 +373,6 @@ export async function cancelJob(jobId: string): Promise<void> {
  */
 export async function requestRefund(jobId: string): Promise<void> {
   await apiFetch(ANALYSIS_ENDPOINTS.JOB_REFUND(jobId), { method: "POST" });
-}
-
-/**
- * Get current entitlement info (trial count etc).
- */
-export async function getEntitlement(): Promise<EntitlementInfo> {
-  return apiFetch<EntitlementInfo>("/v1/entitlement");
 }
 
 // ---------------------------------------------------------------------------

@@ -29,9 +29,8 @@ import {
   cancelJob,
   createUpload,
   generateGlowup,
-  getEntitlement,
-  type EntitlementInfo,
 } from "../lib/analysis";
+import { FeedCreditBadge } from "../components/feed/FeedCreditBadge";
 import { ApiError } from "../lib/api";
 import {
   HTTP_FACE_MOD_CONSENT_REQUIRED,
@@ -87,7 +86,6 @@ export default function UploadScreen() {
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [entitlement, setEntitlement] = useState<EntitlementInfo | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isFaceError, setIsFaceError] = useState(false);
@@ -104,15 +102,6 @@ export default function UploadScreen() {
       router.replace("/(tabs)/create");
     }
   }, [router]);
-
-  // Fetch entitlement on mount
-  useEffect(() => {
-    getEntitlement()
-      .then(setEntitlement)
-      .catch(() => {
-        // Silently fail — user can still attempt upload
-      });
-  }, []);
 
   // Elapsed timer during any active processing phase
   useEffect(() => {
@@ -328,18 +317,9 @@ export default function UploadScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {entitlement ? (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              style={styles.trialBadge}
-              accessibilityLabel={`${entitlement.remaining_trials} of ${entitlement.total_trials} free trials remaining`}
-            >
-              <Ionicons name="flash-outline" size={16} color={theme.accent} />
-              <Caption weight="semibold" color="secondary">
-                {entitlement.remaining_trials} / {entitlement.total_trials} trials remaining
-              </Caption>
-            </Animated.View>
-          ) : null}
+          <View style={styles.creditBadgeRow}>
+            <FeedCreditBadge />
+          </View>
 
           <Animated.View
             entering={FadeInDown.duration(THEME.animation.duration.normal).delay(50)}
@@ -479,19 +459,9 @@ const styles = StyleSheet.create({
     paddingBottom: THEME.spacing.xxxl,
     gap: THEME.spacing.lg,
   },
-  // Trial badge
-  trialBadge: {
-    flexDirection: "row",
+  // Credit badge row — centers FeedCreditBadge inside padded ScrollView content
+  creditBadgeRow: {
     alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: THEME.colors.glass,
-    borderRadius: THEME.radius.pill,
-    borderCurve: "continuous",
-    borderWidth: 1,
-    borderColor: THEME.colors.glassBorder,
-    paddingHorizontal: THEME.spacing.lg,
-    paddingVertical: THEME.spacing.sm,
-    gap: THEME.spacing.sm,
   },
   // Photo picker section
   pickerSection: {
