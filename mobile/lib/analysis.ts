@@ -379,6 +379,31 @@ export async function requestRefund(jobId: string): Promise<void> {
 // Polling helper
 // ---------------------------------------------------------------------------
 
+const TERMINAL_JOB_STATUSES: readonly JobStatus[] = [
+  "completed",
+  "failed",
+  "cancelled",
+];
+
+function isTerminalJobStatus(status: JobStatus): boolean {
+  return TERMINAL_JOB_STATUSES.includes(status);
+}
+
+/** Await a delay that rejects with an AbortError if the signal fires first. */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Polling aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+}
+
 /**
  * Poll a job until it reaches a terminal state.
  * Calls onUpdate with each intermediate result.
@@ -390,8 +415,6 @@ export async function pollJob(
   onUpdate: (result: JobResult) => void,
   signal?: AbortSignal,
 ): Promise<JobResult> {
-  const terminalStatuses: JobStatus[] = ["completed", "failed", "cancelled"];
-
   while (true) {
     if (signal?.aborted) {
       throw new DOMException("Polling aborted", "AbortError");
@@ -400,20 +423,10 @@ export async function pollJob(
     const result = await getJobStatus(jobId);
     onUpdate(result);
 
-    if (terminalStatuses.includes(result.status)) {
+    if (isTerminalJobStatus(result.status)) {
       return result;
     }
 
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, ANALYSIS_POLLING.INTERVAL_MS);
-      signal?.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          reject(new DOMException("Polling aborted", "AbortError"));
-        },
-        { once: true },
-      );
-    });
+    await abortableDelay(ANALYSIS_POLLING.INTERVAL_MS, signal);
   }
 }
