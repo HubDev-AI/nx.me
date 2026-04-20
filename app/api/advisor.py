@@ -271,10 +271,8 @@ class NudgeUpdateRequest(BaseModel):
 async def update_nudge(
     nudge_id: UUID,
     body: NudgeUpdateRequest,
-    # Guests own post-analysis nudges that fire for their own analyses, so
-    # the mark-as-read path must accept guest tokens. The repo's
-    # mark_nudge_read already scopes by (user_id, nudge_id) so there is
-    # no cross-user exposure.
+    # The repo's mark_nudge_read scopes by (user_id, nudge_id) so there
+    # is no cross-user exposure.
     claims: UserClaims = Depends(get_current_user),
     svc: AdvisorService = Depends(get_advisor_service),
 ) -> Response:

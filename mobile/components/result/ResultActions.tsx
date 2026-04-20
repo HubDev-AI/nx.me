@@ -73,7 +73,7 @@ export interface ResultActionsProps {
    * Drives the primary-row label: "Share & Publish…" when true,
    * "Share…" when false. Keeps the dialog button honest — no false
    * promise of Publish when the user can't actually publish
-   * (social_enabled=false, guest session, etc). Resolved by the parent
+   * (social_enabled=false, etc). Resolved by the parent
    * via `useCapabilities()` so gating stays centralized.
    */
   canPublishGlowup: boolean;

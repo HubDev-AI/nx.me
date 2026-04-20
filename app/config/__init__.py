@@ -317,7 +317,7 @@ class Settings(BaseSettings):
     # device fingerprint. 300 milli = 3 glow-ups at 100 milli/glow-up.
     SIGNUP_GRANT_MILLI: int = 300
 
-    # Weekly free grant for authenticated Free users (guests never receive it).
+    # Weekly free grant for Free (non-Pro, non-banned) users.
     # 100 milli = 1 glow-up. Scheduled ARQ worker delivers it on a 7-day cadence.
     WEEKLY_FREE_GRANT_MILLI: int = 100
 
@@ -350,8 +350,6 @@ class Settings(BaseSettings):
     # Proxy headers — enable only when deployed behind a trusted reverse proxy
     # (e.g., ALB, nginx) that sets X-Forwarded-For.
     TRUST_PROXY_HEADERS: bool = False
-
-    # Guest reaction token registry (LR-8)
 
     # Account deletion (Story 2-2 AC-FR5)
     USERNAME_RESERVATION_DAYS: int = 180  # days username is reserved post-deletion

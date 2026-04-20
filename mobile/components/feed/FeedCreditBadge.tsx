@@ -17,7 +17,7 @@ import { useAuth } from "../../lib/auth-context";
 
 export function FeedCreditBadge() {
   const router = useRouter();
-  // Entitlement endpoint accepts JWT or guest token — show badge for both.
+  // Entitlement endpoint requires JWT — badge only shows for signed-in users.
   const { session } = useAuth();
   const hasSession = !session.isAnon;
   const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);

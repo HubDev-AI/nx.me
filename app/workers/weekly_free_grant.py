@@ -58,14 +58,32 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
     """
     # Fetch user IDs with active subscriptions so we can skip them.
     # The subscriptions table is small pre-launch; one-shot fetch is adequate.
+    # Paired with a count probe: if .data comes back empty but `count` > 0
+    # (PostgREST returned 200+empty-data under connection reset or stale
+    # replica), abort rather than silently granting every Pro user.
     try:
         sub_result = (
             supabase.table("subscriptions")
-            .select("user_id")
+            .select("user_id", count="exact")
             .eq("status", "active")
             .execute()
         )
         pro_user_ids: set[str] = {row["user_id"] for row in (sub_result.data or [])}
+        # Sanity check: PostgREST can return 200 + empty data under replica
+        # staleness or connection reset after headers. If `count` reports any
+        # active subscriptions but `data` came back empty, abort instead of
+        # silently granting every Pro user a free weekly credit.
+        expected_count_raw = getattr(sub_result, "count", None)
+        expected_count = expected_count_raw if isinstance(expected_count_raw, int) else 0
+        if expected_count > 0 and not pro_user_ids:
+            logger.error(
+                "weekly_free_grant: subscriptions count=%d but data empty — aborting",
+                expected_count,
+            )
+            raise RuntimeError(
+                "pro_user_ids sanity check failed — active subscriptions present but"
+                " empty data payload from Supabase"
+            )
     except Exception:
         logger.exception(
             "weekly_free_grant: failed to fetch active subscriptions -- aborting"
@@ -82,6 +100,7 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
             page_result = (
                 supabase.table("users")
                 .select("id")
+                .eq("is_banned", False)
                 .range(offset, offset + _PAGE_SIZE - 1)
                 .execute()
             )

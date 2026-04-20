@@ -112,7 +112,7 @@ class ProfileResponse(BaseModel):
 
 
 class MeResponse(BaseModel):
-    """Identity payload for the current session — JWT user or guest token."""
+    """Identity payload for the authenticated user."""
 
     username: str
     display_name: str
@@ -261,7 +261,7 @@ async def check_username(
 
 
 # ---------------------------------------------------------------------------
-# GET /users/me  — identity for the current session (JWT user or guest token)
+# GET /users/me  — identity for the authenticated user
 # ---------------------------------------------------------------------------
 # Declared BEFORE /users/{username}/profile so path matching prefers the
 # static "me" segment over the path-param branch.
@@ -386,9 +386,8 @@ async def get_user_history(
         le=_MAX_HISTORY_PAGE_SIZE,
         description="Page size",
     ),
-    # Accept both JWT and guest tokens — guests are real DB rows and own their
-    # uploads. The owner check below (`claims["sub"] != user_id`) still gates
-    # cross-user access; both auth shapes resolve to the same kind of `sub`.
+    # Owner-only — the check below (`claims["sub"] != user_id`) gates
+    # cross-user access.
     claims: UserClaims = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
     upload_repo: UploadRepository = Depends(get_upload_repo),

@@ -28,8 +28,8 @@ interface CommentInputProps {
 }
 
 /**
- * Comment text input with send button.
- * Guest users tapping the input get an auth prompt instead.
+ * Comment text input with send button. Unauthenticated users tapping the
+ * input get an auth prompt instead.
  */
 export function CommentInput({
   isAuthenticated,
@@ -42,12 +42,12 @@ export function CommentInput({
 
   // Press scale animations
   const sendScale = useSharedValue(1);
-  const guestScale = useSharedValue(1);
+  const promptScale = useSharedValue(1);
   const sendPressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: sendScale.value }],
   }));
-  const guestPressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: guestScale.value }],
+  const promptPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: promptScale.value }],
   }));
 
   const trimmedText = text.trim();
@@ -122,12 +122,12 @@ export function CommentInput({
             </Animated.View>
           </>
         ) : (
-          <Animated.View style={[{ flex: 1 }, guestPressStyle]}>
+          <Animated.View style={[{ flex: 1 }, promptPressStyle]}>
             <Pressable
-              style={styles.guestInput}
+              style={styles.authPromptInput}
               onPress={handleFocus}
-              onPressIn={() => { guestScale.value = withSpring(0.98, THEME.animation.press); }}
-              onPressOut={() => { guestScale.value = withSpring(1, THEME.animation.press); }}
+              onPressIn={() => { promptScale.value = withSpring(0.98, THEME.animation.press); }}
+              onPressOut={() => { promptScale.value = withSpring(1, THEME.animation.press); }}
               accessibilityLabel="Sign in to comment"
               accessibilityRole="button"
               accessibilityHint="Opens sign-in flow"
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   sendButtonDisabled: {
     backgroundColor: "transparent",
   },
-  guestInput: {
+  authPromptInput: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",

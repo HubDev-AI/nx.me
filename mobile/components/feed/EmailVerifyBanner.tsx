@@ -22,7 +22,7 @@ import { SECURE_STORE_KEYS, MIN_TOUCH_TARGET } from "../../constants/config";
 import { fetchEntitlement } from "../../lib/entitlement";
 
 export function EmailVerifyBanner() {
-  // Email verification only applies to real (JWT) users — guests have no email.
+  // Email verification applies only to signed-in users.
   const { session } = useAuth();
   const isAuthenticated = session.isUser;
   const { theme } = useTheme();

@@ -142,7 +142,7 @@ export const FeedCard = React.memo(function FeedCard({
 
   // Prefer a per-user card URL so recipients land on the poster's latest
   // glow-up (card-web /{username} route). Fall back to the site root only
-  // when the post has no username (guest/legacy rows).
+  // when the post has no username (legacy rows).
   const shareUrl = post.username
     ? `${UNIVERSAL_LINK_ORIGIN}/${post.username}`
     : UNIVERSAL_LINK_ORIGIN;

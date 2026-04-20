@@ -14,8 +14,10 @@
 --      per-guest UNIQUE constraint.
 
 -- 1) Drop merge RPC. Its signature reads `users.guest_install_uuid_hash`, so
---    this must come before the column drop.
-DROP FUNCTION IF EXISTS public.merge_guest_ledger(UUID, UUID, BYTEA);
+--    this must come before the column drop. Signature is (UUID, UUID, INT, BYTEA)
+--    per migration 0050 — the 3-arg drop previously here was a silent no-op that
+--    left the function alive, blocking the guest_install_uuid_hash column drop.
+DROP FUNCTION IF EXISTS public.merge_guest_ledger(UUID, UUID, INT, BYTEA);
 
 -- 2) Narrow credit_ledger.type CHECK enum — drop guest_merge_* entries.
 ALTER TABLE credit_ledger

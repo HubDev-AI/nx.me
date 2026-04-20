@@ -2,8 +2,8 @@
  * Identity helper for the current session.
  *
  * `GET /v1/users/me` mirrors `app.api.users.MeResponse` — it returns the
- * username/display_name/avatar of whoever is on the wire (JWT user or guest
- * token). Mobile uses this after guest provisioning so screens like
+ * username/display_name/avatar of the authenticated user. Called after login
+ * to hydrate the canonical username + consent state so screens like
  * profile.tsx know which `/v1/users/{username}/profile` to load.
  */
 import { apiFetch } from "./api";

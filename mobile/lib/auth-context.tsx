@@ -11,7 +11,7 @@ interface AuthContextValue {
   /** Non-null when the session expired and the user was force-logged-out. */
   sessionExpiredMessage: string | null;
   clearSessionExpiredMessage: () => void;
-  /** Set the session mode explicitly. Real login → "user", guest provision → "guest", logout → "anon". */
+  /** Set the session mode explicitly. Real login → "user", logout → "anon". */
   setSessionMode: (mode: SessionMode) => void;
   /** Mark the session as bootstrapped (features loaded + token resolution attempted). */
   markSessionReady: () => void;
