@@ -54,6 +54,23 @@ lint:
 format:
 	.venv/bin/ruff format app/ tests/
 
+# ── Copy gate ────────────────────────────────────────────────────────────────
+# Fail if any user-facing surface markets Pro as "unlimited" — the real cap is
+# MONTHLY_ALLOTMENT_MILLI / GLOWUP_COST_MILLI / ADA_COST_MILLI per plan
+# 2026-04-20-002 Unit 2. `docs/` + `tests/` + generated types are allowed to
+# reference the historical string.
+copy-lint:
+	@echo "Scanning for banned marketing copy…"
+	@if grep -RniE --include='*.ts' --include='*.tsx' --include='*.py' \
+	    --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=docs \
+	    --exclude-dir=migrations --exclude-dir=tests \
+	    'unlimited' app mobile card-web; then \
+	  echo "❌  user-facing 'unlimited' string found (see matches above)"; \
+	  exit 1; \
+	else \
+	  echo "✅  copy-lint clean"; \
+	fi
+
 # ── Mobile ────────────────────────────────────────────────────────────────────
 mobile-ios:
 	cd mobile && npx expo run:ios

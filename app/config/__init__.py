@@ -322,6 +322,18 @@ class Settings(BaseSettings):
     # 3000 milli = 30 glow-ups OR ~200 Ada messages (shared pool per R3).
     MONTHLY_ALLOTMENT_MILLI: int = 3000
 
+    # Per-action debit amounts (milli-credits). Must divide MONTHLY_ALLOTMENT_MILLI
+    # evenly so "N glow-ups" / "~M Ada messages" copy stays honest.
+    # Changing either creates a new plan_versions row (R12) — existing Pro
+    # subscribers stay bound to their original row until they explicitly migrate.
+    GLOWUP_COST_MILLI: int = 100
+    ADA_COST_MILLI: int = 15
+
+    # Pro monthly price as displayed on the paywall. Must mirror the Stripe
+    # Price object (`PRO_SUBSCRIPTION_STRIPE_PRICE_ID`) — if the Stripe price
+    # changes, this constant MUST be updated in the same change-set.
+    PRO_MONTHLY_PRICE_USD: str = "$9.99"
+
     # Rate limiting — registration (Story 2-1 AC-3, Story 2-2 AC-4)
     REGISTRATION_FINGERPRINT_LIMIT: int = 3  # max attempts per device fingerprint
     REGISTRATION_FINGERPRINT_WINDOW_SECONDS: int = 86_400  # 24 hours

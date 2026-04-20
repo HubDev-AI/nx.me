@@ -1,6 +1,11 @@
-/** Shared premium upsell benefits — referenced by paywall/PremiumCard and subscription/PremiumUpsell. */
+/** Shared Pro upsell benefits — referenced by paywall/PremiumCard and subscription/PremiumUpsell. */
+import {
+  PRO_MONTHLY_ADA_APPROX,
+  PRO_MONTHLY_GLOWUPS,
+} from "./pricing";
+
 export const PREMIUM_BENEFITS = [
-  "Unlimited glow-up analyses",
+  `${PRO_MONTHLY_GLOWUPS} glow-ups every month`,
+  `About ${PRO_MONTHLY_ADA_APPROX} Ada advisor messages from the same pool`,
   "Priority processing",
-  "Ada AI advisor chat",
 ] as const;
