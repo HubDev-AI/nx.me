@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Slot, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
@@ -127,7 +127,21 @@ function AuthGuard() {
     router,
   ]);
 
-  return <Slot />;
+  // Root stack. Making this an explicit Stack (instead of Slot) is what
+  // gives every detail screen pushed above (tabs) — /card, /result,
+  // /subscription, /upload etc. — a real navigation stack to pop. With
+  // Slot, routes replaced each other and the tabs navigator's internal
+  // state would drift on back, landing users on the default tab
+  // regardless of which tab pushed the detail screen. Headers are
+  // disabled globally because every screen renders its own chrome.
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: THEME.colors.bg },
+      }}
+    />
+  );
 }
 
 export default function RootLayout() {
