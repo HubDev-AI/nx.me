@@ -101,6 +101,17 @@ const TICK_INTERVAL_MS = 1_000;
 /** Hourglass rotation period (ms) — slow enough to read as patient, not stuck. */
 const HOURGLASS_ROTATION_MS = 2_400;
 
+/** One full clockwise turn in degrees — target value for the hourglass spin. */
+const HOURGLASS_FULL_ROTATION_DEG = 360;
+
+/**
+ * Share-dialog entry animation timing. The delay lets the result
+ * before/after finish its own fade before the action row enters, so
+ * the user isn't hit with two simultaneous animations on arrival.
+ */
+const SHARE_DIALOG_FADE_IN_MS = 300;
+const SHARE_DIALOG_ENTRY_DELAY_MS = 400;
+
 // TODO(writer-review): Delete-confirm copy must name external-link
 // breakage per `feedback_female_user_targeting` + plan §Risks table
 // ("Links you've already shared will stop working").
@@ -593,7 +604,7 @@ export default function ResultScreen() {
       return;
     }
     rotation.value = withRepeat(
-      withTiming(360, {
+      withTiming(HOURGLASS_FULL_ROTATION_DEG, {
         duration: HOURGLASS_ROTATION_MS,
         easing: Easing.inOut(Easing.quad),
       }),
@@ -731,7 +742,11 @@ export default function ResultScreen() {
                   />
                 </View>
 
-                <Animated.View entering={FadeIn.duration(300).delay(400)}>
+                <Animated.View
+                  entering={FadeIn.duration(SHARE_DIALOG_FADE_IN_MS).delay(
+                    SHARE_DIALOG_ENTRY_DELAY_MS,
+                  )}
+                >
                   <ResultActions
                     onSave={() => {
                       void handleSave();

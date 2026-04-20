@@ -14,7 +14,7 @@ import { THEME } from "../../constants/theme";
 import { TAB_BAR_HEIGHT } from "./_layout";
 import { useTheme } from "../../lib/theme-context";
 import { PageBackground } from "../../components/ui/PageBackground";
-import { FEED_CONFIG } from "../../constants/config";
+import { FEED_CONFIG, HTTP_STATUS_RATE_LIMIT } from "../../constants/config";
 import { FeedCard } from "../../components/feed/FeedCard";
 import { FeedSkeleton } from "../../components/feed/FeedSkeleton";
 import { SortTabs } from "../../components/feed/SortTabs";
@@ -97,7 +97,7 @@ export default function HomeScreen() {
               });
             } catch (err: unknown) {
               const status = (err as { status?: number }).status;
-              if (status === 429) {
+              if (status === HTTP_STATUS_RATE_LIMIT) {
                 showToast({
                   kind: "warning",
                   message: "You've reported a lot recently. Give it a little while.",

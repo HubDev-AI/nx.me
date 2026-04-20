@@ -38,6 +38,14 @@ interface Feature {
 const GRID_COLUMN_GAP = THEME.spacing.md;
 const INACTIVE_ICON_BG = "rgba(255, 255, 255, 0.04)";
 
+/**
+ * Feature-card entry animation timing. Cards staggered from
+ * ``CARD_ENTRY_BASE_DELAY_MS`` upward so the grid "cascades" in rather
+ * than appearing as one slab.
+ */
+const CARD_ENTRY_BASE_DELAY_MS = 240;
+const CARD_STAGGER_INCREMENT_MS = 50;
+
 const FEATURES: Feature[] = [
   {
     key: "glow-up",
@@ -95,7 +103,10 @@ function FeatureCard({
   return (
     <Animated.View
       key={feature.key}
-      entering={fadeInDown(240 + index * 50, THEME.animation.duration.normal)}
+      entering={fadeInDown(
+        CARD_ENTRY_BASE_DELAY_MS + index * CARD_STAGGER_INCREMENT_MS,
+        THEME.animation.duration.normal,
+      )}
       style={styles.gridCell}
     >
       <Animated.View style={pressStyle}>

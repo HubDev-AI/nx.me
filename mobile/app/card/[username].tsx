@@ -61,6 +61,12 @@ import { showToast } from "../../lib/toast";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
 
+/**
+ * Stacking order for the deleting overlay — sits above the scrollable
+ * content but below any native system UI (keyboard, alerts).
+ */
+const DELETING_OVERLAY_Z_INDEX = 100;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -813,7 +819,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 100,
+    zIndex: DELETING_OVERLAY_Z_INDEX,
     gap: THEME.spacing.md,
   },
 });
