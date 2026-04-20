@@ -763,7 +763,7 @@ class AdvisorRepository:
         """
         return self._sb.storage.from_(bucket).download(path)
 
-    def get_cleared_images(self, user_id: str, limit: int = 2) -> list[dict[str, Any]]:
+    def get_cleared_images(self, user_id: str, limit: int) -> list[dict[str, Any]]:
         """Fetch the most recent cleared images for a user.
 
         The ``images`` table stores the path-within-bucket under
