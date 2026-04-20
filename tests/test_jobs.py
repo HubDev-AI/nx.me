@@ -76,7 +76,16 @@ def _make_job_dict(
     reservation_id: str = None,
     saved_at=None,
     created_at: str = "2026-01-01T00:00:00+00:00",
+    failure_reason: str | None = None,
 ) -> dict:
+    # Failed fixtures default to PROVIDER_ERROR so the refund-eligibility
+    # gate in refund_job lets them through; user-caused variants pass a
+    # concrete reason explicitly.
+    resolved_reason = (
+        failure_reason
+        if failure_reason is not None
+        else ("PROVIDER_ERROR" if status == "failed" else None)
+    )
     return {
         "id": job_id or str(uuid4()),
         "user_id": user_id or str(uuid4()),
@@ -87,7 +96,7 @@ def _make_job_dict(
         "updated_at": "2026-01-01T00:00:00+00:00",
         "before_image_url": None,
         "after_image_url": None,
-        "failure_reason": None,
+        "failure_reason": resolved_reason,
         "saved_at": saved_at,
         "identity_preserved": None,
         "credit_reservation_id": reservation_id,
@@ -464,6 +473,38 @@ class TestRefundJobHandler:
         assert (
             result.credit_refunded is True or result.credit_refunded is False
         )  # either valid
+
+    @pytest.mark.asyncio
+    async def test_refund_user_caused_failure_raises_409(self):
+        """Failed jobs with a user-caused failure_reason (NSFW / IDENTITY)
+        can't be auto-refunded — the provider already ran a paid inference."""
+        from fastapi import HTTPException
+
+        user_id = str(uuid4())
+        reservation_id = str(uuid4())
+        job = _make_job_dict(
+            user_id=user_id,
+            status="failed",
+            reservation_id=reservation_id,
+            failure_reason="IDENTITY_PRESERVATION_FAILED",
+        )
+        job_repo = _make_job_repo(job=job)
+        ledger = _make_ledger()
+
+        with pytest.raises(HTTPException) as exc_info:
+            with patch("app.db.async_helpers.run_sync", new=_run_sync_passthrough):
+                await refund_job(
+                    job_id=uuid4(),
+                    claims=_make_claims(user_id),
+                    job_repo=job_repo,
+                    ledger=ledger,
+                )
+        assert exc_info.value.status_code == 409
+        detail = exc_info.value.detail
+        code = detail["error"]["code"] if isinstance(detail, dict) else None
+        assert code == "REFUND_NOT_ELIGIBLE"
+        ledger.refund.assert_not_called()
+        ledger.release.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_refund_already_refunded_raises_409(self):

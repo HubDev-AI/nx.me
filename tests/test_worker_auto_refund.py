@@ -1,21 +1,24 @@
 """Tests for worker auto-refund on non-user-caused job failures.
 
 Verifies that _fail_job:
-  - calls ledger.release() for in-flight failures (reserved reservation)
-  - calls ledger.refund() for finalizing failures (committed reservation)
-  - does NOT settle credits for user-caused failures (NSFW, IDENTITY) — same
-    mechanism as provider failures, but classification is at caller level;
-    here we verify the settle happens for all failure_reasons (classification
-    is enforced by the caller passing the right failure_reason)
-  - does NOT settle credits for completed jobs (credit already fully consumed)
+  - calls ledger.release() for non-user-caused in-flight failures
+    (PROVIDER_ERROR, GENERATION_TIMEOUT on reserved reservations)
+  - calls ledger.refund() for non-user-caused finalizing failures
+    (committed reservations that need reversal)
+  - does NOT release/refund for user-caused failures (NSFW, IDENTITY) —
+    the provider already ran a paid inference, so the credit stays
+    consumed. Reserved credits are committed in that path.
+  - does NOT settle credits for completed jobs (credit already fully
+    consumed)
   - handles credit settle failure gracefully (still marks job failed)
 
-Idempotency is enforced by the ledger RPCs themselves (credit_release and
-credit_refund both use UPDATE ... WHERE status = X RETURNING *), so the
-worker no longer writes a secondary usage_events row.
+Idempotency is enforced by the ledger RPCs themselves (credit_release,
+credit_refund, credit_commit all use UPDATE ... WHERE status = X
+RETURNING *), so the worker no longer writes a secondary usage_events
+row.
 
-Pattern: unit tests calling _fail_job directly with MagicMock dependencies,
-consistent with test_refund.py and test_face_errors.py.
+Pattern: unit tests calling _fail_job directly with MagicMock
+dependencies, consistent with test_refund.py and test_face_errors.py.
 """
 
 from __future__ import annotations
@@ -208,28 +211,30 @@ class TestWorkerAutoRefundOnFinalizingFailure:
 
 
 class TestWorkerNoAutoRefundOnUserCausedFailures:
-    """User-caused failures are passed through _fail_job the same way.
+    """User-caused failures keep the credit consumed.
 
-    The distinction is in the API layer (failure_reason → retry_eligible),
-    not in _fail_job itself. _fail_job always releases/refunds on failure.
-    We verify that NSFW and IDENTITY failures still trigger release to avoid
-    a credit leak — the client's "Report issue" flow returns 409 because
-    the ledger reservation is already resolved.
+    The provider already ran a paid inference by the time we classify
+    the output as NSFW or identity-drifted, so auto-refunding the user
+    would leave NXME holding the bill. _fail_job commits the reserved
+    credit (reserved → committed) so the balance reflects what we
+    actually paid for.
     """
 
     @pytest.mark.asyncio
-    async def test_nsfw_failure_still_releases_credit(self):
-        """NSFW_CONTENT_DETECTED: credit is released (reservation returned)."""
+    async def test_nsfw_failure_commits_instead_of_releasing(self):
+        """NSFW_CONTENT_DETECTED: credit is committed, not released."""
         job_data = _make_job_data(status=JobStatus.PROCESSING)
         ledger = _make_ledger()
 
         _, ledger = await _call_fail_job(job_data, FAILURE_NSFW, ledger)
 
-        ledger.release.assert_called_once()
+        ledger.release.assert_not_called()
+        ledger.refund.assert_not_called()
+        ledger.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_identity_failure_still_releases_credit(self):
-        """IDENTITY_PRESERVATION_FAILED: credit is released."""
+    async def test_identity_failure_commits_instead_of_releasing(self):
+        """IDENTITY_PRESERVATION_FAILED: credit is committed, not released."""
         job_data = _make_job_data(
             status=JobStatus.PROCESSING, reservation_id=str(uuid4())
         )
@@ -239,7 +244,27 @@ class TestWorkerNoAutoRefundOnUserCausedFailures:
             job_data, FAILURE_IDENTITY, ledger, identity_score=0.42
         )
 
-        ledger.release.assert_called_once()
+        ledger.release.assert_not_called()
+        ledger.refund.assert_not_called()
+        ledger.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_user_caused_failure_in_finalizing_skips_commit(self):
+        """Finalizing job with user-caused failure: credit already committed.
+
+        The finalizer is the thing that performs ``ledger.commit`` for
+        the happy path. If the job flips to FAILED while in FINALIZING
+        with a user-caused reason, the credit is already in ``committed``
+        and must be left alone — a second commit would raise ValueError.
+        """
+        job_data = _make_job_data(status=JobStatus.FINALIZING)
+        ledger = _make_ledger()
+
+        _, ledger = await _call_fail_job(job_data, FAILURE_IDENTITY, ledger)
+
+        ledger.release.assert_not_called()
+        ledger.refund.assert_not_called()
+        ledger.commit.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_identity_failure_updates_identity_fields(self):

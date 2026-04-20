@@ -117,7 +117,7 @@ class JobRepository:
         """Fetch job fields needed for refund operation."""
         result = (
             self._sb.table("jobs")
-            .select("id, user_id, status, credit_reservation_id")
+            .select("id, user_id, status, credit_reservation_id, failure_reason")
             .eq("id", job_id)
             .maybe_single()
             .execute()

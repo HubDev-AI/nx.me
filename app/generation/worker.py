@@ -32,6 +32,7 @@ from app.generation.models import (
     FAILURE_TIMEOUT,
     GenerationOptions,
     JobStatus,
+    NON_USER_FAILURE_REASONS,
 )
 from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
@@ -855,11 +856,22 @@ async def _fail_job(
     identity_score: float | None = None,
     supabase: Client | None = None,
 ) -> None:
-    """Fail a job: release/refund credit and update status.
+    """Fail a job: conditionally release/refund credit and update status.
 
-    Credit handling (auto-refund for non-user-caused failures):
-    - Job in 'finalizing' state: credit was already committed → call refund()
-      (committed → released, adds +1 delta).
+    Credit handling depends on who caused the failure:
+
+    * ``NON_USER_FAILURE_REASONS`` (PROVIDER_ERROR, GENERATION_TIMEOUT) —
+      the provider failed to return a usable result. We refund the user's
+      credit.
+    * User-caused failures (NSFW_CONTENT_DETECTED,
+      IDENTITY_PRESERVATION_FAILED) — the provider ran a paid inference
+      and returned output we rejected. We already paid the provider, so
+      the user's credit stays consumed.
+
+    Within the refundable path:
+
+    - Job in 'finalizing' state: credit was already committed → call
+      refund() (committed → released, adds +1 delta).
     - Job in other states: credit is still reserved → call release()
       (reserved → released, adds +1 delta).
     - Job in 'completed' state: credit fully consumed — no action.
@@ -873,11 +885,14 @@ async def _fail_job(
     current_status = job_data.get("status")
     reservation_id_str = job_data.get("credit_reservation_id")
 
-    if (
+    should_settle_credit = (
         reservation_id_str
         and supabase is not None
         and current_status != JobStatus.COMPLETED
-    ):
+        and failure_reason in NON_USER_FAILURE_REASONS
+    )
+
+    if should_settle_credit:
         _ledger = CreditLedger(supabase)
         reservation_id = UUID(reservation_id_str)
         try:
@@ -896,6 +911,26 @@ async def _fail_job(
                 current_status,
                 exc,
             )
+    elif reservation_id_str and current_status != JobStatus.COMPLETED:
+        # User-caused failure: commit the reserved credit so the balance
+        # reflects that we paid the provider. Without this, the credit
+        # sits in 'reserved' forever and the ledger drifts.
+        _ledger = CreditLedger(supabase) if supabase is not None else None
+        if _ledger is not None and current_status != JobStatus.FINALIZING:
+            try:
+                _ledger.commit(UUID(reservation_id_str))
+                logger.info(
+                    "Credit committed (user-caused failure) for job %s (reason=%s)",
+                    job_id,
+                    failure_reason,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to commit credit for user-caused failure %s (status=%s): %s",
+                    job_id,
+                    current_status,
+                    exc,
+                )
 
     update: dict = {
         "status": JobStatus.FAILED,
