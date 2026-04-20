@@ -26,6 +26,8 @@ def _make_supabase(
     pro_user_ids: list[str] | None = None,
     rpc_raises_for: set[str] | None = None,
     sub_fetch_raises: Exception | None = None,
+    kill_switch_enabled: bool | None = True,
+    kill_switch_fetch_raises: Exception | None = None,
 ) -> MagicMock:
     """Build a minimal Supabase mock for weekly_free_grant tests.
 
@@ -33,6 +35,10 @@ def _make_supabase(
     ``pro_user_ids`` — users with active subscriptions (will be skipped).
     ``rpc_raises_for`` — set of user_ids for which the RPC should raise.
     ``sub_fetch_raises`` — exception to raise when fetching subscriptions.
+    ``kill_switch_enabled`` — value of the ``app_kill_switches.enabled`` row;
+        ``None`` simulates a missing row (fail-open ⇒ treated as enabled).
+    ``kill_switch_fetch_raises`` — simulate a DB error on the kill-switch
+        lookup (fail-open ⇒ treated as enabled).
     """
     pro_ids = pro_user_ids or []
     raise_for = rpc_raises_for or set()
@@ -43,7 +49,25 @@ def _make_supabase(
     def _table(name: str):
         chain = MagicMock()
 
-        if name == "subscriptions":
+        if name == "app_kill_switches":
+            if kill_switch_fetch_raises:
+                chain.select.return_value = chain
+                chain.eq.return_value = chain
+                chain.limit.return_value = chain
+                chain.execute.side_effect = kill_switch_fetch_raises
+            else:
+                data = (
+                    []
+                    if kill_switch_enabled is None
+                    else [{"enabled": bool(kill_switch_enabled)}]
+                )
+                inner = MagicMock()
+                inner.execute.return_value = MagicMock(data=data)
+                inner.eq.return_value = inner
+                inner.limit.return_value = inner
+                chain.select.return_value = inner
+
+        elif name == "subscriptions":
             if sub_fetch_raises:
                 chain.select.return_value = chain
                 chain.eq.return_value = chain
@@ -272,3 +296,65 @@ class TestRunWeeklyFreeGrantEdgeCases:
         ]
         # Both calls fired — dedup is in the DB, not the worker.
         assert len(grant_calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# Kill-switch (app_kill_switches table)
+# ---------------------------------------------------------------------------
+
+
+class TestRunWeeklyFreeGrantKillSwitch:
+    @pytest.mark.asyncio
+    async def test_kill_switch_disabled_skips_job(self, caplog):
+        """Kill-switch row set to FALSE → worker logs + returns, no RPC."""
+        import logging
+
+        user_id = str(uuid4())
+        sb = _make_supabase(user_ids=[user_id], kill_switch_enabled=False)
+        ctx = {"supabase": sb}
+
+        with caplog.at_level(logging.INFO, logger="app.workers.weekly_free_grant"):
+            await run_weekly_free_grant(ctx)
+
+        grant_calls = [
+            name
+            for name, _ in sb._rpc_calls
+            if name == "credit_apply_weekly_free_grant"
+        ]
+        assert grant_calls == []
+        assert any("disabled via kill-switch" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_kill_switch_missing_row_fails_open(self):
+        """No row for 'weekly_free_grant' key → treated as enabled."""
+        user_id = str(uuid4())
+        sb = _make_supabase(user_ids=[user_id], kill_switch_enabled=None)
+        ctx = {"supabase": sb}
+
+        await run_weekly_free_grant(ctx)
+
+        grant_calls = [
+            name
+            for name, _ in sb._rpc_calls
+            if name == "credit_apply_weekly_free_grant"
+        ]
+        assert len(grant_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_kill_switch_lookup_error_fails_open(self):
+        """DB error on kill-switch lookup → treated as enabled (fail-open)."""
+        user_id = str(uuid4())
+        sb = _make_supabase(
+            user_ids=[user_id],
+            kill_switch_fetch_raises=RuntimeError("DB blip"),
+        )
+        ctx = {"supabase": sb}
+
+        await run_weekly_free_grant(ctx)
+
+        grant_calls = [
+            name
+            for name, _ in sb._rpc_calls
+            if name == "credit_apply_weekly_free_grant"
+        ]
+        assert len(grant_calls) == 1

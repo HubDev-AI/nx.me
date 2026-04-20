@@ -141,6 +141,36 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
+### Pause / resume without a redeploy
+
+The cron is gated by a DB kill-switch row in `app_kill_switches`. The
+worker reads the flag at every fire — flipping it takes effect on the
+next Monday 02:30 UTC tick (no restart needed).
+
+```sql
+-- Pause
+UPDATE app_kill_switches
+   SET enabled = FALSE,
+       note = 'paused YYYY-MM-DD — <reason>',
+       updated_at = now()
+ WHERE key = 'weekly_free_grant';
+
+-- Resume
+UPDATE app_kill_switches
+   SET enabled = TRUE,
+       note = 'resumed YYYY-MM-DD',
+       updated_at = now()
+ WHERE key = 'weekly_free_grant';
+
+-- Current state
+SELECT key, enabled, note, updated_at
+  FROM app_kill_switches
+ WHERE key = 'weekly_free_grant';
+```
+
+A missing row or DB lookup error is treated as **enabled** (fail-open) —
+a forgotten seed must never silently skip a grant.
+
 ---
 
 ## 6. Fingerprint purge manual trigger
