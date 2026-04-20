@@ -171,9 +171,8 @@ export default function ProfileScreen() {
     reconcileWithJob,
   } = useProfile();
 
-  // Load profile once the session can view its own profile and the username
-  // is known. Gated on canViewOwnProfile (not isUser) so guests with a valid
-  // guest token in `auth_required=false` mode also fetch their data.
+  // Load profile once the session can view its own profile and the
+  // username is known.
   useEffect(() => {
     if (caps.canViewOwnProfile && authUsername && profile === null) {
       loadProfile(authUsername);
@@ -559,8 +558,8 @@ export default function ProfileScreen() {
     });
   }, [navigation]);
 
-  // No profile to show (anon, or impossible-state guest with auth_required=true)
-  // — render a centered sign-in CTA. The RadialMenu is mounted globally via
+  // No profile to show (anon session) — render a centered sign-in CTA.
+  // The RadialMenu is mounted globally via
   // RadialMenuProvider, so we only call `open(menuItems)` from the 3-dot
   // button; no local rendering needed.
   if (!caps.canViewOwnProfile) {

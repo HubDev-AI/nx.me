@@ -27,6 +27,7 @@ import {
   STRIPE_PUBLISHABLE_KEY,
   APPLE_MERCHANT_ID,
   SECURE_STORE_KEYS,
+  ME_FETCH_TIMEOUT_MS,
 } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
@@ -58,21 +59,35 @@ function AuthGuard() {
 
   // On a real JWT-backed session, hydrate /me once so the UI has the
   // canonical username + consent state. Anon sessions just release the splash.
+  //
+  // The fetch is bounded by ME_FETCH_TIMEOUT_MS — a stalled backend (captive
+  // portal, unreachable API) must not hold the splash screen indefinitely. On
+  // failure the ref is reset so a re-login or connectivity recovery can retry.
   useEffect(() => {
     if (featuresLoading) return;
     if (!session.isUser) {
+      meFetchRef.current = false;
       markSessionReady();
       return;
     }
     if (meFetchRef.current) return;
     meFetchRef.current = true;
-    fetchMe()
+    Promise.race([
+      fetchMe(),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("/me lookup timed out")),
+          ME_FETCH_TIMEOUT_MS,
+        ),
+      ),
+    ])
       .then((me) => {
         setUsername(me.username);
         markConsentGranted(me.face_mod_consent_at !== null);
       })
       .catch((err) => {
         if (__DEV__) console.warn("/me lookup failed:", err);
+        meFetchRef.current = false;
       })
       .finally(() => {
         markSessionReady();

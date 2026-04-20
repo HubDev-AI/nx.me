@@ -164,8 +164,7 @@ async def check_delete_account_rate_limit(
 # 10 deletes per minute per caller. Tight enough to defuse a stolen-token
 # sweep (which would otherwise pound blob storage and inflate the orphan
 # DLQ), loose enough that a user cleaning up 5-6 old glow-ups back-to-back
-# never feels it. Guest + real-user both key on the claim ``sub`` — guest
-# tokens resolve to a stable user UUID upstream of this call.
+# never feels it. Keyed on the claim ``sub`` (the authenticated user UUID).
 _DELETE_GLOWUP_WINDOW_SECONDS = 60
 _DELETE_GLOWUP_MAX_ATTEMPTS = 10
 

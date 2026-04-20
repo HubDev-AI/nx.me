@@ -305,9 +305,22 @@ class TestAuthSessionIsolation:
         user_repo = MagicMock()
         user_repo.get_profile_by_id.return_value = {"username": "alice"}
 
+        # Rate-limit dep inputs — Request + redis pipeline that always allows.
+        fake_request = MagicMock()
+        fake_request.client = MagicMock(host="127.0.0.1")
+        fake_request.headers = {}
+        redis_mock = AsyncMock()
+        pipeline_mock = MagicMock()
+        pipeline_mock.incr = MagicMock()
+        pipeline_mock.expire = MagicMock()
+        pipeline_mock.execute = AsyncMock(return_value=[1, True])
+        redis_mock.pipeline = MagicMock(return_value=pipeline_mock)
+
         result = await refresh_token(
+            request=fake_request,
             body=RefreshRequest(refresh_token="rt-123"),
             supabase=shared_supabase,
+            r=redis_mock,
             user_repo=user_repo,
         )
 

@@ -1177,8 +1177,10 @@ async def tiktok_login(
 
 @router.post("/refresh", response_model=LoginResponse)
 async def refresh_token(
+    request: Request,
     body: RefreshRequest,
     supabase: Client = Depends(get_supabase),
+    r: aioredis.Redis = Depends(get_redis),
     user_repo: UserRepository = Depends(get_user_repo),
 ) -> LoginResponse:
     """Exchange a refresh_token for a new session (access + refresh tokens).
@@ -1186,7 +1188,26 @@ async def refresh_token(
     No auth dependency is required — the caller is refreshing precisely
     because their access token has expired.  The refresh_token itself is
     validated by Supabase GoTrue.
+
+    Per-IP rate limited to block refresh-token stuffing with stolen or
+    brute-forced tokens. Uses the same `check_login_rate_limit` window as
+    /v1/auth/login so an attacker can't side-step login throttling by hammering
+    /refresh.
     """
+    client_ip = get_client_ip(request)
+    if not client_ip:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot determine client IP address.",
+        )
+    login_allowed, login_ttl = await check_login_rate_limit(client_ip, r)
+    if not login_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many refresh attempts from this IP. Try again later.",
+            headers={"Retry-After": str(login_ttl)},
+        )
+
     from app.db.client import get_supabase_service
 
     refresh_client = get_supabase_service()

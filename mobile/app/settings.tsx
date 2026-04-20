@@ -117,7 +117,7 @@ export default function SettingsScreen() {
   });
 
   // -------------------------------------------------------------------------
-  // Fetch /v1/auth/me — only for real users; guests have no account record.
+  // Fetch /v1/users/me for the authenticated user's account details.
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (!caps.canViewAccountDetails) return;

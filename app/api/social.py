@@ -345,6 +345,17 @@ async def persist_reaction(ctx: dict, reaction_data: dict) -> None:
         )
         raise ValueError("persist_reaction: post_id is required")
 
+    user_id = reaction_data.get("user_id")
+    if not user_id:
+        # Defensive — reaction endpoint always sets user_id from claims["sub"]
+        # post-guest-removal. A missing user_id would hit the reactions.user_id
+        # NOT NULL constraint at the DB and each ARQ retry would over-decrement
+        # the Redis counter. Fail loudly here so ARQ drops the job instead.
+        logger.error(
+            "persist_reaction received payload without user_id: %r", reaction_data
+        )
+        raise ValueError("persist_reaction: user_id is required")
+
     from app.db.client import get_supabase_service
     from app.repositories.feed_repo import FeedRepository
 

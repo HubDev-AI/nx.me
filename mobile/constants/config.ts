@@ -335,7 +335,7 @@ export const CARD_ENDPOINTS = {
 
 /** Profile API paths */
 export const PROFILE_ENDPOINTS = {
-  /** Identity for the current session — works for JWT users and guest tokens. */
+  /** Identity for the authenticated user — JWT required. */
   ME: "/v1/users/me",
   PROFILE: (username: string) => `/v1/users/${username}/profile`,
   HISTORY: (username: string) => `/v1/users/${username}/history`,
@@ -349,10 +349,12 @@ export const PROFILE_ENDPOINTS = {
 } as const;
 
 /**
- * Bound on how long AuthGuard waits for the guest /me lookup before
- * releasing the splash screen. A stalled network must not strand users.
+ * Bound on how long AuthGuard waits for /me after a real-user session is
+ * established, before releasing the splash screen regardless. A stalled
+ * network (captive portal, unreachable API) must not strand users behind
+ * the splash.
  */
-export const GUEST_ME_TIMEOUT_MS = 5_000;
+export const ME_FETCH_TIMEOUT_MS = 5_000;
 
 /**
  * Result-screen latency tolerance.

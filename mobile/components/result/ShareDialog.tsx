@@ -3,8 +3,8 @@
  * with plain-language disclosure of what each action does.
  *
  * Visibility rules (computed on render from `useCapabilities()` + job state):
- *   - Save row    → shown when `saved_at` is null AND user can edit profile
- *                   (real users always; guests when auth_required=false).
+ *   - Save row    → shown when `saved_at` is null AND the user can edit
+ *                   their profile.
  *   - Share row   → always shown.
  *   - Publish row → shown when `canPublishGlowup` is true AND `post_id`
  *                   is null (not yet published).

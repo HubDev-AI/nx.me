@@ -117,7 +117,8 @@ class TestRoutesUseApprovedAuthDep:
         protected = [r for r in _api_routes(app_under_test) if not _is_public(r.path)]
         assert len(protected) >= 10, (
             f"expected to find ≥10 protected routes, found {len(protected)} "
-            "— allowlist may be too broad or app failed to import"
+            "— app may have failed to import or routes were mistakenly added to "
+            "PUBLIC_ROUTE_ALLOWLIST"
         )
 
     def test_every_route_is_either_auth_gated_or_explicitly_public(
