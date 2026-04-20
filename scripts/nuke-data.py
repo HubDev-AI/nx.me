@@ -43,7 +43,6 @@ TABLES_IN_ORDER: list[tuple[str, str | None]] = [
     ("uploads", "user_id"),
     ("images", "user_id"),
     ("credit_ledger", "user_id"),
-    ("usage_events", "user_id"),
     ("subscriptions", "user_id"),
     ("advisor_messages", None),  # FK via conversation
     ("advisor_nudges", "user_id"),
