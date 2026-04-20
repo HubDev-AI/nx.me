@@ -198,7 +198,11 @@ export const FeedCard = React.memo(function FeedCard({
       doubleTapFiredRef.current = true;
       setTimeout(() => { doubleTapFiredRef.current = false; }, 600);
       hapticMedium();
-      onReact(post.post_id);
+      // Instagram-style double-tap: always LIKE, never unlike. Unliking
+      // happens via the explicit heart button in the actions row.
+      if (!hasReacted) {
+        onReact(post.post_id);
+      }
       setShowHeartOverlay(true);
       setTimeout(() => setShowHeartOverlay(false), 600);
     } else {
@@ -213,7 +217,7 @@ export const FeedCard = React.memo(function FeedCard({
         }
       }, DOUBLE_TAP_DELAY_MS);
     }
-  }, [onReact, post.post_id, handlePostPress]);
+  }, [hasReacted, onReact, post.post_id, handlePostPress]);
 
   // ─── Navigate to post detail (slider view with comments/actions) ─────────
   const handleUserPress = useCallback(() => {

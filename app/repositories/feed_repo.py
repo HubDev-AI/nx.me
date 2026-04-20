@@ -131,23 +131,51 @@ class FeedRepository:
     # RPCs — reaction persistence
     # ------------------------------------------------------------------
 
-    def persist_reaction_atomic(
+    def toggle_reaction_atomic(
         self,
         p_post_id: str,
         p_user_id: str,
-    ) -> list[dict]:
-        """Atomically insert reaction + update counter.
+    ) -> dict:
+        """Toggle a reaction for (post, user) and return the new state.
 
-        Returns the inserted row(s); empty list indicates a duplicate.
+        Returns ``{"reaction_count": int, "has_reacted": bool}``. A second
+        call from the same user removes the reaction and decrements the
+        counter.
         """
         result = self._sb.rpc(
-            "persist_reaction_atomic",
+            "toggle_reaction_atomic",
             {
                 "p_post_id": p_post_id,
                 "p_user_id": p_user_id,
             },
         ).execute()
-        return result.data or []
+        rows = result.data or []
+        if not rows:
+            raise RuntimeError(
+                f"toggle_reaction_atomic returned no rows for post {p_post_id}"
+            )
+        return rows[0]
+
+    def get_reacted_post_ids(
+        self,
+        user_id: str,
+        post_ids: list[str],
+    ) -> set[str]:
+        """Return the subset of ``post_ids`` the user has reacted to.
+
+        Used by the feed endpoint to populate ``has_reacted`` per post so
+        the UI can render the heart as filled on initial load.
+        """
+        if not post_ids:
+            return set()
+        result = (
+            self._sb.table("reactions")
+            .select("post_id")
+            .eq("user_id", user_id)
+            .in_("post_id", post_ids)
+            .execute()
+        )
+        return {row["post_id"] for row in (result.data or [])}
 
     def reconcile_reaction_counts(self, cutoff_iso: str) -> list[dict]:
         """Bulk UPDATE reaction counts from DB truth for posts since cutoff.
