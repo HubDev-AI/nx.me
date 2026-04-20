@@ -205,11 +205,10 @@ def test_recommendations_present_without_summary():
 # ---------------------------------------------------------------------------
 
 
-def _nudge(content: str, trigger: str = "post_analysis") -> dict:
+def _nudge(body: str) -> dict:
     """Minimal nudge row shape returned by ``get_recent_nudges_for_context``."""
     return {
-        "content": content,
-        "trigger": trigger,
+        "body": body,
         "created_at": "2026-04-17T00:00:00Z",
     }
 
@@ -217,9 +216,9 @@ def _nudge(content: str, trigger: str = "post_analysis") -> dict:
 def test_build_context_includes_nudge_block():
     """3 recent nudges → 3rd system block, 3 lines, order preserved."""
     nudges = [
-        _nudge("oval face shapes are versatile — try bangs", trigger="post_analysis"),
-        _nudge("loving how the new fringe lands", trigger="post_glowup"),
-        _nudge("weekly check-in: what's been landing?", trigger="weekly_checkin"),
+        _nudge("oval face shapes are versatile — try bangs"),
+        _nudge("loving how the new fringe lands"),
+        _nudge("weekly check-in: what's been landing?"),
     ]
     messages = build_context(
         soul_md="SOUL.md",
@@ -235,11 +234,9 @@ def test_build_context_includes_nudge_block():
     nudge_block = system_msgs[-1]["content"]
     lines = nudge_block.split("\n")
     assert len(lines) == 3
-    assert lines[0] == (
-        "nudge (post_analysis): oval face shapes are versatile — try bangs"
-    )
-    assert lines[1] == "nudge (post_glowup): loving how the new fringe lands"
-    assert lines[2] == "nudge (weekly_checkin): weekly check-in: what's been landing?"
+    assert lines[0] == "nudge: oval face shapes are versatile — try bangs"
+    assert lines[1] == "nudge: loving how the new fringe lands"
+    assert lines[2] == "nudge: weekly check-in: what's been landing?"
 
 
 def test_build_context_no_nudges_preserves_two_block_shape():
@@ -262,7 +259,7 @@ def test_build_context_no_nudges_preserves_two_block_shape():
     for messages in (messages_none, messages_empty):
         system_msgs = [m for m in messages if m.get("role") == "system"]
         assert len(system_msgs) == 2
-        assert "nudge (" not in system_msgs[-1]["content"]
+        assert "nudge:" not in system_msgs[-1]["content"]
 
 
 def test_build_context_caller_enforces_nudge_cap():
@@ -281,27 +278,20 @@ def test_build_context_caller_enforces_nudge_cap():
 
 def test_format_nudges_block_replaces_newlines_in_body_with_spaces():
     """Newlines inside a nudge body must be flattened so block rows stay one-per-line."""
-    block = format_nudges_block(
-        [
-            {
-                "content": "first line\nsecond line\r\nthird line",
-                "trigger": "post_analysis",
-            }
-        ]
-    )
+    block = format_nudges_block([{"body": "first line\nsecond line\r\nthird line"}])
     # One line in output, no literal \n / \r\n inside the rendered body.
     assert "\n" not in block
     assert "\r" not in block
-    assert block == "nudge (post_analysis): first line second line third line"
+    assert block == "nudge: first line second line third line"
 
 
 def test_format_nudges_block_skips_empty_bodies():
     """Empty / whitespace-only nudge bodies are skipped silently."""
-    assert format_nudges_block([{"content": "", "trigger": "post_analysis"}]) == ""
-    assert format_nudges_block([{"content": "   ", "trigger": "post_analysis"}]) == ""
+    assert format_nudges_block([{"body": ""}]) == ""
+    assert format_nudges_block([{"body": "   "}]) == ""
 
 
-def test_format_nudges_block_trigger_fallback_when_missing():
-    """Missing trigger → ``nudge: <body>`` without empty parens."""
-    block = format_nudges_block([{"content": "solo body"}])
+def test_format_nudges_block_renders_simple_body():
+    """Body-only input → ``nudge: <body>``."""
+    block = format_nudges_block([{"body": "solo body"}])
     assert block == "nudge: solo body"

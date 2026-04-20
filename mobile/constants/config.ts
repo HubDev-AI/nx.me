@@ -236,9 +236,56 @@ export const ADVISOR_ENDPOINTS = {
   MESSAGES: "/v1/advisor/messages",
   NUDGES: "/v1/advisor/nudges",
   NUDGE_READ: (id: string) => `/v1/advisor/nudges/${id}`,
+  /**
+   * POST — exchanges a nudge's seed for the chat-open seed text. Fires
+   * only when the user taps the card's CTA chip, so we don't pay the
+   * lookup for nudges the user never actions.
+   */
+  NUDGE_NEXT_STEP: (id: string) => `/v1/advisor/nudges/${id}/next-step`,
+  /**
+   * GET — chat-seed chips shown on the Ada chat empty state. Reserved
+   * here so Unit 7 and Unit 8 don't race on the same file; wired up by
+   * `fetchChatSeeds` in Unit 8.
+   */
+  CHAT_SEEDS: "/v1/advisor/chat-seeds",
   MEMORIES: "/v1/memories",
   MEMORY_DELETE: (id: string) => `/v1/memories/${id}`,
 } as const;
+
+/**
+ * Static label shown above every `post_glowup` nudge. The backend collapsed
+ * to a single trigger in Unit 3; the mobile surface mirrors that with a
+ * fixed label + icon rather than per-trigger chrome.
+ */
+export const POST_GLOWUP_LABEL = "After your glow-up";
+
+/** Ionicon name rendered alongside POST_GLOWUP_LABEL on NudgeCard/NudgeDetailSheet. */
+export const POST_GLOWUP_ICON = "bulb-outline" as const;
+
+/** Expo Router pathnames used for navigation — kept here so magic strings don't leak. */
+export const APP_ROUTES = {
+  ADVISOR: "/advisor",
+} as const;
+
+/**
+ * Only the `n` newest nudges render the actionable CTA chip. Older cards
+ * render a "quieter" variant — body + static chrome, no chip, no empty
+ * space where the chip would have sat. Newest-first by `created_at`, set
+ * once per fetch — infinite scroll does NOT promote older nudges into
+ * the top slot.
+ */
+export const NUDGES_CTA_VISIBLE_RECENT_CAP = 5;
+
+/**
+ * Microcopy shown above the composer while the prefilled text is
+ * untouched. First keystroke / backspace dismisses it for the session;
+ * one-shot, never re-activates.
+ */
+export const COMPOSER_PREFILL_MICROCOPY = "Ada suggested this question — edit or send";
+
+/** Toast copy for nudge CTA failure paths. */
+export const NUDGE_CTA_ERROR_TOAST = "Couldn't open chat. Try again.";
+export const NUDGE_CTA_STALE_TOAST = "This nudge is no longer available.";
 
 /**
  * Advisor Chat scoped seed-state copy. Replaces the generic
@@ -246,28 +293,13 @@ export const ADVISOR_ENDPOINTS = {
  * the Chat tab so first-time users see what Ada actually does. Other
  * advisor tabs (Nudges, Memories) still use AdvisorEmptyOverlay.
  *
- * The body's italic trailing clause is non-negotiable: the chip list
- * shouldn't read as exhaustive (Ada handles anything). If SOUL.md
- * persona lanes change, update this text and the chips below in lockstep
- * — see ADVISOR_PERSONA_NAME and app/advisor/SOUL.md.
+ * Chip seeds are no longer hardcoded — they're fetched from
+ * `GET /v1/advisor/chat-seeds` (Haiku-backed, Redis-cached 24 h) by the
+ * `ChatSeedChips` component. See `components/advisor/ChatSeedChips.tsx`.
  */
 export const ADVISOR_CHAT_EMPTY_TITLE = "Hi, I'm Ada.";
 export const ADVISOR_CHAT_EMPTY_BODY =
   "I can help with hair, skin, fit, grooming, or style — or ask me anything else you're thinking about.";
-
-/**
- * Starter chips for the Chat empty state. Tap → handleSend(chipText)
- * fires the LLM call immediately (no extra Send tap). Keep these
- * short, conversational, and aligned with SOUL.md's lanes. Must stay
- * gender-agnostic — no prompts assuming facial hair, body type, or
- * wardrobe category a user might not have.
- */
-export const ADVISOR_CHAT_STARTER_CHIPS: readonly string[] = [
-  "What hairstyle would suit me?",
-  "How's my overall style?",
-  "How do I fix the fit of my clothes?",
-  "What should I focus on next?",
-] as const;
 
 /** Advisor configuration */
 export const ADVISOR_CONFIG = {

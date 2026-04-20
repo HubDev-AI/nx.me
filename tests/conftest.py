@@ -223,7 +223,7 @@ class MockRedis:
         """Return a fixed TTL for test purposes — keys always have 900s remaining."""
         return 900 if key in self._store else -2
 
-    def pipeline(self) -> "MockPipeline":
+    def pipeline(self, transaction: bool = True) -> "MockPipeline":
         return MockPipeline(self)
 
 

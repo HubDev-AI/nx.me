@@ -90,8 +90,9 @@ class ConversationHistoryResponse(BaseModel):
 
 class NudgeResponse(BaseModel):
     id: str
-    trigger: str
-    content: str
+    body: str
+    next_step_label: str
+    next_step_seed: str
     read_at: str | None
     created_at: str
 
@@ -113,3 +114,21 @@ class MemoryListPageResponse(BaseModel):
     memories: list[MemoryResponse]
     next_cursor: str | None = None
     has_more: bool = False
+
+
+class NudgeNextStepResponse(BaseModel):
+    seed_text: str
+
+
+# ---------------------------------------------------------------------------
+# Chat seeds API models (Plan 2026-04-20-001 Unit 5)
+# ---------------------------------------------------------------------------
+
+
+class ChatSeed(BaseModel):
+    label: str
+    text: str
+
+
+class ChatSeedsResponse(BaseModel):
+    seeds: list[ChatSeed]

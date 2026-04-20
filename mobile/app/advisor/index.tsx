@@ -5,9 +5,10 @@
  * Nudges: Ada's tips and check-ins, available to all tiers.
  * Memories: user memories that Ada uses for personalisation.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { THEME } from "../../constants/theme";
 import { PageBackground } from "../../components/ui/PageBackground";
@@ -53,6 +54,40 @@ const TABS: TabConfig[] = [
 export default function AdvisorScreen() {
   const [activeTab, setActiveTab] = useState<AdvisorTab>("chat");
   const { theme } = useTheme();
+  const router = useRouter();
+  const rawParams = useLocalSearchParams<{ seedText?: string | string[] }>();
+  // `useLocalSearchParams` can surface a param as `string | string[]`
+  // (when the same key repeats). The nudge CTA only ever sets a single
+  // value, so we normalise to the first string.
+  const seedText: string | undefined = Array.isArray(rawParams.seedText)
+    ? rawParams.seedText[0]
+    : rawParams.seedText;
+
+  // Committed seed survives `router.setParams({ seedText: undefined })`
+  // so ChatView can still receive the text on the render that clears
+  // the URL param. A new incoming `seedText` bumps `seedVersion`, which
+  // feeds into ChatView's React key — that forces a fresh mount so its
+  // one-shot useState initializer runs again. Without the key bump, a
+  // second nudge CTA while ChatView is already mounted would silently
+  // no-op (lazy initializer only runs once per mount).
+  const [committedSeed, setCommittedSeed] = useState<string | undefined>(
+    undefined,
+  );
+  const [seedVersion, setSeedVersion] = useState(0);
+  const consumedSeedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!seedText) return;
+    if (consumedSeedRef.current === seedText) return;
+    consumedSeedRef.current = seedText;
+    setCommittedSeed(seedText);
+    setSeedVersion((v) => v + 1);
+    // A seed means the user explicitly invoked Ada — switch the tab
+    // even if they were viewing Nudges when they tapped the CTA.
+    setActiveTab("chat");
+    // Drop the param so subsequent remounts of AdvisorScreen (background
+    // kill + restore, deep-link back) don't re-seed the composer.
+    router.setParams({ seedText: undefined });
+  }, [seedText, router]);
 
   const handleTabChange = useCallback((tab: AdvisorTab) => {
     hapticLight();
@@ -103,7 +138,9 @@ export default function AdvisorScreen() {
 
       {/* Content */}
       <View style={styles.content}>
-        {activeTab === "chat" && <ChatView />}
+        {activeTab === "chat" && (
+          <ChatView key={`chat-${seedVersion}`} seedText={committedSeed} />
+        )}
         {activeTab === "nudges" && <NudgeFeed />}
         {activeTab === "memories" && <MemoryList />}
       </View>

@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 # ``tests/test_advisor_style_profile.py::test_repo_type_constant_matches_enum``.
 STYLE_PROFILE_TYPE = "style_profile"
 
+# ``jobs.source_type`` + ``jobs.status`` literals used by the glow-up
+# lookup. Named constants rather than inline strings (project rule: no
+# magic strings) so a rename of the canonical value is a single edit.
+_SOURCE_TYPE_GLOWUP_ANALYSIS = "glowup_analysis"
+_JOB_STATUS_COMPLETED = "completed"
+
 
 class AdvisorRepository:
     """Encapsulates all DB queries for the advisor module."""
@@ -186,7 +192,7 @@ class AdvisorRepository:
         """Fetch all nudges for a user, newest first."""
         result = (
             self._sb.table("advisor_nudges")
-            .select("id, trigger, content, read_at, created_at")
+            .select("id, body, next_step_label, next_step_seed, read_at, created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .execute()
@@ -196,37 +202,22 @@ class AdvisorRepository:
     def get_recent_nudge_context(
         self, user_id: str, limit: int = 5
     ) -> list[dict[str, Any]]:
-        """Return the newest N nudge bodies + observation_tags for a user.
+        """Return the newest N nudges for the "do not repeat" prompt block.
 
-        Plan 2026-04-17-003 Unit 8. Feeds the "do not repeat" block of
-        the vision-grounded nudge prompt. Returns
-        ``[{"body": str, "observation_tag": str | None, "created_at": str}]``
-        newest-first.
-
-        ``body`` is an alias for the ``content`` column the table uses —
-        the prompt reads more naturally with ``body`` and the column
-        rename would be pure churn. ``observation_tag`` may be ``None``
-        on rows written before migration 0041; the prompt renderer
-        treats ``None`` as "no tag" for graceful forward-compat. Does
-        NOT touch ``read_at`` — this is a pure read path.
+        Plan 2026-04-20-001 Unit 3. Returns
+        ``[{"body": str, "next_step_label": str, "next_step_seed": str,
+           "created_at": str}]`` newest-first. Does NOT touch ``read_at``
+        — this is a pure read path.
         """
         result = (
             self._sb.table("advisor_nudges")
-            .select("content, observation_tag, created_at")
+            .select("body, next_step_label, next_step_seed, created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .limit(limit)
             .execute()
         )
-        rows = result.data or []
-        return [
-            {
-                "body": row.get("content"),
-                "observation_tag": row.get("observation_tag"),
-                "created_at": row.get("created_at"),
-            }
-            for row in rows
-        ]
+        return result.data or []
 
     def get_nudges_page(
         self,
@@ -242,7 +233,7 @@ class AdvisorRepository:
         """
         query = (
             self._sb.table("advisor_nudges")
-            .select("id, trigger, content, read_at, created_at")
+            .select("id, body, next_step_label, next_step_seed, read_at, created_at")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .order("id", desc=True)
@@ -270,7 +261,7 @@ class AdvisorRepository:
         """Fetch a single nudge, verifying ownership. Returns None if not found."""
         result = (
             self._sb.table("advisor_nudges")
-            .select("id, read_at")
+            .select("id, body, next_step_seed, read_at, created_at")
             .eq("id", nudge_id)
             .eq("user_id", user_id)
             .maybe_single()
@@ -287,43 +278,53 @@ class AdvisorRepository:
     def insert_nudge(self, nudge_data: dict[str, Any]) -> None:
         """Persist a new nudge row.
 
-        Accepts any columns the ``advisor_nudges`` table defines; callers
-        are responsible for the shape. Plan 2026-04-17-003 Unit 8 added
-        the ``observation_tag`` column (migration 0041) — it is optional
-        and flows through this passthrough when the caller provides it.
+        Plan 2026-04-20-001 Unit 3. Expected keys:
+        ``{user_id, body, next_step_label, next_step_seed, body_hash}``.
+        Callers are responsible for the shape.
         """
         self._sb.table("advisor_nudges").insert(nudge_data).execute()
 
-    def find_last_nudge(self, user_id: str, trigger: str) -> dict[str, Any] | None:
-        """Return the most recent nudge for a user+trigger, or None."""
-        result = (
-            self._sb.table("advisor_nudges")
-            .select("created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        return rows[0] if rows else None
+    def find_duplicate_body(
+        self, user_id: str, body_hash: str, since: datetime
+    ) -> bool:
+        """Return True if a nudge with matching ``body_hash`` exists for this user
+        with ``created_at >= since``.
 
-    def find_recent_nudges(
-        self, user_id: str, trigger: str, since: str
-    ) -> list[dict[str, Any]]:
-        """Return nudges for user+trigger created after ``since`` (ISO timestamp).
-
-        Used for cooldown / dedup checks.
+        Plan 2026-04-20-001 Unit 3. Uses the non-unique index
+        ``ix_advisor_nudges_user_body_hash (user_id, body_hash)``.
         """
         result = (
             self._sb.table("advisor_nudges")
             .select("id")
             .eq("user_id", user_id)
-            .eq("trigger", trigger)
-            .gt("created_at", since)
+            .eq("body_hash", body_hash)
+            .gte("created_at", since.isoformat())
             .limit(1)
             .execute()
         )
-        return result.data or []
+        return bool(result.data)
+
+    def get_latest_completed_glowup_id(self, user_id: str) -> str | None:
+        """Return the latest completed glowup job id for a user, or None.
+
+        Plan 2026-04-20-001 Unit 3 (consumed by Unit 4 /next-step endpoint).
+        Queries ``jobs`` with ``source_type='glowup_analysis'`` and
+        ``status='completed'`` ordered by ``updated_at DESC LIMIT 1``.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("source_type", _SOURCE_TYPE_GLOWUP_ANALYSIS)
+            .eq("status", _JOB_STATUS_COMPLETED)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return None
+        return str(rows[0]["id"])
 
     def get_recent_nudges_for_context(
         self, user_id: str, limit: int, since_iso: str
@@ -331,18 +332,16 @@ class AdvisorRepository:
         """Return the user's newest ``limit`` nudges created at/after ``since_iso``.
 
         Read-only helper used by the chat context builder (Plan
-        2026-04-17-003 Unit 4). Does NOT mutate ``read_at`` — the chat
-        surface must not change read state as a side effect of the model
-        seeing a nudge. Returned rows carry ``content`` (the nudge body),
-        ``trigger`` (lowercase identifier used as prefix in the system
-        block), and ``created_at`` (ISO timestamp).
+        2026-04-17-003 Unit 4). Does NOT mutate ``read_at``. Returned rows
+        carry ``body`` (the nudge body), ``next_step_label``,
+        ``next_step_seed``, and ``created_at`` (ISO timestamp).
 
         Ordered newest-first so callers can emit them in recency order
         without re-sorting.
         """
         result = (
             self._sb.table("advisor_nudges")
-            .select("content, trigger, created_at")
+            .select("body, next_step_label, next_step_seed, created_at")
             .eq("user_id", user_id)
             .gte("created_at", since_iso)
             .order("created_at", desc=True)
@@ -350,23 +349,6 @@ class AdvisorRepository:
             .execute()
         )
         return result.data or []
-
-    def get_user_ids_with_nudge_since(
-        self, since: str, trigger: str | None = None
-    ) -> set[str]:
-        """Batch version of ``find_recent_nudges`` — one query, any user.
-
-        Returns the set of user IDs that have at least one nudge (optionally
-        filtered by ``trigger``) created after ``since``. Callers use set
-        membership to dedup eligibility scans in O(1) instead of N queries.
-        """
-        query = (
-            self._sb.table("advisor_nudges").select("user_id").gt("created_at", since)
-        )
-        if trigger is not None:
-            query = query.eq("trigger", trigger)
-        result = query.execute()
-        return {row["user_id"] for row in (result.data or [])}
 
     # ------------------------------------------------------------------
     # Memories
@@ -583,52 +565,6 @@ class AdvisorRepository:
             .execute()
         )
         return result.data or []
-
-    def get_all_insights_with_timestamps(self) -> list[dict[str, Any]]:
-        """Fetch (user_id, created_at) for all analysis_insight rows.
-
-        Used by nudge eligibility scans across all users.
-        """
-        result = (
-            self._sb.table("user_memories")
-            .select("user_id, created_at")
-            .eq("type", "analysis_insight")
-            .execute()
-        )
-        return result.data or []
-
-    def count_insights_by_user(self) -> dict[str, int]:
-        """Return a mapping of user_id → analysis_insight count for all users.
-
-        Uses a COUNT query grouped by user_id to avoid fetching every row.
-        """
-        result = (
-            self._sb.table("user_memories")
-            .select("user_id", count="exact")
-            .eq("type", "analysis_insight")
-            .execute()
-        )
-        # PostgREST does not support GROUP BY directly; fall back to Python grouping
-        # on the minimal (user_id-only) payload — significantly less data than
-        # fetching created_at for every row.
-        counts: dict[str, int] = {}
-        for row in result.data or []:
-            uid = row["user_id"]
-            counts[uid] = counts.get(uid, 0) + 1
-        return counts
-
-    def get_all_goal_user_ids(self) -> set[str]:
-        """Fetch distinct user IDs that have at least one goal memory.
-
-        Used by the weekly check-in eligibility scan.
-        """
-        result = (
-            self._sb.table("user_memories")
-            .select("user_id")
-            .eq("type", "goal")
-            .execute()
-        )
-        return {row["user_id"] for row in (result.data or [])}
 
     def get_latest_nudge_for_user(self, user_id: str) -> dict[str, Any] | None:
         """Return the most recent nudge (any trigger) for a user, or None."""

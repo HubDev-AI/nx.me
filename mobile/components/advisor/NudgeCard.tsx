@@ -1,59 +1,89 @@
 /**
- * NudgeCard — individual nudge card with unread badge and tap-to-read.
+ * NudgeCard — single actionable nudge row.
  *
- * Unread nudges show a coral dot indicator. Tapping marks as read.
+ * Unread nudges show a coral dot indicator; tapping anywhere outside the
+ * CTA chip opens the detail sheet and marks the nudge read. Top-5 cards
+ * (by newest-first order in the feed) render an in-card CTA chip whose
+ * label comes from `nudge.next_step_label`; the quieter variant shown
+ * for older cards drops the chip but keeps the body + chrome. Chrome is
+ * static — the backend collapsed to a single `post_glowup` trigger in
+ * Unit 3, so the label and icon no longer vary per nudge.
  */
-import { memo, useCallback } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { memo, useCallback, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { Body, Caption } from "../ui/Text";
-import { MIN_TOUCH_TARGET } from "../../constants/config";
+import {
+  MIN_TOUCH_TARGET,
+  NUDGES_CTA_VISIBLE_RECENT_CAP,
+  POST_GLOWUP_ICON,
+  POST_GLOWUP_LABEL,
+} from "../../constants/config";
 import { formatTimeAgo } from "../../lib/format";
 import type { Nudge } from "../../lib/advisor";
 
 interface NudgeCardProps {
   nudge: Nudge;
   /**
-   * Called on every tap. The parent owns side-effects: marking the
-   * nudge as read, opening a detail modal, navigating, etc. Kept as
-   * a single callback so the card stays presentational — it never
-   * decides whether a tap is meaningful or not.
+   * Newest-first position in the feed. Used to decide whether the
+   * actionable CTA chip renders — only the first
+   * `NUDGES_CTA_VISIBLE_RECENT_CAP` cards show it. Required so callers
+   * cannot silently hide every chip by forgetting to pass it.
    */
+  index: number;
+  /** Called when the card body (not the CTA) is tapped. */
   onPress: (nudge: Nudge) => void;
+  /**
+   * Called when the CTA chip is tapped. Parent owns routing + error
+   * handling + "stale nudge" refresh. Kept as a pass-through so the
+   * card stays presentational.
+   */
+  onCtaPress?: (nudge: Nudge) => Promise<void> | void;
 }
 
-function nudgeLabel(trigger: string): string {
-  const labels: Record<string, string> = {
-    check_in: "Check-in",
-    tip: "Tip",
-    reminder: "Reminder",
-    welcome: "Welcome",
-    milestone: "Milestone",
-    outfit_post: "Outfit Post",
-  };
-  return labels[trigger] ?? trigger.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
-}
-
-function nudgeIcon(trigger: string): React.ComponentProps<typeof Ionicons>["name"] {
-  switch (trigger) {
-    case "tip":
-      return "sparkles-outline";
-    case "check_in":
-      return "chatbubble-outline";
-    case "reminder":
-      return "alarm-outline";
-    default:
-      return "bulb-outline";
-  }
-}
-
-function NudgeCardInner({ nudge, onPress }: NudgeCardProps) {
+function NudgeCardInner({
+  nudge,
+  index,
+  onPress,
+  onCtaPress,
+}: NudgeCardProps) {
   const { theme } = useTheme();
   const isRead = nudge.read_at !== null;
+  const showCta =
+    index < NUDGES_CTA_VISIBLE_RECENT_CAP &&
+    nudge.next_step_label.trim().length > 0;
+
   const handlePress = useCallback(() => onPress(nudge), [nudge, onPress]);
+
+  // -------------------------------------------------------------------------
+  // CTA press — single-flight guard via ref + UI spinner.
+  // The ref is the actual re-entrancy guard; the `isFiring` state only
+  // drives the spinner. Disabled UI is a bug per napkin rule 9, so the
+  // Pressable stays tappable — the ref just blocks the second call.
+  // -------------------------------------------------------------------------
+  const isFiringRef = useRef(false);
+  const [isFiring, setIsFiring] = useState(false);
+
+  const handleCtaPress = useCallback(async () => {
+    if (!onCtaPress) return;
+    if (isFiringRef.current) return;
+    isFiringRef.current = true;
+    setIsFiring(true);
+    try {
+      await onCtaPress(nudge);
+    } finally {
+      isFiringRef.current = false;
+      setIsFiring(false);
+    }
+  }, [nudge, onCtaPress]);
 
   return (
     <Pressable
@@ -63,14 +93,16 @@ function NudgeCardInner({ nudge, onPress }: NudgeCardProps) {
         !isRead && styles.unreadCard,
         pressed && styles.pressed,
       ]}
-      accessibilityLabel={`${isRead ? "" : "Unread "}nudge: ${nudgeLabel(nudge.trigger)}`}
+      accessibilityLabel={`${isRead ? "" : "Unread "}nudge: ${POST_GLOWUP_LABEL}`}
       accessibilityRole="button"
       accessibilityHint="Tap to open the full nudge"
     >
       {/* Icon */}
-      <View style={[styles.iconContainer, { backgroundColor: theme.accentMuted }]}>
+      <View
+        style={[styles.iconContainer, { backgroundColor: theme.accentMuted }]}
+      >
         <Ionicons
-          name={nudgeIcon(nudge.trigger)}
+          name={POST_GLOWUP_ICON}
           size={22}
           color={isRead ? THEME.colors.textSecondary : theme.accent}
         />
@@ -85,13 +117,48 @@ function NudgeCardInner({ nudge, onPress }: NudgeCardProps) {
             numberOfLines={1}
             style={styles.title}
           >
-            {nudgeLabel(nudge.trigger)}
+            {POST_GLOWUP_LABEL}
           </Body>
-          {!isRead && <View style={[styles.unreadDot, { backgroundColor: theme.accent }]} />}
+          {!isRead && (
+            <View
+              style={[styles.unreadDot, { backgroundColor: theme.accent }]}
+            />
+          )}
         </View>
         <Caption color="secondary" numberOfLines={3} style={styles.body}>
-          {nudge.content}
+          {nudge.body}
         </Caption>
+
+        {showCta && (
+          <Pressable
+            onPress={handleCtaPress}
+            style={({ pressed }) => [
+              styles.cta,
+              {
+                backgroundColor: theme.accent,
+                ...THEME.shadow.glow(theme.accent),
+              },
+              pressed && styles.ctaPressed,
+            ]}
+            accessibilityLabel={nudge.next_step_label}
+            accessibilityRole="button"
+            hitSlop={8}
+          >
+            {isFiring ? (
+              <ActivityIndicator size="small" color={THEME.colors.bg} />
+            ) : (
+              <Body
+                weight="semibold"
+                color="primary"
+                numberOfLines={1}
+                style={[styles.ctaLabel, { color: THEME.colors.bg }]}
+              >
+                {nudge.next_step_label}
+              </Body>
+            )}
+          </Pressable>
+        )}
+
         <Caption color="muted" style={styles.time}>
           {formatTimeAgo(nudge.created_at)}
         </Caption>
@@ -140,7 +207,6 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.sm,
   },
   title: {
-    textTransform: "capitalize",
     flex: 1,
   },
   unreadDot: {
@@ -150,6 +216,23 @@ const styles = StyleSheet.create({
   },
   body: {
     lineHeight: 20,
+  },
+  cta: {
+    alignSelf: "flex-start",
+    borderRadius: THEME.radius.pill,
+    borderCurve: "continuous",
+    paddingHorizontal: THEME.spacing.lg,
+    paddingVertical: THEME.spacing.sm,
+    minHeight: MIN_TOUCH_TARGET,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: THEME.spacing.sm,
+  },
+  ctaPressed: {
+    opacity: 0.85,
+  },
+  ctaLabel: {
+    textAlign: "center",
   },
   time: {
     marginTop: THEME.spacing.xs / 2,

@@ -13,16 +13,27 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 
-import { ADVISOR_CONFIG, PAGINATION_CONFIG } from "../../constants/config";
+import {
+  ADVISOR_CONFIG,
+  APP_ROUTES,
+  NUDGE_CTA_ERROR_TOAST,
+  NUDGE_CTA_STALE_TOAST,
+  PAGINATION_CONFIG,
+} from "../../constants/config";
 import { THEME } from "../../constants/theme";
-import { fetchNudges, markNudgeRead } from "../../lib/advisor";
+import { ApiError } from "../../lib/api";
+import { fetchNudges, markNudgeRead, requestNudgeNextStep } from "../../lib/advisor";
 import type { Nudge } from "../../lib/advisor";
 import { useTheme } from "../../lib/theme-context";
 import { showToast } from "../../lib/toast";
 import { AdvisorEmptyOverlay } from "./AdvisorEmptyOverlay";
 import { NudgeCard } from "./NudgeCard";
 import { NudgeDetailSheet } from "./NudgeDetailSheet";
+
+/** HTTP status code surfaced when a nudge has been deleted server-side. */
+const HTTP_STALE_NUDGE = 404;
 
 /** Skeleton for loading state */
 function NudgeSkeleton() {
@@ -77,6 +88,7 @@ const Separator = () => <View style={styles.separator} />;
 
 export function NudgeFeed() {
   const { theme } = useTheme();
+  const router = useRouter();
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -91,6 +103,13 @@ export function NudgeFeed() {
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextCursorRef = useRef<string | null>(null);
+  // Lifecycle guard — guarded setState must never run after unmount,
+  // otherwise late network responses from a tab switch raise RN warnings
+  // and corrupt visible state on remount. Matches the ChatSeedChips pattern.
+  const isMountedRef = useRef(true);
+  // CTA in-flight guard shared across NudgeCard + NudgeDetailSheet so
+  // double-fire from both surfaces for the same nudge is impossible.
+  const inFlightCtaIdsRef = useRef<Set<string>>(new Set());
 
   // -------------------------------------------------------------------------
   // Load nudges
@@ -100,21 +119,25 @@ export function NudgeFeed() {
     setError(null);
     try {
       const response = await fetchNudges();
+      if (!isMountedRef.current) return;
       setNudges(response.nudges);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
+      if (!isMountedRef.current) return;
       const message =
         err instanceof Error ? err.message : "We couldn't load your nudges.";
       setError(message);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     loadNudges();
     return () => {
+      isMountedRef.current = false;
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
@@ -136,13 +159,14 @@ export function NudgeFeed() {
     retryCountRef.current = 0;
     try {
       const response = await fetchNudges();
+      if (!isMountedRef.current) return;
       setNudges(response.nudges);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch {
       // Silently ignore refresh errors — existing data stays
     } finally {
-      setIsRefreshing(false);
+      if (isMountedRef.current) setIsRefreshing(false);
     }
   }, []);
 
@@ -154,11 +178,13 @@ export function NudgeFeed() {
     setIsLoadingMore(true);
     try {
       const response = await fetchNudges(nextCursorRef.current);
+      if (!isMountedRef.current) return;
       setNudges((prev) => [...prev, ...response.nudges]);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
     } catch {
+      if (!isMountedRef.current) return;
       retryCountRef.current += 1;
       if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
         const attemptIndex = Math.min(
@@ -184,7 +210,7 @@ export function NudgeFeed() {
         message: "Couldn't load more nudges. Pull to refresh.",
       });
     } finally {
-      setIsLoadingMore(false);
+      if (isMountedRef.current) setIsLoadingMore(false);
     }
   }, [hasMore, isLoadingMore]);
 
@@ -204,6 +230,7 @@ export function NudgeFeed() {
     try {
       await markNudgeRead(nudge.id);
     } catch {
+      if (!isMountedRef.current) return;
       setNudges((prev) =>
         prev.map((n) => (n.id === nudge.id ? { ...n, read_at: null } : n)),
       );
@@ -213,15 +240,66 @@ export function NudgeFeed() {
   const handleCloseSheet = useCallback(() => setSelectedNudge(null), []);
 
   // -------------------------------------------------------------------------
+  // CTA press → seed the chat composer via Expo Router search params.
+  //
+  // Happy path: navigate to the advisor screen with `seedText` param.
+  // ChatView.handleSeedText (Unit 7) consumes the param one-shot and
+  // forwards it to AdvisorComposer.initialText. We intentionally `push`
+  // even when already on /advisor so `useLocalSearchParams` picks up
+  // the new seed; the advisor screen effect force-selects the chat tab
+  // whenever a seed param arrives.
+  //
+  // 404 path: the nudge was deleted server-side between the list fetch
+  // and the tap. Toast + refresh so the stale card drops out of the
+  // feed without the user having to pull-to-refresh manually.
+  // -------------------------------------------------------------------------
+  const handleCtaPress = useCallback(
+    async (nudge: Nudge) => {
+      // Cross-surface single-flight guard: if either NudgeCard or
+      // NudgeDetailSheet already fired this nudge's CTA, skip.
+      if (inFlightCtaIdsRef.current.has(nudge.id)) return;
+      inFlightCtaIdsRef.current.add(nudge.id);
+      try {
+        const response = await requestNudgeNextStep(nudge.id);
+        if (!isMountedRef.current) return;
+        // Close the detail sheet before navigation so the modal fade-out
+        // overlaps with the push transition — otherwise the sheet stays
+        // visible behind the new screen.
+        setSelectedNudge(null);
+        router.push({
+          pathname: APP_ROUTES.ADVISOR,
+          params: { seedText: response.seed_text },
+        });
+      } catch (err) {
+        if (err instanceof ApiError && err.status === HTTP_STALE_NUDGE) {
+          showToast({ kind: "warning", message: NUDGE_CTA_STALE_TOAST });
+          // Refresh so the stale card disappears from the list.
+          void handleRefresh();
+          return;
+        }
+        showToast({ kind: "error", message: NUDGE_CTA_ERROR_TOAST });
+      } finally {
+        inFlightCtaIdsRef.current.delete(nudge.id);
+      }
+    },
+    [handleRefresh, router],
+  );
+
+  // -------------------------------------------------------------------------
   // Render helpers
   // -------------------------------------------------------------------------
   const keyExtractor = useCallback((item: Nudge) => item.id, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: Nudge }) => (
-      <NudgeCard nudge={item} onPress={handleCardPress} />
+    ({ item, index }: { item: Nudge; index: number }) => (
+      <NudgeCard
+        nudge={item}
+        index={index}
+        onPress={handleCardPress}
+        onCtaPress={handleCtaPress}
+      />
     ),
-    [handleCardPress],
+    [handleCardPress, handleCtaPress],
   );
 
   const renderFooter = useCallback(() => {
@@ -290,7 +368,11 @@ export function NudgeFeed() {
         />
       )}
 
-      <NudgeDetailSheet nudge={selectedNudge} onClose={handleCloseSheet} />
+      <NudgeDetailSheet
+        nudge={selectedNudge}
+        onClose={handleCloseSheet}
+        onCtaPress={handleCtaPress}
+      />
     </View>
   );
 }

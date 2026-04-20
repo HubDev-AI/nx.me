@@ -7,40 +7,37 @@
  * composer below — the chips are interactive and need clean hit
  * targeting.
  *
- * Hardcoded scope must stay in sync with `app/advisor/SOUL.md`. If the
- * persona's lanes change, update both the body copy and the chip list
- * in `mobile/constants/config.ts`.
+ * Vertical stack:
+ *   1. Static title + body copy ("Hi, I'm Ada…").
+ *   2. `ChatSeedChips` — up to 3 server-generated seeds. A chip tap
+ *      bubbles `seed.text` up to the parent (ChatView), which prefills
+ *      the composer. The user still taps send — nothing auto-submits.
+ *
+ * Hardcoded copy must stay in sync with `app/advisor/SOUL.md`. The
+ * seeds themselves are server-driven (Unit 5 endpoint), so no hardcoded
+ * chip list lives in this file.
  */
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import {
   ADVISOR_CHAT_EMPTY_BODY,
   ADVISOR_CHAT_EMPTY_TITLE,
-  ADVISOR_CHAT_STARTER_CHIPS,
 } from "../../constants/config";
 import { THEME } from "../../constants/theme";
-import { Button } from "../ui/Button";
 import { EMPTY_STATE_OPTICAL_LIFT } from "../ui/EmptyState";
 import { Body, Heading } from "../ui/Text";
+import { ChatSeedChips } from "./ChatSeedChips";
 
 export interface AdvisorChatEmptyProps {
   /**
-   * Invoked with the chip text when a chip is tapped. The caller is
-   * responsible for actually sending the message — this component only
-   * renders the copy + chips.
+   * Invoked with the seed's full prompt text when a chip is tapped. The
+   * parent (ChatView) prefills the composer — this component only
+   * renders the copy + chip row; nothing auto-submits.
    */
-  onChipPress: (chipText: string) => void;
-  /**
-   * Disable the chips while a send is in flight so a double-tap can't
-   * fire two LLM calls in parallel.
-   */
-  isSending?: boolean;
+  onChipPress: (seedText: string) => void;
 }
 
-export function AdvisorChatEmpty({
-  onChipPress,
-  isSending = false,
-}: AdvisorChatEmptyProps) {
+export function AdvisorChatEmpty({ onChipPress }: AdvisorChatEmptyProps) {
   return (
     <View style={styles.container}>
       <View style={styles.textBlock}>
@@ -56,23 +53,7 @@ export function AdvisorChatEmpty({
           {ADVISOR_CHAT_EMPTY_BODY}
         </Body>
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsRow}
-      >
-        {ADVISOR_CHAT_STARTER_CHIPS.map((chip) => (
-          <Button
-            key={chip}
-            title={chip}
-            onPress={() => onChipPress(chip)}
-            variant="outline"
-            size="sm"
-            disabled={isSending}
-            haptic="light"
-          />
-        ))}
-      </ScrollView>
+      <ChatSeedChips onChipPress={onChipPress} />
     </View>
   );
 }
@@ -89,7 +70,7 @@ const styles = StyleSheet.create({
     paddingBottom: EMPTY_STATE_OPTICAL_LIFT,
     gap: THEME.spacing.md,
   },
-  /* Title + body get their own horizontal padding; the ScrollView
+  /* Title + body get their own horizontal padding; the ChatSeedChips
      sibling below keeps full width for overflow scrolling. */
   textBlock: {
     paddingHorizontal: THEME.spacing.xxl,
@@ -100,10 +81,5 @@ const styles = StyleSheet.create({
   },
   body: {
     textAlign: "center",
-  },
-  chipsRow: {
-    paddingTop: THEME.spacing.lg,
-    paddingHorizontal: THEME.spacing.xxl,
-    gap: THEME.spacing.sm,
   },
 });

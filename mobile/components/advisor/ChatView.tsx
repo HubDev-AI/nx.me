@@ -81,7 +81,18 @@ const skeletonStyles = StyleSheet.create({
   },
 });
 
-export function ChatView() {
+export interface ChatViewProps {
+  /**
+   * Seed text forwarded from the Ada chat route's `seedText` search
+   * param. Consumed one-shot on mount — subsequent re-renders (e.g.
+   * tab switch away + back, background-kill restore) do NOT re-seed
+   * the composer. Unit 7 plumbs this in for nudge CTA presses; Unit 8
+   * will reuse the same prop for chat-seed chips.
+   */
+  seedText?: string;
+}
+
+export function ChatView({ seedText }: ChatViewProps = {}) {
   const { theme } = useTheme();
   const {
     keyboardVerticalOffset,
@@ -95,7 +106,15 @@ export function ChatView() {
   const [messages, setMessages] = useState<AdvisorMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [inputText, setInputText] = useState("");
+  // One-shot seed: the initializer only runs on the first render. Any
+  // later `seedText` prop change (Expo Router re-reading the same
+  // param after a tab switch) is ignored, matching the plan's
+  // "navigate away and back → composer is empty" invariant.
+  const [inputText, setInputText] = useState<string>(() => seedText ?? "");
+  // Frozen at mount so the AdvisorComposer microcopy comparison
+  // (`value === initialText`) stays stable even if the route param
+  // changes later.
+  const initialSeedRef = useRef<string>(seedText ?? "");
   const [isSending, setIsSending] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -111,6 +130,19 @@ export function ChatView() {
   const nextCursorRef = useRef<string | null>(null);
   /** Track the last message ID to only auto-scroll on appended messages */
   const lastMessageIdRef = useRef<string | null>(null);
+  /**
+   * Lifecycle guard — tab switching + background restore can unmount
+   * ChatView while a fetchMessages / sendMessage promise is still in
+   * flight. Without this guard, the resolved setState would warn on RN
+   * and corrupt the next mount. Mirrors the ChatSeedChips pattern.
+   */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // -------------------------------------------------------------------------
   // Load initial messages
@@ -120,17 +152,19 @@ export function ChatView() {
     setError(null);
     try {
       const response = await fetchMessages();
+      if (!isMountedRef.current) return;
       // API returns oldest first; FlatList renders top-to-bottom for standard chat order.
       setMessages(response.messages);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
     } catch (err) {
+      if (!isMountedRef.current) return;
       // Route through parseApiError so the overlay shows a user-friendly
       // message, not `err.message` (which looked like `API 502` or worse
       // when raw).
       setError(parseApiError(err).message);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
   }, []);
 
@@ -152,12 +186,14 @@ export function ChatView() {
     setIsLoadingMore(true);
     try {
       const response = await fetchMessages(nextCursorRef.current);
+      if (!isMountedRef.current) return;
       const older = response.messages;
       setMessages((prev) => [...older, ...prev]);
       nextCursorRef.current = response.next_cursor;
       setHasMore(response.has_more);
       retryCountRef.current = 0;
     } catch {
+      if (!isMountedRef.current) return;
       retryCountRef.current += 1;
       if (retryCountRef.current < PAGINATION_CONFIG.MAX_RETRIES) {
         const attemptIndex = Math.min(
@@ -179,7 +215,7 @@ export function ChatView() {
       // Reset so next user-initiated scroll starts a fresh retry round
       retryCountRef.current = 0;
     } finally {
-      setIsLoadingMore(false);
+      if (isMountedRef.current) setIsLoadingMore(false);
     }
   }, [hasMore, isLoadingMore]);
 
@@ -217,6 +253,7 @@ export function ChatView() {
       try {
         // Send and get Ada's response (backend returns the assistant reply)
         const adaResponse = await sendMessage(trimmed);
+        if (!isMountedRef.current) return;
 
         // Replace optimistic user message with the real one from the response
         // and append Ada's reply
@@ -237,6 +274,7 @@ export function ChatView() {
           listRef.current?.scrollToEnd({ animated: true });
         }, ADVISOR_CONFIG.AUTO_SCROLL_DELAY_MS);
       } catch (err) {
+        if (!isMountedRef.current) return;
         if (isPremiumRequired(err)) {
           // Remove optimistic message and show paywall
           setMessages((prev) =>
@@ -259,7 +297,7 @@ export function ChatView() {
           setError("Couldn't send that. Tap retry.");
         }
       } finally {
-        setIsSending(false);
+        if (isMountedRef.current) setIsSending(false);
       }
     },
     [inputText, isSending],
@@ -362,12 +400,11 @@ export function ChatView() {
             AdvisorEmptyOverlay on the Chat tab so first-time users see
             what Ada actually does. Pure function of `messages.length`,
             so a paywall-dismissed-without-purchase send naturally
-            re-renders the card. */}
+            re-renders the card. Chip tap prefills the composer via
+            `setInputText`; the user still taps send — no auto-submit,
+            matching the Unit 8 spec. */}
         {!error && messages.length === 0 && (
-          <AdvisorChatEmpty
-            onChipPress={(text) => handleSend(text)}
-            isSending={isSending}
-          />
+          <AdvisorChatEmpty onChipPress={setInputText} />
         )}
       </View>
 
@@ -398,6 +435,7 @@ export function ChatView() {
         accessibilityLabel="Message input"
         submitAccessibilityLabel="Send message"
         bottomPadding={inputBottomPadding}
+        initialText={initialSeedRef.current}
       />
 
       {/* Paywall modal — shown on 402 */}

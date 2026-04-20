@@ -272,8 +272,8 @@ class TestAnalyzeGlowupHandler:
         assert exc_info.value.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_enqueues_post_analysis_nudge_on_success(self, monkeypatch):
-        """ADVISOR_ENABLED=True: successful analysis enqueues the nudge job."""
+    async def test_enqueues_analysis_insight_on_success(self, monkeypatch):
+        """ADVISOR_ENABLED=True: successful analysis enqueues write_analysis_insight_job."""
         monkeypatch.setattr("app.api.glowup.settings.ADVISOR_ENABLED", True)
 
         user_id = str(uuid4())
@@ -288,20 +288,7 @@ class TestAnalyzeGlowupHandler:
         )
 
         job_names = [c.args[0] for c in enqueue_job.await_args_list]
-        assert "schedule_post_analysis_nudge" in job_names
-        # The nudge enqueue passes the analysis result through so the
-        # worker can ground the prompt without racing the insight write.
-        assert any(
-            c.args
-            == (
-                "schedule_post_analysis_nudge",
-                user_id,
-                "oval",
-                0.85,
-                ["Try bangs"],
-            )
-            for c in enqueue_job.await_args_list
-        )
+        assert "write_analysis_insight_job" in job_names
 
     @pytest.mark.asyncio
     async def test_skips_nudge_when_advisor_disabled(self, monkeypatch):

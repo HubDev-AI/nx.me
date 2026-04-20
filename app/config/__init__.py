@@ -98,22 +98,20 @@ class Settings(BaseSettings):
     )
     ADVISOR_MAX_MESSAGE_LENGTH: int = 2000  # Max chars per user message
     ADVISOR_CHAT_RATE_LIMIT: int = 30  # Max messages per hour per user
+    ADVISOR_NEXT_STEP_RL_LIMIT: int = 60  # Max next-step calls per window per user
+    ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS: int = 60  # Window for next-step rate limit (s)
+    # Plan 2026-04-20-001 Unit 5 — chat-seeds endpoint (GET /advisor/chat-seeds).
+    # Seeds are Haiku-generated, grounded on the user's latest completed glow-up
+    # image. Redis is the backing store for a per-(user, glowup) cache (cheap
+    # reuse for 24 h), a per-user cooldown (at most one generation per 1 h —
+    # prevents replay storms on parse failures), and a short single-flight lock
+    # (collapses concurrent cold-key requests to one Haiku call).
+    ADVISOR_CHAT_SEEDS_CACHE_TTL_SECONDS: int = 86400  # 24 h
+    ADVISOR_CHAT_SEEDS_COOLDOWN_SECONDS: int = 3600  # 1 h
+    ADVISOR_CHAT_SEEDS_LOCK_TTL_SECONDS: int = 30
     ADVISOR_DEGRADATION_THRESHOLD: int = 50  # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30  # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7  # Days before auto-new conversation
-    ADVISOR_MILESTONE_DEDUP_HOURS: int = (
-        48  # Hours before a duplicate milestone nudge is allowed
-    )
-    # DEPRECATED — Plan 2026-04-17-003 Unit 8. The vision-grounded
-    # nudge redesign dropped the fixed 60-min cooldown entirely: dedup
-    # now emerges from the model's own access to prior nudge bodies +
-    # model-authored ``observation_tag``s in the prompt's "do not
-    # repeat" block. Kept at 0 as a rollback knob — set to a positive
-    # value to temporarily gate post_analysis / post_glowup on a time
-    # window if the vision path ever misbehaves. A rapid-retry dedup
-    # (same upload_id within 5 min) still fires at the scheduler level.
-    ADVISOR_POST_ANALYSIS_NUDGE_COOLDOWN_MINUTES: int = 0
-
     # Plan 2026-04-17-003 Unit 8. How many prior nudges (body +
     # observation_tag) are included in the vision-nudge prompt's
     # "do not repeat" block. The cap keeps the prompt compact — the

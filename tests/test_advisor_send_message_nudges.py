@@ -125,18 +125,21 @@ async def test_send_message_threads_nudges_into_context(caplog, monkeypatch):
 
     nudges = [
         {
-            "content": "oval face shapes are versatile",
-            "trigger": "post_analysis",
+            "body": "oval face shapes are versatile",
+            "next_step_label": "Try bangs?",
+            "next_step_seed": "what bangs would suit me?",
             "created_at": "2026-04-17T00:00:00+00:00",
         },
         {
-            "content": "loving how the new fringe lands",
-            "trigger": "post_glowup",
+            "body": "loving how the new fringe lands",
+            "next_step_label": "Share a photo",
+            "next_step_seed": "how should I style this tomorrow?",
             "created_at": "2026-04-16T00:00:00+00:00",
         },
         {
-            "content": "weekly check-in: what's been landing?",
-            "trigger": "weekly_checkin",
+            "body": "weekly check-in: what's been landing?",
+            "next_step_label": "Ada's pick",
+            "next_step_seed": "what should I try next?",
             "created_at": "2026-04-15T00:00:00+00:00",
         },
     ]
@@ -171,9 +174,9 @@ async def test_send_message_threads_nudges_into_context(caplog, monkeypatch):
     nudge_block = system_blocks[-1]
     nudge_lines = nudge_block.split("\n")
     assert nudge_lines == [
-        "nudge (post_analysis): oval face shapes are versatile",
-        "nudge (post_glowup): loving how the new fringe lands",
-        "nudge (weekly_checkin): weekly check-in: what's been landing?",
+        "nudge: oval face shapes are versatile",
+        "nudge: loving how the new fringe lands",
+        "nudge: weekly check-in: what's been landing?",
     ]
 
     # --- Payload logger exposes the canonical ``nudge_count`` ---------

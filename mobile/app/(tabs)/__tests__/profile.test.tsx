@@ -82,6 +82,7 @@ const BASE_FEATURES: FeatureFlags = {
   share_enabled: true,
   onboarding_enabled: true,
   advisor_enabled: true,
+  weekly_free_grant_enabled: true,
 };
 
 function setSession(mode: SessionMode, flags: Partial<FeatureFlags> = {}) {

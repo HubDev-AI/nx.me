@@ -21,8 +21,6 @@ from app.generation.worker import process_generation_job, watchdog_stuck_jobs
 from app.api.social import reconcile_reaction_counts
 from app.advisor.nudge_scheduler import (
     generate_nudge,
-    schedule_post_analysis_nudge,
-    check_nudge_eligibility,
     write_analysis_insight_job,
 )
 from app.repositories.image_repo import ImageRepository
@@ -77,8 +75,8 @@ async def startup(ctx: dict) -> None:
     )
 
     # ARQ dispatch pool for fire-and-forget enqueue_job calls from within
-    # worker jobs (e.g. _enqueue_post_glowup_nudge in generation/worker.py,
-    # schedule_post_analysis_nudge in advisor/nudge_scheduler.py). ARQ
+    # worker jobs (e.g. _enqueue_post_glowup_nudge in generation/worker.py).
+    # ARQ
     # populates ctx["redis"] with its ArqRedis pool by default, but the
     # block above overwrites it with a plain aioredis client configured
     # for string decoding — dropping ArqRedis's enqueue_job method. The
@@ -145,9 +143,7 @@ class WorkerSettings:
 
     functions = [
         process_generation_job,
-        schedule_post_analysis_nudge,
         generate_nudge,
-        check_nudge_eligibility,
         write_analysis_insight_job,
         reconcile_reaction_counts,
         wipe_deleted_user_blobs,
@@ -164,7 +160,6 @@ class WorkerSettings:
 
     cron_jobs = [
         cron(watchdog_stuck_jobs, second=0),  # Every minute
-        cron(check_nudge_eligibility, hour=6, minute=0),  # Daily at 06:00 UTC
         cron(reconcile_reaction_counts, hour=3, minute=0),  # Nightly at 03:00 UTC
         cron(run_retention, hour=3, minute=30),  # Nightly at 03:30 UTC
         cron(reclaim_orphaned_blobs, hour=3, minute=45),  # Nightly at 03:45 UTC

@@ -23,7 +23,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, Field
 from supabase import Client
 
+from app.advisor.chat_seeds import build_chat_seeds
 from app.advisor.models import (
+    ChatSeedsResponse,
     ConversationHistoryPageResponse,
     MemoryCreateRequest,
     MemoryListPageResponse,
@@ -32,6 +34,7 @@ from app.advisor.models import (
     MessageRequest,
     MessageResponse,
     NudgeFeedResponse,
+    NudgeNextStepResponse,
     NudgeResponse,
 )
 from app.advisor.service import AdvisorService
@@ -43,6 +46,7 @@ from app.api.deps import (
     require_feature,
 )
 from app.api.middleware.auth import UserClaims
+from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
 
 logger = logging.getLogger(__name__)
@@ -236,13 +240,30 @@ async def get_nudges(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
+    except Exception as exc:
+        logger.error(
+            "Failed to fetch advisor nudges for user %s: %s",
+            user_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": {
+                    "code": "ADVISOR_ERROR",
+                    "message": "Failed to load nudges",
+                }
+            },
+        ) from exc
 
     return NudgeFeedResponse(
         nudges=[
             NudgeResponse(
                 id=n["id"],
-                trigger=n["trigger"],
-                content=n["content"],
+                body=n["body"],
+                next_step_label=n["next_step_label"],
+                next_step_seed=n["next_step_seed"],
                 read_at=n.get("read_at"),
                 created_at=n["created_at"],
             )
@@ -282,7 +303,7 @@ async def update_nudge(
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Nudge not found",
+            detail={"error": {"code": "nudge_not_found", "message": "Nudge not found"}},
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -304,9 +325,108 @@ async def mark_nudge_read(
     if not found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Nudge not found",
+            detail={"error": {"code": "nudge_not_found", "message": "Nudge not found"}},
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/advisor/nudges/{nudge_id}/next-step — return seed text (Unit 4)
+# ---------------------------------------------------------------------------
+
+_NEXT_STEP_RL_KEY_TEMPLATE = "advisor:next_step_rl:{user_id}"
+
+
+@router.post(
+    "/advisor/nudges/{nudge_id}/next-step",
+    response_model=NudgeNextStepResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_nudge_next_step(
+    nudge_id: UUID,
+    claims: UserClaims = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> NudgeNextStepResponse:
+    """Return the next-step seed text for a nudge owned by the current user.
+
+    IDOR-gated: returns 404 (not 403) for foreign or unknown nudge IDs to
+    avoid acting as an existence oracle.  Rate-limited per user.
+    No conversation is created and no message row is inserted.
+    """
+    from app.config import settings as _settings
+
+    user_id = UUID(claims["sub"])
+
+    # Rate limit: 60 calls per 60 s per user. INCR + EXPIRE(NX) dispatched as
+    # a single pipeline so a process crash between the two commands cannot
+    # leave the key without a TTL (which would otherwise lock the user out
+    # permanently). EXPIRE NX ensures the TTL is only set when none exists,
+    # preserving fixed-window (not sliding-window) semantics.
+    rl_key = _NEXT_STEP_RL_KEY_TEMPLATE.format(user_id=user_id)
+    pipe = redis_client.pipeline(transaction=False)
+    pipe.incr(rl_key)
+    pipe.expire(rl_key, _settings.ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    new_count: int = int(results[0])
+    if new_count > _settings.ADVISOR_NEXT_STEP_RL_LIMIT:
+        logger.warning(
+            "next-step rate limit hit for user=%s count=%d", user_id, new_count
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"error": {"code": "rate_limited", "message": "Too many requests"}},
+        )
+
+    repo = AdvisorRepository(supabase)
+    row = await run_sync(repo.get_nudge_by_id, str(nudge_id), str(user_id))
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "nudge_not_found", "message": "Nudge not found"}},
+        )
+
+    return NudgeNextStepResponse(seed_text=row["next_step_seed"])
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/advisor/chat-seeds — suggested starter questions (Unit 5)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/advisor/chat-seeds",
+    response_model=ChatSeedsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_chat_seeds(
+    claims: UserClaims = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> ChatSeedsResponse:
+    """Return 3 suggested starter questions for the Ada chat empty state.
+
+    Plan 2026-04-20-001 Unit 5.  Haiku-backed and grounded on the user's
+    latest completed glow-up image.  Seeds are cached per (user, glowup)
+    for ``ADVISOR_CHAT_SEEDS_CACHE_TTL_SECONDS``, cooldown-gated at
+    ``ADVISOR_CHAT_SEEDS_COOLDOWN_SECONDS``, and protected by a single-
+    flight lock so bursts collapse to one Haiku call.  When no glow-up
+    exists, or any failure occurs, returns ``FALLBACK_SEEDS`` — this
+    endpoint never 500s.
+
+    Inherits ``require_app_feature("advisor_enabled")`` via router
+    dependency (403 FEATURE_DISABLED when off).  No premium gate.
+    """
+    from app.api.deps import get_llm_adapter
+
+    user_id = str(UUID(claims["sub"]))
+    llm = get_llm_adapter()
+    return await build_chat_seeds(
+        user_id=user_id,
+        supabase=supabase,
+        redis=redis_client,
+        llm=llm,
+    )
 
 
 # ---------------------------------------------------------------------------

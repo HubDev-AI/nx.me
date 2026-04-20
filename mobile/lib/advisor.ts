@@ -24,10 +24,26 @@ export interface MessagesResponse {
   has_more: boolean;
 }
 
+/**
+ * Actionable `post_glowup` nudge — the single nudge shape shipped in Nudges v2.
+ *
+ * Backend contract (`/v1/advisor/nudges`) returns flat `body`,
+ * `next_step_label`, and `next_step_seed` fields; the scheduler's JSON
+ * parser writes them as flat columns to the DB. The `trigger` /
+ * `observation_tag` fields were deleted in Unit 3 along with the four
+ * legacy trigger paths — do not re-introduce them.
+ */
 export interface Nudge {
   id: string;
-  trigger: string;
-  content: string;
+  /** Primary copy rendered on the card and in the detail sheet. */
+  body: string;
+  /** CTA chip text. Always non-empty in well-formed payloads. */
+  next_step_label: string;
+  /**
+   * Seed text committed server-side when the user taps the CTA. Sent to
+   * the backend via `requestNudgeNextStep`; not rendered directly.
+   */
+  next_step_seed: string;
   read_at: string | null;
   created_at: string;
 }
@@ -36,6 +52,29 @@ export interface NudgesResponse {
   nudges: Nudge[];
   next_cursor: string | null;
   has_more: boolean;
+}
+
+/** Response shape for `POST /v1/advisor/nudges/{id}/next-step`. */
+export interface NudgeNextStepResponse {
+  seed_text: string;
+}
+
+/**
+ * Chat-seed chip rendered on the Ada chat empty-conversation state.
+ *
+ * `label` is the compact text shown inside the chip (e.g. "Hair colour?").
+ * `text` is the full prompt that prefills the composer when the chip is
+ * tapped and is also used as the chip's `accessibilityLabel` so VoiceOver
+ * reads the full seed rather than the shortened chip label.
+ */
+export interface ChatSeed {
+  label: string;
+  text: string;
+}
+
+/** Response shape for `GET /v1/advisor/chat-seeds`. */
+export interface ChatSeedsResponse {
+  seeds: ChatSeed[];
 }
 
 export type MemoryType =
@@ -115,6 +154,46 @@ export async function markNudgeRead(nudgeId: string): Promise<void> {
   await apiFetch(ADVISOR_ENDPOINTS.NUDGE_READ(nudgeId), {
     method: "PATCH",
     body: JSON.stringify({ read: true }),
+  });
+}
+
+/**
+ * Exchange a nudge's CTA tap for chat-open seed text.
+ *
+ * Fires only on user intent (CTA chip press) so the backend Haiku
+ * call doesn't run for nudges the user never actions. Throws
+ * `ApiError` on failure — callers map 404 → "stale nudge" toast,
+ * other errors → generic failure toast.
+ */
+export async function requestNudgeNextStep(
+  nudgeId: string,
+): Promise<NudgeNextStepResponse> {
+  return apiFetch<NudgeNextStepResponse>(
+    ADVISOR_ENDPOINTS.NUDGE_NEXT_STEP(nudgeId),
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chat seeds
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch chat-seed chips for the Ada chat empty-conversation state.
+ *
+ * Backed by a Haiku-generated + Redis-cached endpoint (24 h TTL). Returns
+ * up to 3 seeds — callers still enforce the cap client-side. `signal` lets
+ * `ChatSeedChips` abort the fetch on unmount / timeout so late responses
+ * don't update state after the component is gone.
+ */
+export async function fetchChatSeeds(opts?: {
+  signal?: AbortSignal;
+}): Promise<ChatSeedsResponse> {
+  return apiFetch<ChatSeedsResponse>(ADVISOR_ENDPOINTS.CHAT_SEEDS, {
+    signal: opts?.signal,
   });
 }
 
