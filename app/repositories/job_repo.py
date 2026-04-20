@@ -37,7 +37,7 @@ SOURCE_TYPE_GLOWUP = "glowup_analysis"
 
 
 class JobRepository:
-    """Encapsulates all DB calls related to the jobs table and usage_events."""
+    """Encapsulates all DB calls related to the jobs table."""
 
     def __init__(self, supabase: Client) -> None:
         self._sb = supabase
@@ -348,42 +348,6 @@ class JobRepository:
             )
             .eq("id", job_id)
             .eq("status", "queued")
-            .execute()
-        )
-        return result.data or []
-
-    # ------------------------------------------------------------------
-    # usage_events
-    # ------------------------------------------------------------------
-
-    def insert_usage_event(self, event_data: dict) -> dict:
-        """Insert a usage_events row. Returns the inserted row."""
-        result = self._sb.table("usage_events").insert(event_data).execute()
-        return result.data[0] if result.data else {}
-
-    def get_usage_event_status(self, job_id: str) -> str | None:
-        """Get the current status of the usage_event for a job.
-
-        Returns the status string ('reserved', 'committed', 'released',
-        'refunded') or None if no event exists.
-        """
-        result = (
-            self._sb.table("usage_events")
-            .select("status")
-            .eq("job_id", job_id)
-            .maybe_single()
-            .execute()
-        )
-        if result.data:
-            return result.data.get("status")
-        return None
-
-    def update_usage_event(self, job_id: str, update_data: dict) -> list[dict]:
-        """Update usage_events rows for a given job_id (e.g. cancel/refund)."""
-        result = (
-            self._sb.table("usage_events")
-            .update(update_data)
-            .eq("job_id", job_id)
             .execute()
         )
         return result.data or []

@@ -430,7 +430,6 @@ async def generate_glowup(
 
         job_id = uuid4()
         now_utc = datetime.now(tz=timezone.utc).isoformat()
-        usage_status = "reserved"
 
         await run_sync(
             job_repo.create,
@@ -452,16 +451,6 @@ async def generate_glowup(
             },
         )
         created_job_id = job_id
-
-        await run_sync(
-            job_repo.insert_usage_event,
-            {
-                "user_id": user_id_str,
-                "action": "generation",
-                "status": usage_status,
-                "job_id": str(job_id),
-            },
-        )
 
         await request.app.state.arq_pool.enqueue_job(
             "process_generation_job",

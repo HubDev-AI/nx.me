@@ -85,15 +85,6 @@ async def refund_analysis_job(
             "Not authorised to refund this job.",
         )
 
-    # Idempotency guard — reject if already refunded (prevents double-spend)
-    usage_status = await run_sync(job_repo.get_usage_event_status, str(job_id))
-    if usage_status in ("refunded", "released"):
-        raise_api_error(
-            http_status.HTTP_409_CONFLICT,
-            "already_refunded",
-            "This job has already been refunded.",
-        )
-
     # Only failed and cancelled jobs are eligible for this endpoint
     refundable_statuses = {JobStatus.FAILED, JobStatus.CANCELLED}
     if job["status"] not in refundable_statuses:
@@ -104,25 +95,24 @@ async def refund_analysis_job(
         )
 
     # --- Refund credit reservation if present ---
+    # Idempotency is enforced by the ledger RPCs: credit_refund/credit_release
+    # both use UPDATE ... WHERE status = 'committed'/'reserved' RETURNING * and
+    # raise ValueError when no rows match. If both ops see no matching state,
+    # the reservation was already resolved — treat as a double-refund attempt.
     if job.get("credit_reservation_id"):
         reservation_id = UUID(job["credit_reservation_id"])
-        # Try refund (committed -> released) first, then release (reserved -> released)
-        # as a fallback for edge cases where the reservation was never committed.
         try:
             ledger.refund(reservation_id)
         except ValueError:
             try:
                 ledger.release(reservation_id)
             except ValueError:
-                logger.warning(
-                    "Credit refund/release failed for reservation %s (already resolved)",
-                    job["credit_reservation_id"],
+                raise_api_error(
+                    http_status.HTTP_409_CONFLICT,
+                    "already_refunded",
+                    "This job has already been refunded.",
                 )
 
-    # --- Mark usage_event as refunded ---
-    await run_sync(job_repo.update_usage_event, str(job_id), {"status": "refunded"})
-
-    # --- Fetch updated balance ---
     new_balance = await run_sync(ledger.balance, UUID(user_id_str))
 
     logger.info(

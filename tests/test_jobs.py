@@ -41,17 +41,13 @@ def _make_claims(user_id: str | None = None) -> dict:
     return {"sub": user_id or str(uuid4()), "role": "authenticated"}
 
 
-def _make_job_repo(
-    job: dict | None = None, usage_status: str | None = None
-) -> MagicMock:
+def _make_job_repo(job: dict | None = None) -> MagicMock:
     repo = MagicMock()
     repo.get_for_status_poll.return_value = job
     repo.get_for_cancel.return_value = job
     repo.get_for_refund.return_value = job
     repo.get_for_save.return_value = job
-    repo.get_usage_event_status.return_value = usage_status
     repo.update.return_value = [{}]
-    repo.update_usage_event.return_value = [{}]
     repo.save.return_value = job
     return repo
 
@@ -455,7 +451,7 @@ class TestRefundJobHandler:
             status="failed",
             reservation_id=reservation_id,
         )
-        job_repo = _make_job_repo(job=job, usage_status="committed")
+        job_repo = _make_job_repo(job=job)
 
         with patch("app.db.async_helpers.run_sync", new=_run_sync_passthrough):
             result = await refund_job(
@@ -471,11 +467,19 @@ class TestRefundJobHandler:
 
     @pytest.mark.asyncio
     async def test_refund_already_refunded_raises_409(self):
+        """When the ledger rejects both refund and release on a resolved
+        reservation, the endpoint returns 409 already_refunded."""
         from fastapi import HTTPException
 
         user_id = str(uuid4())
-        job = _make_job_dict(user_id=user_id, status="failed")
-        job_repo = _make_job_repo(job=job, usage_status="refunded")
+        reservation_id = str(uuid4())
+        job = _make_job_dict(
+            user_id=user_id, status="failed", reservation_id=reservation_id
+        )
+        job_repo = _make_job_repo(job=job)
+        ledger = _make_ledger()
+        ledger.refund.side_effect = ValueError("not committed")
+        ledger.release.side_effect = ValueError("not reserved")
 
         with pytest.raises(HTTPException) as exc_info:
             with patch("app.db.async_helpers.run_sync", new=_run_sync_passthrough):
@@ -483,6 +487,6 @@ class TestRefundJobHandler:
                     job_id=uuid4(),
                     claims=_make_claims(user_id),
                     job_repo=job_repo,
-                    ledger=_make_ledger(),
+                    ledger=ledger,
                 )
         assert exc_info.value.status_code == 409
