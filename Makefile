@@ -63,7 +63,8 @@ copy-lint:
 	@echo "Scanning for banned marketing copy…"
 	@if grep -RniE --include='*.ts' --include='*.tsx' --include='*.py' \
 	    --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=docs \
-	    --exclude-dir=migrations --exclude-dir=tests \
+	    --exclude-dir=migrations --exclude-dir=tests --exclude-dir=__tests__ \
+	    --exclude='*.test.ts' --exclude='*.test.tsx' --exclude='*.test.py' \
 	    'unlimited' app mobile card-web; then \
 	  echo "❌  user-facing 'unlimited' string found (see matches above)"; \
 	  exit 1; \

@@ -8,9 +8,11 @@
  */
 import {
   FREE_SIGNUP_GLOWUPS,
+  FREE_WEEKLY_REGEN_GLOWUPS,
   PRO_MONTHLY_GLOWUPS,
   PRO_MONTHLY_PRICE_USD,
 } from "../constants/pricing";
+import type { FeatureFlags } from "../constants/features";
 
 // ---------------------------------------------------------------------------
 // Subscribe CTA
@@ -38,9 +40,21 @@ export const PAYWALL_CONTACT_SUPPORT_PRIMARY_ACTION = "contact_support";
 // ---------------------------------------------------------------------------
 
 export const PAYWALL_HEADER_SUBSCRIBE = "Ready for your glow-up?";
-// Unit 3 will extend this with an optional `"+ 1 free glow-up every week"`
-// clause when `app_kill_switches.weekly_free_grant.enabled = FALSE`.
-export const PAYWALL_SUBHEADER_SUBSCRIBE = `Free: ${FREE_SIGNUP_GLOWUPS} glow-ups to start. Pro: ${PRO_MONTHLY_GLOWUPS} a month for ${PRO_MONTHLY_PRICE_USD}.`;
+
+/**
+ * Subscribe-scenario subheader. Conditional on the weekly-regen kill-switch
+ * so we never promise a refill we cannot deliver. Callers pass the resolved
+ * `features` registry from `useFeatures()`; the `?? false` guard treats a
+ * missing field (older backend rollout) as "cron paused" per the no-env-
+ * fallbacks rule.
+ */
+export function buildPaywallSubheaderSubscribe(features: FeatureFlags): string {
+  const weeklyEnabled = features.weekly_free_grant_enabled ?? false;
+  const freeLine = weeklyEnabled
+    ? `Free: ${FREE_SIGNUP_GLOWUPS} glow-ups to start, plus ${FREE_WEEKLY_REGEN_GLOWUPS} every week.`
+    : `Free: ${FREE_SIGNUP_GLOWUPS} glow-ups to start.`;
+  return `${freeLine} Pro: ${PRO_MONTHLY_GLOWUPS} a month for ${PRO_MONTHLY_PRICE_USD}.`;
+}
 
 export const PAYWALL_HEADER_UPDATE_CARD = "Let's sort out your billing";
 export const PAYWALL_SUBHEADER_UPDATE_CARD =
