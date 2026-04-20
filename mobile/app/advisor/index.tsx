@@ -111,7 +111,7 @@ export default function AdvisorScreen() {
               style={[
                 styles.tab,
                 isActive && {
-                  backgroundColor: theme.accent + "1A",
+                  backgroundColor: theme.accent + THEME.alpha.soft,
                   borderColor: theme.accent,
                   ...THEME.shadow.glow(theme.accent),
                 },

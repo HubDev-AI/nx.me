@@ -45,14 +45,22 @@ export const THEME = {
   /**
    * Hex alpha suffixes for compositing 8-digit hex colors.
    * Append to a 6-digit hex string (e.g. `theme.accent + THEME.alpha.subtle`).
+   * Scale is monotonic in perceived weight: faint → soft → subtle → low →
+   * med → strong → mid.
    */
   alpha: {
+    /** ~6% — faintest accent wash (inactive feature-card fill) */
+    faint: "0F",
+    /** ~10% — soft accent wash (active feature-card fill, advisor tab bg) */
+    soft: "1A",
     /** ~15% — subtle accent fill (badge background) */
     subtle: "26",
     /** ~20% — low accent fill (badge border) */
     low: "33",
     /** ~25% — medium accent fill (premium card border) */
     med: "40",
+    /** ~30% — strong accent fill (active feature-card border) */
+    strong: "4D",
     /** ~38% — mid accent fill (active pack card border) */
     mid: "60",
   },
