@@ -2,16 +2,16 @@
 -- Pre-launch destructive cleanup. Phase A landed parallel _v2 RPCs (renamed to no-suffix in R1);
 -- this migration removes the legacy v1 path entirely.
 
--- 1) Drop legacy credit RPCs
--- credit_reserve: 2-arg (uuid, uuid) — original in 0014, overridden in 0019 (advisory lock version)
+-- 1) Drop legacy credit RPCs.
+--
+-- After the _v2-suffix refactor (commit 014a321), 0049 creates the canonical
+-- credit_reserve/credit_commit/credit_release/credit_refund with no-suffix
+-- names. The pre-refactor drops here clobbered those fresh creates on any
+-- chain that runs 0049 → 0054 — a regression. Retained drops are limited to
+-- signatures that 0049 does NOT create:
+--   * credit_reserve 2-arg (0014 baseline, superseded by 0049's 3-arg).
+--   * handle_checkout_credit_atomic 5-arg (0015 tier-upgrade, no replacement).
 DROP FUNCTION IF EXISTS public.credit_reserve(uuid, uuid);
--- credit_release: 1-arg (uuid) — 0014
-DROP FUNCTION IF EXISTS public.credit_release(uuid);
--- credit_commit: 1-arg (uuid) — 0014
-DROP FUNCTION IF EXISTS public.credit_commit(uuid);
--- credit_refund: 1-arg (uuid) — 0029
-DROP FUNCTION IF EXISTS public.credit_refund(uuid);
--- handle_checkout_credit_atomic: 5-arg — 0015 (tier-upgrade on checkout; replaced by ledger-only)
 DROP FUNCTION IF EXISTS public.handle_checkout_credit_atomic(uuid, integer, text, uuid, uuid);
 
 -- 2) Drop FKs blocking column drops
