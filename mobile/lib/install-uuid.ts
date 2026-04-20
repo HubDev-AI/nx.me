@@ -7,8 +7,7 @@
  * Sent as `X-Install-UUID` on auth endpoints so the backend can correlate
  * installs without requiring a logged-in user.
  *
- * Models `guest-session.ts` pattern: reads SecureStore, generates + persists
- * on miss, regenerates on corruption.
+ * Reads SecureStore, generates + persists on miss, regenerates on corruption.
  */
 import * as Crypto from "expo-crypto";
 

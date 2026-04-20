@@ -77,8 +77,8 @@ export function useCapabilities(): Capabilities {
 
   return useMemo<Capabilities>(
     () => ({
-      canViewOwnProfile: session.isUser || session.isGuest,
-      canEditProfile: session.isUser || session.isGuest,
+      canViewOwnProfile: session.isUser,
+      canEditProfile: session.isUser,
       canViewAccountDetails: session.isUser,
       canDeleteAccount: session.isUser,
       canSignOut: session.isUser,
@@ -99,7 +99,6 @@ export function useCapabilities(): Capabilities {
       features.share_enabled,
       features.onboarding_enabled,
       session.isUser,
-      session.isGuest,
     ],
   );
 }

@@ -110,21 +110,6 @@ beforeEach(() => {
 // =============================================================================
 
 describe("profile screen — capability-driven gating", () => {
-  it("guest renders guest-profile menu (Edit, Subscription, Settings, Sign In)", () => {
-    setSession("guest");
-    const caps = renderHook(() => useCapabilities()).result.current;
-
-    expect(caps.canViewOwnProfile).toBe(true);
-
-    const labels = buildProfileMenu(caps, HANDLERS).map((i) => i.label);
-    expect(labels).toEqual([
-      "Edit Profile",
-      "Subscription",
-      "Settings",
-      "Sign In",
-    ]);
-  });
-
   it("user renders full-profile menu (Edit + Log Out, no Sign In)", () => {
     setSession("user");
     const caps = renderHook(() => useCapabilities()).result.current;
@@ -151,11 +136,11 @@ describe("profile screen — capability-driven gating", () => {
     expect(labels).not.toContain("Log Out");
   });
 
-  it("load-effect predicate (canViewOwnProfile && authUsername) fires for guests with username", () => {
-    setSession("guest");
+  it("load-effect predicate (canViewOwnProfile && authUsername) fires for users with username", () => {
+    setSession("user");
     const caps = renderHook(() => useCapabilities()).result.current;
 
-    const authUsername = "guest-abc123def456";
+    const authUsername = "alice";
     const profile = null;
     const shouldLoad =
       caps.canViewOwnProfile && Boolean(authUsername) && profile === null;
@@ -163,8 +148,8 @@ describe("profile screen — capability-driven gating", () => {
     expect(shouldLoad).toBe(true);
   });
 
-  it("load-effect predicate suppresses when guest has no username yet", () => {
-    setSession("guest");
+  it("load-effect predicate suppresses when user has no username yet", () => {
+    setSession("user");
     const caps = renderHook(() => useCapabilities()).result.current;
 
     const authUsername: string | null = null;

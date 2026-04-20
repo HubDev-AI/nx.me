@@ -12,7 +12,6 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { deleteItem, getItem } from "../lib/secure-storage";
 
-import { getOrCreateGuestToken } from "../lib/guest-session";
 import { fetchMe } from "../lib/me";
 import { getStoredJwt } from "../lib/auth";
 import { restoreStoredSession } from "../lib/api";
@@ -28,7 +27,6 @@ import {
   STRIPE_PUBLISHABLE_KEY,
   APPLE_MERCHANT_ID,
   SECURE_STORE_KEYS,
-  GUEST_ME_TIMEOUT_MS,
 } from "../constants/config";
 import { ThemeProvider } from "../lib/theme-context";
 import { useAppFonts } from "../hooks/useFonts";
@@ -50,73 +48,38 @@ initSentry();
 SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { session, setSessionMode, setUsername, markSessionReady } = useAuth();
+  const { session, setUsername, markSessionReady } = useAuth();
   const { isLoading: featuresLoading } = useFeatures();
   const caps = useCapabilities();
   const { markConsentGranted } = useConsent();
   const router = useRouter();
   const segments = useSegments();
-  const guestInitRef = useRef(false);
+  const meFetchRef = useRef(false);
 
-  // Provision the backend guest token once for non-user sessions and
-  // promote to "guest" so downstream UI can talk to guest-friendly endpoints
-  // (entitlement, uploads, advisor reads). Real-user sessions skip this.
+  // On a real JWT-backed session, hydrate /me once so the UI has the
+  // canonical username + consent state. Anon sessions just release the splash.
   useEffect(() => {
     if (featuresLoading) return;
-    if (session.isUser) {
+    if (!session.isUser) {
       markSessionReady();
       return;
     }
-    if (guestInitRef.current) return;
-    guestInitRef.current = true;
-    getOrCreateGuestToken()
-      .then(async () => {
-        // Promote to "guest" first so apiFetch picks the X-Guest-Token branch
-        // for the /me call (it reads the token from SecureStore, not from
-        // session mode, but ordering keeps state coherent for any other
-        // listeners that may fire on the mode transition).
-        setSessionMode("guest");
-        try {
-          // Bound the /me wait so a stalled network can't block the splash
-          // screen indefinitely. On timeout the screen mounts without an
-          // authUsername; the profile load effect stays inert until the user
-          // backgrounds/foregrounds and the AuthGuard re-runs.
-          const me = await Promise.race([
-            fetchMe(),
-            new Promise<never>((_, reject) =>
-              setTimeout(
-                () => reject(new Error("Guest /me timed out")),
-                GUEST_ME_TIMEOUT_MS,
-              ),
-            ),
-          ]);
-          setUsername(me.username);
-          // Hydrate ConsentProvider from the server's source of truth so
-          // subsequent Analyze taps trust the server state rather than
-          // whatever hasConsent happened to be cached on this device.
-          // Without this, a DB reset (pre-launch this happens often)
-          // leaves the client believing consent is granted while the
-          // server 428s the analyze call.
-          markConsentGranted(me.face_mod_consent_at !== null);
-        } catch (err) {
-          // Non-fatal — profile screens fall back to the "complete your
-          // profile" stub when authUsername is null. Log so dev can debug.
-          if (__DEV__) console.warn("Guest /me lookup failed:", err);
-        } finally {
-          // Always release the splash, even on /me timeout or failure.
-          markSessionReady();
-        }
+    if (meFetchRef.current) return;
+    meFetchRef.current = true;
+    fetchMe()
+      .then((me) => {
+        setUsername(me.username);
+        markConsentGranted(me.face_mod_consent_at !== null);
       })
       .catch((err) => {
-        if (__DEV__) console.warn("Guest session init failed:", err);
-        // Leave session as anon; allow retry on the next connectivity recovery.
-        guestInitRef.current = false;
+        if (__DEV__) console.warn("/me lookup failed:", err);
+      })
+      .finally(() => {
         markSessionReady();
       });
   }, [
     featuresLoading,
     session.isUser,
-    setSessionMode,
     setUsername,
     markSessionReady,
     markConsentGranted,
@@ -125,12 +88,6 @@ function AuthGuard() {
   useEffect(() => {
     if (featuresLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
-
-    // Guest sessions reach the app; the auth screens are only for anon.
-    if (session.isGuest) {
-      if (inAuthGroup) router.replace("/(tabs)");
-      return;
-    }
 
     if (!session.isUser) {
       if (!inAuthGroup) router.replace("/(auth)/login");
@@ -151,7 +108,6 @@ function AuthGuard() {
     featuresLoading,
     caps.canSeeOnboarding,
     session.isUser,
-    session.isGuest,
     segments,
     router,
   ]);
@@ -197,8 +153,6 @@ export default function RootLayout() {
         authed = Boolean(await restoreStoredSession());
       }
 
-      // Guest token provisioning happens inside AuthGuard once feature flags
-      // resolve, so we avoid hitting POST /auth/guest when auth is required.
       setInitialMode(authed ? "user" : "anon");
     }
 

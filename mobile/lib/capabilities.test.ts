@@ -63,25 +63,6 @@ describe("useCapabilities", () => {
     expect(caps.canSignIn).toBe(false);
   });
 
-  it("guest → profile view/edit, no account details, no sign-out", () => {
-    setInputs("guest", { social_enabled: false });
-    const caps = render();
-
-    expect(caps.canViewOwnProfile).toBe(true);
-    // Guest row IS the identity — backend PATCH accepts X-Guest-Token, so the
-    // UI surfaces Edit Profile for guests too.
-    expect(caps.canEditProfile).toBe(true);
-    // Guests have no account record — no account details to view or delete.
-    expect(caps.canViewAccountDetails).toBe(false);
-    expect(caps.canDeleteAccount).toBe(false);
-    // Signed out (no user), but sign-in offered; sign-out not meaningful.
-    expect(caps.canSignOut).toBe(false);
-    expect(caps.canSignIn).toBe(true);
-    expect(caps.canViewBlockedUsers).toBe(false);
-    expect(caps.canSeeFeed).toBe(false);
-    expect(caps.canReact).toBe(false);
-  });
-
   // ---------- Edge cases ----------
 
   it("anon → no profile access, sign-in offered", () => {
@@ -126,8 +107,6 @@ describe("useCapabilities", () => {
   it.each([
     { mode: "user" as const, social: true, expected: true },
     { mode: "user" as const, social: false, expected: false },
-    { mode: "guest" as const, social: true, expected: true },
-    { mode: "guest" as const, social: false, expected: false },
     { mode: "anon" as const, social: true, expected: true },
     { mode: "anon" as const, social: false, expected: false },
   ])(
@@ -156,8 +135,6 @@ describe("useCapabilities", () => {
   it.each([
     { mode: "user" as const, social: true, expected: true },
     { mode: "user" as const, social: false, expected: false },
-    { mode: "guest" as const, social: true, expected: false },
-    { mode: "guest" as const, social: false, expected: false },
     { mode: "anon" as const, social: true, expected: false },
     { mode: "anon" as const, social: false, expected: false },
   ])(

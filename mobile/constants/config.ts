@@ -26,17 +26,10 @@ export const UNIVERSAL_LINK_ORIGIN = "https://nxme.ai";
 
 /** SecureStore keys */
 export const SECURE_STORE_KEYS = {
-  GUEST_TOKEN: "nxme_guest_token",
   JWT: "nxme_jwt",
   REFRESH_TOKEN: "nxme_refresh_token",
   /** Set to "1" after registration when email_verification_required is true */
   PENDING_EMAIL_VERIFICATION: "nxme_pending_email_verification",
-  /**
-   * ISO timestamp written when AuthGuard observes auth_required=true and
-   * purges any stale GUEST_TOKEN. Acts as an idempotency sentinel so the
-   * purge runs once across launches in production builds.
-   */
-  GUEST_PURGED_AT: "nxme_guest_purged_at",
   /** Device-local flag set once the onboarding screen has been completed. */
   ONBOARDING_COMPLETE: "nxme_onboarding_complete",
   /** Canonical location for the current user's username. */
@@ -73,12 +66,6 @@ export const AUTH_ENDPOINTS = {
   SOCIAL_LOGIN: "/v1/auth/login",
   /** TikTok native SDK code exchange — backend accepts { auth_code, code_verifier? } */
   TIKTOK_LOGIN: "/v1/auth/tiktok-login",
-  /**
-   * Guest session — POST creates a guest user and returns { user_id, guest_token }.
-   * Only accepts requests when FEATURE_AUTH_REQUIRED is off server-side;
-   * otherwise returns 403 FEATURE_DISABLED.
-   */
-  GUEST: "/v1/auth/guest",
   /** Returns { providers: string[] } — list of enabled auth providers */
   PROVIDERS: "/v1/auth/providers",
   /**
@@ -356,7 +343,7 @@ export const PROFILE_ENDPOINTS = {
   /**
    * POST multipart avatar file → Supabase avatars bucket. Returns the
    * same shape as UPDATE so the caller merges one response into profile
-   * state. Owner only; accepts JWT or X-Guest-Token.
+   * state. Owner only; JWT required.
    */
   AVATAR: (username: string) => `/v1/users/${username}/avatar`,
 } as const;

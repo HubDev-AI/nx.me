@@ -306,13 +306,7 @@ export default function SettingsScreen() {
               ACCOUNT
             </Label>
             <View style={styles.glassCard}>
-              {!caps.canViewAccountDetails ? (
-                <Body color="secondary" style={styles.guestText}>
-                  You&apos;re using NXME as a guest. Your glow-ups are saved on
-                  this device only and won&apos;t sync across installs. Sign in
-                  from the profile menu to keep them tied to an account.
-                </Body>
-              ) : isLoading ? (
+              {isLoading ? (
                 <View style={styles.accountSkeleton}>
                   <LoadingSkeleton height={18} width="40%" />
                   <LoadingSkeleton height={18} width="60%" />
@@ -587,11 +581,6 @@ const styles = StyleSheet.create({
   // Error
   errorText: {
     textAlign: "center",
-  },
-
-  // Guest explainer
-  guestText: {
-    lineHeight: 20,
   },
 
   // Navigation row (Subscription link)
