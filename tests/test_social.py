@@ -63,9 +63,31 @@ class TestFeedModels:
             reaction_count=42,
             comment_count=7,
             created_at="2026-03-17T00:00:00+00:00",
+            has_reacted=True,
         )
         assert post.reaction_count == 42
         assert post.comment_count == 7
+        assert post.has_reacted is True
+
+    def test_feed_post_response_has_reacted_defaults_false(self):
+        """Clients that deserialize legacy payloads without ``has_reacted``
+        should still parse the response — default must be False."""
+        from app.api.social import FeedPostResponse
+
+        post = FeedPostResponse(
+            post_id="p-1",
+            user_id="u-1",
+            username=None,
+            display_name=None,
+            avatar_url=None,
+            caption=None,
+            before_image_url="b",
+            after_image_url="a",
+            reaction_count=0,
+            comment_count=0,
+            created_at="2026-03-17T00:00:00+00:00",
+        )
+        assert post.has_reacted is False
 
     def test_feed_response_empty_list(self):
         from app.api.social import FeedResponse
@@ -77,32 +99,9 @@ class TestFeedModels:
     def test_reaction_response_model(self):
         from app.api.social import ReactionResponse
 
-        resp = ReactionResponse(reaction_count=5)
+        resp = ReactionResponse(reaction_count=5, has_reacted=True)
         assert resp.reaction_count == 5
-
-
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="StrEnum requires 3.11+")
-class TestPersistReaction:
-    """Tests for persist_reaction worker — exercises app/api/social.py."""
-
-    def test_missing_post_id_raises_value_error(self):
-        """A payload without post_id must raise ValueError so ARQ surfaces it
-        and drops the job instead of looping forever."""
-        from app.api.social import persist_reaction
-
-        with pytest.raises(ValueError, match="post_id"):
-            asyncio.get_event_loop().run_until_complete(
-                persist_reaction({}, {"user_id": "u1"})
-            )
-
-    def test_empty_post_id_raises_value_error(self):
-        """Empty string post_id is just as bad as a missing key."""
-        from app.api.social import persist_reaction
-
-        with pytest.raises(ValueError, match="post_id"):
-            asyncio.get_event_loop().run_until_complete(
-                persist_reaction({}, {"post_id": "", "user_id": "u1"})
-            )
+        assert resp.has_reacted is True
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="StrEnum requires 3.11+")

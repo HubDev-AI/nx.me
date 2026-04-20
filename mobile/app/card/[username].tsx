@@ -14,7 +14,7 @@
  *
  * Ownership = authed session username matches the card username.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -41,6 +41,7 @@ import {
   HeaderBackButton,
 } from "../../components/ui/HeaderBackButton";
 import { DropdownMenu, type DropdownMenuItem } from "../../components/ui/DropdownMenu";
+import { CommentsSheet } from "../../components/comments/CommentsSheet";
 import {
   AUTH_VALIDATION,
   CARD_ENDPOINTS,
@@ -48,12 +49,13 @@ import {
   MIN_TOUCH_TARGET,
   UNIVERSAL_LINK_ORIGIN,
 } from "../../constants/config";
+import type { ReactionResponse } from "../../components/feed/types";
 import { apiFetch } from "../../lib/api";
 import { parseApiError } from "../../lib/errors";
 import { THEME } from "../../constants/theme";
 import { useTheme } from "../../lib/theme-context";
 import { useAuth } from "../../lib/auth-context";
-import { hapticLight, hapticError } from "../../lib/haptics";
+import { hapticLight, hapticMedium, hapticError } from "../../lib/haptics";
 import { showToast } from "../../lib/toast";
 import { blockUser } from "../../lib/block";
 import { reportPost } from "../../lib/report";
@@ -134,6 +136,16 @@ export default function CardDetailScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Per-user reaction + comment state. The public /cards/{username} endpoint
+  // is cacheable and doesn't carry `has_reacted`, so when we have a postId
+  // we seed these from /posts/{postId}/reactions/me. Local counts let the
+  // UI update optimistically without re-fetching the card.
+  const [hasReacted, setHasReacted] = useState(false);
+  const [reactionCount, setReactionCount] = useState<number | null>(null);
+  const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [commentsVisible, setCommentsVisible] = useState(false);
+  const reactingRef = useRef(false);
+
   const isOwner = useMemo(
     () => !!currentUsername && !!card && currentUsername === card.username,
     [currentUsername, card],
@@ -173,6 +185,35 @@ export default function CardDetailScreen() {
   );
 
   useEffect(() => load(), [load]);
+
+  // Seed local counters from the card payload on first load, then let the
+  // per-user state fetch and optimistic updates take over.
+  useEffect(() => {
+    if (card) {
+      setReactionCount((prev) => (prev === null ? card.reaction_count : prev));
+      setCommentCount((prev) => (prev === null ? card.comment_count : prev));
+    }
+  }, [card]);
+
+  // Fetch the authed user's reaction state when we have a postId. Deep-link
+  // visitors (no postId) can't toggle a reaction anyway — fall back to the
+  // public counter shown on the card.
+  useEffect(() => {
+    if (!postId) return;
+    let cancelled = false;
+    apiFetch<ReactionResponse>(FEED_ENDPOINTS.REACTION_STATE(postId))
+      .then((state) => {
+        if (cancelled) return;
+        setHasReacted(state.has_reacted);
+        setReactionCount(state.reaction_count);
+      })
+      .catch(() => {
+        // Non-fatal — heart stays outline, count stays from card payload.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [postId]);
 
   const handleRevealComplete = useCallback(() => {
     setRevealComplete(true);
@@ -320,6 +361,68 @@ export default function CardDetailScreen() {
       ],
     );
   }, [userId, card?.display_name, router]);
+
+  // ─── Reaction toggle ────────────────────────────────────────────────────
+
+  const handleToggleReaction = useCallback(async () => {
+    if (!postId || reactingRef.current || reactionCount === null) return;
+    reactingRef.current = true;
+
+    const previousHasReacted = hasReacted;
+    const previousCount = reactionCount;
+    const nextHasReacted = !previousHasReacted;
+    const delta = nextHasReacted ? 1 : -1;
+
+    // Optimistic update
+    hapticMedium();
+    setHasReacted(nextHasReacted);
+    setReactionCount(Math.max(0, previousCount + delta));
+
+    try {
+      const response = await apiFetch<ReactionResponse>(
+        FEED_ENDPOINTS.REACT(postId),
+        { method: "POST" },
+      );
+      setHasReacted(response.has_reacted);
+      setReactionCount(response.reaction_count);
+      // Keep the feed list in sync so when the user pops back, the heart
+      // and count match the detail screen without waiting for staleTime.
+      queryClient.invalidateQueries({
+        queryKey: FEED_QUERY_KEY_PREFIX.slice(),
+      });
+    } catch (err) {
+      hapticError();
+      setHasReacted(previousHasReacted);
+      setReactionCount(previousCount);
+      const appError = parseApiError(err);
+      const message =
+        appError.kind === "rateLimit"
+          ? "Too many reactions. Please slow down."
+          : "Couldn't save that reaction. Try again.";
+      showToast({ kind: "error", message });
+    } finally {
+      reactingRef.current = false;
+    }
+  }, [postId, hasReacted, reactionCount, queryClient]);
+
+  // ─── Comments sheet ─────────────────────────────────────────────────────
+
+  const handleOpenComments = useCallback(() => {
+    if (!postId) return;
+    hapticLight();
+    setCommentsVisible(true);
+  }, [postId]);
+
+  const handleCloseComments = useCallback(() => {
+    setCommentsVisible(false);
+  }, []);
+
+  const handleCommentPosted = useCallback(() => {
+    setCommentCount((c) => (c === null ? 1 : c + 1));
+    queryClient.invalidateQueries({
+      queryKey: FEED_QUERY_KEY_PREFIX.slice(),
+    });
+  }, [queryClient]);
 
   const handleReportPost = useCallback(() => {
     if (!postId) return;
@@ -504,18 +607,47 @@ export default function CardDetailScreen() {
           />
 
           <View style={styles.statsRow}>
-            <View style={styles.stat}>
+            <Pressable
+              onPress={handleToggleReaction}
+              disabled={!postId || reactingRef.current}
+              style={({ pressed }) => [
+                styles.stat,
+                pressed && styles.statPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={
+                hasReacted
+                  ? `Liked, ${reactionCount ?? card.reaction_count} reactions`
+                  : `Like, ${reactionCount ?? card.reaction_count} reactions`
+              }
+              accessibilityState={{ selected: hasReacted }}
+              hitSlop={8}
+            >
               <Ionicons
-                name="heart-outline"
+                name={hasReacted ? "heart" : "heart-outline"}
                 size={16}
-                color={THEME.colors.textSecondary}
+                color={hasReacted ? theme.accent : THEME.colors.textSecondary}
                 style={styles.statIcon}
               />
-              <Caption weight="semibold" color="secondary">
-                {card.reaction_count.toLocaleString()}
+              <Caption
+                weight="semibold"
+                color={hasReacted ? "primary" : "secondary"}
+                style={hasReacted ? { color: theme.accent } : undefined}
+              >
+                {(reactionCount ?? card.reaction_count).toLocaleString()}
               </Caption>
-            </View>
-            <View style={styles.stat}>
+            </Pressable>
+            <Pressable
+              onPress={handleOpenComments}
+              disabled={!postId}
+              style={({ pressed }) => [
+                styles.stat,
+                pressed && styles.statPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`${commentCount ?? card.comment_count} comments, tap to view`}
+              hitSlop={8}
+            >
               <Ionicons
                 name="chatbubble-outline"
                 size={16}
@@ -523,9 +655,9 @@ export default function CardDetailScreen() {
                 style={styles.statIcon}
               />
               <Caption weight="semibold" color="secondary">
-                {card.comment_count.toLocaleString()}
+                {(commentCount ?? card.comment_count).toLocaleString()}
               </Caption>
-            </View>
+            </Pressable>
           </View>
 
           <SuggestionPills
@@ -540,6 +672,13 @@ export default function CardDetailScreen() {
         onClose={closeMenu}
         items={menuItems}
         anchorPosition={{ top: insets.top + MIN_TOUCH_TARGET, right: THEME.spacing.lg }}
+      />
+
+      <CommentsSheet
+        visible={commentsVisible}
+        postId={postId ?? ""}
+        onClose={handleCloseComments}
+        onCommentPosted={handleCommentPosted}
       />
 
       {isDeleting && (
@@ -622,6 +761,10 @@ const styles = StyleSheet.create({
     borderCurve: "continuous",
     borderWidth: 1,
     borderColor: THEME.colors.glassBorder,
+    minHeight: MIN_TOUCH_TARGET,
+  },
+  statPressed: {
+    opacity: 0.6,
   },
   statIcon: {
     marginRight: 2,

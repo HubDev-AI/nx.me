@@ -14,6 +14,7 @@ export interface FeedPost {
   reaction_count: number;
   comment_count: number;
   created_at: string;
+  has_reacted: boolean;
 }
 
 export interface FeedResponse {
@@ -24,4 +25,5 @@ export interface FeedResponse {
 
 export interface ReactionResponse {
   reaction_count: number;
+  has_reacted: boolean;
 }
