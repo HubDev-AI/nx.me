@@ -6,6 +6,8 @@ Covers:
   - Edge: delete_customer raises → DLQ row written + delete completes 204 + WARNING logged.
   - Edge: signup_grants_issued for device SURVIVES (regression guard via step 1.5).
   - Edge: in-flight reservation drained via ledger.release (credit_release RPC path).
+  - Unit 6: Redis sweep covers chat_seeds cache/cooldown/lock and post_glowup rapid retry
+    prefixes; isolation check ensures other users' keys are not affected.
 """
 
 from __future__ import annotations
@@ -289,3 +291,107 @@ class TestReservationDrainStep:
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         user_repo.delete.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Unit 6 — Redis sweep for chat_seeds + post_glowup rapid retry prefixes
+# ---------------------------------------------------------------------------
+
+# Literal constants — keep test prefixes in one place to avoid magic strings.
+_CHAT_SEEDS_CACHE_PREFIX = "advisor:chat_seeds"
+_CHAT_SEEDS_COOLDOWN_PREFIX = "advisor:chat_seeds:cooldown"
+_CHAT_SEEDS_LOCK_PREFIX = "advisor:chat_seeds:lock"
+_POST_GLOWUP_RAPID_RETRY_PREFIX = "advisor:nudge:post_glowup"
+_OTHER_USER_ID = "u-other-isolation"
+
+
+class _PatternScanIter:
+    """Async iterator over in-memory keys matching a glob pattern."""
+
+    def __init__(self, store: dict[str, str], pattern: str) -> None:
+        self._matches = iter(_match_pattern(store.keys(), pattern))
+
+    def __aiter__(self) -> "_PatternScanIter":
+        return self
+
+    async def __anext__(self) -> str:
+        try:
+            return next(self._matches)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+def _match_pattern(keys, pattern: str) -> list[str]:
+    """Redis-style glob match — only supports trailing ``*`` and literals."""
+    import fnmatch
+
+    return [k for k in keys if fnmatch.fnmatchcase(k, pattern)]
+
+
+def _make_fake_redis_with_store(store: dict[str, str]) -> MagicMock:
+    """Fake redis backed by an in-memory ``store`` supporting scan_iter/delete."""
+
+    redis_client = MagicMock()
+
+    def _scan_iter(match: str, count: int = 100) -> _PatternScanIter:
+        return _PatternScanIter(store, match)
+
+    async def _delete(*keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in store:
+                del store[key]
+                removed += 1
+        return removed
+
+    redis_client.scan_iter = MagicMock(side_effect=_scan_iter)
+    redis_client.delete = AsyncMock(side_effect=_delete)
+    redis_client.pipeline = MagicMock(side_effect=lambda: _FakeRedisPipeline())
+    redis_client.ttl = AsyncMock(return_value=0)
+    return redis_client
+
+
+class TestRedisSweepCoversNewPrefixes:
+    @pytest.mark.asyncio
+    async def test_sweep_clears_chat_seeds_and_post_glowup_and_preserves_other_user(
+        self, monkeypatch
+    ):
+        """All four new prefixes must be swept; another user's keys must survive."""
+        monkeypatch.setattr("app.api.auth.run_sync", _passthrough_run_sync)
+
+        store: dict[str, str] = {
+            # Target user — all four prefixes must be cleared.
+            f"{_CHAT_SEEDS_CACHE_PREFIX}:{_USER_ID}:g1": "1",
+            f"{_CHAT_SEEDS_COOLDOWN_PREFIX}:{_USER_ID}": "1",
+            f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g1": "1",
+            f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g2": "1",
+            f"{_POST_GLOWUP_RAPID_RETRY_PREFIX}:{_USER_ID}:u1": "1",
+            # Isolation — another user's key must survive.
+            f"{_CHAT_SEEDS_CACHE_PREFIX}:{_OTHER_USER_ID}:g1": "1",
+        }
+
+        user_repo = _make_user_repo()
+        deps = _make_deps()
+        deps.redis_client = _make_fake_redis_with_store(store)
+
+        response = await delete_account(
+            claims=_make_claims(),
+            user_repo=user_repo,
+            image_repo=deps.image_repo,
+            orphan_repo=deps.orphan_repo,
+            ledger=deps.ledger,
+            redis_client=deps.redis_client,
+            arq_pool=deps.arq_pool,
+            payment=deps.payment,
+            dlq_repo=deps.dlq_repo,
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        # Target user — every prefix must be swept.
+        assert f"{_CHAT_SEEDS_CACHE_PREFIX}:{_USER_ID}:g1" not in store
+        assert f"{_CHAT_SEEDS_COOLDOWN_PREFIX}:{_USER_ID}" not in store
+        assert f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g1" not in store
+        assert f"{_CHAT_SEEDS_LOCK_PREFIX}:{_USER_ID}:g2" not in store
+        assert f"{_POST_GLOWUP_RAPID_RETRY_PREFIX}:{_USER_ID}:u1" not in store
+        # Isolation — other user's key must survive.
+        assert f"{_CHAT_SEEDS_CACHE_PREFIX}:{_OTHER_USER_ID}:g1" in store

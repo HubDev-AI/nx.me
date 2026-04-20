@@ -1309,6 +1309,16 @@ _INLINE_BLOB_WIPE_THRESHOLD = 500
 # jobs are introduced so they are always cancelled on delete.
 _USER_SCOPED_JOB_PREFIXES = ("delete_account",)
 
+# Per-user Redis key formats swept on account deletion (Unit 6).
+# Keep format strings here — never inline in the sweep block. When a new
+# per-user Redis namespace is introduced, add a constant and wire it into
+# the sweep in ``delete_account`` below so there are no silent remnants.
+_SWEEP_CHAT_SEEDS_COOLDOWN_FMT = "advisor:chat_seeds:cooldown:{user_id}"
+_SWEEP_CHAT_SEEDS_PREFIX_FMT = "advisor:chat_seeds:{user_id}:*"
+_SWEEP_CHAT_SEEDS_LOCK_PREFIX_FMT = "advisor:chat_seeds:lock:{user_id}:*"
+_SWEEP_POST_GLOWUP_RAPID_RETRY_PREFIX_FMT = "advisor:nudge:post_glowup:{user_id}:*"
+_SWEEP_SCAN_COUNT = 100
+
 
 @router.delete("/account", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_account(
@@ -1518,9 +1528,25 @@ async def delete_account(
         redis_keys_to_delete = [
             f"advisor_chat_rate:{user_id}",
             f"concurrent:{user_id}",
+            _SWEEP_CHAT_SEEDS_COOLDOWN_FMT.format(user_id=user_id),
         ]
         async for key in redis_client.scan_iter(
-            match=f"gen:user_daily:{user_id}:*", count=100
+            match=f"gen:user_daily:{user_id}:*", count=_SWEEP_SCAN_COUNT
+        ):
+            redis_keys_to_delete.append(key)
+        async for key in redis_client.scan_iter(
+            match=_SWEEP_CHAT_SEEDS_PREFIX_FMT.format(user_id=user_id),
+            count=_SWEEP_SCAN_COUNT,
+        ):
+            redis_keys_to_delete.append(key)
+        async for key in redis_client.scan_iter(
+            match=_SWEEP_CHAT_SEEDS_LOCK_PREFIX_FMT.format(user_id=user_id),
+            count=_SWEEP_SCAN_COUNT,
+        ):
+            redis_keys_to_delete.append(key)
+        async for key in redis_client.scan_iter(
+            match=_SWEEP_POST_GLOWUP_RAPID_RETRY_PREFIX_FMT.format(user_id=user_id),
+            count=_SWEEP_SCAN_COUNT,
         ):
             redis_keys_to_delete.append(key)
         if redis_keys_to_delete:
