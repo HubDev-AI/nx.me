@@ -25,7 +25,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,7 +43,6 @@ import {
 import { DropdownMenu, type DropdownMenuItem } from "../../components/ui/DropdownMenu";
 import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
-import { useBackToActiveTab } from "../../lib/last-tab";
 import {
   AUTH_VALIDATION,
   CARD_ENDPOINTS,
@@ -125,6 +124,7 @@ export default function CardDetailScreen() {
     postId?: string;
     userId?: string;
   }>();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { username: currentUsername } = useAuth();
@@ -235,12 +235,17 @@ export default function CardDetailScreen() {
     load();
   }, [load]);
 
-  // Back navigation that works across any tab. Pops the native stack
-  // when we have one (preserves tab state on in-app pushes); on deep-
-  // link entries with no stack, replaces to whichever tab is active in
-  // the mounted tabs navigator — so a user tapping a share link while
-  // on /profile lands back on profile, not on the default feed tab.
-  const navigateBackToOrigin = useBackToActiveTab();
+  // Pops the real root Stack — tab state inside (tabs) is preserved by
+  // React Navigation, so whichever tab pushed the card is still active
+  // when we return. Cold-start deep links without a back stack fall
+  // back to the tabs group (lands on the first-visible tab).
+  const navigateBackToOrigin = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/(tabs)");
+  }, [router]);
 
   const handleBack = useCallback(() => {
     // Don't pop the screen mid-delete — the DELETE request would be
