@@ -38,6 +38,7 @@ const config: Config = {
           card: '#111111',
           elevated: '#181818',
           subtle: '#1f1f1f',
+          divider: '#1a1a1a',
         },
         border: {
           default: 'rgba(255, 255, 255, 0.06)',
@@ -46,6 +47,9 @@ const config: Config = {
         content: {
           primary: '#e8e8e8',
           secondary: '#888888',
+          tertiary: '#555555',
+          muted: '#cccccc',
+          faint: '#333333',
           disabled: '#444444',
           inverse: '#0a0a0a',
         },

@@ -26,7 +26,7 @@ export function CardView({ card }: CardViewProps) {
         <h1 className="font-display text-4xl sm:text-5xl tracking-[-0.02em] text-white leading-[0.95]">
           {card.display_name}
         </h1>
-        <p className="mt-2 text-sm text-[#555] tracking-wide">
+        <p className="mt-2 text-sm text-content-tertiary tracking-wide">
           @{card.username}
         </p>
       </header>
@@ -37,7 +37,7 @@ export function CardView({ card }: CardViewProps) {
         className="grid grid-cols-2 gap-3 sm:gap-4"
       >
         {/* Before image */}
-        <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-[#111]">
+        <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-surface-card">
           <Image
             src={card.before_image_url}
             alt={`${card.display_name} before glow-up`}
@@ -47,16 +47,16 @@ export function CardView({ card }: CardViewProps) {
             priority
           />
           <div
-            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent"
+            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface-page/70 to-transparent"
             aria-hidden="true"
           />
-          <span className="absolute bottom-3 left-3 z-10 text-[11px] font-medium text-[#888] uppercase tracking-widest">
+          <span className="absolute bottom-3 left-3 z-10 text-[11px] font-medium text-content-secondary uppercase tracking-widest">
             Before
           </span>
         </div>
 
         {/* After image */}
-        <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-[#111]">
+        <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-surface-card">
           <Image
             src={card.after_image_url}
             alt={`${card.display_name} after glow-up`}
@@ -66,7 +66,7 @@ export function CardView({ card }: CardViewProps) {
             priority
           />
           <div
-            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0a0a0a]/70 to-transparent"
+            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface-page/70 to-transparent"
             aria-hidden="true"
           />
           <span className="absolute bottom-3 left-3 z-10 text-[11px] font-medium uppercase tracking-widest" style={{ color: 'var(--accent)' }}>
@@ -84,14 +84,14 @@ export function CardView({ card }: CardViewProps) {
           <strong className="text-white font-semibold">
             {card.reaction_count}
           </strong>
-          <span className="text-[#555]">reactions</span>
+          <span className="text-content-tertiary">reactions</span>
         </span>
-        <span className="text-[#333]" aria-hidden="true">/</span>
+        <span className="text-content-faint" aria-hidden="true">/</span>
         <span className="flex items-center gap-1.5">
           <strong className="text-white font-semibold">
             {card.comment_count}
           </strong>
-          <span className="text-[#555]">comments</span>
+          <span className="text-content-tertiary">comments</span>
         </span>
       </div>
 
@@ -100,7 +100,7 @@ export function CardView({ card }: CardViewProps) {
         <section aria-labelledby="recommendations-heading" className="mt-12">
           <h2
             id="recommendations-heading"
-            className="text-xs tracking-[0.25em] uppercase text-[#555] mb-8"
+            className="text-xs tracking-[0.25em] uppercase text-content-tertiary mb-8"
           >
             Top improvements
           </h2>
@@ -114,7 +114,7 @@ export function CardView({ card }: CardViewProps) {
                 ].join(' ')}
               >
                 <span
-                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-[#0a0a0a]"
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold text-content-inverse"
                   aria-label={`Rank ${rec.rank}`}
                   style={{ backgroundColor: 'var(--accent)' }}
                 >
@@ -127,7 +127,7 @@ export function CardView({ card }: CardViewProps) {
                   >
                     {rec.category}
                   </p>
-                  <p className="text-sm text-[#ccc] leading-relaxed">
+                  <p className="text-sm text-content-muted leading-relaxed">
                     {rec.suggestion}
                   </p>
                 </div>
