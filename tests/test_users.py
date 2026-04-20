@@ -313,7 +313,7 @@ class TestGetCurrentUser:
 
 
 # ===========================================================================
-# GET /users/me — authenticated identity lookup (works for guests + users)
+# GET /users/me — authenticated identity lookup
 # ===========================================================================
 
 
@@ -338,8 +338,8 @@ class TestMeResponseModel:
         from app.api.users import MeResponse
 
         resp = MeResponse(
-            username="guest-abc",
-            display_name="Guest",
+            username="bob",
+            display_name="Bob",
             avatar_url=None,
             face_mod_consent_at=None,
         )
@@ -390,33 +390,6 @@ class TestGetMeHandler:
         assert resp.username == "alice"
         assert resp.display_name == "Alice"
         assert resp.avatar_url is None
-
-    @pytest.mark.asyncio
-    async def test_returns_username_for_guest(self):
-        from app.api.users import get_me
-
-        guest_id = str(uuid4())
-        sb = MockSupabase()
-        sb.set_table_data(
-            "users",
-            [
-                {
-                    "id": guest_id,
-                    "username": "guest-abc123def456",
-                    "display_name": "Guest",
-                    "avatar_storage_key": None,
-                }
-            ],
-        )
-        user_repo = UserRepository(sb)
-
-        resp = await get_me(
-            claims=self._make_claims(guest_id),
-            user_repo=user_repo,
-            image_repo=self._make_image_repo(),
-        )
-        assert resp.username == "guest-abc123def456"
-        assert resp.display_name == "Guest"
 
     @pytest.mark.asyncio
     async def test_resolves_avatar_url_when_storage_key_present(self):
@@ -954,7 +927,7 @@ class TestGetUserHistoryHandler:
 
 
 # ===========================================================================
-# PATCH /users/{username} — guest-token acceptance regression
+# PATCH /users/{username} — owner-match + display name update
 # ===========================================================================
 
 
@@ -980,14 +953,14 @@ class TestUpdateUserProfileHandler:
         return repo
 
     @pytest.mark.asyncio
-    async def test_accepts_guest_owner_claims_and_updates_display_name(self):
+    async def test_owner_claims_update_display_name(self):
         from app.api.users import UpdateProfileRequest, update_user_profile
 
         user_id = str(uuid4())
         user_row = {
             "id": user_id,
-            "username": "guest-abc123def456",
-            "display_name": "Guest",
+            "username": "alice",
+            "display_name": "Alice",
             "avatar_storage_key": None,
             "username_changed_at": None,
         }
@@ -995,22 +968,22 @@ class TestUpdateUserProfileHandler:
         user_repo.get_by_username = MagicMock(return_value=user_row)
         user_repo.update_profile = MagicMock()
         user_repo.get_profile_by_id = MagicMock(
-            return_value={**user_row, "display_name": "Guest Renamed"}
+            return_value={**user_row, "display_name": "Alice Renamed"}
         )
 
         resp = await update_user_profile(
-            username="guest-abc123def456",
-            body=UpdateProfileRequest(display_name="Guest Renamed"),
+            username="alice",
+            body=UpdateProfileRequest(display_name="Alice Renamed"),
             claims=self._make_claims(user_id),
             user_repo=user_repo,
             image_repo=self._make_image_repo(),
         )
 
-        assert resp.display_name == "Guest Renamed"
+        assert resp.display_name == "Alice Renamed"
         user_repo.update_profile.assert_called_once()
         update_args = user_repo.update_profile.call_args[0]
         assert update_args[0] == user_id
-        assert update_args[1]["display_name"] == "Guest Renamed"
+        assert update_args[1]["display_name"] == "Alice Renamed"
         assert "updated_at" in update_args[1]
 
     @pytest.mark.asyncio

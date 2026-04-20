@@ -11,7 +11,7 @@
  *   - Blocking auto-save: POST /save fires before the share sheet
  *   - shareUrl derivation: undefined when no post, hash URL when post exists
  *   - Publish flow: POST /v1/posts → local state merge → dialog close
- *   - Guest session (canPublishGlowup=false) hides the Publish row
+ *   - canPublishGlowup=false hides the Publish row
  *   - Error paths: save failure skips share sheet; publish failure stays open
  *   - Delete overflow: Alert.alert confirm → DELETE /v1/jobs/{id}
  *
@@ -669,7 +669,7 @@ describe("ResultScreen — Publish path", () => {
     expect(queryByTestId("share-dialog-confirm-publish")).not.toBeNull();
   });
 
-  it("guest session (canPublishGlowup=false) → Publish row hidden", () => {
+  it("canPublishGlowup=false → Publish row hidden", () => {
     setCaps({ canPublishGlowup: false });
     mockCurrentJob = makeJob({ saved_at: null, post_id: null });
     const { queryByText, getByTestId, queryByTestId } = render(<ResultScreen />);

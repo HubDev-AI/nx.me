@@ -45,18 +45,6 @@ describe("buildProfileMenu", () => {
     ]);
   });
 
-  it("guest menu = [Subscription, Settings, Sign In] — no Log Out, no Edit", () => {
-    const items = buildProfileMenu(
-      caps({ canEditProfile: false, canSignOut: false, canSignIn: true }),
-      HANDLERS,
-    );
-    expect(items.map((i) => i.label)).toEqual([
-      "Subscription",
-      "Settings",
-      "Sign In",
-    ]);
-  });
-
   it("anon menu = [Subscription, Settings, Sign In]", () => {
     const items = buildProfileMenu(
       caps({ canSignIn: true }),

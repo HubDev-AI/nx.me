@@ -242,18 +242,6 @@ describe("ShareDialog — row visibility", () => {
     expect(queryByTestId("share-dialog-row-publish")).toBeNull();
   });
 
-  it("guest + not saved → Save + Share; Publish hidden", () => {
-    // Guest session: canEditProfile=true, canPublishGlowup=false (publish needs a real user).
-    setCaps({ canPublishGlowup: false, canEditProfile: true });
-    const { queryByTestId } = renderDialog({
-      job: makeJob({ saved_at: null, post_id: null }),
-    });
-
-    expect(queryByTestId("share-dialog-row-save")).not.toBeNull();
-    expect(queryByTestId("share-dialog-row-share")).not.toBeNull();
-    expect(queryByTestId("share-dialog-row-publish")).toBeNull();
-  });
-
   it("real user + saved + published → Share row only (Save + Publish hidden)", () => {
     setCaps({ canPublishGlowup: true, canEditProfile: true });
     const { queryByTestId } = renderDialog({
