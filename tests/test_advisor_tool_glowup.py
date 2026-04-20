@@ -92,7 +92,7 @@ def _stub_repo_with_glowup() -> MagicMock:
 def _stub_repo_with_source_photo() -> MagicMock:
     repo = MagicMock()
     repo.get_cleared_images.return_value = [
-        {"id": "img_1", "storage_path": "user_a/selfie.jpg"},
+        {"id": "img_1", "storage_key": "user_a/selfie.jpg"},
     ]
     repo.fetch_image_bytes.return_value = _FAKE_SOURCE_BYTES
     return repo
@@ -234,11 +234,11 @@ async def test_get_latest_photo_returns_is_error_when_no_cleared_images() -> Non
 
 
 @pytest.mark.asyncio
-async def test_get_latest_photo_returns_is_error_when_storage_path_missing() -> None:
-    """Row present but empty storage_path → treated as no source photo."""
+async def test_get_latest_photo_returns_is_error_when_storage_key_missing() -> None:
+    """Row present but empty storage_key → treated as no source photo."""
     repo = MagicMock()
     repo.get_cleared_images.return_value = [
-        {"id": "img_1", "storage_path": ""},
+        {"id": "img_1", "storage_key": ""},
     ]
     result = await _handle_get_latest_photo(_ctx(repo=repo))
 
@@ -252,7 +252,7 @@ async def test_get_latest_photo_degrades_when_download_fails() -> None:
     """Download error → recoverable text + is_error on envelope."""
     repo = MagicMock()
     repo.get_cleared_images.return_value = [
-        {"id": "img_1", "storage_path": "user_a/selfie.jpg"},
+        {"id": "img_1", "storage_key": "user_a/selfie.jpg"},
     ]
     repo.fetch_image_bytes.side_effect = RuntimeError("storage outage")
     result = await _handle_get_latest_photo(_ctx(repo=repo))
