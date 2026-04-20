@@ -3,7 +3,7 @@
 import { THEME_ACCENTS } from '@/config/constants';
 import { POOLS } from '@/data/demo-themes';
 
-function pick<T>(arr: ReadonlyArray<T>): T {
+function pickRandom<T>(arr: ReadonlyArray<T>): T {
   return arr[Math.floor(Math.random() * arr.length)] ?? (arr[0] as T);
 }
 
@@ -19,16 +19,16 @@ export interface Theme {
 }
 
 export function buildTheme(): Theme {
-  const pool = pick(POOLS);
-  const pair = pick(pool.pairs);
+  const pool = pickRandom(POOLS);
+  const pair = pickRandom(pool.pairs);
   return {
     before: pair.before,
     after: pair.after,
-    hero: pick(pool.heroes),
-    hair: pick(pool.hair),
-    clothing: pick(pool.clothing),
-    grooming: pick(pool.grooming),
-    accessories: pick(pool.accessories),
-    accent: pick(THEME_ACCENTS),
+    hero: pickRandom(pool.heroes),
+    hair: pickRandom(pool.hair),
+    clothing: pickRandom(pool.clothing),
+    grooming: pickRandom(pool.grooming),
+    accessories: pickRandom(pool.accessories),
+    accent: pickRandom(THEME_ACCENTS),
   };
 }

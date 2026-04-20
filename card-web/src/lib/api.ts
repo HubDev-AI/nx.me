@@ -2,7 +2,7 @@ import {
   API_BASE_URL,
   API_FETCH_TIMEOUT_MS,
   CARD_REVALIDATE_SECONDS,
-  HTTP_GONE,
+  HTTP_NOT_FOUND,
 } from '@/config/constants';
 
 export interface Recommendation {
@@ -64,7 +64,7 @@ export async function getCardData(username: string, shareHash?: string): Promise
     return null;
   }
 
-  if (res.status === HTTP_GONE || res.status === 404) {
+  if (res.status === HTTP_NOT_FOUND) {
     return null;
   }
 

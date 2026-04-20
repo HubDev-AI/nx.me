@@ -9,7 +9,7 @@ import {
   APP_DEEP_LINK_PATH,
   APP_OPEN_TIMEOUT_MS,
 } from '@/config/constants';
-import { detectPlatform } from '@/lib/user-agent';
+import { detectPlatform, type DevicePlatform } from '@/lib/user-agent';
 
 interface CtaButtonProps {
   /** Username — used to build the deep-link with card context */
@@ -43,12 +43,13 @@ export function CtaButton({ username }: CtaButtonProps) {
       const params = new URLSearchParams({ card: username });
       const universalLink = `${APP_BASE_URL}${APP_DEEP_LINK_PATH}?${params.toString()}`;
 
-      const storeUrl =
-        platform === 'ios'
-          ? APP_STORE_URL
-          : platform === 'android'
-            ? PLAY_STORE_URL
-            : universalLink; // Desktop: universal link is both the app target and the fallback
+      // Desktop: universal link is both the app target and the fallback
+      const storeUrlByPlatform: Record<DevicePlatform, string> = {
+        ios: APP_STORE_URL,
+        android: PLAY_STORE_URL,
+        desktop: universalLink,
+      };
+      const storeUrl = storeUrlByPlatform[platform];
 
       // Attempt to open the app via the universal link.
       // If the app is installed, the OS intercepts and opens it; the page stays
@@ -92,7 +93,7 @@ export function CtaButton({ username }: CtaButtonProps) {
       href={displayHref}
       onClick={mounted ? handleClick : undefined}
       aria-label="Get Your Free Glow-Up — open app or download"
-      className="inline-flex items-center justify-center w-full gap-2 text-[#0a0a0a] text-sm font-medium px-7 py-4 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+      className="inline-flex items-center justify-center w-full gap-2 text-content-inverse text-sm font-medium px-7 py-4 rounded-full transition-opacity hover:opacity-85 active:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-page"
       style={{ backgroundColor: 'var(--accent)' }}
     >
       Get Your Free Glow-Up &rarr;
