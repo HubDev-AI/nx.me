@@ -24,6 +24,10 @@ from datetime import datetime, timezone
 from supabase import Client
 
 from app.config import settings
+from app.runtime_flags import (
+    KILL_SWITCH_WEEKLY_FREE_GRANT,
+    is_kill_switch_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +78,9 @@ def _run_grant_sync(supabase: Client, iso_week: str, weekly_grant_milli: int) ->
         # active subscriptions but `data` came back empty, abort instead of
         # silently granting every Pro user a free weekly credit.
         expected_count_raw = getattr(sub_result, "count", None)
-        expected_count = expected_count_raw if isinstance(expected_count_raw, int) else 0
+        expected_count = (
+            expected_count_raw if isinstance(expected_count_raw, int) else 0
+        )
         if expected_count > 0 and not pro_user_ids:
             logger.error(
                 "weekly_free_grant: subscriptions count=%d but data empty — aborting",
@@ -162,6 +168,16 @@ async def run_weekly_free_grant(ctx: dict) -> None:
     supabase: Client = ctx["supabase"]
     iso_week = _current_iso_week()
     weekly_grant_milli = settings.WEEKLY_FREE_GRANT_MILLI
+
+    # Kill-switch — operator can flip `app_kill_switches.enabled=false` for
+    # key='weekly_free_grant' to pause the job without a redeploy. Read fresh
+    # every fire so a flip takes effect on the next Monday tick.
+    if not await is_kill_switch_enabled(supabase, KILL_SWITCH_WEEKLY_FREE_GRANT):
+        logger.info(
+            "weekly_free_grant: disabled via kill-switch — skipping iso_week=%s",
+            iso_week,
+        )
+        return
 
     logger.info(
         "weekly_free_grant: starting for iso_week=%s grant_milli=%d",
