@@ -41,6 +41,7 @@ import {
   HeaderBackButton,
 } from "../../components/ui/HeaderBackButton";
 import { DropdownMenu, type DropdownMenuItem } from "../../components/ui/DropdownMenu";
+import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import { CommentsSheet } from "../../components/comments/CommentsSheet";
 import {
   AUTH_VALIDATION,
@@ -118,10 +119,18 @@ async function fetchPublicCard(username: string): Promise<PublicCard> {
 // ---------------------------------------------------------------------------
 
 export default function CardDetailScreen() {
-  const { username, postId, userId } = useLocalSearchParams<{
+  const { username, postId, userId, from } = useLocalSearchParams<{
     username: string;
     postId?: string;
     userId?: string;
+    /**
+     * Which screen pushed us here. Currently: "feed" from the home/social
+     * feed. Unset for deep-link visitors. The back button uses this to
+     * route back to the caller tab — `router.back()` alone lands on
+     * whichever tab was most recently active, which isn't always the
+     * tab the user came from.
+     */
+    from?: string;
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -144,6 +153,7 @@ export default function CardDetailScreen() {
   const [reactionCount, setReactionCount] = useState<number | null>(null);
   const [commentCount, setCommentCount] = useState<number | null>(null);
   const [commentsVisible, setCommentsVisible] = useState(false);
+  const [zoomTarget, setZoomTarget] = useState<"before" | "after" | null>(null);
   const reactingRef = useRef(false);
 
   const isOwner = useMemo(
@@ -219,17 +229,48 @@ export default function CardDetailScreen() {
     setRevealComplete(true);
   }, []);
 
+  const handleZoomBefore = useCallback(() => {
+    if (card?.before_image_url) setZoomTarget("before");
+  }, [card?.before_image_url]);
+
+  const handleZoomAfter = useCallback(() => {
+    if (card?.after_image_url) setZoomTarget("after");
+  }, [card?.after_image_url]);
+
+  const handleCloseZoom = useCallback(() => setZoomTarget(null), []);
+
   const handleRetry = useCallback(() => {
     load();
   }, [load]);
+
+  // When the screen was pushed from a known tab, route back to that tab
+  // explicitly. `router.back()` alone relies on whichever tab was most
+  // recently focused, which produced "back from feed → profile" when the
+  // user had visited profile earlier in the session.
+  const navigateBackToOrigin = useCallback(() => {
+    if (from === "feed") {
+      router.replace("/(tabs)");
+      return;
+    }
+    if (from === "profile") {
+      router.replace("/(tabs)/profile");
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    // Deep-link entry with no back stack — land on the feed.
+    router.replace("/(tabs)");
+  }, [router, from]);
 
   const handleBack = useCallback(() => {
     // Don't pop the screen mid-delete — the DELETE request would be
     // orphaned and a late error toast would fire on a screen the user
     // is no longer on.
     if (isDeleting) return;
-    router.back();
-  }, [router, isDeleting]);
+    navigateBackToOrigin();
+  }, [isDeleting, navigateBackToOrigin]);
 
   const toggleMenu = useCallback(() => setMenuVisible((v) => !v), []);
   const closeMenu = useCallback(() => setMenuVisible(false), []);
@@ -316,7 +357,7 @@ export default function CardDetailScreen() {
               queryClient.invalidateQueries({
                 queryKey: FEED_QUERY_KEY_PREFIX.slice(),
               });
-              router.back();
+              navigateBackToOrigin();
             } catch (err) {
               hapticError();
               const appError = parseApiError(err);
@@ -332,7 +373,7 @@ export default function CardDetailScreen() {
         },
       ],
     );
-  }, [postId, isDeleting, router, queryClient]);
+  }, [postId, isDeleting, navigateBackToOrigin, queryClient]);
 
   const handleBlockUser = useCallback(() => {
     if (!userId) return;
@@ -350,7 +391,7 @@ export default function CardDetailScreen() {
               await blockUser(userId);
               hapticLight();
               showToast({ kind: "success", message: `${name} has been blocked.` });
-              router.back();
+              navigateBackToOrigin();
             } catch (err) {
               hapticError();
               const appError = parseApiError(err);
@@ -360,7 +401,7 @@ export default function CardDetailScreen() {
         },
       ],
     );
-  }, [userId, card?.display_name, router]);
+  }, [userId, card?.display_name, navigateBackToOrigin]);
 
   // ─── Reaction toggle ────────────────────────────────────────────────────
 
@@ -604,6 +645,8 @@ export default function CardDetailScreen() {
             afterUrl={card.after_image_url}
             rightLabel="Glow Up"
             onAccessibilityToggle={handleRevealComplete}
+            onPressBeforeImage={handleZoomBefore}
+            onPressAfterImage={handleZoomAfter}
           />
 
           <View style={styles.statsRow}>
@@ -679,6 +722,19 @@ export default function CardDetailScreen() {
         postId={postId ?? ""}
         onClose={handleCloseComments}
         onCommentPosted={handleCommentPosted}
+      />
+
+      <ZoomableImageModal
+        visible={zoomTarget !== null}
+        sourceUri={
+          zoomTarget === "before"
+            ? card.before_image_url
+            : zoomTarget === "after"
+              ? card.after_image_url
+              : null
+        }
+        altText={zoomTarget === "before" ? "Before photo" : "Glow-up photo"}
+        onClose={handleCloseZoom}
       />
 
       {isDeleting && (
