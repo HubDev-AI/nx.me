@@ -434,7 +434,7 @@ Payload log (DEBUG, same line + `"payload": {"system": "…", "messages": [...]}
 - `tests/test_advisor_vision_nudge.py` passes.
 - `tests/test_advisor_nudge_post_glowup.py` passes.
 - Existing `tests/test_advisor_nudge_post_analysis_grounded.py` passes with the new prompt shape.
-- Dev smoke: `DEV_FEATURE_FOCUS=upload`, run two different glow-ups on two different uploads; open profile → confirm two distinct nudges; eyeball the bodies to verify they reference specific things visible in the respective images (not face-shape boilerplate).
+- Dev smoke: log in, navigate to `/(tabs)/upload`, run two different glow-ups on two different uploads; open profile → confirm two distinct nudges; eyeball the bodies to verify they reference specific things visible in the respective images (not face-shape boilerplate).
 - SQL check: `SELECT observation_tag, count(*) FROM advisor_nudges WHERE trigger IN ('post_glowup','post_analysis') GROUP BY observation_tag` shows diverse tags across runs, not one dominant repeat.
 
 - [ ] **Unit 9: Advisor tool surface (MCP-style) — user-scoped, bytes-only, no signed URLs in prompts**
@@ -553,7 +553,7 @@ Payload log (DEBUG, same line + `"payload": {"system": "…", "messages": [...]}
 
 **Verification:**
 - `pytest tests/test_advisor_context_integration.py -x -q` passes.
-- Dev smoke: with `DEV_FEATURE_FOCUS=` unset, fresh account, run one analysis + one glow-up, then open Chat tab and send "What hairstyle would suit me?" — Ada's first reply must reference the user's face shape OR one of the recommendations. Capture simulator screenshot for the PR.
+- Dev smoke: fresh account (log in via Google/Apple), run one analysis + one glow-up, then open Chat tab and send "What hairstyle would suit me?" — Ada's first reply must reference the user's face shape OR one of the recommendations. Capture simulator screenshot for the PR.
 
 ## System-Wide Impact
 

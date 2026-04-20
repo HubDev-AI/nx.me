@@ -1,7 +1,7 @@
 # AGENTS.md — `mobile/` (React Native + Expo)
 
 TypeScript, Expo Router, native dev build.
-Root CLAUDE.md covers project-wide rules and `DEV_FEATURE_FOCUS` — this file is for mobile-specific context only.
+Root CLAUDE.md covers project-wide rules — this file is for mobile-specific context only.
 
 ## Layout
 
