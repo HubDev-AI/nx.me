@@ -762,19 +762,17 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
 async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> None:
     """Fire-and-forget enqueue of the post_glowup vision nudge.
 
-    Plan 2026-04-17-003 Unit 8. Runs after ``_finalize_job`` transitions
-    the job to ``completed`` with both image URLs populated. ARQ's
-    ``enqueue_job`` returns a job handle on success; any failure (Redis
-    hiccup, serialization bug) is logged and swallowed — the user's
-    glow-up is already complete and durable, a missing nudge is the
-    lesser failure.
+    Plan 2026-04-17-003 Unit 8 / Plan 2026-04-20-001 Unit 3. Runs after
+    ``_finalize_job`` transitions the job to ``completed`` with both image
+    URLs populated. ARQ's ``enqueue_job`` returns a job handle on success;
+    any failure (Redis hiccup, serialization bug) is logged and swallowed
+    — the user's glow-up is already complete and durable, a missing nudge
+    is the lesser failure.
 
     The pattern mirrors ``_fail_job``'s fire-and-forget credit release
     for terminal state transitions: the primary happy path must never be
     blocked by optional advisor work.
     """
-    from app.advisor.nudge_policy import TRIGGER_POST_GLOWUP
-
     arq_pool = ctx.get("arq_pool")
     if arq_pool is None:
         # Defense in depth: if worker_settings.startup ever regresses and
@@ -796,7 +794,7 @@ async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> No
             # parent ARQ job_timeout (see ``_NUDGE_INLINE_TIMEOUT_SECONDS``
             # at module level for rationale).
             await asyncio.wait_for(
-                generate_nudge(ctx, user_id, TRIGGER_POST_GLOWUP, None, job_id),
+                generate_nudge(ctx, user_id, job_id),
                 timeout=_NUDGE_INLINE_TIMEOUT_SECONDS,
             )
         except Exception:
@@ -811,8 +809,6 @@ async def _enqueue_post_glowup_nudge(ctx: dict, job_id: str, user_id: str) -> No
         await arq_pool.enqueue_job(
             "generate_nudge",
             user_id,
-            TRIGGER_POST_GLOWUP,
-            None,
             job_id,
         )
         logger.debug("Enqueued post_glowup nudge for user %s (job %s)", user_id, job_id)

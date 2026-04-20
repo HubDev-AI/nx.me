@@ -31,7 +31,11 @@ async def test_nudge_uses_soul_md_as_system(monkeypatch):
     async def _capturing_create(**kwargs):
         captured.update(kwargs)
         return LLMResponse(
-            content='{"body": "warm.", "observation_tag": "clean look"}',
+            content=(
+                '{"body": "Your look feels so warm and polished.", '
+                '"next_step": {"label": "Ask Ada", '
+                '"seed": "What can I do to keep this warmth in my look?"}}'
+            ),
             input_tokens=1,
             output_tokens=1,
         )
@@ -46,6 +50,7 @@ async def test_nudge_uses_soul_md_as_system(monkeypatch):
         return_value={"content": {"face_shape": "oval"}, "created_at": "2026-01-01"}
     )
     fake_repo.get_recent_nudge_context = MagicMock(return_value=[])
+    fake_repo.find_duplicate_body = MagicMock(return_value=False)
     monkeypatch.setattr(
         nudge_scheduler, "AdvisorRepository", MagicMock(return_value=fake_repo)
     )

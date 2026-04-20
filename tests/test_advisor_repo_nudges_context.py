@@ -1,8 +1,11 @@
 """Unit-4 repo helper — ``AdvisorRepository.get_recent_nudges_for_context``.
 
-Plan 2026-04-17-003 Unit 4. Covers:
+Plan 2026-04-17-003 Unit 4 / Plan 2026-04-20-001 Unit 3.
 
-- Select set stays ``content, trigger, created_at`` (no extra columns).
+Covers:
+
+- Select set is now ``body, next_step_label, next_step_seed, created_at``
+  (content + trigger columns dropped in Unit 3 migration).
 - Filter chain: ``eq(user_id) -> gte(created_at, since_iso) -> order desc -> limit``.
 - Read-only contract: the method never touches ``read_at`` (no update path).
 - Empty result (``.data = None`` from supabase-py) returns ``[]``.
@@ -32,14 +35,16 @@ def _build_repo_with_data(
 
 
 class TestQueryShape:
-    def test_select_columns_are_content_trigger_created_at(self):
-        """Plan Unit 4 — repo selects exactly these three columns."""
+    def test_select_columns_are_body_next_step_label_next_step_seed_created_at(self):
+        """Plan Unit 3 — repo selects exactly these four columns."""
         repo, sb, _leaf = _build_repo_with_data([])
         repo.get_recent_nudges_for_context(
             "user-1", limit=5, since_iso="2026-04-03T00:00:00+00:00"
         )
         sb.table.assert_called_with("advisor_nudges")
-        sb.table.return_value.select.assert_called_with("content, trigger, created_at")
+        sb.table.return_value.select.assert_called_with(
+            "body, next_step_label, next_step_seed, created_at"
+        )
 
     def test_filter_chain_uses_eq_then_gte(self):
         """Filter chain: eq(user_id) → gte(created_at, since) — user scoping and time window."""
@@ -73,17 +78,11 @@ class TestQueryShape:
         limit_mock.assert_called_with(7)
 
     def test_no_read_at_mutation(self):
-        """Read-only contract: the repo method never calls ``.update(..)`` on advisor_nudges.
-
-        Plan Unit 4 explicitly forbids mutating ``read_at`` as a side
-        effect of chat context assembly.
-        """
+        """Read-only contract: the repo method never calls ``.update(..)`` on advisor_nudges."""
         repo, sb, _leaf = _build_repo_with_data([])
         repo.get_recent_nudges_for_context(
             "user-1", limit=5, since_iso="2026-04-03T00:00:00+00:00"
         )
-        # Walk every attr call recorded on the table mock — ``update`` must
-        # never have been invoked on advisor_nudges for this helper.
         calls = [str(c) for c in sb.table.return_value.mock_calls]
         assert not any(".update(" in c for c in calls), (
             f"get_recent_nudges_for_context must not call .update(): saw {calls!r}"
@@ -95,13 +94,15 @@ class TestReturnShape:
         """Rows from Supabase are passed through unchanged (newest first)."""
         rows = [
             {
-                "content": "weekly check-in: what's been landing?",
-                "trigger": "weekly_checkin",
+                "body": "Your brow arch looks beautifully defined.",
+                "next_step_label": "Ask Ada",
+                "next_step_seed": "How can I keep my brows this defined?",
                 "created_at": "2026-04-17T00:00:00+00:00",
             },
             {
-                "content": "oval face shapes are versatile",
-                "trigger": "post_analysis",
+                "body": "Softer jaw contouring reads really well here.",
+                "next_step_label": "Tell me more",
+                "next_step_seed": "What jaw contouring techniques work for my face shape?",
                 "created_at": "2026-04-15T00:00:00+00:00",
             },
         ]

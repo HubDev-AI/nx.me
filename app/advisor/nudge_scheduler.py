@@ -3,6 +3,10 @@
 Plan 2026-04-17-003 Unit 2: removed generic trigger functions and
 eligibility cron. Only post_glowup vision-grounded path remains.
 
+Plan 2026-04-20-001 Unit 3: simplified generate_nudge signature to
+(ctx, user_id, job_id); rewrote parser for three-field contract
+{body, next_step.{label, seed}}; added body_hash dedup.
+
 Jobs:
   generate_nudge           — generate + save a single nudge via Haiku
   write_analysis_insight_job — persist analysis insight memory row
@@ -10,8 +14,10 @@ Jobs:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -21,17 +27,11 @@ from supabase import Client
 from app.advisor._hashing import hash_user_id
 from app.advisor._json_utils import strip_json_code_fence
 from app.advisor.mcp.context import McpContext
-from app.advisor.mcp.tools_glowup import (
-    _handle_get_latest_glowup,
-    _handle_get_latest_photo,
-)
+from app.advisor.mcp.tools_glowup import _handle_get_latest_glowup
 from app.advisor.persona import SOUL_MD
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
-from app.advisor.nudge_policy import (
-    MAX_TOKENS_NUDGE,
-    TRIGGER_POST_GLOWUP,
-)
+from app.advisor.nudge_policy import MAX_TOKENS_NUDGE, TRIGGER_POST_GLOWUP  # noqa: F401
 from app.advisor.nudge_templates import build_vision_nudge_prompt
 from app.api.deps import get_llm_adapter as _get_llm_adapter
 from app.config import settings
@@ -48,6 +48,8 @@ CONTENT_BLOCK_TYPE_TEXT = "text"
 METRIC_NUDGE_INVALID_JSON = "advisor.nudge_invalid_json"
 METRIC_NUDGE_RAPID_RETRY_DEDUP = "advisor.nudge_rapid_retry_dedup"
 METRIC_NUDGE_NO_PROFILE = "advisor.nudge_no_profile"
+METRIC_NUDGE_PARSE_DROP = "advisor.nudge_parse_drop"
+METRIC_NUDGE_DUPLICATE_BODY = "advisor.nudge_duplicate_body"
 
 # Redis key template for the post_glowup rapid-retry dedup guard.
 # Using a SETNX with a TTL keyed by (user_id, upload_id) — no schema
@@ -55,6 +57,10 @@ METRIC_NUDGE_NO_PROFILE = "advisor.nudge_no_profile"
 _RAPID_RETRY_KEY_FMT = "advisor:nudge:post_glowup:{user_id}:{upload_id}"
 _RAPID_RETRY_VALUE = "1"
 _SECONDS_PER_MINUTE = 60
+
+# Body dedup lookback window: drop nudges whose body_hash was seen within
+# this many days to prevent repeating identical observations.
+_BODY_DEDUP_DAYS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -65,22 +71,18 @@ _SECONDS_PER_MINUTE = 60
 async def generate_nudge(
     ctx: dict,
     user_id: str,
-    trigger: str,
-    insight: dict[str, Any] | None = None,
     job_id: str | None = None,
 ) -> None:
     """Generate and save a single nudge for a user.
 
-    Plan 2026-04-17-003 Unit 2: only the post_glowup vision-grounded
-    path remains. All generic triggers have been removed.
+    Plan 2026-04-20-001 Unit 3: simplified signature — trigger and insight
+    args removed. Always runs the post_glowup vision-grounded path.
 
     Args:
         ctx:     ARQ worker context (supabase, redis injected at startup).
         user_id: UUID string of the target user.
-        trigger: Must be TRIGGER_POST_GLOWUP.
-        insight: Legacy kwarg — unused, kept for wire compatibility.
-        job_id:  Source job_id for ``post_glowup`` — used to resolve
-                 the ``upload_id`` for rapid-retry dedup.
+        job_id:  Source job_id for the glow-up — used to resolve the
+                 ``upload_id`` for rapid-retry dedup.
     """
     if not settings.ADVISOR_ENABLED:
         logger.debug(
@@ -97,7 +99,6 @@ async def generate_nudge(
         redis=redis,
         supabase=supabase,
         user_id=user_id,
-        trigger=trigger,
         job_id=job_id,
     )
 
@@ -108,40 +109,35 @@ async def _generate_vision_nudge(
     redis: aioredis.Redis,
     supabase: Client,
     user_id: str,
-    trigger: str,
     job_id: str | None,
 ) -> None:
-    """Vision-grounded nudge flow (Plan 2026-04-17-003 Unit 8).
+    """Vision-grounded nudge flow (Plan 2026-04-20-001 Unit 3).
 
     1. Skip if no ``style_profile`` (no stable facts → no prompt).
-    2. Rapid-retry dedup for ``post_glowup``: if a second
-       ``post_glowup`` for the same user+upload fires within
-       ``ADVISOR_POST_GLOWUP_RAPID_RETRY_MINUTES``, skip the second run.
-    3. Fetch images via the MCP tool handlers
-       (``_handle_get_latest_glowup`` / ``_handle_get_latest_photo``) —
-       same in-process code path Ada chat uses. Error text blocks from
-       the handler are filtered out; only image blocks reach the model.
+    2. Rapid-retry dedup: if a second post_glowup for the same
+       user+upload fires within ``ADVISOR_POST_GLOWUP_RAPID_RETRY_MINUTES``,
+       skip the second run.
+    3. Fetch images via ``_handle_get_latest_glowup``.
     4. Build ``build_vision_nudge_prompt(profile, recent_nudges)``
-       text, attach image blocks in the user message's ``content`` list,
-       call Haiku.
-    5. Parse strict JSON ``{"body", "observation_tag"}``. Drop on
-       parse failure.
+       text, attach image blocks, call Haiku.
+    5. Parse strict JSON ``{"body", "next_step": {"label", "seed"}}``.
+       Validate lengths and seed-ends-with-? invariant. Drop on failure.
+    6. Compute body_hash; drop if duplicate within 30 days.
+    7. Insert nudge row with new three-field shape.
     """
     user_id_hash = hash_user_id(user_id)
     profile_row = await run_sync(advisor_repo.get_style_profile, user_id)
     profile_content = (profile_row or {}).get("content") or None
     if not profile_content:
         logger.info(
-            "Vision nudge skipped — no style_profile for user=%s (trigger=%s)",
+            "Vision nudge skipped — no style_profile for user=%s",
             user_id_hash,
-            trigger,
             extra={"metric": METRIC_NUDGE_NO_PROFILE, "user_id_hash": user_id_hash},
         )
         return
 
-    # Rapid-retry dedup — only applies to post_glowup; post_analysis
-    # predates any generation and runs at most once per analysis event.
-    if trigger == TRIGGER_POST_GLOWUP and job_id:
+    # Rapid-retry dedup
+    if job_id:
         upload_id = await run_sync(_resolve_upload_id_for_job, supabase, job_id)
         if upload_id:
             rapid_ttl_minutes = settings.ADVISOR_POST_GLOWUP_RAPID_RETRY_MINUTES
@@ -153,9 +149,6 @@ async def _generate_vision_nudge(
                         key, _RAPID_RETRY_VALUE, ex=ttl_seconds, nx=True
                     )
                 except Exception as exc:
-                    # Redis hiccup → fall through rather than block the
-                    # nudge; the model still has its own dedup via
-                    # recent_nudges context.
                     logger.warning(
                         "Rapid-retry SETNX failed for user=%s: %s — continuing",
                         user_id_hash,
@@ -176,11 +169,6 @@ async def _generate_vision_nudge(
                     )
                     return
 
-    # Build the per-turn MCP context in the same shape the chat path
-    # uses. The worker resolves the user from its own ctx, never from
-    # any model-provided input — cross-user leakage is impossible
-    # because the worker-built context's ``user_id`` is the only
-    # identity the handlers see.
     mcp_ctx = McpContext(
         user_id=UUID(user_id),
         supabase=supabase,
@@ -188,17 +176,11 @@ async def _generate_vision_nudge(
         logger=logger,
     )
 
-    image_blocks = await _fetch_vision_blocks(mcp_ctx, trigger)
-    # The prompt handles the degenerate 1-image case gracefully; we
-    # still emit the nudge when only one image is available
-    # (post_analysis pre-generation). Zero image blocks means the
-    # handler returned only error text — skip to avoid feeding the
-    # model an image-shaped prompt with no image.
+    image_blocks = await _fetch_vision_blocks(mcp_ctx)
     if not image_blocks:
         logger.info(
-            "Vision nudge skipped — no image blocks available (user=%s, trigger=%s)",
+            "Vision nudge skipped — no image blocks available (user=%s)",
             user_id_hash,
-            trigger,
         )
         return
 
@@ -232,41 +214,70 @@ async def _generate_vision_nudge(
             user_id=user_id,
             conversation_id="-",
             response=response,
-            purpose=f"vision_nudge:{trigger}",
+            purpose="vision_nudge",
         )
         raw = response.content.strip()
     except Exception as exc:
         logger.error(
-            "LLM call failed for vision nudge (user=%s, trigger=%s): %s",
+            "LLM call failed for vision nudge (user=%s): %s",
             user_id_hash,
-            trigger,
             exc,
         )
         return
 
-    parsed = _parse_vision_nudge_json(raw)
+    parsed, parse_kind = _parse_nudge_json(raw)
     if parsed is None:
         logger.warning(
-            "Vision nudge dropped — malformed JSON (user=%s, trigger=%s)",
+            "Vision nudge dropped — parse failure kind=%s (user=%s)",
+            parse_kind,
             user_id_hash,
-            trigger,
             extra={
-                "metric": METRIC_NUDGE_INVALID_JSON,
+                "metric": METRIC_NUDGE_PARSE_DROP,
+                "kind": parse_kind,
                 "user_id_hash": user_id_hash,
-                "trigger": trigger,
             },
         )
         return
 
-    body, observation_tag = parsed
+    body: str = parsed["body"]
+    next_step_label: str = parsed["next_step_label"]
+    next_step_seed: str = parsed["next_step_seed"]
+
+    # Body-hash dedup: drop if identical body seen in last 30 days.
+    body_hash = hashlib.sha256(body.lower().encode()).hexdigest()
+    since = datetime.now(tz=timezone.utc) - timedelta(days=_BODY_DEDUP_DAYS)
+    try:
+        is_dup = await run_sync(
+            advisor_repo.find_duplicate_body, user_id, body_hash, since
+        )
+    except Exception as exc:
+        logger.warning(
+            "Body-hash dedup check failed for user=%s: %s — continuing",
+            user_id_hash,
+            exc,
+        )
+        is_dup = False
+
+    if is_dup:
+        logger.info(
+            "Vision nudge dropped — duplicate body_hash within %d days (user=%s)",
+            _BODY_DEDUP_DAYS,
+            user_id_hash,
+            extra={
+                "metric": METRIC_NUDGE_DUPLICATE_BODY,
+                "user_id_hash": user_id_hash,
+            },
+        )
+        return
 
     try:
         advisor_repo.insert_nudge(
             {
                 "user_id": user_id,
-                "trigger": trigger,
-                "content": body,
-                "observation_tag": observation_tag,
+                "body": body,
+                "next_step_label": next_step_label,
+                "next_step_seed": next_step_seed,
+                "body_hash": body_hash,
             }
         )
     except Exception as exc:
@@ -274,10 +285,9 @@ async def _generate_vision_nudge(
         return
 
     logger.info(
-        "Vision nudge saved: user=%s trigger=%s observation_tag=%s",
+        "Vision nudge saved: user=%s next_step_label=%s",
         user_id_hash,
-        trigger,
-        observation_tag,
+        next_step_label,
     )
 
 
@@ -315,65 +325,77 @@ def _resolve_upload_id_for_job(supabase: Client, job_id: str) -> str | None:
     return str(upload_id) if upload_id else None
 
 
-async def _fetch_vision_blocks(
-    mcp_ctx: McpContext, trigger: str
-) -> list[dict[str, Any]]:
+async def _fetch_vision_blocks(mcp_ctx: McpContext) -> list[dict[str, Any]]:
     """Fetch image blocks for the vision nudge via the MCP tool handlers.
 
-    Plan 2026-04-17-003 Unit 8 Dependency on Unit 2/9: nudge generation
-    shares the exact same image-fetch code path as Ada chat. For
-    ``post_glowup`` we call ``get_latest_glowup``; for ``post_analysis``
-    (which can fire before any generation exists) we call
-    ``get_latest_glowup`` first and fall back to ``get_latest_photo``
-    when no glow-up is available yet.
-
-    The handlers now return ``{"content": [...], "is_error": bool}``
-    (envelope-shaped payload). We unwrap ``content`` and keep only the
-    image blocks; error payloads naturally drop to zero image blocks
-    and trigger the fallback or skip path.
+    Plan 2026-04-20-001 Unit 3: post_analysis trigger removed; always
+    calls ``_handle_get_latest_glowup``. The handler returns
+    ``{"content": [...], "is_error": bool}``; we unwrap and keep only
+    image blocks.
     """
 
     def _content(payload: dict[str, Any]) -> list[dict[str, Any]]:
         inner = payload.get("content")
         return inner if isinstance(inner, list) else []
 
-    if trigger == TRIGGER_POST_GLOWUP:
-        payload = await _handle_get_latest_glowup(mcp_ctx)
-        blocks = _content(payload)
-    else:
-        # post_analysis: prefer the glow-up if one exists (user may
-        # have completed one already), otherwise fall back to the
-        # most recent source photo.
-        payload = await _handle_get_latest_glowup(mcp_ctx)
-        blocks = _content(payload)
-        if not any(b.get("type") == CONTENT_BLOCK_TYPE_IMAGE for b in blocks):
-            payload = await _handle_get_latest_photo(mcp_ctx)
-            blocks = _content(payload)
-
+    payload = await _handle_get_latest_glowup(mcp_ctx)
+    blocks = _content(payload)
     return [b for b in blocks if b.get("type") == CONTENT_BLOCK_TYPE_IMAGE]
 
 
-def _parse_vision_nudge_json(raw: str) -> tuple[str, str] | None:
-    """Parse a strict JSON ``{"body", "observation_tag"}`` response.
+def _parse_nudge_json(raw: str) -> tuple[dict | None, str | None]:
+    """Parse a strict JSON ``{"body", "next_step": {"label", "seed"}}`` response.
 
-    Returns ``(body, observation_tag)`` when both fields are non-empty
-    strings; returns ``None`` on any parse or shape failure. Dropping
-    on failure is preferred to retrying — a malformed response from
-    Haiku is usually a token-budget accident, not a retryable error.
+    Returns ``(parsed_dict, None)`` on success where parsed_dict has keys
+    ``{"body", "next_step_label", "next_step_seed"}``.
+
+    Returns ``(None, kind)`` on failure where kind is one of:
+    ``"json" | "shape" | "length" | "seed_not_question"``.
+
+    Validation:
+    - Valid JSON after stripping code-fence.
+    - Keys: ``body`` (str, non-empty), ``next_step`` (dict with ``label``
+      str and ``seed`` str).
+    - ``len(body) <= 160``.
+    - ``len(next_step.label) <= 24``.
+    - ``len(next_step.seed) <= 140``.
+    - ``next_step.seed.strip()`` must end with ``?``.
     """
     try:
         data = json.loads(strip_json_code_fence(raw))
     except (TypeError, ValueError):
-        return None
+        return None, "json"
+
     if not isinstance(data, dict):
-        return None
+        return None, "json"
+
     body = data.get("body")
-    observation_tag = data.get("observation_tag")
+    next_step = data.get("next_step")
+
     if not isinstance(body, str) or not body.strip():
-        return None
-    if not isinstance(observation_tag, str) or not observation_tag.strip():
-        return None
-    return body.strip(), observation_tag.strip()
+        return None, "shape"
+    if not isinstance(next_step, dict):
+        return None, "shape"
+
+    label = next_step.get("label")
+    seed = next_step.get("seed")
+
+    if not isinstance(label, str) or not label.strip():
+        return None, "shape"
+    if not isinstance(seed, str) or not seed.strip():
+        return None, "shape"
+
+    body = body.strip()
+    label = label.strip()
+    seed = seed.strip()
+
+    if len(body) > 160 or len(label) > 24 or len(seed) > 140:
+        return None, "length"
+
+    if not seed.endswith("?"):
+        return None, "seed_not_question"
+
+    return {"body": body, "next_step_label": label, "next_step_seed": seed}, None
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ _DEFAULT_SINCE_DAYS = 14
 
 _TOOL_DESCRIPTION = (
     "Returns the authenticated user's most recent advisor nudges as a "
-    "short bulleted list of {trigger, content, created_at} records. "
+    "short bulleted list of {body, created_at} records. "
     "Nudges are product-authored messages the user saw on a passive "
     "surface (e.g., after a completed analysis or glow-up).\n\n"
     "Call this when the user references a nudge ('you said I should try "
@@ -122,8 +122,7 @@ async def handle(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        trigger = str(row.get("trigger", "")).strip().lower() or "nudge"
-        body = row.get("content") or row.get("body") or ""
+        body = row.get("body") or ""
         body_str = (
             str(body).replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
         )
@@ -131,8 +130,8 @@ async def handle(
             continue
         created_at = str(row.get("created_at", "")).strip()
         if created_at:
-            lines.append(f"- ({trigger}, {created_at}) {body_str}")
+            lines.append(f"- ({created_at}) {body_str}")
         else:
-            lines.append(f"- ({trigger}) {body_str}")
+            lines.append(f"- {body_str}")
     text = "\n".join(lines) if lines else "no recent nudges"
     return {"content": [{"type": "text", "text": text}], "is_error": False}
