@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000000",
+    backgroundColor: THEME.colors.backdrop,
   },
   sheet: {
     backgroundColor: THEME.colors.glass,

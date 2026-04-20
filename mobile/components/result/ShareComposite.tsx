@@ -24,6 +24,7 @@ import {
 import { captureRef } from "react-native-view-shot";
 
 import { FONTS } from "../../hooks/useFonts";
+import { THEME } from "../../constants/theme";
 import { Watermark } from "./Watermark";
 
 // ---------------------------------------------------------------------------
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     width: COMPOSITE_SIZE_PX,
     height: COMPOSITE_SIZE_PX,
     flexDirection: "row",
-    backgroundColor: "#000000",
+    backgroundColor: THEME.colors.backdrop,
     overflow: "hidden",
   },
   halfImage: {
@@ -286,7 +287,7 @@ const styles = StyleSheet.create({
   labelText: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: LABEL_FONT_SIZE_PX,
-    color: "#ffffff",
+    color: THEME.colors.white,
     letterSpacing: LABEL_LETTER_SPACING,
   },
 });
