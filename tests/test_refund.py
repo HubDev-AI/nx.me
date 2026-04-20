@@ -41,13 +41,19 @@ def _make_job(
     user_id: str,
     status: str = "failed",
     credit_reservation_id: str | None = None,
+    failure_reason: str | None = "PROVIDER_ERROR",
 ) -> dict:
-    """Return a minimal job dict as returned by get_for_refund."""
+    """Return a minimal job dict as returned by get_for_refund.
+
+    Defaults to PROVIDER_ERROR so failed-job tests land in the refundable
+    branch; user-caused failure tests pass ``failure_reason`` explicitly.
+    """
     return {
         "id": job_id,
         "user_id": user_id,
         "status": status,
         "credit_reservation_id": credit_reservation_id,
+        "failure_reason": failure_reason,
     }
 
 
@@ -241,6 +247,87 @@ class TestRefundEndpoint:
         assert result.new_balance == 2
         ledger.refund.assert_not_called()
         ledger.release.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refund_identity_failure_returns_409(self):
+        """IDENTITY_PRESERVATION_FAILED consumed a paid provider inference.
+
+        The user should not be able to self-refund it. The endpoint must
+        return 409 refund_not_eligible without touching the ledger.
+        """
+        job_id = str(uuid4())
+        user_id = str(uuid4())
+        reservation_id = str(uuid4())
+
+        job = _make_job(
+            job_id,
+            user_id,
+            status="failed",
+            credit_reservation_id=reservation_id,
+            failure_reason="IDENTITY_PRESERVATION_FAILED",
+        )
+        job_repo = _make_job_repo(job)
+        ledger = _make_ledger()
+
+        claims = _make_claims(user_id)
+        with pytest.raises(ApiError) as exc_info:
+            await _call(job_id, claims, job_repo, ledger)
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.code == "refund_not_eligible"
+        ledger.refund.assert_not_called()
+        ledger.release.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refund_nsfw_failure_returns_409(self):
+        """NSFW_CONTENT_DETECTED is also ineligible for auto-refund."""
+        job_id = str(uuid4())
+        user_id = str(uuid4())
+        reservation_id = str(uuid4())
+
+        job = _make_job(
+            job_id,
+            user_id,
+            status="failed",
+            credit_reservation_id=reservation_id,
+            failure_reason="NSFW_CONTENT_DETECTED",
+        )
+        job_repo = _make_job_repo(job)
+        ledger = _make_ledger()
+
+        claims = _make_claims(user_id)
+        with pytest.raises(ApiError) as exc_info:
+            await _call(job_id, claims, job_repo, ledger)
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.code == "refund_not_eligible"
+
+    @pytest.mark.asyncio
+    async def test_refund_cancelled_job_bypasses_failure_reason_gate(self):
+        """Cancelled jobs are always refundable regardless of failure_reason.
+
+        Cancel short-circuits before FAL and the refund gate only applies
+        to FAILED jobs. This guards against a regression that would route
+        cancels through the gate.
+        """
+        job_id = str(uuid4())
+        user_id = str(uuid4())
+        reservation_id = str(uuid4())
+
+        job = _make_job(
+            job_id,
+            user_id,
+            status="cancelled",
+            credit_reservation_id=reservation_id,
+            failure_reason=None,
+        )
+        job_repo = _make_job_repo(job)
+        ledger = _make_ledger(balance=4)
+
+        claims = _make_claims(user_id)
+        result = await _call(job_id, claims, job_repo, ledger)
+        assert result.refunded is True
+        assert result.new_balance == 4
 
     @pytest.mark.asyncio
     async def test_refund_falls_back_to_release_on_value_error(self):

@@ -20,7 +20,7 @@ from app.api.errors import raise_api_error
 from app.api.middleware.auth import UserClaims
 from app.db.async_helpers import run_sync
 from app.entitlement.ledger import CreditLedger
-from app.generation.models import JobStatus
+from app.generation.models import JobStatus, NON_USER_FAILURE_REASONS
 from app.repositories.job_repo import JobRepository
 
 logger = logging.getLogger(__name__)
@@ -93,6 +93,18 @@ async def refund_analysis_job(
             "refund_not_applicable",
             f"Only failed or cancelled jobs can be refunded. Job is '{job['status']}'.",
         )
+
+    # User-caused failures (NSFW / IDENTITY) consumed a paid provider
+    # inference — we cannot refund them without eating the bill. Cancel
+    # is always refundable because the worker short-circuits before FAL.
+    if job["status"] == JobStatus.FAILED:
+        failure_reason = job.get("failure_reason")
+        if failure_reason not in NON_USER_FAILURE_REASONS:
+            raise_api_error(
+                http_status.HTTP_409_CONFLICT,
+                "refund_not_eligible",
+                "This failure isn't eligible for an automatic refund.",
+            )
 
     # --- Refund credit reservation if present ---
     # Idempotency is enforced by the ledger RPCs: credit_refund/credit_release

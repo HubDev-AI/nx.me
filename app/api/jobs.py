@@ -38,6 +38,7 @@ from app.generation.models import (
     FAILURE_CANCELLED,
     FAILURE_IDENTITY,
     JobStatus,
+    NON_USER_FAILURE_REASONS,
 )
 from app.repositories.image_repo import ImageRepository
 from app.repositories.job_repo import JobRepository, SOURCE_TYPE_GLOWUP
@@ -434,6 +435,23 @@ async def refund_job(
                 }
             },
         )
+
+    # User-caused failures (NSFW / IDENTITY) consumed a paid provider
+    # inference — refunding the user's credit would leave the NXME side
+    # holding the bill. Completed jobs are exempt from this gate (their
+    # refund path is the dispute workflow, not the auto-refund path).
+    if job["status"] == JobStatus.FAILED:
+        failure_reason = job.get("failure_reason")
+        if failure_reason not in NON_USER_FAILURE_REASONS:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": {
+                        "code": "REFUND_NOT_ELIGIBLE",
+                        "message": "This failure isn't eligible for an automatic refund.",
+                    }
+                },
+            )
 
     # Idempotency via ledger RPCs: both credit_refund and credit_release
     # raise ValueError when no matching reservation state exists. If both
