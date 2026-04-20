@@ -3,13 +3,16 @@
 Verifies that _fail_job:
   - calls ledger.release() for in-flight failures (reserved reservation)
   - calls ledger.refund() for finalizing failures (committed reservation)
-  - updates usage_event status to 'released' after successful credit settle
   - does NOT settle credits for user-caused failures (NSFW, IDENTITY) — same
     mechanism as provider failures, but classification is at caller level;
     here we verify the settle happens for all failure_reasons (classification
     is enforced by the caller passing the right failure_reason)
   - does NOT settle credits for completed jobs (credit already fully consumed)
   - handles credit settle failure gracefully (still marks job failed)
+
+Idempotency is enforced by the ledger RPCs themselves (credit_release and
+credit_refund both use UPDATE ... WHERE status = X RETURNING *), so the
+worker no longer writes a secondary usage_events row.
 
 Pattern: unit tests calling _fail_job directly with MagicMock dependencies,
 consistent with test_refund.py and test_face_errors.py.
@@ -50,7 +53,6 @@ pytestmark = pytest.mark.skipif(
 def _make_job_repo() -> MagicMock:
     repo = MagicMock()
     repo.update.return_value = [{}]
-    repo.update_usage_event.return_value = [{}]
     return repo
 
 
@@ -145,7 +147,7 @@ class TestWorkerAutoReleaseOnProviderFailure:
 
     @pytest.mark.asyncio
     async def test_provider_failure_calls_release(self):
-        """PROVIDER_ERROR: calls ledger.release() and marks usage_event released."""
+        """PROVIDER_ERROR: calls ledger.release()."""
         job_data = _make_job_data(status=JobStatus.PROCESSING)
         ledger = _make_ledger()
 
@@ -153,18 +155,6 @@ class TestWorkerAutoReleaseOnProviderFailure:
 
         ledger.release.assert_called_once()
         ledger.refund.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_provider_failure_marks_usage_event_released(self):
-        """After release, usage_event is updated to 'released'."""
-        job_data = _make_job_data(status=JobStatus.PROCESSING)
-        ledger = _make_ledger()
-
-        job_repo, _ = await _call_fail_job(job_data, FAILURE_PROVIDER, ledger)
-
-        job_repo.update_usage_event.assert_called_once_with(
-            job_data["id"], {"status": "released"}
-        )
 
     @pytest.mark.asyncio
     async def test_timeout_failure_calls_release(self):
@@ -210,18 +200,6 @@ class TestWorkerAutoRefundOnFinalizingFailure:
         ledger.refund.assert_called_once()
         ledger.release.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_finalizing_job_marks_usage_event_released(self):
-        """After refund, usage_event is still marked 'released' for idempotency."""
-        job_data = _make_job_data(status=JobStatus.FINALIZING)
-        ledger = _make_ledger()
-
-        job_repo, _ = await _call_fail_job(job_data, FAILURE_TIMEOUT, ledger)
-
-        job_repo.update_usage_event.assert_called_once_with(
-            job_data["id"], {"status": "released"}
-        )
-
 
 # ---------------------------------------------------------------------------
 # User-caused failures — credits still released (same path), but the
@@ -236,7 +214,7 @@ class TestWorkerNoAutoRefundOnUserCausedFailures:
     not in _fail_job itself. _fail_job always releases/refunds on failure.
     We verify that NSFW and IDENTITY failures still trigger release to avoid
     a credit leak — the client's "Report issue" flow returns 409 because
-    usage_event is already 'released'.
+    the ledger reservation is already resolved.
     """
 
     @pytest.mark.asyncio
@@ -301,16 +279,6 @@ class TestWorkerNoActionForCompletedJobs:
         ledger.release.assert_not_called()
         ledger.refund.assert_not_called()
 
-    @pytest.mark.asyncio
-    async def test_completed_job_skips_usage_event_update(self):
-        """No usage_event update when job is COMPLETED."""
-        job_data = _make_job_data(status=JobStatus.COMPLETED)
-        ledger = _make_ledger()
-
-        job_repo, _ = await _call_fail_job(job_data, FAILURE_PROVIDER, ledger)
-
-        job_repo.update_usage_event.assert_not_called()
-
 
 # ---------------------------------------------------------------------------
 # No credit action when no reservation
@@ -328,11 +296,10 @@ class TestWorkerNoActionWithoutReservation:
         job_data["credit_reservation_id"] = None
         ledger = _make_ledger()
 
-        job_repo, ledger = await _call_fail_job(job_data, FAILURE_PROVIDER, ledger)
+        _, ledger = await _call_fail_job(job_data, FAILURE_PROVIDER, ledger)
 
         ledger.release.assert_not_called()
         ledger.refund.assert_not_called()
-        job_repo.update_usage_event.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -353,16 +320,6 @@ class TestWorkerCreditSettleFailureResilience:
 
         update_data = job_repo.update.call_args[0][1]
         assert update_data["status"] == JobStatus.FAILED
-
-    @pytest.mark.asyncio
-    async def test_release_failure_skips_usage_event_update(self):
-        """If ledger.release() raises, usage_event is NOT updated (credit_settled=False)."""
-        job_data = _make_job_data(status=JobStatus.PROCESSING)
-        ledger = _make_ledger(release_raises=ValueError("already resolved"))
-
-        job_repo, _ = await _call_fail_job(job_data, FAILURE_PROVIDER, ledger)
-
-        job_repo.update_usage_event.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_refund_failure_still_marks_job_failed(self):

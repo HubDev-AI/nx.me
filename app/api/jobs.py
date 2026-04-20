@@ -369,8 +369,6 @@ async def cancel_job(
                 job["credit_reservation_id"],
             )
 
-    await run_sync(job_repo.update_usage_event, str(job_id), {"status": "released"})
-
     logger.info("Job %s cancelled by user %s", job_id, user_id_str)
 
     return CancelResponse(
@@ -399,7 +397,7 @@ async def refund_job(
     """Refund a completed or failed generation job.
 
     Releases the credit reservation, returning the credit to the user's balance.
-    Idempotent via usage_event status check.
+    Idempotency is enforced by the ledger RPCs — a second call returns 409.
     """
     user_id_str: str = claims["sub"]
 
@@ -413,19 +411,6 @@ async def refund_job(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorised to refund this job",
-        )
-
-    # Idempotency guard: reject if this job was already refunded
-    usage_status = await run_sync(job_repo.get_usage_event_status, str(job_id))
-    if usage_status in ("refunded", "released"):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": {
-                    "code": "ALREADY_REFUNDED",
-                    "message": "This job has already been refunded.",
-                }
-            },
         )
 
     refundable_statuses = {JobStatus.COMPLETED, JobStatus.FAILED}
@@ -450,6 +435,9 @@ async def refund_job(
             },
         )
 
+    # Idempotency via ledger RPCs: both credit_refund and credit_release
+    # raise ValueError when no matching reservation state exists. If both
+    # raise, the reservation was already resolved → 409 already_refunded.
     credit_refunded = False
     if job.get("credit_reservation_id"):
         reservation_id = UUID(job["credit_reservation_id"])
@@ -461,12 +449,15 @@ async def refund_job(
                 ledger.release(reservation_id)
                 credit_refunded = True
             except ValueError:
-                logger.warning(
-                    "Credit refund/release failed for reservation %s (already resolved)",
-                    job["credit_reservation_id"],
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "error": {
+                            "code": "ALREADY_REFUNDED",
+                            "message": "This job has already been refunded.",
+                        }
+                    },
                 )
-
-    await run_sync(job_repo.update_usage_event, str(job_id), {"status": "refunded"})
 
     logger.info(
         "Job %s refunded by user %s (credit_refunded=%s)",

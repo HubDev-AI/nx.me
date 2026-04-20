@@ -51,12 +51,10 @@ def _make_job(
     }
 
 
-def _make_job_repo(job: dict | None, usage_status: str | None = None) -> MagicMock:
+def _make_job_repo(job: dict | None) -> MagicMock:
     """Return a mock JobRepository."""
     repo = MagicMock()
     repo.get_for_refund.return_value = job
-    repo.get_usage_event_status.return_value = usage_status
-    repo.update_usage_event.return_value = []
     return repo
 
 
@@ -108,7 +106,7 @@ class TestRefundEndpoint:
         job = _make_job(
             job_id, user_id, status="failed", credit_reservation_id=reservation_id
         )
-        job_repo = _make_job_repo(job, usage_status="committed")
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger(balance=5)
 
         claims = _make_claims(user_id)
@@ -118,9 +116,6 @@ class TestRefundEndpoint:
         assert result.refunded is True
         assert result.new_balance == 5
         ledger.refund.assert_called_once()
-        job_repo.update_usage_event.assert_called_once_with(
-            job_id, {"status": "refunded"}
-        )
 
     @pytest.mark.asyncio
     async def test_refund_cancelled_job_returns_200(self):
@@ -129,7 +124,7 @@ class TestRefundEndpoint:
         user_id = str(uuid4())
 
         job = _make_job(job_id, user_id, status="cancelled")
-        job_repo = _make_job_repo(job, usage_status="reserved")
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger(balance=3)
 
         claims = _make_claims(user_id)
@@ -139,31 +134,20 @@ class TestRefundEndpoint:
         assert result.new_balance == 3
 
     @pytest.mark.asyncio
-    async def test_refund_already_refunded_returns_409(self):
-        """A job whose usage_event is already refunded returns 409 already_refunded."""
+    async def test_refund_already_settled_returns_409(self):
+        """When both ledger.refund and ledger.release raise ValueError the
+        reservation is already resolved → 409 already_refunded."""
         job_id = str(uuid4())
         user_id = str(uuid4())
+        reservation_id = str(uuid4())
 
-        job = _make_job(job_id, user_id, status="failed")
-        job_repo = _make_job_repo(job, usage_status="refunded")
+        job = _make_job(
+            job_id, user_id, status="failed", credit_reservation_id=reservation_id
+        )
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger()
-
-        claims = _make_claims(user_id)
-        with pytest.raises(ApiError) as exc_info:
-            await _call(job_id, claims, job_repo, ledger)
-
-        assert exc_info.value.status_code == 409
-        assert exc_info.value.code == "already_refunded"
-
-    @pytest.mark.asyncio
-    async def test_refund_already_released_returns_409(self):
-        """A job whose usage_event is released also returns 409 already_refunded."""
-        job_id = str(uuid4())
-        user_id = str(uuid4())
-
-        job = _make_job(job_id, user_id, status="failed")
-        job_repo = _make_job_repo(job, usage_status="released")
-        ledger = _make_ledger()
+        ledger.refund.side_effect = ValueError("not committed")
+        ledger.release.side_effect = ValueError("not reserved")
 
         claims = _make_claims(user_id)
         with pytest.raises(ApiError) as exc_info:
@@ -180,7 +164,7 @@ class TestRefundEndpoint:
         other_id = str(uuid4())
 
         job = _make_job(job_id, owner_id, status="failed")
-        job_repo = _make_job_repo(job, usage_status=None)
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger()
 
         claims = _make_claims(other_id)  # different user
@@ -197,7 +181,7 @@ class TestRefundEndpoint:
         user_id = str(uuid4())
 
         job = _make_job(job_id, user_id, status="completed")
-        job_repo = _make_job_repo(job, usage_status="committed")
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger()
 
         claims = _make_claims(user_id)
@@ -214,7 +198,7 @@ class TestRefundEndpoint:
         user_id = str(uuid4())
 
         job = _make_job(job_id, user_id, status="queued")
-        job_repo = _make_job_repo(job, usage_status="reserved")
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger()
 
         claims = _make_claims(user_id)
@@ -247,7 +231,7 @@ class TestRefundEndpoint:
         user_id = str(uuid4())
 
         job = _make_job(job_id, user_id, status="failed", credit_reservation_id=None)
-        job_repo = _make_job_repo(job, usage_status="reserved")
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger(balance=2)
 
         claims = _make_claims(user_id)
@@ -268,7 +252,7 @@ class TestRefundEndpoint:
         job = _make_job(
             job_id, user_id, status="failed", credit_reservation_id=reservation_id
         )
-        job_repo = _make_job_repo(job, usage_status="reserved")
+        job_repo = _make_job_repo(job)
         ledger = _make_ledger(balance=1)
         ledger.refund.side_effect = ValueError("not committed")
 
