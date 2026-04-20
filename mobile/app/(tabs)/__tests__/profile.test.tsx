@@ -5,8 +5,7 @@
  * Ionicons, expo-router, @expo/vector-icons) to mount under jest-expo
  * without enormous mock scaffolding, so this suite tests the handler
  * logic in isolation:
- *   - the capability-driven gating + menu derivation (regression guards
- *     for the earlier guest-token fix).
+ *   - the capability-driven gating + menu derivation.
  *   - the long-press action-sheet dispatch map (completed vs errored vs
  *     in-flight cells).
  *   - the delete + share-dialog-open + publish flows as pure async

@@ -435,13 +435,13 @@ class TestDeleteGlowupCascade:
         """G: authenticated owner with arbitrary uuid — handler cascade works."""
         monkeypatch.setattr("app.api.jobs.run_sync", _passthrough_run_sync)
 
-        guest_id = "owner-uuid-1"
-        job = _make_job(user_id=guest_id)
+        owner_id = "owner-uuid-1"
+        job = _make_job(user_id=owner_id)
         deps = _make_deps(job=job, post=None)
 
         response = await delete_job(
             job_id=uuid.UUID(_JOB_ID),
-            claims=_make_claims(user_id=guest_id),
+            claims=_make_claims(user_id=owner_id),
             redis_client=deps.redis_client,
             job_repo=deps.job_repo,
             image_repo=deps.image_repo,

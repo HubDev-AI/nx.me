@@ -2,8 +2,8 @@
  * CommentsSheet — bottom sheet displaying comments for a feed post.
  *
  * Opens via Modal with slide-in animation from bottom. Swipe-down to dismiss.
- * Guest users see an auth prompt when tapping the comment input.
- * Registered users post with optimistic UI; rollback on API failure with error toast.
+ * Unauthenticated (anon) sessions see an auth prompt when tapping the comment input.
+ * Authenticated users post with optimistic UI; rollback on API failure with error toast.
  */
 import { useEffect, useCallback, useRef } from "react";
 import {

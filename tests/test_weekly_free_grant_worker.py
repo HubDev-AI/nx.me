@@ -1,7 +1,7 @@
 """Tests for ``app.workers.weekly_free_grant.run_weekly_free_grant``.
 
 Covers:
-  - Happy path: iterates non-guest users, calls RPC per user.
+  - Happy path: iterates users, calls RPC per user.
   - Pro users (active subscription) are skipped.
   - Second run same ISO-week: RPC still called (idempotency is in the DB
     RPC, not the worker — worker always calls, DB deduplicates).
@@ -31,7 +31,7 @@ def _make_supabase(
 ) -> MagicMock:
     """Build a minimal Supabase mock for weekly_free_grant tests.
 
-    ``user_ids`` — non-guest users returned by the users table query.
+    ``user_ids`` — users returned by the users table query.
     ``pro_user_ids`` — users with active subscriptions (will be skipped).
     ``rpc_raises_for`` — set of user_ids for which the RPC should raise.
     ``sub_fetch_raises`` — exception to raise when fetching subscriptions.
@@ -128,8 +128,8 @@ def _make_supabase(
 
 class TestRunWeeklyFreeGrant:
     @pytest.mark.asyncio
-    async def test_grants_all_non_guest_users(self):
-        """All non-guest, non-Pro users receive an RPC call."""
+    async def test_grants_all_non_pro_users(self):
+        """All non-Pro users receive an RPC call."""
         user_ids = [str(uuid4()) for _ in range(3)]
         sb = _make_supabase(user_ids=user_ids)
         ctx = {"supabase": sb}
