@@ -31,10 +31,9 @@ class TestGetFeatures:
         features = get_features()
         assert isinstance(features, FeatureFlags)
 
-    def test_all_five_flags_present(self):
+    def test_all_flags_present(self):
         features = get_features()
         for flag in (
-            "auth_required",
             "social_enabled",
             "share_enabled",
             "onboarding_enabled",
@@ -42,13 +41,6 @@ class TestGetFeatures:
         ):
             assert hasattr(features, flag), f"missing {flag}"
             assert isinstance(getattr(features, flag), bool)
-
-    def test_reads_auth_required_from_settings(self):
-        from app.config import settings as real_settings
-
-        with patch.object(real_settings, "FEATURE_AUTH_REQUIRED", False):
-            features = get_features()
-        assert features.auth_required is False
 
     def test_reads_advisor_from_legacy_setting(self):
         """advisor_enabled maps to the pre-existing ADVISOR_ENABLED setting."""

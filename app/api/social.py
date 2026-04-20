@@ -303,12 +303,7 @@ async def react_to_post(
 
         claims = validate_jwt(authorization.removeprefix("Bearer ").strip())
         user_id = claims["sub"]
-    elif x_guest_token and not settings.FEATURE_AUTH_REQUIRED:
-        # Guest reactions are only allowed when the auth feature is OFF.
-        # With FEATURE_AUTH_REQUIRED=true (production), the X-Guest-Token
-        # path is closed even though this handler does inline validation
-        # (rather than going through get_user_or_guest). Mirrors the gate
-        # that get_user_or_guest applies in app/api/deps.py.
+    elif x_guest_token:
         # Validate format: must be 64-char hex (32 bytes CSPRNG)
         if not _GUEST_TOKEN_RE.fullmatch(x_guest_token):
             raise HTTPException(

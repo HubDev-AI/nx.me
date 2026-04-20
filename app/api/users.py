@@ -7,8 +7,7 @@ Story 6-3:
   POST  /users/{username}/avatar   — multipart avatar upload, owner only
 
 Owner-only write paths accept both JWT users and guest tokens (via
-`get_user_or_guest`) so guest-mode sessions can edit their own row while
-FEATURE_AUTH_REQUIRED is false.
+`get_user_or_guest`) so guest-mode sessions can edit their own row.
 """
 
 from __future__ import annotations
@@ -276,10 +275,9 @@ async def get_me(
 ) -> MeResponse:
     """Return the current session's identity (username, display_name, avatar).
 
-    Accepts either a JWT (real user) or X-Guest-Token (guest, when
-    FEATURE_AUTH_REQUIRED=false). Mobile uses this to learn its own username
-    after guest provisioning so screens like profile.tsx can call
-    /users/{username}/profile.
+    Accepts either a JWT (real user) or X-Guest-Token. Mobile uses this to
+    learn its own username after guest provisioning so screens like
+    profile.tsx can call /users/{username}/profile.
     """
     user = await run_sync(user_repo.get_profile_by_id, claims["sub"])
     if not user:
@@ -609,9 +607,8 @@ async def update_user_profile(
     """Update the authenticated user's profile (display_name, avatar, username).
 
     Owner only — returns 404 if the token does not belong to the requested user.
-    Accepts JWT (real user) or X-Guest-Token (guest, when FEATURE_AUTH_REQUIRED
-    is false). Username changes are subject to a 24-hour cooldown enforced via
-    username_changed_at.
+    Accepts JWT (real user) or X-Guest-Token. Username changes are subject to
+    a 24-hour cooldown enforced via username_changed_at.
     """
     # M-2: Wrap sync Supabase calls to avoid blocking the event loop
     user = await run_sync(_lookup_user, user_repo, username)
@@ -758,8 +755,7 @@ async def upload_user_avatar(
     Multipart form field `file` is written to Supabase bucket `avatars` at
     `avatars/{user_id}/{uuid}.{ext}`. users.avatar_storage_key swings to the
     new key, users.updated_at bumps, and the previous object (if any) is
-    removed best-effort. Accepts JWT (real user) or X-Guest-Token (guest,
-    when FEATURE_AUTH_REQUIRED is false).
+    removed best-effort. Accepts JWT (real user) or X-Guest-Token.
 
     Owner only — returns 404 if the token does not belong to the requested
     user, mirroring the PATCH endpoint to avoid leaking ownership.

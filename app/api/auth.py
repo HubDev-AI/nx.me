@@ -155,26 +155,13 @@ async def create_guest(
 ) -> GuestResponse:
     """Create a guest user session.
 
-    Only available when FEATURE_AUTH_REQUIRED is false. Returns a token the
-    mobile client persists in SecureStore and sends via X-Guest-Token.
-    Returns 403 FEATURE_DISABLED when auth is required.
+    Returns a token the mobile client persists in SecureStore and sends via
+    X-Guest-Token.
 
     When X-Install-UUID is present, the guest row records a deterministic
     hash of it so a later merge_guest_ledger can verify device ownership
     (security review HIGH — prevents pack-drain via guest-token theft).
     """
-    if settings.FEATURE_AUTH_REQUIRED:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error": {
-                    "code": "FEATURE_DISABLED",
-                    "message": "Guest sessions are not available; authentication is required.",
-                    "detail": {"feature": "auth_required"},
-                }
-            },
-        )
-
     from app.db.async_helpers import run_sync
     from app.db.guest import create_guest_user
 

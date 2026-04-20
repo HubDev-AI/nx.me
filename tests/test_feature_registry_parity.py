@@ -103,7 +103,6 @@ def test_backend_and_mobile_registries_match():
 def test_drift_detection_mobile_missing_field():
     fake_source = (
         "export interface FeatureFlags {\n"
-        "  auth_required: boolean;\n"
         # Intentionally omitting social_enabled to simulate drift.
         "  share_enabled: boolean;\n"
         "  onboarding_enabled: boolean;\n"
@@ -118,7 +117,6 @@ def test_drift_detection_mobile_missing_field():
 def test_drift_detection_mobile_extra_field():
     fake_source = (
         "export interface FeatureFlags {\n"
-        "  auth_required: boolean;\n"
         "  social_enabled: boolean;\n"
         "  share_enabled: boolean;\n"
         "  onboarding_enabled: boolean;\n"

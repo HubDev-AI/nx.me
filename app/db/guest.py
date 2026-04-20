@@ -1,9 +1,9 @@
 """Guest user management for anonymous / pre-login flows.
 
-When FEATURE_AUTH_REQUIRED is false, mobile calls POST /v1/guest to create
-an ephemeral user row (is_guest=true) and receive a guest session token.
-Subsequent requests send the token via the X-Guest-Token header. The token
-is validated server-side by looking up the matching users row.
+Mobile calls POST /v1/guest to create an ephemeral user row (is_guest=true)
+and receive a guest session token. Subsequent requests send the token via
+the X-Guest-Token header. The token is validated server-side by looking up
+the matching users row.
 """
 
 from __future__ import annotations

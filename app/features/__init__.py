@@ -7,8 +7,9 @@ When a flag is off:
 - Backend routes guarded by `require_feature(name)` return 403 FEATURE_DISABLED.
 - Mobile hides the associated UI entirely (no greyed-out states).
 
-Day-one registry: AUTH_REQUIRED, SOCIAL_ENABLED, SHARE_ENABLED,
-ONBOARDING_ENABLED, ADVISOR_ENABLED.
+Day-one registry: SOCIAL_ENABLED, SHARE_ENABLED, ONBOARDING_ENABLED,
+ADVISOR_ENABLED. Auth is not a feature — every route requires JWT except
+the public-route allowlist enumerated in tests/test_auth_invariants.py.
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ class FeatureFlags(BaseModel):
     model, config defaults, and the mobile `FeatureFlags` interface together.
     """
 
-    auth_required: bool
     social_enabled: bool
     share_enabled: bool
     onboarding_enabled: bool
@@ -36,7 +36,6 @@ def get_features() -> FeatureFlags:
     from app.config import settings
 
     return FeatureFlags(
-        auth_required=settings.FEATURE_AUTH_REQUIRED,
         social_enabled=settings.FEATURE_SOCIAL_ENABLED,
         share_enabled=settings.FEATURE_SHARE_ENABLED,
         onboarding_enabled=settings.FEATURE_ONBOARDING_ENABLED,

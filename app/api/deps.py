@@ -182,20 +182,14 @@ async def get_user_or_guest(
 ) -> UserClaims:
     """Auth dep accepting JWT or X-Guest-Token.
 
-    Guest tokens are honoured when FEATURE_AUTH_REQUIRED is false. The token
-    is resolved against the users.guest_session_token column — no Redis
-    lookup, no tier-1 cache yet (cold path, one lookup per request).
+    The token is resolved against the users.guest_session_token column — no
+    Redis lookup, no tier-1 cache yet (cold path, one lookup per request).
 
     Falls through to normal JWT validation otherwise.
     """
-    from app.config import settings
     from app.db.guest import is_valid_guest_token_format, resolve_guest_by_token
 
-    if (
-        not settings.FEATURE_AUTH_REQUIRED
-        and x_guest_token
-        and is_valid_guest_token_format(x_guest_token)
-    ):
+    if x_guest_token and is_valid_guest_token_format(x_guest_token):
         guest_user_id = await run_sync(resolve_guest_by_token, supabase, x_guest_token)
         if guest_user_id is not None:
             return UserClaims(
