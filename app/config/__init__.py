@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     ADVISOR_CHAT_RATE_LIMIT: int = 30  # Max messages per hour per user
     ADVISOR_NEXT_STEP_RL_LIMIT: int = 60  # Max next-step calls per window per user
     ADVISOR_NEXT_STEP_RL_WINDOW_SECONDS: int = 60  # Window for next-step rate limit (s)
+    # Plan 2026-04-20-001 Unit 5 — chat-seeds endpoint (GET /advisor/chat-seeds).
+    # Seeds are Haiku-generated, grounded on the user's latest completed glow-up
+    # image. Redis is the backing store for a per-(user, glowup) cache (cheap
+    # reuse for 24 h), a per-user cooldown (at most one generation per 1 h —
+    # prevents replay storms on parse failures), and a short single-flight lock
+    # (collapses concurrent cold-key requests to one Haiku call).
+    ADVISOR_CHAT_SEEDS_CACHE_TTL_SECONDS: int = 86400  # 24 h
+    ADVISOR_CHAT_SEEDS_COOLDOWN_SECONDS: int = 3600  # 1 h
+    ADVISOR_CHAT_SEEDS_LOCK_TTL_SECONDS: int = 30
     ADVISOR_DEGRADATION_THRESHOLD: int = 50  # Daily messages before degrading to Haiku
     ADVISOR_CONVERSATION_SUMMARY_THRESHOLD: int = 30  # Messages before auto-summarize
     ADVISOR_CONVERSATION_INACTIVE_DAYS: int = 7  # Days before auto-new conversation

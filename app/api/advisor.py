@@ -23,7 +23,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from pydantic import BaseModel, Field
 from supabase import Client
 
+from app.advisor.chat_seeds import build_chat_seeds
 from app.advisor.models import (
+    ChatSeedsResponse,
     ConversationHistoryPageResponse,
     MemoryCreateRequest,
     MemoryListPageResponse,
@@ -362,6 +364,46 @@ async def get_nudge_next_step(
         )
 
     return NudgeNextStepResponse(seed_text=row["next_step_seed"])
+
+
+# ---------------------------------------------------------------------------
+# GET /v1/advisor/chat-seeds — suggested starter questions (Unit 5)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/advisor/chat-seeds",
+    response_model=ChatSeedsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_chat_seeds(
+    claims: UserClaims = Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+    redis_client: aioredis.Redis = Depends(get_redis),
+) -> ChatSeedsResponse:
+    """Return 3 suggested starter questions for the Ada chat empty state.
+
+    Plan 2026-04-20-001 Unit 5.  Haiku-backed and grounded on the user's
+    latest completed glow-up image.  Seeds are cached per (user, glowup)
+    for ``ADVISOR_CHAT_SEEDS_CACHE_TTL_SECONDS``, cooldown-gated at
+    ``ADVISOR_CHAT_SEEDS_COOLDOWN_SECONDS``, and protected by a single-
+    flight lock so bursts collapse to one Haiku call.  When no glow-up
+    exists, or any failure occurs, returns ``FALLBACK_SEEDS`` — this
+    endpoint never 500s.
+
+    Inherits ``require_app_feature("advisor_enabled")`` via router
+    dependency (403 FEATURE_DISABLED when off).  No premium gate.
+    """
+    from app.api.deps import get_llm_adapter
+
+    user_id = str(UUID(claims["sub"]))
+    llm = get_llm_adapter()
+    return await build_chat_seeds(
+        user_id=user_id,
+        supabase=supabase,
+        redis=redis_client,
+        llm=llm,
+    )
 
 
 # ---------------------------------------------------------------------------

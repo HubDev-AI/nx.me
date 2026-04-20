@@ -117,3 +117,17 @@ class MemoryListPageResponse(BaseModel):
 
 class NudgeNextStepResponse(BaseModel):
     seed_text: str
+
+
+# ---------------------------------------------------------------------------
+# Chat seeds API models (Plan 2026-04-20-001 Unit 5)
+# ---------------------------------------------------------------------------
+
+
+class ChatSeed(BaseModel):
+    label: str
+    text: str
+
+
+class ChatSeedsResponse(BaseModel):
+    seeds: list[ChatSeed]
