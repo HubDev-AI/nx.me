@@ -58,18 +58,9 @@ When working inside any of `app/`, `mobile/`, or `card-web/`, read that module's
 
 ## Memory
 
-Architecture decisions and project context: `~/.claude/projects/.../memory/MEMORY.md`
+- `MEMORY.md` (repo root) — cross-session rules, corrections log, active context. Curate it; don't let it grow stale.
+- Agent-side architecture notes: `~/.claude/projects/.../memory/MEMORY.md`.
 
 ## Conventions
 
-Cross-session rules and corrections live in `MEMORY.md` (see Memory section
-above). Key invariants to keep in mind:
-
-- **No magic strings/numbers** — literals go in named constants, config, or env.
-- **No env fallbacks** — fail fast if a required env var is missing.
-- **Always use `uv`** for Python packages (never `pip` / `pip3`).
-- **Branch workflow** — never push directly to `dev` / `main`; feature branch → PR → merge.
-- **Verification before "done"** — run the Verification Loop commands above; no "looks right" claims.
-- **Infinite scroll** for all pagination (no load-more buttons).
-- **Always reuse** — check for existing components/hooks/utilities before writing new ones.
-- **Feature gating** — use `useCapabilities()` in mobile UI and `Depends(require_app_feature("..."))` on backend routers. Never read raw `features.X` for gating outside the capabilities module. See `app/features/README.md`.
+Cross-cutting invariants (naming, env, package tooling, branch flow, verification, UX, reuse, feature gating) live in `rules/conventions.md`. Read it before any non-trivial change.
