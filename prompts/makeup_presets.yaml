@@ -1,0 +1,100 @@
+fal_endpoint_version: "image-apps-v2/makeup-application"
+
+presets:
+  - slug: bold_red
+    display_name: Bold Red
+    fal_style: bold_lips
+    thumbnail: bold_red.jpg
+    description: Classic bold red lip — high-impact and statement-making.
+    supported_intensities:
+      - medium
+      - bold
+    intensity_mapping:
+      medium: medium
+      bold: heavy
+    mst_bin_blocklist: []
+    deprecated: false
+
+  - slug: soft_glam
+    display_name: Soft Glam
+    fal_style: soft_glam
+    thumbnail: soft_glam.jpg
+    description: Warm tones, soft glow — everyday glam without the drama.
+    supported_intensities:
+      - subtle
+      - light
+      - medium
+    intensity_mapping:
+      subtle: light
+      light: medium
+      medium: medium
+    mst_bin_blocklist: []
+    deprecated: false
+
+  - slug: smoky_eye
+    display_name: Smoky Eye
+    fal_style: smoky_eye
+    thumbnail: smoky_eye.jpg
+    description: Smoked-out shadow with a neutral lip — moody and dramatic.
+    supported_intensities:
+      - medium
+      - bold
+    intensity_mapping:
+      medium: medium
+      bold: heavy
+    mst_bin_blocklist: []
+    deprecated: false
+
+  - slug: natural_glow
+    display_name: Natural Glow
+    fal_style: natural
+    thumbnail: natural_glow.jpg
+    description: Enhanced natural look — like you, but rested and radiant.
+    supported_intensities:
+      - subtle
+      - light
+    intensity_mapping:
+      subtle: light
+      light: medium
+    mst_bin_blocklist: []
+    deprecated: false
+
+  - slug: bridal
+    display_name: Bridal
+    fal_style: bridal
+    thumbnail: bridal.jpg
+    description: Polished and timeless — luminous skin, soft rose lip.
+    supported_intensities:
+      - light
+      - medium
+    intensity_mapping:
+      light: medium
+      medium: heavy
+    mst_bin_blocklist: []
+    deprecated: false
+
+  - slug: dramatic_night
+    display_name: Dramatic Night
+    fal_style: dramatic
+    thumbnail: dramatic_night.jpg
+    description: High-contrast editorial look for nights out.
+    supported_intensities:
+      - bold
+    intensity_mapping:
+      bold: dramatic
+    mst_bin_blocklist: []
+    deprecated: false
+
+  - slug: groomed
+    display_name: Groomed
+    fal_style: no_makeup
+    thumbnail: groomed.jpg
+    description: Clean, groomed finish with clear brows and balanced skin.
+    supported_intensities:
+      - subtle
+      - light
+    intensity_mapping:
+      subtle: light
+      light: medium
+    mst_bin_blocklist: []
+    deprecated: false

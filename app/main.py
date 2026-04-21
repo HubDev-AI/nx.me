@@ -149,6 +149,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception as exc:
             logger.warning("ArcFace preload failed (non-fatal): %s", exc)
 
+    # Validate makeup preset YAML at startup — fail-fast on schema violation
+    # so misconfigured presets don't reach production.
+    from app.generation.preset_registry import load_presets
+
+    load_presets()
+    logger.info("Makeup preset registry validated")
+
     # ARQ pool for enqueuing generation jobs
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
 
