@@ -25,6 +25,7 @@ from app.api import (
     glowup,
     health,
     jobs,
+    makeup,
     posts,
     public,
     refund,
@@ -54,7 +55,9 @@ if settings.SENTRY_DSN:
     try:
         import sentry_sdk
 
-        from app.observability.sentry_before_send import before_send as _sentry_before_send
+        from app.observability.sentry_before_send import (
+            before_send as _sentry_before_send,
+        )
 
         sentry_sdk.init(
             dsn=settings.SENTRY_DSN,
@@ -273,6 +276,7 @@ def create_app() -> FastAPI:
     # Tier-3 API: uploads + glowup feature namespace + jobs
     v1.include_router(uploads.router)
     v1.include_router(glowup.router)
+    v1.include_router(makeup.router)
     v1.include_router(jobs.router)
     v1.include_router(user_consent.router)
     # Legacy refund endpoint (/v1/analyses/{job_id}/refund) — still mounted

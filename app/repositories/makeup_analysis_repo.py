@@ -53,7 +53,5 @@ class MakeupAnalysisRepository:
         Uses a cutoff timestamp computed in Python so the sweeper job can
         control timezone and precision consistently.
         """
-        cutoff = (
-            datetime.now(tz=timezone.utc) - timedelta(days=days)
-        ).isoformat()
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=days)).isoformat()
         self._sb.table("makeup_analyses").delete().lt("created_at", cutoff).execute()

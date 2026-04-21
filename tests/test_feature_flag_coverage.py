@@ -49,6 +49,7 @@ FLAG_GATED_ROUTERS: dict[str, str] = {
     "app/api/social.py": "social_enabled",
     "app/api/blocks.py": "social_enabled",
     "app/api/advisor.py": "advisor_enabled",
+    "app/api/makeup.py": "makeup_enabled",
 }
 
 # Routers NOT in the allowlist are ungated by design. Listed here for

@@ -101,6 +101,40 @@ class JobRepository:
             return None
         return result.data
 
+    def get_makeup_job_by_idempotency_key(
+        self, namespaced_key: str, user_id: str
+    ) -> dict | None:
+        """Replay-check SELECT for makeup /generate — returns body_hash for conflict detection."""
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, idempotency_key_body_hash")
+            .eq("idempotency_key", namespaced_key)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
+    def pre_record_makeup_job(self, job_data: dict) -> dict | None:
+        """INSERT ... ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING *.
+
+        Returns the inserted row dict on success, or None when a concurrent
+        identical-key INSERT won the race (conflict). Callers handle the
+        None path as the concurrent-replay fallback.
+        """
+        result = (
+            self._sb.table("jobs")
+            .upsert(
+                job_data, on_conflict="user_id,idempotency_key", ignore_duplicates=True
+            )
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data[0]
+
     def get_for_status_poll(self, job_id: str) -> dict | None:
         """Fetch job fields needed for GET /jobs/{job_id} status polling."""
         return self._fetch_by_id(job_id, JOB_STATUS_SELECT)
