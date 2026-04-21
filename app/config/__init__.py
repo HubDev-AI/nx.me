@@ -414,6 +414,7 @@ class Settings(BaseSettings):
     FEATURE_SOCIAL_ENABLED: bool = False  # post-poned — flip when launching social
     FEATURE_SHARE_ENABLED: bool = True
     FEATURE_ONBOARDING_ENABLED: bool = True
+    FEATURE_MAKEUP_ENABLED: bool = False  # flip when AI Makeup ships to prod
     # Note: the advisor flag is the existing ADVISOR_ENABLED setting above.
 
     # Bypass all per-tier `require_feature` gates. Default False (prod-safe).

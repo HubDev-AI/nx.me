@@ -37,6 +37,7 @@ class FeatureFlags(BaseModel):
     onboarding_enabled: bool
     advisor_enabled: bool
     weekly_free_grant_enabled: bool
+    makeup_enabled: bool
 
 
 def get_features() -> FeatureFlags:
@@ -55,6 +56,7 @@ def get_features() -> FeatureFlags:
         onboarding_enabled=settings.FEATURE_ONBOARDING_ENABLED,
         advisor_enabled=settings.ADVISOR_ENABLED,  # uses existing setting
         weekly_free_grant_enabled=True,
+        makeup_enabled=settings.FEATURE_MAKEUP_ENABLED,
     )
 
 

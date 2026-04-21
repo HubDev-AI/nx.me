@@ -27,6 +27,7 @@ export interface FeatureFlags {
    * rule — the UI never promises a refill we cannot deliver.
    */
   weekly_free_grant_enabled: boolean;
+  makeup_enabled: boolean;
 }
 
 export const PROD_DEFAULT_FEATURES: FeatureFlags = {
@@ -40,6 +41,7 @@ export const PROD_DEFAULT_FEATURES: FeatureFlags = {
   // the real value (potentially FALSE) takes over before the paywall
   // actually renders.
   weekly_free_grant_enabled: true,
+  makeup_enabled: false,
 };
 
 export const FEATURES_ENDPOINT = "/v1/features";
@@ -53,6 +55,7 @@ const DEV_SHORT_NAME_TO_FLAG: Record<string, keyof FeatureFlags> = {
   share: "share_enabled",
   onboarding: "onboarding_enabled",
   advisor: "advisor_enabled",
+  makeup: "makeup_enabled",
 };
 
 function parseDevDisableList(raw: string): string[] {
