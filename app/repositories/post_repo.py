@@ -262,9 +262,15 @@ class PostRepository:
     # posts table — writes
     # ------------------------------------------------------------------
 
-    def insert_post(self, post_row: dict) -> dict:
-        """Insert a new post row and return the created row."""
-        result = self._sb.table("posts").insert(post_row).execute()
+    def insert_post(self, post_row: dict, *, share_hash: str | None = None) -> dict:
+        """Insert a new post row and return the created row.
+
+        When ``share_hash`` is provided it is merged into the row dict,
+        overriding the Postgres DEFAULT. Legacy glow-up callers omit it and
+        keep the server-generated 8-char default.
+        """
+        row = {**post_row, "share_hash": share_hash} if share_hash is not None else post_row
+        result = self._sb.table("posts").insert(row).execute()
         return result.data[0]
 
     def soft_delete_post(self, post_id: str, now_utc: str) -> None:

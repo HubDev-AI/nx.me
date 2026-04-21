@@ -26,14 +26,24 @@ logger = logging.getLogger(__name__)
 # Columns needed for job status polling. created_at is used by the dev-only
 # DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS gate in app/api/jobs.py to
 # simulate read-after-write replica lag.
+# Makeup-specific columns are included so GET /jobs/{job_id} surfaces them
+# for makeup jobs without a separate query path.
 JOB_STATUS_SELECT = (
     "id, user_id, status, source_type, source_id, created_at, updated_at, "
     "before_image_url, after_image_url, failure_reason, saved_at, "
-    "identity_preserved, credit_reservation_id"
+    "identity_preserved, credit_reservation_id, "
+    "fal_request_id, fal_url, output_key, preset_slug, intensity, "
+    "makeup_failure_reason, user_tier_at_enqueue"
 )
 
-# Source type constant for Glow Up — avoids magic strings in callers.
+# Source type constants — avoid magic strings in callers.
 SOURCE_TYPE_GLOWUP = "glowup_analysis"
+SOURCE_TYPE_MAKEUP = "makeup_session"
+
+# Makeup failure reason codes (distinct from glowup's failure_reason values).
+MAKEUP_FAILURE_REFUSED = "refused"
+MAKEUP_FAILURE_NON_RETRYABLE = "non_retryable"
+MAKEUP_FAILURE_RETRYABLE = "retryable"
 
 
 class JobRepository:
@@ -124,6 +134,78 @@ class JobRepository:
             job_id,
             "id, user_id, status, before_image_url, after_image_url",
         )
+
+    def get_for_makeup_worker(self, job_id: str) -> dict | None:
+        """Fetch fields needed by the makeup worker for processing + terminal writes."""
+        return self._fetch_by_id(
+            job_id,
+            "id, user_id, status, source_id, idempotency_key, "
+            "idempotency_key_body_hash, preset_slug, intensity, "
+            "credit_reservation_id, user_tier_at_enqueue",
+        )
+
+    def get_by_fal_idempotency_key(self, fal_key: str) -> dict | None:
+        """Look up a makeup job by the fal-side idempotency key."""
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, output_key, makeup_failure_reason")
+            .eq("fal_idempotency_key", fal_key)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
+    def update_makeup_job_processing(
+        self,
+        job_id: str,
+        fal_request_id: str,
+        fal_url: str,
+        fal_idempotency_key: str,
+        now_utc: str,
+    ) -> None:
+        """Record the fal request details when the worker submits the job."""
+        self._sb.table("jobs").update(
+            {
+                "status": "processing",
+                "fal_request_id": fal_request_id,
+                "fal_url": fal_url,
+                "fal_idempotency_key": fal_idempotency_key,
+                "updated_at": now_utc,
+            }
+        ).eq("id", job_id).execute()
+
+    def update_makeup_job_completed(
+        self,
+        job_id: str,
+        output_key: str,
+        now_utc: str,
+    ) -> None:
+        """Mark a makeup job as completed with its storage output key."""
+        self._sb.table("jobs").update(
+            {
+                "status": "completed",
+                "output_key": output_key,
+                "completed_at": now_utc,
+                "updated_at": now_utc,
+            }
+        ).eq("id", job_id).execute()
+
+    def update_makeup_job_failed(
+        self,
+        job_id: str,
+        makeup_failure_reason: str,
+        now_utc: str,
+    ) -> None:
+        """Mark a makeup job as failed with a typed failure reason."""
+        self._sb.table("jobs").update(
+            {
+                "status": "failed",
+                "makeup_failure_reason": makeup_failure_reason,
+                "updated_at": now_utc,
+            }
+        ).eq("id", job_id).execute()
 
     def get_completed_jobs_for_source(self, source_ids: list[str]) -> list[dict]:
         """Fetch latest completed jobs for a list of source_ids (e.g. for history)."""
