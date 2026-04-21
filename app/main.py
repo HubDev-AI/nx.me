@@ -50,6 +50,20 @@ from app.logging_config import configure_logging
 
 configure_logging()
 
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        from app.observability.sentry_before_send import before_send as _sentry_before_send
+
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            before_send=_sentry_before_send,
+            environment=settings.APP_ENV,
+        )
+    except ImportError:
+        pass  # sentry-sdk not installed; skip
+
 logger = logging.getLogger(__name__)
 
 

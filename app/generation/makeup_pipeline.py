@@ -20,6 +20,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Callable
 
+from app.entitlement.consent import MAKEUP_CONSENT_VERSION
 from app.generation.adapters.falai import MakeupAdapterError
 from app.repositories.job_repo import (
     MAKEUP_FAILURE_NON_RETRYABLE,
@@ -28,8 +29,6 @@ from app.repositories.job_repo import (
 )
 
 logger = logging.getLogger(__name__)
-
-_MAKEUP_CONSENT_MIN_VERSION = "makeup_v1"
 
 
 def _now_utc() -> str:

@@ -427,6 +427,9 @@ class Settings(BaseSettings):
     # (e.g., POST /v1/advisor/messages) with free-tier accounts.
     FEATURE_PREMIUM_BYPASS: bool = False
 
+    # Sentry error reporting — optional; disabled when empty / unset.
+    SENTRY_DSN: str | None = None
+
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""
     TIKTOK_CLIENT_SECRET: str = ""
