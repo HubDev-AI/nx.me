@@ -38,7 +38,7 @@ from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
 from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
 from app.repositories.image_repo import ImageRepository
-from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, JobRepository
+from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, SOURCE_TYPE_MAKEUP, JobRepository
 
 logger = logging.getLogger(__name__)
 
@@ -612,6 +612,44 @@ async def _finalize_job(
         raise
 
 
+async def _run_makeup_pipeline(
+    ctx: dict, job_id: str, supabase: "Client", redis: Any
+) -> None:
+    """Construct and execute the makeup pipeline from worker context.
+
+    Separated from the dispatch site so the makeup imports (heavy ML stack)
+    are deferred and the glow-up path pays no import cost.
+    """
+    from app.generation.adapters.falai import FalAiAdapter
+    from app.generation.makeup_pipeline import MakeupPipeline
+    from app.generation.output_copier import OutputCopier
+    from app.repositories.image_repo import ImageRepository
+    from app.repositories.upload_repo import UploadRepository
+
+    from app.entitlement import has_active_pro
+    from app.db.async_helpers import run_sync
+
+    job_repo = JobRepository(supabase)
+    image_repo = ImageRepository(supabase)
+    upload_repo = UploadRepository(supabase)
+    output_copier = OutputCopier(supabase)
+    fal_adapter = FalAiAdapter()
+
+    async def _check_pro(user_id: str) -> bool:
+        return await run_sync(has_active_pro, user_id, supabase)
+
+    pipeline = MakeupPipeline(
+        job_repo=job_repo,
+        fal_adapter=fal_adapter,
+        output_copier=output_copier,
+        redis_client=redis,
+        entitlements_check=_check_pro,
+        image_repo=image_repo,
+        upload_repo=upload_repo,
+    )
+    await pipeline.run(job_id)
+
+
 async def process_generation_job(ctx: dict, job_id: str) -> None:
     """Full generation lifecycle orchestrator.
 
@@ -645,6 +683,15 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     # Fetch job data FIRST — needed for credit release in all failure paths (P2-6)
     job_data = await _fetch_and_claim_job(job_repo, cost_tracker, job_id, supabase)
     if job_data is None:
+        return
+
+    # Makeup dispatch arm (Unit 5) — two-stage idempotent pipeline.
+    # Runs outside the glow-up try-except-finally so the makeup pipeline
+    # handles its own error paths and doesn't trip the glow-up circuit
+    # breaker or concurrent counter.  Collapsing the parallel paths to
+    # Unit 14.
+    if job_data.get("source_type") == SOURCE_TYPE_MAKEUP:
+        await _run_makeup_pipeline(ctx, job_id, supabase, redis)
         return
 
     try:

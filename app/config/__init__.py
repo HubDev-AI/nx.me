@@ -240,6 +240,11 @@ class Settings(BaseSettings):
     GENERATION_TIMEOUT_SECONDS: int = 180
     CREDIT_COST_ALERT_USD: float = 0.12
 
+    # Makeup fair-use cap (applies per user per 24h window)
+    MAKEUP_FAIR_USE_DAILY_CAP: int = 10
+    # Per-user malformed-200 circuit-breaker threshold (see Unit 5 plan)
+    MAKEUP_MALFORMED_CIRCUIT_THRESHOLD: int = 3
+
     # Dev-only repro harness for the result screen's latency tolerance.
     # Both default off in production. The mobile result screen relies on
     # these to deterministically reproduce the two known failure shapes —

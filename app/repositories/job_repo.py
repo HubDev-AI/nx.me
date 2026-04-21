@@ -141,7 +141,9 @@ class JobRepository:
             job_id,
             "id, user_id, status, source_id, idempotency_key, "
             "idempotency_key_body_hash, preset_slug, intensity, "
-            "credit_reservation_id, user_tier_at_enqueue",
+            "credit_reservation_id, user_tier_at_enqueue, "
+            "fal_request_id, fal_idempotency_key, fal_url, "
+            "consent_version_at_enqueue",
         )
 
     def get_by_fal_idempotency_key(self, fal_key: str) -> dict | None:
@@ -157,21 +159,34 @@ class JobRepository:
             return None
         return result.data
 
-    def update_makeup_job_processing(
+    def pre_write_fal_idempotency_key(self, job_id: str, key: str) -> bool:
+        """Conditionally write fal_idempotency_key before calling fal.
+
+        Only writes when fal_idempotency_key IS NULL (idempotent).
+        Returns True if the row was updated, False if already set (race).
+        """
+        result = (
+            self._sb.table("jobs")
+            .update({"fal_idempotency_key": key})
+            .eq("id", job_id)
+            .is_("fal_idempotency_key", "null")
+            .execute()
+        )
+        return bool(result.data)
+
+    def commit_stage_a(
         self,
         job_id: str,
         fal_request_id: str,
         fal_url: str,
-        fal_idempotency_key: str,
         now_utc: str,
     ) -> None:
-        """Record the fal request details when the worker submits the job."""
+        """Commit Stage A after fal returns: record request ID + output URL."""
         self._sb.table("jobs").update(
             {
                 "status": "processing",
                 "fal_request_id": fal_request_id,
                 "fal_url": fal_url,
-                "fal_idempotency_key": fal_idempotency_key,
                 "updated_at": now_utc,
             }
         ).eq("id", job_id).execute()

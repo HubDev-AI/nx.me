@@ -7,13 +7,49 @@ dependency when using MockGeneratorAdapter.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+from dataclasses import dataclass
 
 from app.config import settings
 from app.generation.models import GenerationOptions, GenerationResult
 
 logger = logging.getLogger(__name__)
+
+_FAL_MAKEUP_ENDPOINT = "fal-ai/image-apps-v2/makeup-application"
+
+
+@dataclass
+class MakeupAdapterResult:
+    fal_request_id: str
+    fal_output_url: str
+
+
+class MakeupAdapterError(Exception):
+    """Typed error from apply_makeup_preset — categorised by retry posture."""
+
+    def __init__(self, *, kind: str, reason: str, retry_after: int | None = None) -> None:
+        super().__init__(reason)
+        self.kind = kind  # "non_retryable" | "retryable" | "config"
+        self.reason = reason
+        self.retry_after = retry_after
+
+
+def _parse_retry_after(raw: str | None) -> int | None:
+    if not raw:
+        return None
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        from datetime import datetime, timezone
+        from email.utils import parsedate_to_datetime
+
+        try:
+            dt = parsedate_to_datetime(raw)
+            return max(0, int((dt - datetime.now(tz=timezone.utc)).total_seconds()))
+        except Exception:
+            return None
 
 
 class FalAiAdapter:
@@ -254,6 +290,98 @@ class FalAiAdapter:
         raise ValueError(
             f"Could not extract image URL from fal.ai response: {list(result.keys())}"
         )
+
+    # ------------------------------------------------------------------
+    # Makeup — apply_makeup_preset
+    # ------------------------------------------------------------------
+
+    async def apply_makeup_preset(
+        self,
+        image_url: str,
+        fal_style: str,
+        fal_intensity: str,
+        *,
+        idempotency_key: str | None = None,
+        aspect_ratio: str = "3:4",
+    ) -> MakeupAdapterResult:
+        """Call the makeup-application fal endpoint; return result or raise MakeupAdapterError."""
+        import fal_client
+        from fal_client.client import FalClientHTTPError, FalClientTimeoutError
+
+        public_url = await self._ensure_public_url(image_url)
+
+        arguments = {
+            "image_url": public_url,
+            "style": fal_style,
+            "intensity": fal_intensity,
+            "aspect_ratio": aspect_ratio,
+        }
+
+        headers: dict[str, str] = {
+            "X-Fal-Store-IO": "0",
+            "X-Fal-Object-Lifecycle-Preference": json.dumps(
+                {"expiration_duration_seconds": 300}
+            ),
+        }
+        if idempotency_key:
+            headers["X-Fal-Idempotency-Key"] = idempotency_key
+
+        captured_request_id: list[str] = []
+
+        def _on_enqueue(request_id: str) -> None:
+            captured_request_id.append(request_id)
+
+        try:
+            result = await fal_client.subscribe_async(
+                _FAL_MAKEUP_ENDPOINT,
+                arguments=arguments,
+                headers=headers,
+                on_enqueue=_on_enqueue,
+                client_timeout=settings.GENERATION_TIMEOUT_SECONDS,
+            )
+        except FalClientTimeoutError:
+            raise MakeupAdapterError(kind="retryable", reason="fal_timeout")
+        except FalClientHTTPError as exc:
+            raise self._map_fal_http_error(exc) from exc
+
+        output_url = result.get("output_url") or ""
+        if not output_url or not output_url.startswith("https://"):
+            logger.error(
+                "fal malformed 200 for %s — full response: %r", _FAL_MAKEUP_ENDPOINT, result
+            )
+            raise MakeupAdapterError(kind="non_retryable", reason="fal_malformed_response")
+
+        request_id = captured_request_id[0] if captured_request_id else ""
+        return MakeupAdapterResult(fal_request_id=request_id, fal_output_url=output_url)
+
+    def _map_fal_http_error(self, exc: object) -> MakeupAdapterError:
+        from fal_client.client import FalClientHTTPError
+
+        assert isinstance(exc, FalClientHTTPError)
+        code = exc.status_code
+        error_type = (
+            exc.response_headers.get("X-Fal-Error-Type")
+            or exc.response_headers.get("x-fal-error-type")
+            or ""
+        )
+
+        if code in (400, 422) or "bad_request" in error_type or "content_filter" in error_type:
+            return MakeupAdapterError(kind="non_retryable", reason=f"fal_bad_request: {exc}")
+        if code == 429:
+            retry_after = _parse_retry_after(
+                exc.response_headers.get("Retry-After")
+                or exc.response_headers.get("retry-after")
+            )
+            return MakeupAdapterError(
+                kind="retryable", reason="fal_rate_limited", retry_after=retry_after
+            )
+        if code == 401:
+            return MakeupAdapterError(kind="config", reason="fal_auth_invalid")
+        if code == 402:
+            return MakeupAdapterError(kind="config", reason="fal_billing_required")
+        if code in (502, 503) or "runner_" in error_type or "internal_error" in error_type:
+            return MakeupAdapterError(kind="retryable", reason=f"fal_server_error_{code}")
+        return MakeupAdapterError(kind="retryable", reason=f"fal_unknown_status_{code}")
 
     def _estimate_cost(self, model: str) -> float:
         """Estimate cost per generation by model (from config)."""
