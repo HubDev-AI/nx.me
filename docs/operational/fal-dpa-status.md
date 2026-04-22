@@ -6,17 +6,20 @@ Tracks the Data Processing Agreement status with FAL.ai (fal.ai), the image gene
 
 ```yaml
 signed: false
+covers_art_9: false
 last_reviewed: 2026-04-22
 next_review: 2026-07-21
 contact: legal@fal.ai
 notes: >
   DPA review initiated. Required before makeup_enabled feature flag is turned
-  on in production. FAL_KEY rotation every 90 days once signed.
+  on in production (Unit 13 hard gate). FAL_KEY rotation every 90 days once
+  signed. covers_art_9 must be true before any production biometric processing.
 ```
 
 ## Checklist
 
 - [ ] DPA signed with FAL.ai
+- [ ] DPA explicitly covers Art. 9 biometric data (covers_art_9: true)
 - [ ] DPA stored in legal document vault
 - [ ] `makeup_enabled` feature flag enabled in production
 - [ ] FAL_KEY rotation scheduled (every 90 days per rules/conventions.md)
