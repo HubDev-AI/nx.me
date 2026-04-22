@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getCardCacheTags } from '@/lib/api';
+import { getCardCacheTags, getMakeupCacheTags } from '@/lib/api';
 
 // Security notes:
 // - M-17: Uses timing-safe comparison to prevent brute-force via timing side-channel
@@ -42,12 +42,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   let username: string | undefined;
+  let shareHash: string | undefined;
+  let kind: string | undefined;
+  let publishRev: number | undefined;
 
   try {
     const body = (await request.json()) as Record<string, unknown>;
     if (typeof body.username === 'string' && body.username.trim().length > 0) {
       username = body.username.trim();
     }
+    if (typeof body.share_hash === 'string') shareHash = body.share_hash.trim();
+    if (typeof body.kind === 'string') kind = body.kind.trim();
+    if (typeof body.publish_rev === 'number') publishRev = body.publish_rev;
   } catch {
     // JSON parse failure — fall through to validation error below
   }
@@ -68,10 +74,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  for (const tag of getCardCacheTags(username)) {
-    revalidateTag(tag);
+  if (kind === 'makeup' && shareHash && publishRev !== undefined) {
+    for (const tag of getMakeupCacheTags(username, shareHash)) {
+      revalidateTag(tag);
+    }
+    revalidatePath(`/${username}/makeup/${shareHash}/${publishRev}`);
+  } else {
+    for (const tag of getCardCacheTags(username)) {
+      revalidateTag(tag);
+    }
+    revalidatePath(`/${username}`);
   }
-  revalidatePath(`/${username}`);
 
   return NextResponse.json({ revalidated: true, username });
 }
