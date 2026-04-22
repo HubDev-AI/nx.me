@@ -194,10 +194,12 @@ class TestMigration0067:
 class TestJobRepoConstants:
     def test_source_type_makeup_constant(self):
         from app.repositories.job_repo import SOURCE_TYPE_MAKEUP
+
         assert SOURCE_TYPE_MAKEUP == "makeup_session"
 
     def test_source_type_glowup_unchanged(self):
         from app.repositories.job_repo import SOURCE_TYPE_GLOWUP
+
         assert SOURCE_TYPE_GLOWUP == "glowup_analysis"
 
     def test_makeup_failure_reason_constants(self):
@@ -206,14 +208,23 @@ class TestJobRepoConstants:
             MAKEUP_FAILURE_REFUSED,
             MAKEUP_FAILURE_RETRYABLE,
         )
+
         assert MAKEUP_FAILURE_REFUSED == "refused"
         assert MAKEUP_FAILURE_NON_RETRYABLE == "non_retryable"
         assert MAKEUP_FAILURE_RETRYABLE == "retryable"
 
     def test_job_status_select_includes_makeup_columns(self):
         from app.repositories.job_repo import JOB_STATUS_SELECT
-        for col in ("fal_request_id", "fal_url", "output_key", "preset_slug",
-                    "intensity", "makeup_failure_reason", "user_tier_at_enqueue"):
+
+        for col in (
+            "fal_request_id",
+            "fal_url",
+            "output_key",
+            "preset_slug",
+            "intensity",
+            "makeup_failure_reason",
+            "user_tier_at_enqueue",
+        ):
             assert col in JOB_STATUS_SELECT, f"{col} missing from JOB_STATUS_SELECT"
 
 
@@ -225,6 +236,7 @@ class TestJobRepoConstants:
 class TestMakeupAnalysisRepo:
     def _make_sb(self, data=None):
         from unittest.mock import MagicMock
+
         execute_result = MagicMock()
         execute_result.data = data
         builder = MagicMock()
@@ -244,6 +256,7 @@ class TestMakeupAnalysisRepo:
 
     def test_insert_returns_first_row(self):
         from app.repositories.makeup_analysis_repo import MakeupAnalysisRepository
+
         sb, builder, er = self._make_sb([{"id": "a1"}])
         repo = MakeupAnalysisRepository(sb)
         result = repo.insert({"user_id": "u1", "consent_version": "v1"})
@@ -251,12 +264,14 @@ class TestMakeupAnalysisRepo:
 
     def test_get_latest_for_user_returns_none_on_empty(self):
         from app.repositories.makeup_analysis_repo import MakeupAnalysisRepository
+
         sb, builder, er = self._make_sb(None)
         repo = MakeupAnalysisRepository(sb)
         assert repo.get_latest_for_user("u1") is None
 
     def test_get_latest_for_user_returns_row(self):
         from app.repositories.makeup_analysis_repo import MakeupAnalysisRepository
+
         sb, builder, er = self._make_sb({"id": "a1", "mst_bin": 5})
         repo = MakeupAnalysisRepository(sb)
         result = repo.get_latest_for_user("u1")
@@ -264,6 +279,7 @@ class TestMakeupAnalysisRepo:
 
     def test_nullify_biometric_fields_updates_correct_columns(self):
         from app.repositories.makeup_analysis_repo import MakeupAnalysisRepository
+
         sb, builder, er = self._make_sb(None)
         repo = MakeupAnalysisRepository(sb)
         repo.nullify_biometric_fields("u1")
@@ -274,6 +290,7 @@ class TestMakeupAnalysisRepo:
 
     def test_delete_older_than_uses_lt_on_created_at(self):
         from app.repositories.makeup_analysis_repo import MakeupAnalysisRepository
+
         sb, builder, er = self._make_sb(None)
         repo = MakeupAnalysisRepository(sb)
         repo.delete_older_than(90)

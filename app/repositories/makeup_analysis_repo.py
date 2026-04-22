@@ -47,6 +47,23 @@ class MakeupAnalysisRepository:
             {"mst_bin": None, "undertone": None, "region_anchors": None}
         ).eq("user_id", user_id).execute()
 
+    def nullify_biometric_fields_older_than(self, days: int) -> int:
+        """Null biometric fields on rows older than *days* days (scheduled sweeper).
+
+        CAS predicate (mst_bin IS NOT NULL) makes the sweep idempotent — already-
+        nullified rows are skipped. Consent and ranking metadata are preserved.
+        Returns the count of rows updated.
+        """
+        cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=days)).isoformat()
+        result = (
+            self._sb.table("makeup_analyses")
+            .update({"mst_bin": None, "undertone": None, "region_anchors": None})
+            .lt("created_at", cutoff)
+            .filter("mst_bin", "not.is", "null")
+            .execute()
+        )
+        return len(result.data) if result.data else 0
+
     def delete_older_than(self, days: int) -> None:
         """Hard-delete analysis rows older than *days* days (purge sweeper).
 

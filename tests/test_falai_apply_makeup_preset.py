@@ -13,7 +13,9 @@ from app.generation.adapters.falai import (
 )
 
 
-def _make_fal_http_error(status_code: int, headers: dict | None = None, msg: str = "err"):
+def _make_fal_http_error(
+    status_code: int, headers: dict | None = None, msg: str = "err"
+):
     """Build a FalClientHTTPError-like mock."""
     from fal_client.client import FalClientHTTPError
 
@@ -37,12 +39,18 @@ class TestApplyMakeupPresetHappyPath:
 
         fal_result = {"output_url": "https://fal.media/output.jpg"}
 
-        async def fake_subscribe(endpoint, arguments, *, headers, on_enqueue, client_timeout):
+        async def fake_subscribe(
+            endpoint, arguments, *, headers, on_enqueue, client_timeout
+        ):
             on_enqueue("fal-req-123")
             return fal_result
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://example.com/selfie.jpg"),
+            patch.object(
+                adapter,
+                "_ensure_public_url",
+                return_value="https://example.com/selfie.jpg",
+            ),
             patch("fal_client.subscribe_async", new=fake_subscribe),
         ):
             result = await adapter.apply_makeup_preset(
@@ -62,13 +70,17 @@ class TestApplyMakeupPresetHappyPath:
         adapter = FalAiAdapter()
         captured_headers: dict = {}
 
-        async def fake_subscribe(endpoint, arguments, *, headers, on_enqueue, client_timeout):
+        async def fake_subscribe(
+            endpoint, arguments, *, headers, on_enqueue, client_timeout
+        ):
             captured_headers.update(headers)
             on_enqueue("rid")
             return {"output_url": "https://fal.media/out.jpg"}
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", new=fake_subscribe),
         ):
             await adapter.apply_makeup_preset(
@@ -86,7 +98,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", side_effect=exc),
         ):
             with pytest.raises(MakeupAdapterError) as info:
@@ -100,7 +114,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", side_effect=exc),
         ):
             with pytest.raises(MakeupAdapterError) as info:
@@ -115,7 +131,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch(
                 "fal_client.subscribe_async",
                 side_effect=FalClientTimeoutError(timeout=180.0),
@@ -133,7 +151,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", side_effect=exc),
         ):
             with pytest.raises(MakeupAdapterError) as info:
@@ -148,7 +168,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", side_effect=exc),
         ):
             with pytest.raises(MakeupAdapterError) as info:
@@ -163,7 +185,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", side_effect=exc),
         ):
             with pytest.raises(MakeupAdapterError) as info:
@@ -179,7 +203,9 @@ class TestApplyMakeupPresetErrors:
         adapter = FalAiAdapter()
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", side_effect=exc),
         ):
             with pytest.raises(MakeupAdapterError) as info:
@@ -193,12 +219,16 @@ class TestApplyMakeupPresetErrors:
         """fal returns HTTP 200 but response body lacks output_url → non_retryable."""
         adapter = FalAiAdapter()
 
-        async def fake_subscribe(endpoint, arguments, *, headers, on_enqueue, client_timeout):
+        async def fake_subscribe(
+            endpoint, arguments, *, headers, on_enqueue, client_timeout
+        ):
             on_enqueue("rid")
             return {"some_other_field": "value"}  # no output_url
 
         with (
-            patch.object(adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"),
+            patch.object(
+                adapter, "_ensure_public_url", return_value="https://x.com/img.jpg"
+            ),
             patch("fal_client.subscribe_async", new=fake_subscribe),
         ):
             with pytest.raises(MakeupAdapterError) as info:

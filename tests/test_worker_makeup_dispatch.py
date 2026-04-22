@@ -57,7 +57,10 @@ class TestMakeupDispatch:
                 "app.generation.worker._run_makeup_pipeline",
                 new_callable=AsyncMock,
             ) as mock_makeup,
-            patch("app.generation.worker._release_concurrent_counter", new_callable=AsyncMock),
+            patch(
+                "app.generation.worker._release_concurrent_counter",
+                new_callable=AsyncMock,
+            ),
         ):
             from app.generation.worker import process_generation_job
 
@@ -107,7 +110,10 @@ class TestMakeupDispatch:
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("pipeline exploded"),
             ),
-            patch("app.generation.worker._release_concurrent_counter", new_callable=AsyncMock),
+            patch(
+                "app.generation.worker._release_concurrent_counter",
+                new_callable=AsyncMock,
+            ),
         ):
             from app.generation.worker import process_generation_job
 

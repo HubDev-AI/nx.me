@@ -7,7 +7,11 @@ import textwrap
 import yaml
 import pytest
 
-from app.generation.preset_registry import PresetRegistry, PresetRegistryModel, _reset_registry
+from app.generation.preset_registry import (
+    PresetRegistry,
+    PresetRegistryModel,
+    _reset_registry,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -78,6 +82,7 @@ class TestMstBinBlocklist:
     def test_committed_yaml_has_seven_presets_for_bin_5(self):
         """Sanity check: all 7 presets available for a mid-range MST bin."""
         from app.generation.preset_registry import load_presets
+
         reg = load_presets()
         available = reg.get_available_presets(mst_bin=5)
         assert len(available) == 7

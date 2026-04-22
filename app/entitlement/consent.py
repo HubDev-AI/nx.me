@@ -45,7 +45,9 @@ def _parse_version(v: str) -> tuple[int, ...]:
         return (0,)
 
 
-def has_consent(user_id: str, consent_key: str, min_version: str, *, supabase: Client) -> bool:
+def has_consent(
+    user_id: str, consent_key: str, min_version: str, *, supabase: Client
+) -> bool:
     """Return True if the user has accepted consent_key at >= min_version.
 
     Reads the most recent ``makeup_analyses`` row for the user and compares
@@ -86,7 +88,9 @@ def require_consent(consent_key: str) -> Callable:
     ) -> None:
         user_id: str = claims["sub"]
         min_ver = MAKEUP_CONSENT_VERSION
-        ok = await run_sync(has_consent, user_id, consent_key, min_ver, supabase=supabase)
+        ok = await run_sync(
+            has_consent, user_id, consent_key, min_ver, supabase=supabase
+        )
         if not ok:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

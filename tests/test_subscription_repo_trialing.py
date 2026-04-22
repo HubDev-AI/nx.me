@@ -60,4 +60,6 @@ class TestGetActiveSubscriptionStatusFilter:
         # .eq() should NOT be called with "status" (old single-eq pattern)
         for call in builder.eq.call_args_list:
             col = call[0][0]
-            assert col != "status", "eq('status', ...) must not be used — use in_() instead"
+            assert col != "status", (
+                "eq('status', ...) must not be used — use in_() instead"
+            )

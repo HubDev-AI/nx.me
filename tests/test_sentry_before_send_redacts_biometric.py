@@ -6,7 +6,6 @@ scrubbed from all three carriers before the event leaves the process.
 
 from __future__ import annotations
 
-import copy
 
 from app.observability.sentry_before_send import before_send
 
@@ -56,9 +55,7 @@ class TestBreadcrumbRedaction:
     def test_biometric_in_breadcrumb_data_is_redacted(self):
         event = _make_event(
             breadcrumbs={
-                "values": [
-                    {"message": "analyze", "data": {"mst_bin": 3, "other": "x"}}
-                ]
+                "values": [{"message": "analyze", "data": {"mst_bin": 3, "other": "x"}}]
             }
         )
         result = before_send(event, {})
@@ -78,9 +75,7 @@ class TestBreadcrumbRedaction:
         assert result["breadcrumbs"][1]["data"]["safe"] == "value"
 
     def test_breadcrumb_without_data_is_safe(self):
-        event = _make_event(
-            breadcrumbs={"values": [{"message": "no data here"}]}
-        )
+        event = _make_event(breadcrumbs={"values": [{"message": "no data here"}]})
         before_send(event, {})  # must not raise
 
 

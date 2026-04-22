@@ -104,7 +104,9 @@ class TestRequireConsent:
         supabase = _make_supabase("1.0")
         claims = {"sub": "user-1"}
 
-        with patch("app.entitlement.consent.run_sync", new=AsyncMock(return_value=True)):
+        with patch(
+            "app.entitlement.consent.run_sync", new=AsyncMock(return_value=True)
+        ):
             await dep(supabase=supabase, claims=claims)
         # No exception raised → test passes
 
@@ -116,7 +118,9 @@ class TestRequireConsent:
         supabase = _make_supabase(None)
         claims = {"sub": "user-1"}
 
-        with patch("app.entitlement.consent.run_sync", new=AsyncMock(return_value=False)):
+        with patch(
+            "app.entitlement.consent.run_sync", new=AsyncMock(return_value=False)
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await dep(supabase=supabase, claims=claims)
 
@@ -130,7 +134,9 @@ class TestRequireConsent:
         dep = require_consent("makeup_v1")
         claims = {"sub": "user-1"}
 
-        with patch("app.entitlement.consent.run_sync", new=AsyncMock(return_value=False)):
+        with patch(
+            "app.entitlement.consent.run_sync", new=AsyncMock(return_value=False)
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await dep(supabase=MagicMock(), claims=claims)
 

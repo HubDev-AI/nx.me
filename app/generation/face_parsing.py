@@ -40,10 +40,17 @@ def _load_model():
     if _model is not None:
         return _model, _processor
     try:
-        from transformers import SegformerForSemanticSegmentation, SegformerImageProcessor
+        from transformers import (
+            SegformerForSemanticSegmentation,
+            SegformerImageProcessor,
+        )
 
-        _processor = SegformerImageProcessor.from_pretrained("jonathandinu/face-parsing")
-        _model = SegformerForSemanticSegmentation.from_pretrained("jonathandinu/face-parsing")
+        _processor = SegformerImageProcessor.from_pretrained(
+            "jonathandinu/face-parsing"
+        )
+        _model = SegformerForSemanticSegmentation.from_pretrained(
+            "jonathandinu/face-parsing"
+        )
         _model.eval()
         logger.info("face-parsing model loaded")
     except Exception as exc:

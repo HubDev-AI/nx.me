@@ -49,6 +49,7 @@ class BiometricFieldFilter(logging.Filter):
                 )
         return True
 
+
 _CONFIGURED = False
 
 # Loggers we want chatty in dev DEBUG mode so the full advisor pipeline

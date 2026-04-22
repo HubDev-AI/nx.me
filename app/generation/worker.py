@@ -38,7 +38,11 @@ from app.generation.ports import GlowUpGeneratorPort
 from app.generation.prompt_builder import build_prompt
 from app.repositories.glowup_analysis_repo import GlowupAnalysisRepository
 from app.repositories.image_repo import ImageRepository
-from app.repositories.job_repo import SOURCE_TYPE_GLOWUP, SOURCE_TYPE_MAKEUP, JobRepository
+from app.repositories.job_repo import (
+    SOURCE_TYPE_GLOWUP,
+    SOURCE_TYPE_MAKEUP,
+    JobRepository,
+)
 
 logger = logging.getLogger(__name__)
 

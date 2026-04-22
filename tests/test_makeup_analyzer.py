@@ -180,4 +180,6 @@ class TestRankPresets:
         ranking = _rank_presets(5, "warm")
         top = set(ranking[:2])
         warm_preferred = {"bold_red", "soft_glam", "bridal"}
-        assert top & warm_preferred, f"Expected warm presets near top, got {ranking[:3]}"
+        assert top & warm_preferred, (
+            f"Expected warm presets near top, got {ranking[:3]}"
+        )

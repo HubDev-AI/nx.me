@@ -1492,6 +1492,23 @@ async def delete_account(
                 str(stripe_exc),
             )
 
+    # Step 4.5 — null biometric fields before CASCADE drops the rows. --------
+    # enumerate-before-cascade: wipe mst_bin/undertone/region_anchors while the
+    # user row (and its makeup_analyses FK) still exists, so the nullification
+    # lands in the audit log rather than being swallowed by CASCADE.
+    try:
+        from app.db.client import get_supabase_service as _get_supabase_service
+        from app.repositories.makeup_analysis_repo import MakeupAnalysisRepository
+
+        makeup_analysis_repo = MakeupAnalysisRepository(_get_supabase_service())
+        await run_sync(makeup_analysis_repo.nullify_biometric_fields, user_id)
+    except Exception as exc:
+        logger.warning(
+            "delete_account: makeup biometric nullification failed for user=%s: %s",
+            user_id,
+            exc,
+        )
+
     # 5. Hard-delete the user row. CASCADE fans out everything owned. -------
     try:
         deleted = await run_sync(user_repo.delete, user_id)
@@ -1529,6 +1546,8 @@ async def delete_account(
         redis_keys_to_delete = [
             f"advisor_chat_rate:{user_id}",
             f"concurrent:{user_id}",
+            f"makeup:quota:{user_id}",
+            f"makeup:analyze_rate:{user_id}",
             _SWEEP_CHAT_SEEDS_COOLDOWN_FMT.format(user_id=user_id),
             _SWEEP_NEXT_STEP_RL_FMT.format(user_id=user_id),
         ]

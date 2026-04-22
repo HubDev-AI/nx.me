@@ -50,6 +50,11 @@ from app.workers.stripe_customer_dlq_reconciler import (
     STRIPE_CUSTOMER_DLQ_CRON_MINUTE,
     reconcile_stripe_customer_dlq,
 )
+from app.workers.makeup_purge import (
+    MAKEUP_PURGE_CRON_HOUR,
+    MAKEUP_PURGE_CRON_MINUTE,
+    run_makeup_purge,
+)
 
 configure_logging()
 
@@ -151,6 +156,7 @@ class WorkerSettings:
         run_fingerprint_purge,
         purge_old_webhook_events,
         reconcile_stripe_customer_dlq,
+        run_makeup_purge,
     ]
 
     on_startup = startup
@@ -190,6 +196,12 @@ class WorkerSettings:
             reconcile_stripe_customer_dlq,
             hour=STRIPE_CUSTOMER_DLQ_CRON_HOUR,
             minute=STRIPE_CUSTOMER_DLQ_CRON_MINUTE,
+        ),
+        # Unit 7c: makeup biometric purge — daily 04:30 UTC
+        cron(
+            run_makeup_purge,
+            hour=MAKEUP_PURGE_CRON_HOUR,
+            minute=MAKEUP_PURGE_CRON_MINUTE,
         ),
     ]
 

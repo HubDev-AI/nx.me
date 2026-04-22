@@ -226,9 +226,7 @@ async def build_chat_seeds(
             if cached_during_cooldown is not None:
                 try:
                     seeds_data = json.loads(cached_during_cooldown)
-                    return ChatSeedsResponse(
-                        seeds=[ChatSeed(**s) for s in seeds_data]
-                    )
+                    return ChatSeedsResponse(seeds=[ChatSeed(**s) for s in seeds_data])
                 except Exception:
                     break
             await asyncio.sleep(_LOCK_WAIT_SECONDS)

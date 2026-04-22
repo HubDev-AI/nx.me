@@ -94,7 +94,9 @@ def _rank_presets(mst_bin: int, undertone: str) -> list[str]:
     return [p.slug for p in ranked]
 
 
-def _mean_skin_rgb(image_url: str, skin_mask_bbox: tuple | None) -> tuple[float, float, float]:
+def _mean_skin_rgb(
+    image_url: str, skin_mask_bbox: tuple | None
+) -> tuple[float, float, float]:
     """Fetch image and compute mean RGB of the skin region (or full image if no mask)."""
     import io
 

@@ -29,7 +29,9 @@ class MakeupAdapterResult:
 class MakeupAdapterError(Exception):
     """Typed error from apply_makeup_preset — categorised by retry posture."""
 
-    def __init__(self, *, kind: str, reason: str, retry_after: int | None = None) -> None:
+    def __init__(
+        self, *, kind: str, reason: str, retry_after: int | None = None
+    ) -> None:
         super().__init__(reason)
         self.kind = kind  # "non_retryable" | "retryable" | "config"
         self.reason = reason
@@ -347,9 +349,13 @@ class FalAiAdapter:
         output_url = result.get("output_url") or ""
         if not output_url or not output_url.startswith("https://"):
             logger.error(
-                "fal malformed 200 for %s — full response: %r", _FAL_MAKEUP_ENDPOINT, result
+                "fal malformed 200 for %s — full response: %r",
+                _FAL_MAKEUP_ENDPOINT,
+                result,
             )
-            raise MakeupAdapterError(kind="non_retryable", reason="fal_malformed_response")
+            raise MakeupAdapterError(
+                kind="non_retryable", reason="fal_malformed_response"
+            )
 
         request_id = captured_request_id[0] if captured_request_id else ""
         return MakeupAdapterResult(fal_request_id=request_id, fal_output_url=output_url)
@@ -365,8 +371,14 @@ class FalAiAdapter:
             or ""
         )
 
-        if code in (400, 422) or "bad_request" in error_type or "content_filter" in error_type:
-            return MakeupAdapterError(kind="non_retryable", reason=f"fal_bad_request: {exc}")
+        if (
+            code in (400, 422)
+            or "bad_request" in error_type
+            or "content_filter" in error_type
+        ):
+            return MakeupAdapterError(
+                kind="non_retryable", reason=f"fal_bad_request: {exc}"
+            )
         if code == 429:
             retry_after = _parse_retry_after(
                 exc.response_headers.get("Retry-After")
@@ -379,8 +391,14 @@ class FalAiAdapter:
             return MakeupAdapterError(kind="config", reason="fal_auth_invalid")
         if code == 402:
             return MakeupAdapterError(kind="config", reason="fal_billing_required")
-        if code in (502, 503) or "runner_" in error_type or "internal_error" in error_type:
-            return MakeupAdapterError(kind="retryable", reason=f"fal_server_error_{code}")
+        if (
+            code in (502, 503)
+            or "runner_" in error_type
+            or "internal_error" in error_type
+        ):
+            return MakeupAdapterError(
+                kind="retryable", reason=f"fal_server_error_{code}"
+            )
         return MakeupAdapterError(kind="retryable", reason=f"fal_unknown_status_{code}")
 
     def _estimate_cost(self, model: str) -> float:

@@ -69,7 +69,10 @@ class TestRequireTierFeature:
             with pytest.raises(HTTPException) as exc_info:
                 await dep(supabase=mock_sb, claims=self._make_claims())
 
-        assert exc_info.value.detail["error"]["detail"]["capability"] == "some_other_capability"
+        assert (
+            exc_info.value.detail["error"]["detail"]["capability"]
+            == "some_other_capability"
+        )
 
     @pytest.mark.asyncio
     async def test_passes_user_id_from_claims_to_has_active_pro(self):
@@ -79,7 +82,9 @@ class TestRequireTierFeature:
         dep = require_tier_feature("makeup")
         mock_sb = MagicMock()
 
-        with patch("app.api.deps.run_sync", new=AsyncMock(return_value=True)) as mock_run:
+        with patch(
+            "app.api.deps.run_sync", new=AsyncMock(return_value=True)
+        ) as mock_run:
             await dep(supabase=mock_sb, claims={"sub": "specific-user-id"})
 
         # run_sync is called as run_sync(has_active_pro, user_id, supabase)

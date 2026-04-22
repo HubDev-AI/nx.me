@@ -20,7 +20,6 @@ import secrets
 from datetime import datetime, timezone
 from typing import Callable
 
-from app.entitlement.consent import MAKEUP_CONSENT_VERSION
 from app.generation.adapters.falai import MakeupAdapterError
 from app.repositories.job_repo import (
     MAKEUP_FAILURE_NON_RETRYABLE,
@@ -96,7 +95,9 @@ class MakeupPipeline:
         consent_snapshot = job.get("consent_version_at_enqueue")
         if not consent_snapshot:
             logger.error("Job %s missing consent_version_at_enqueue", job_id)
-            self._job_repo.update_makeup_job_failed(job_id, MAKEUP_FAILURE_NON_RETRYABLE, now)
+            self._job_repo.update_makeup_job_failed(
+                job_id, MAKEUP_FAILURE_NON_RETRYABLE, now
+            )
             return None
 
         # Entitlement check — Pro may have lapsed between enqueue and worker entry

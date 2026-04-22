@@ -26,6 +26,7 @@ from app.api import (
     health,
     jobs,
     makeup,
+    makeup_privacy,
     posts,
     public,
     refund,
@@ -277,6 +278,7 @@ def create_app() -> FastAPI:
     v1.include_router(uploads.router)
     v1.include_router(glowup.router)
     v1.include_router(makeup.router)
+    v1.include_router(makeup_privacy.router)
     v1.include_router(jobs.router)
     v1.include_router(user_consent.router)
     # Legacy refund endpoint (/v1/analyses/{job_id}/refund) — still mounted

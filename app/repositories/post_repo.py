@@ -269,7 +269,11 @@ class PostRepository:
         overriding the Postgres DEFAULT. Legacy glow-up callers omit it and
         keep the server-generated 8-char default.
         """
-        row = {**post_row, "share_hash": share_hash} if share_hash is not None else post_row
+        row = (
+            {**post_row, "share_hash": share_hash}
+            if share_hash is not None
+            else post_row
+        )
         result = self._sb.table("posts").insert(row).execute()
         return result.data[0]
 

@@ -64,7 +64,12 @@ class TestBiometricFieldFilter:
     def test_filter_always_returns_true(self):
         filt = BiometricFieldFilter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="mst_bin=3", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="mst_bin=3",
+            args=(),
+            exc_info=None,
         )
         assert filt.filter(record) is True

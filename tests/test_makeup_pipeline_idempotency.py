@@ -187,7 +187,9 @@ class TestNonRetryableFalError:
         """fal 422 bad_request → job ends (failed, non_retryable), fal called once."""
         pipeline, job_repo, fal_adapter, _ = _make_pipeline(
             job_seq=[_fresh_job()],
-            fal_error=MakeupAdapterError(kind="non_retryable", reason="fal_bad_request"),
+            fal_error=MakeupAdapterError(
+                kind="non_retryable", reason="fal_bad_request"
+            ),
         )
 
         await pipeline.run("job-1")
@@ -209,7 +211,9 @@ class TestRetryableFalError:
         """fal 503 → MakeupAdapterError(retryable) propagates to caller."""
         pipeline, _, _, _ = _make_pipeline(
             job_seq=[_fresh_job()],
-            fal_error=MakeupAdapterError(kind="retryable", reason="fal_server_error_503"),
+            fal_error=MakeupAdapterError(
+                kind="retryable", reason="fal_server_error_503"
+            ),
         )
 
         with pytest.raises(MakeupAdapterError) as exc_info:

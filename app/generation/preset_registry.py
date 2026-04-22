@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 _VALID_INTENSITIES = frozenset({"subtle", "light", "medium", "bold"})
 
-PRESETS_YAML_PATH = Path(__file__).resolve().parent.parent.parent / "prompts" / "makeup_presets.yaml"
+PRESETS_YAML_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "prompts" / "makeup_presets.yaml"
+)
 
 
 class PresetNotFound(KeyError):
@@ -47,7 +49,9 @@ class Preset(BaseModel):
 
     @field_validator("intensity_mapping")
     @classmethod
-    def _validate_mapping_covers_supported(cls, v: dict[str, str], info) -> dict[str, str]:
+    def _validate_mapping_covers_supported(
+        cls, v: dict[str, str], info
+    ) -> dict[str, str]:
         supported = set(info.data.get("supported_intensities", []))
         missing = supported - set(v.keys())
         if missing:
@@ -81,7 +85,8 @@ class PresetRegistry:
         return [
             p
             for p in self._model.presets
-            if not p.deprecated and (mst_bin is None or mst_bin not in p.mst_bin_blocklist)
+            if not p.deprecated
+            and (mst_bin is None or mst_bin not in p.mst_bin_blocklist)
         ]
 
     def map_to_fal(self, preset_slug: str, our_intensity: str) -> tuple[str, str]:
