@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, FadeInDown, FadeOut } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -78,6 +78,8 @@ const PROCESSING_PHASES: ReadonlySet<UploadPhase> = new Set([
 
 export default function UploadScreen() {
   const router = useRouter();
+  const { action } = useLocalSearchParams<{ action?: string }>();
+  const isMakeup = action === "makeup";
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { requestConsentIfNeeded, markConsentGranted } = useConsent();
@@ -151,6 +153,10 @@ export default function UploadScreen() {
 
         if (controller.signal.aborted) return;
         setUploadId(result.upload_id);
+        if (isMakeup) {
+          router.replace(`/makeup/preset-picker?uploadId=${result.upload_id}`);
+          return;
+        }
         setPhase("uploaded");
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -164,7 +170,7 @@ export default function UploadScreen() {
         setPhase("error");
       }
     },
-    [],
+    [isMakeup, router],
   );
 
   const handlePhotoClear = useCallback(() => {
@@ -305,7 +311,7 @@ export default function UploadScreen() {
           style={styles.headerTitle}
           maxFontSizeMultiplier={1.3}
         >
-          Upload
+          {isMakeup ? "Upload Photo" : "Upload"}
         </Heading>
         <HeaderBackButtonSpacer />
       </View>

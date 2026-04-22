@@ -481,6 +481,18 @@ export const PROFILE_CONFIG = {
   DISPLAY_NAME_MAX_LENGTH: 50,
 } as const;
 
+/** Makeup API paths */
+export const MAKEUP_ENDPOINTS = {
+  ANALYZE: (uploadId: string) => `/v1/uploads/${uploadId}/makeup/analyze`,
+  GENERATE: (uploadId: string) => `/v1/uploads/${uploadId}/makeup/generate`,
+} as const;
+
+/** Client-side makeup timeout — at 45s the UI decouples from the worker. */
+export const MAKEUP_CLIENT_TIMEOUT_MS = 45_000;
+
+/** AsyncStorage key tracking local makeup consent version. */
+export const MAKEUP_CONSENT_STORAGE_KEY = "@nxme:makeup_consent_version";
+
 /** Touch target minimum (pt) — WCAG / platform guidelines */
 export const MIN_TOUCH_TARGET = 44;
 

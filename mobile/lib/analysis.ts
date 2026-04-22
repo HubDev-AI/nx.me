@@ -113,6 +113,14 @@ export interface JobResult {
    */
   post_id?: string | null;
   share_hash?: string | null;
+  /**
+   * Makeup-specific fields. Populated only when source_type='makeup_session'.
+   * Mobile branches on this pair, never on status alone.
+   */
+  source_type?: "glowup_analysis" | "makeup_session" | null;
+  makeup_failure_reason?: "refused" | "non_retryable" | "retryable" | null;
+  preset_slug?: string | null;
+  intensity?: string | null;
 }
 
 // ---------------------------------------------------------------------------

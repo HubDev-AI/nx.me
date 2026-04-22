@@ -25,6 +25,7 @@ const BASE: Capabilities = {
   canSubscribe: true,
   canReact: false,
   canViewBlockedUsers: false,
+  canUseMakeup: false,
 };
 
 function caps(overrides: Partial<Capabilities> = {}): Capabilities {

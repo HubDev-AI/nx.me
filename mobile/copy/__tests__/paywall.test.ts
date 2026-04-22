@@ -11,6 +11,7 @@ const BASE_FLAGS: FeatureFlags = {
   onboarding_enabled: true,
   advisor_enabled: true,
   weekly_free_grant_enabled: true,
+  makeup_enabled: false,
 };
 
 describe("buildPaywallSubheaderSubscribe", () => {

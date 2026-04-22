@@ -165,6 +165,7 @@ function setCaps(overrides: Partial<Capabilities> = {}) {
     canSubscribe: true,
     canReact: true,
     canViewBlockedUsers: true,
+    canUseMakeup: false,
   };
   capsMod.useCapabilities.mockReturnValue({ ...base, ...overrides });
 }

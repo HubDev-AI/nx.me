@@ -83,6 +83,7 @@ const BASE_FEATURES: FeatureFlags = {
   onboarding_enabled: true,
   advisor_enabled: true,
   weekly_free_grant_enabled: true,
+  makeup_enabled: false,
 };
 
 function setSession(mode: SessionMode, flags: Partial<FeatureFlags> = {}) {

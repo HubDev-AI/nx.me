@@ -53,6 +53,7 @@ import { useShareComposite } from "../../components/result/ShareComposite";
 import { ShareDialog } from "../../components/result/ShareDialog";
 import { useShareDialog } from "../../components/result/useShareDialog";
 import { HeaderBackButton } from "../../components/ui/HeaderBackButton";
+import { TryAnotherPresetButton } from "../../components/makeup/TryAnotherPresetButton";
 import { ZoomableImageModal } from "../../components/ui/ZoomableImageModal";
 import {
   getJobFailureMessage,
@@ -575,15 +576,25 @@ export default function ResultScreen() {
       hardTimedOut ||
       imageUrlTimedOut);
 
+  const isMakeup = result?.source_type === "makeup_session";
+
   const failureCopy = useMemo(() => {
     if (!terminalFailure) return null;
     if (result?.status === "cancelled") return "Generation was cancelled.";
     if (result?.status === "failed") {
+      if (isMakeup && result.makeup_failure_reason) {
+        if (result.makeup_failure_reason === "refused")
+          return "This look isn't available on your current plan. Upgrade to unlock more styles.";
+        if (result.makeup_failure_reason === "non_retryable")
+          return "We couldn't apply this look to your photo. Try a different photo.";
+        if (result.makeup_failure_reason === "retryable")
+          return "Something went wrong applying your look. Your credit is safe — please try again.";
+      }
       return getJobFailureMessage(result.failure_reason, result.user_guidance);
     }
     if (hardTimedOut) return RESULT_HARD_TIMEOUT_COPY;
     return "Images didn't come through for this run.";
-  }, [terminalFailure, result, hardTimedOut]);
+  }, [terminalFailure, result, hardTimedOut, isMakeup]);
 
   // QueryStateView's error UI fires only when nothing else applies. Any
   // tolerable / waiting / terminal state takes precedence so the user
@@ -621,7 +632,7 @@ export default function ResultScreen() {
   // Render
   // ---------------------------------------------------------------------------
 
-  const headerTitle = isSuccess ? "Your Glow-Up" : "Result";
+  const headerTitle = isSuccess ? (isMakeup ? "Your Makeup" : "Your Glow-Up") : "Result";
 
   return (
     <View style={styles.screen}>
@@ -736,7 +747,7 @@ export default function ResultScreen() {
                   <BeforeAfterSlider
                     beforeUrl={result.before_image_url!}
                     afterUrl={result.after_image_url!}
-                    rightLabel="Glow Up"
+                    rightLabel={isMakeup ? "Makeup" : "Glow Up"}
                     onPressBeforeImage={handleZoomBefore}
                     onPressAfterImage={handleZoomAfter}
                   />
@@ -756,6 +767,9 @@ export default function ResultScreen() {
                     saveState={saveState}
                     canPublishGlowup={capabilities.canPublishGlowup}
                   />
+                  {isMakeup ? (
+                    <TryAnotherPresetButton onPress={handleTryAgain} />
+                  ) : null}
                 </Animated.View>
 
                 {/* Capturing overlay hint */}
