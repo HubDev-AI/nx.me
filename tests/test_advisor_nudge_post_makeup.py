@@ -65,7 +65,10 @@ def _patch_nudge_scheduler(monkeypatch, *, image_blocks=None, style_profile=None
     async def _makeup_handler(_ctx):
         if image_blocks is not None:
             return {"content": list(image_blocks), "is_error": False}
-        return {"content": [{"type": "text", "text": "no completed makeup session"}], "is_error": True}
+        return {
+            "content": [{"type": "text", "text": "no completed makeup session"}],
+            "is_error": True,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_makeup", _makeup_handler)
     return repo
@@ -82,7 +85,9 @@ async def test_makeup_nudge_fires_on_completion(monkeypatch):
         image_blocks=[_image_block()],
         style_profile=_STYLE_PROFILE,
     )
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE))
+    monkeypatch.setattr(
+        nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE)
+    )
 
     redis = _make_redis(throttle_accepted=True)
     ctx = {"supabase": MagicMock(), "redis": redis}
@@ -105,7 +110,9 @@ async def test_makeup_nudge_skipped_no_style_profile(monkeypatch, caplog):
         image_blocks=[_image_block()],
         style_profile=None,
     )
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE))
+    monkeypatch.setattr(
+        nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE)
+    )
 
     redis = _make_redis(throttle_accepted=True)
     ctx = {"supabase": MagicMock(), "redis": redis}
@@ -127,7 +134,9 @@ async def test_makeup_nudge_skipped_no_images(monkeypatch):
         image_blocks=None,  # makeup handler returns is_error=True
         style_profile=_STYLE_PROFILE,
     )
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE))
+    monkeypatch.setattr(
+        nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE)
+    )
 
     redis = _make_redis(throttle_accepted=True)
     ctx = {"supabase": MagicMock(), "redis": redis}

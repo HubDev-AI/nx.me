@@ -185,7 +185,9 @@ async def build_chat_seeds(
         return _fallback()
 
     if anchor_row is None:
-        logger.debug("chat_seeds: no completed generation for user=%s — fallback", user_id)
+        logger.debug(
+            "chat_seeds: no completed generation for user=%s — fallback", user_id
+        )
         return _fallback()
 
     anchor_id = str(anchor_row.get("id") or "")

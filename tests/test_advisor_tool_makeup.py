@@ -29,8 +29,10 @@ def _make_ctx(
     if fetch_raises:
         repo.fetch_image_bytes = MagicMock(side_effect=RuntimeError("storage down"))
     else:
+
         def _fetch(bucket, key):
             return before_bytes if "before" in key else after_bytes
+
         repo.fetch_image_bytes = MagicMock(side_effect=_fetch)
 
     return SimpleNamespace(

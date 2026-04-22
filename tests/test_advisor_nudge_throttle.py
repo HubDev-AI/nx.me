@@ -55,10 +55,15 @@ def _patch_makeup_scheduler(monkeypatch, *, style_profile=None, image_blocks=Non
     async def _makeup_handler(_ctx):
         if image_blocks is not None:
             return {"content": list(image_blocks), "is_error": False}
-        return {"content": [{"type": "text", "text": "no completed makeup session"}], "is_error": True}
+        return {
+            "content": [{"type": "text", "text": "no completed makeup session"}],
+            "is_error": True,
+        }
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_makeup", _makeup_handler)
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE))
+    monkeypatch.setattr(
+        nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE)
+    )
     return repo
 
 
@@ -112,7 +117,9 @@ async def test_post_glowup_and_post_makeup_fire_independently(monkeypatch):
 
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_glowup", _glowup_handler)
     monkeypatch.setattr(nudge_scheduler, "_handle_get_latest_makeup", _makeup_handler)
-    monkeypatch.setattr(nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE))
+    monkeypatch.setattr(
+        nudge_scheduler, "_get_llm_adapter", lambda: _fake_llm(_GOOD_RESPONSE)
+    )
 
     # Redis always accepts (separate keys per trigger)
     redis = AsyncMock()

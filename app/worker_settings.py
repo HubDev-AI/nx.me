@@ -21,6 +21,7 @@ from app.generation.worker import process_generation_job, watchdog_stuck_jobs
 from app.api.social import reconcile_reaction_counts
 from app.advisor.nudge_scheduler import (
     generate_nudge,
+    generate_nudge_makeup,
     write_analysis_insight_job,
 )
 from app.repositories.image_repo import ImageRepository
@@ -149,6 +150,7 @@ class WorkerSettings:
     functions = [
         process_generation_job,
         generate_nudge,
+        generate_nudge_makeup,
         write_analysis_insight_job,
         reconcile_reaction_counts,
         wipe_deleted_user_blobs,

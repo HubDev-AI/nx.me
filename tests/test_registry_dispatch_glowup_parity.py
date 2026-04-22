@@ -10,7 +10,6 @@ layer accidentally swallowing or redirecting jobs.
 from __future__ import annotations
 
 
-
 class TestGlowupRegistryDescriptor:
     def test_glowup_action_registered(self):
         from app.generation.actions import get_action

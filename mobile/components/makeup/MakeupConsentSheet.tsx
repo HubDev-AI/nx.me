@@ -9,11 +9,10 @@
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { MAKEUP_MAKEUP_CONSENT_VERSION } from "../../constants/config";
 import { THEME } from "../../constants/theme";
 import { Body, Caption, Heading, Label } from "../ui/Text";
 import { Button } from "../ui/Button";
-
-const CONSENT_VERSION = "1.0";
 const CONSENT_POINTS = [
   "We analyze skin tone and facial features to recommend makeup looks.",
   "This data is stored for up to 90 days, then automatically deleted.",
@@ -79,7 +78,7 @@ export function MakeupConsentSheet({ visible, onAgree, onCancel }: MakeupConsent
             <Caption color="muted" style={styles.legal}>
               By continuing you consent to biometric data processing under our
               Privacy Policy. You may withdraw consent at any time in Settings.
-              Consent version {CONSENT_VERSION}.
+              Consent version {MAKEUP_CONSENT_VERSION}.
             </Caption>
           </ScrollView>
 

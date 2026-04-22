@@ -23,7 +23,9 @@ class _FakeRedis:
     async def get(self, key: str) -> Any:
         return self.store.get(key)
 
-    async def set(self, key: str, value: Any, ex: int | None = None, nx: bool = False, **_: Any) -> Any:
+    async def set(
+        self, key: str, value: Any, ex: int | None = None, nx: bool = False, **_: Any
+    ) -> Any:
         if nx and key in self.store:
             return None
         self.store[key] = value
@@ -37,11 +39,15 @@ def _fake_llm():
     async def _create(**_kwargs):
         from app.advisor.models import LLMResponse
 
-        seeds_json = json.dumps({"seeds": [
-            {"label": "Label 1", "text": "Question one?"},
-            {"label": "Label 2", "text": "Question two?"},
-            {"label": "Label 3", "text": "Question three?"},
-        ]})
+        seeds_json = json.dumps(
+            {
+                "seeds": [
+                    {"label": "Label 1", "text": "Question one?"},
+                    {"label": "Label 2", "text": "Question two?"},
+                    {"label": "Label 3", "text": "Question three?"},
+                ]
+            }
+        )
         return LLMResponse(content=seeds_json, input_tokens=5, output_tokens=20)
 
     return SimpleNamespace(create_message=_create)

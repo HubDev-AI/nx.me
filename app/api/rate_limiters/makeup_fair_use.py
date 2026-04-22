@@ -22,6 +22,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_SECONDS_PER_DAY = 86_400
+
 _INCR_LUA = (Path(__file__).parent / "makeup_fair_use_incr.lua").read_text()
 _DECR_LUA = (Path(__file__).parent / "makeup_fair_use_decr.lua").read_text()
 
@@ -56,7 +58,7 @@ async def fair_use_incr(
     """
     counter_key = f"makeup:quota:{user_id}"
     cap = settings.MAKEUP_FAIR_USE_DAILY_CAP
-    txn_ttl = 86400  # 24h, matches counter window
+    txn_ttl = _SECONDS_PER_DAY
 
     sha = await _load_incr(r)
     result = await r.evalsha(

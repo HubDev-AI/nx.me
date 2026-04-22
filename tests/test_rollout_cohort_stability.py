@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import hashlib
 
-import pytest
-
 from app.entitlement.tier import _in_rollout_cohort
 
 

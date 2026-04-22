@@ -92,23 +92,15 @@ export function parseMakeupCardData(raw: unknown): MakeupCardData {
 
   const obj = raw as Record<string, unknown>;
 
-  for (const field of ['username', 'display_name', 'share_hash', 'before_image_url', 'after_image_url'] as const) {
-    if (typeof obj[field] !== 'string') {
-      throw new Error(`MakeupCardData contract violation: "${field}" must be string`);
-    }
-  }
-  if (typeof obj['reaction_count'] !== 'number') {
-    throw new Error('MakeupCardData contract violation: "reaction_count" must be number');
-  }
-  if (typeof obj['comment_count'] !== 'number') {
-    throw new Error('MakeupCardData contract violation: "comment_count" must be number');
-  }
-  if (typeof obj['public_index_opt_in'] !== 'boolean') {
-    throw new Error('MakeupCardData contract violation: "public_index_opt_in" must be boolean');
-  }
-  if (typeof obj['publish_rev'] !== 'number') {
-    throw new Error('MakeupCardData contract violation: "publish_rev" must be number');
-  }
+  assertField(obj, 'username', 'string');
+  assertField(obj, 'display_name', 'string');
+  assertField(obj, 'share_hash', 'string');
+  assertField(obj, 'before_image_url', 'string');
+  assertField(obj, 'after_image_url', 'string');
+  assertField(obj, 'reaction_count', 'number');
+  assertField(obj, 'comment_count', 'number');
+  assertField(obj, 'public_index_opt_in', 'boolean');
+  assertField(obj, 'publish_rev', 'number');
 
   return {
     username: obj['username'] as string,

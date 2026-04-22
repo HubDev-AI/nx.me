@@ -19,6 +19,7 @@ Cross-user invariants (enforced by registry at construction time):
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 from typing import Any
@@ -116,22 +117,25 @@ async def handle(ctx: McpContext) -> dict[str, Any]:
     before_key = str(row.get("before_image_url") or "")
     after_key = str(row.get("after_image_url") or "")
 
-    blocks: list[dict[str, Any]] = []
-    try:
-        before_bytes = await run_sync(
-            ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, before_key
-        )
-        blocks.append(_encode_image_block(before_bytes, before_key))
-    except Exception as exc:
-        ctx.logger.warning("get_latest_makeup: failed to fetch before image: %s", exc)
+    before_result, after_result = await asyncio.gather(
+        run_sync(ctx.advisor_repo.fetch_image_bytes, BUCKET_BEFORE, before_key),
+        run_sync(ctx.advisor_repo.fetch_image_bytes, BUCKET_AFTER, after_key),
+        return_exceptions=True,
+    )
 
-    try:
-        after_bytes = await run_sync(
-            ctx.advisor_repo.fetch_image_bytes, BUCKET_AFTER, after_key
+    blocks: list[dict[str, Any]] = []
+    if isinstance(before_result, BaseException):
+        ctx.logger.warning(
+            "get_latest_makeup: failed to fetch before image: %s", before_result
         )
-        blocks.append(_encode_image_block(after_bytes, after_key))
-    except Exception as exc:
-        ctx.logger.warning("get_latest_makeup: failed to fetch after image: %s", exc)
+    else:
+        blocks.append(_encode_image_block(before_result, before_key))
+    if isinstance(after_result, BaseException):
+        ctx.logger.warning(
+            "get_latest_makeup: failed to fetch after image: %s", after_result
+        )
+    else:
+        blocks.append(_encode_image_block(after_result, after_key))
 
     if not blocks:
         return {

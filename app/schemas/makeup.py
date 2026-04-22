@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, field_validator
 
 
@@ -20,8 +22,6 @@ class MakeupGenerateRequest(BaseModel):
     @field_validator("preset_slug", "intensity")
     @classmethod
     def _alphanumeric_underscore(cls, v: str) -> str:
-        import re
-
         if not re.match(r"^[a-z0-9_]+$", v):
             raise ValueError("must match ^[a-z0-9_]+$")
         return v

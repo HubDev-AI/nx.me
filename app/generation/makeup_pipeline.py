@@ -24,7 +24,6 @@ from app.generation.adapters.falai import MakeupAdapterError
 from app.repositories.job_repo import (
     MAKEUP_FAILURE_NON_RETRYABLE,
     MAKEUP_FAILURE_REFUSED,
-    MAKEUP_FAILURE_RETRYABLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,9 +38,16 @@ async def _decrement_fair_use(
     user_id: str,
     namespaced_key: str | None,
 ) -> None:
-    """Stub — Unit 6 replaces with Lua-backed DECR + marker DEL."""
-    # No-op until the fair-use Lua scripts land in Unit 6.
-    pass
+    if not namespaced_key:
+        return
+    from app.api.rate_limiters.makeup_fair_use import fair_use_decr
+
+    try:
+        await fair_use_decr(redis_client, user_id, namespaced_key)
+    except Exception:
+        logger.warning(
+            "fair_use_decr failed for user=%s key=%s", user_id, namespaced_key
+        )
 
 
 class MakeupPipeline:
@@ -135,7 +141,7 @@ class MakeupPipeline:
             failure_code = (
                 MAKEUP_FAILURE_NON_RETRYABLE
                 if exc.kind == "non_retryable"
-                else MAKEUP_FAILURE_RETRYABLE
+                else MAKEUP_FAILURE_NON_RETRYABLE
             )
             self._job_repo.update_makeup_job_failed(job_id, failure_code, now)
             return None

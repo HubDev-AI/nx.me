@@ -493,6 +493,9 @@ export const MAKEUP_CLIENT_TIMEOUT_MS = 45_000;
 /** AsyncStorage key tracking local makeup consent version. */
 export const MAKEUP_CONSENT_STORAGE_KEY = "@nxme:makeup_consent_version";
 
+/** Consent version string — must match backend MAKEUP_CONSENT_VERSION. */
+export const MAKEUP_CONSENT_VERSION = "1.0";
+
 /** Touch target minimum (pt) — WCAG / platform guidelines */
 export const MIN_TOUCH_TARGET = 44;
 

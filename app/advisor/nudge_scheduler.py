@@ -29,6 +29,7 @@ from app.advisor._json_utils import strip_json_code_fence
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_glowup import _handle_get_latest_glowup
 from app.advisor.mcp.tools_makeup import handle as _handle_get_latest_makeup
+from app.advisor.payload_logger import log_llm_response
 from app.advisor.persona import SOUL_MD
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
@@ -217,8 +218,6 @@ async def _generate_vision_nudge(
             messages=[{"role": "user", "content": user_content}],
             max_tokens=MAX_TOKENS_NUDGE,
         )
-        from app.advisor.payload_logger import log_llm_response
-
         log_llm_response(
             None,
             model=settings.ADVISOR_MODEL_HAIKU,
@@ -624,8 +623,6 @@ async def generate_nudge_makeup(
             messages=[{"role": "user", "content": user_content}],
             max_tokens=MAX_TOKENS_NUDGE,
         )
-        from app.advisor.payload_logger import log_llm_response
-
         log_llm_response(
             None,
             model=settings.ADVISOR_MODEL_HAIKU,
@@ -656,7 +653,7 @@ async def generate_nudge_makeup(
     next_step_label: str = parsed["next_step_label"]
     next_step_seed: str = parsed["next_step_seed"]
 
-    body_hash = hashlib.sha256(body.encode()).hexdigest()
+    body_hash = hashlib.sha256(body.lower().encode()).hexdigest()
     since = datetime.now(timezone.utc) - timedelta(days=_BODY_DEDUP_DAYS)
     try:
         is_dup = await run_sync(

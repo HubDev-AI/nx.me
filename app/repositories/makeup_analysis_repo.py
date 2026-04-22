@@ -60,6 +60,7 @@ class MakeupAnalysisRepository:
             .update({"mst_bin": None, "undertone": None, "region_anchors": None})
             .lt("created_at", cutoff)
             .filter("mst_bin", "not.is", "null")
+            .select("id")
             .execute()
         )
         return len(result.data) if result.data else 0

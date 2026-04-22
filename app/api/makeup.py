@@ -103,12 +103,6 @@ async def analyze_makeup(
     """
     user_id: str = claims["sub"]
 
-    upload = await run_sync(
-        upload_repo.get_by_id_for_owner_check, str(upload_id), user_id
-    )
-    if not upload:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_404_UPLOAD)
-
     allowed, retry_after = await check_makeup_analyze_rate_limit(user_id, redis_client)
     if not allowed:
         raise HTTPException(
@@ -122,6 +116,12 @@ async def analyze_makeup(
                 }
             },
         )
+
+    upload = await run_sync(
+        upload_repo.get_by_id_for_owner_check, str(upload_id), user_id
+    )
+    if not upload:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_404_UPLOAD)
 
     image_url: str = upload.get("image_url", "")
     try:
@@ -396,7 +396,7 @@ async def generate_makeup(
     # ── 8. Enqueue ─────────────────────────────────────────────────────────
     try:
         await request.app.state.arq_pool.enqueue_job(
-            "makeup_generate",
+            "process_generation_job",
             str(job_id),
         )
     except Exception:

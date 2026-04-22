@@ -22,7 +22,7 @@ import * as Crypto from "expo-crypto";
 import { Ionicons } from "@expo/vector-icons";
 
 import { THEME } from "../../constants/theme";
-import { MAKEUP_CONSENT_STORAGE_KEY } from "../../constants/config";
+import { MAKEUP_CONSENT_STORAGE_KEY, MAKEUP_MAKEUP_CONSENT_VERSION } from "../../constants/config";
 import { MAKEUP_PRESETS, type MakeupPresetDefinition } from "../../constants/presets";
 import type { MakeupIntensity } from "../../lib/makeup";
 import { analyzeMakeup, generateMakeup } from "../../lib/makeup";
@@ -33,8 +33,6 @@ import { useTheme } from "../../lib/theme-context";
 import { PresetCard } from "./PresetCard";
 import { IntensitySegmented } from "./IntensitySegmented";
 import { MakeupConsentSheet } from "./MakeupConsentSheet";
-
-const CONSENT_VERSION = "1.0";
 
 interface PresetPickerProps {
   uploadId: string;
@@ -101,7 +99,7 @@ export function PresetPicker({ uploadId, onJobCreated, onCancel }: PresetPickerP
     consentChecked.current = true;
 
     AsyncStorage.getItem(MAKEUP_CONSENT_STORAGE_KEY).then((stored) => {
-      if (stored === CONSENT_VERSION) {
+      if (stored === MAKEUP_CONSENT_VERSION) {
         runAnalyze();
       } else {
         setConsentSheetVisible(true);
@@ -111,7 +109,7 @@ export function PresetPicker({ uploadId, onJobCreated, onCancel }: PresetPickerP
 
   const handleConsentAgree = useCallback(async () => {
     setConsentSheetVisible(false);
-    await AsyncStorage.setItem(MAKEUP_CONSENT_STORAGE_KEY, CONSENT_VERSION);
+    await AsyncStorage.setItem(MAKEUP_CONSENT_STORAGE_KEY, MAKEUP_CONSENT_VERSION);
     runAnalyze();
   }, [runAnalyze]);
 

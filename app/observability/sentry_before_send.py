@@ -24,10 +24,12 @@ _REDACTED = "[REDACTED]"
 
 
 def _scrub_dict(d: dict[str, Any]) -> None:
-    """In-place: replace values for biometric keys with _REDACTED."""
-    for key in _BIOMETRIC_KEYS:
-        if key in d:
+    """In-place: replace values for biometric keys with _REDACTED (recursive)."""
+    for key, value in d.items():
+        if key in _BIOMETRIC_KEYS:
             d[key] = _REDACTED
+        elif isinstance(value, dict):
+            _scrub_dict(value)
 
 
 def before_send(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any]:

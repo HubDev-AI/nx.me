@@ -26,13 +26,13 @@ export interface RecommendedPreset {
 export interface MakeupAnalyzeResponse {
   mst_bin: number;
   undertone: "warm" | "neutral" | "cool";
-  recommended_presets: RecommendedPreset[];
+  recommended_presets: string[];
 }
 
 export interface MakeupGenerateResponse {
   job_id: string;
   status: string;
-  estimated_wait_seconds: number;
+  poll_url: string;
 }
 
 // ---------------------------------------------------------------------------
