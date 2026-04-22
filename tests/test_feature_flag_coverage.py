@@ -50,6 +50,7 @@ FLAG_GATED_ROUTERS: dict[str, str] = {
     "app/api/blocks.py": "social_enabled",
     "app/api/advisor.py": "advisor_enabled",
     "app/api/makeup.py": "makeup_enabled",
+    "app/api/makeup_privacy.py": "makeup_enabled",
 }
 
 # Routers NOT in the allowlist are ungated by design. Listed here for
@@ -58,6 +59,7 @@ FLAG_GATED_ROUTERS: dict[str, str] = {
 EXPECTED_UNGATED_ROUTERS: frozenset[str] = frozenset(
     {
         "app/api/__init__.py",
+        "app/api/actions_router.py",  # builder — delegates gates to member routers
         "app/api/admin.py",
         "app/api/auth.py",
         "app/api/deps.py",

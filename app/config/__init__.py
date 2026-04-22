@@ -422,6 +422,12 @@ class Settings(BaseSettings):
     FEATURE_MAKEUP_ENABLED: bool = False  # flip when AI Makeup ships to prod
     # Note: the advisor flag is the existing ADVISOR_ENABLED setting above.
 
+    # Registry dispatch — when True the worker validates source_type via
+    # GenerationAction registry and routes raise on unknown types (fail-fast).
+    # Both wiring paths coexist in the build; flip back to False for instant
+    # rollback (no DB change needed).
+    USE_REGISTRY_DISPATCH: bool = False
+
     # Bypass all per-tier `require_feature` gates. Default False (prod-safe).
     # Set to True only in dev/staging to exercise premium-gated endpoints
     # (e.g., POST /v1/advisor/messages) with free-tier accounts.

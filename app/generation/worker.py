@@ -694,7 +694,18 @@ async def process_generation_job(ctx: dict, job_id: str) -> None:
     # handles its own error paths and doesn't trip the glow-up circuit
     # breaker or concurrent counter.  Collapsing the parallel paths to
     # Unit 14.
-    if job_data.get("source_type") == SOURCE_TYPE_MAKEUP:
+    source_type = job_data.get("source_type")
+    if settings.USE_REGISTRY_DISPATCH:
+        from app.generation.actions import get_action
+
+        if get_action(source_type) is None:
+            logger.error(
+                "Unknown source_type '%s' for job %s — no descriptor registered",
+                source_type,
+                job_id,
+            )
+            raise ValueError(f"Unknown source_type: {source_type!r}")
+    if source_type == SOURCE_TYPE_MAKEUP:
         await _run_makeup_pipeline(ctx, job_id, supabase, redis)
         return
 

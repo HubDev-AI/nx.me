@@ -274,10 +274,15 @@ def create_app() -> FastAPI:
     v1.include_router(features.router)  # public — no auth required
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
-    # Tier-3 API: uploads + glowup feature namespace + jobs
+    # Tier-3 API: uploads + glowup/makeup feature namespace + jobs
     v1.include_router(uploads.router)
-    v1.include_router(glowup.router)
-    v1.include_router(makeup.router)
+    if settings.USE_REGISTRY_DISPATCH:
+        from app.api.actions_router import build_actions_router
+
+        v1.include_router(build_actions_router())
+    else:
+        v1.include_router(glowup.router)
+        v1.include_router(makeup.router)
     v1.include_router(makeup_privacy.router)
     v1.include_router(jobs.router)
     v1.include_router(user_consent.router)
