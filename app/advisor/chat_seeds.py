@@ -35,6 +35,7 @@ from app.advisor.chat_seed_prompt import build_chat_seeds_prompt
 from app.advisor.models import ChatSeed, ChatSeedsResponse
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_glowup import _handle_get_latest_glowup
+from app.advisor.mcp.tools_makeup import handle as _handle_get_latest_makeup
 from app.advisor.payload_logger import log_llm_response
 from app.advisor.persona import SOUL_MD
 from app.config import settings
@@ -89,13 +90,17 @@ def _fallback() -> ChatSeedsResponse:
 
 async def _fetch_vision_blocks(
     mcp_ctx: McpContext,
+    source_type: str,
 ) -> list[dict[str, Any]]:
-    """Fetch image blocks via the MCP glowup handler.
+    """Fetch image blocks via the appropriate MCP handler.
 
-    Mirrors nudge_scheduler._fetch_vision_blocks: call the handler,
-    unwrap ``content``, keep only image-type blocks.
+    Dispatches to ``get_latest_makeup`` for makeup sessions, falls back
+    to ``get_latest_glowup`` for all other source types.
     """
-    payload = await _handle_get_latest_glowup(mcp_ctx)
+    if source_type == "makeup_session":
+        payload = await _handle_get_latest_makeup(mcp_ctx)
+    else:
+        payload = await _handle_get_latest_glowup(mcp_ctx)
     inner = payload.get("content")
     blocks = inner if isinstance(inner, list) else []
     return [b for b in blocks if b.get("type") == _CONTENT_BLOCK_TYPE_IMAGE]
@@ -163,25 +168,32 @@ async def build_chat_seeds(
     advisor_repo = AdvisorRepository(supabase)
 
     # ------------------------------------------------------------------
-    # Step 1: no completed glow-up → return fallback immediately
+    # Step 1: no completed generation (glowup OR makeup) → fallback.
+    # Use the polymorphic repo method to pick the most recent completed
+    # job across both source_types (completed_at DESC, id DESC tie-break).
     # ------------------------------------------------------------------
     try:
-        glowup_id = await run_sync(advisor_repo.get_latest_completed_glowup_id, user_id)
+        anchor_row = await run_sync(
+            advisor_repo.get_latest_completed_job_with_images, user_id
+        )
     except Exception:
         logger.warning(
-            "chat_seeds: failed to resolve glowup_id for user=%s — returning fallback",
+            "chat_seeds: failed to resolve anchor job for user=%s — returning fallback",
             user_id,
             exc_info=True,
         )
         return _fallback()
 
-    if glowup_id is None:
-        logger.debug("chat_seeds: no completed glow-up for user=%s — fallback", user_id)
+    if anchor_row is None:
+        logger.debug("chat_seeds: no completed generation for user=%s — fallback", user_id)
         return _fallback()
 
-    cache_key = CACHE_KEY_FMT.format(user_id=user_id, glowup_id=glowup_id)
+    anchor_id = str(anchor_row.get("id") or "")
+    anchor_source_type = str(anchor_row.get("source_type") or "glowup_analysis")
+
+    cache_key = CACHE_KEY_FMT.format(user_id=user_id, glowup_id=anchor_id)
     cooldown_key = COOLDOWN_KEY_FMT.format(user_id=user_id)
-    lock_key = LOCK_KEY_FMT.format(user_id=user_id, glowup_id=glowup_id)
+    lock_key = LOCK_KEY_FMT.format(user_id=user_id, glowup_id=anchor_id)
 
     # ------------------------------------------------------------------
     # Step 2: cache hit
@@ -273,7 +285,8 @@ async def build_chat_seeds(
     try:
         return await _generate_seeds(
             user_id=user_id,
-            glowup_id=glowup_id,
+            anchor_id=anchor_id,
+            anchor_source_type=anchor_source_type,
             supabase=supabase,
             redis=redis,
             llm=llm,
@@ -296,7 +309,8 @@ async def build_chat_seeds(
 async def _generate_seeds(
     *,
     user_id: str,
-    glowup_id: str,
+    anchor_id: str,
+    anchor_source_type: str,
     supabase: Client,
     redis: aioredis.Redis,
     llm: Any,
@@ -337,7 +351,7 @@ async def _generate_seeds(
         logger=logger,
     )
     try:
-        image_blocks = await _fetch_vision_blocks(mcp_ctx)
+        image_blocks = await _fetch_vision_blocks(mcp_ctx, anchor_source_type)
     except Exception:
         logger.warning(
             "chat_seeds: image fetch failed for user=%s — fallback",

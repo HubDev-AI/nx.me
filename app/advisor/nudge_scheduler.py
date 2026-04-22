@@ -28,6 +28,7 @@ from app.advisor._hashing import hash_user_id
 from app.advisor._json_utils import strip_json_code_fence
 from app.advisor.mcp.context import McpContext
 from app.advisor.mcp.tools_glowup import _handle_get_latest_glowup
+from app.advisor.mcp.tools_makeup import handle as _handle_get_latest_makeup
 from app.advisor.persona import SOUL_MD
 from app.db.async_helpers import run_sync
 from app.repositories.advisor_repo import AdvisorRepository
@@ -55,8 +56,10 @@ METRIC_NUDGE_DUPLICATE_BODY = "advisor.nudge_duplicate_body"
 # Using a SETNX with a TTL keyed by (user_id, upload_id) — no schema
 # creep on advisor_nudges.
 _RAPID_RETRY_KEY_FMT = "advisor:nudge:post_glowup:{user_id}:{upload_id}"
+_MAKEUP_THROTTLE_KEY_FMT = "advisor:nudge:post_makeup:{user_id}"
 _RAPID_RETRY_VALUE = "1"
 _SECONDS_PER_MINUTE = 60
+_SECONDS_PER_DAY = 86_400
 
 # Body dedup lookback window: drop nudges whose body_hash was seen within
 # this many days to prevent repeating identical observations.
@@ -333,6 +336,11 @@ def _resolve_upload_id_for_job(supabase: Client, job_id: str) -> str | None:
     return str(upload_id) if upload_id else None
 
 
+def _content_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    inner = payload.get("content")
+    return inner if isinstance(inner, list) else []
+
+
 async def _fetch_vision_blocks(mcp_ctx: McpContext) -> list[dict[str, Any]]:
     """Fetch image blocks for the vision nudge via the MCP tool handlers.
 
@@ -341,13 +349,15 @@ async def _fetch_vision_blocks(mcp_ctx: McpContext) -> list[dict[str, Any]]:
     ``{"content": [...], "is_error": bool}``; we unwrap and keep only
     image blocks.
     """
-
-    def _content(payload: dict[str, Any]) -> list[dict[str, Any]]:
-        inner = payload.get("content")
-        return inner if isinstance(inner, list) else []
-
     payload = await _handle_get_latest_glowup(mcp_ctx)
-    blocks = _content(payload)
+    blocks = _content_blocks(payload)
+    return [b for b in blocks if b.get("type") == CONTENT_BLOCK_TYPE_IMAGE]
+
+
+async def _fetch_makeup_vision_blocks(mcp_ctx: McpContext) -> list[dict[str, Any]]:
+    """Fetch image blocks for the makeup nudge via the makeup MCP handler."""
+    payload = await _handle_get_latest_makeup(mcp_ctx)
+    blocks = _content_blocks(payload)
     return [b for b in blocks if b.get("type") == CONTENT_BLOCK_TYPE_IMAGE]
 
 
@@ -514,3 +524,176 @@ async def write_analysis_insight_job(
                 "user_id_hash": user_id_hash,
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# ARQ job: generate_nudge_makeup
+# ---------------------------------------------------------------------------
+
+
+async def generate_nudge_makeup(
+    ctx: dict,
+    user_id: str,
+    job_id: str | None = None,
+) -> None:
+    """Generate and save a makeup-specific nudge for a user.
+
+    Plan 2026-04-21-001 Unit 10. Mirrors ``generate_nudge`` but uses
+    the makeup MCP handler (``get_latest_makeup``) for image fetch and
+    applies a per-trigger 1/24h throttle keyed by user_id (no
+    upload_id — makeup jobs do not chain through a glowup_analysis).
+
+    Triggers fire independently: ``post_glowup`` and ``post_makeup``
+    do not cross-throttle in v1.
+    """
+    if not settings.ADVISOR_ENABLED:
+        logger.debug(
+            "Advisor disabled — skipping makeup nudge for user=%s",
+            hash_user_id(user_id),
+        )
+        return
+
+    supabase: Client = ctx["supabase"]
+    redis: aioredis.Redis = ctx["redis"]
+    advisor_repo = AdvisorRepository(supabase)
+    user_id_hash = hash_user_id(user_id)
+
+    # Per-trigger 1/24h throttle
+    throttle_key = _MAKEUP_THROTTLE_KEY_FMT.format(user_id=user_id)
+    try:
+        accepted = await redis.set(throttle_key, "1", ex=_SECONDS_PER_DAY, nx=True)
+    except Exception as exc:
+        logger.warning(
+            "Makeup nudge throttle SETNX failed for user=%s: %s — continuing",
+            user_id_hash,
+            exc,
+        )
+        accepted = True
+
+    if not accepted:
+        logger.info(
+            "Makeup nudge skipped — post_makeup throttle active (user=%s)",
+            user_id_hash,
+        )
+        return
+
+    profile_row = await run_sync(advisor_repo.get_style_profile, user_id)
+    profile_content = (profile_row or {}).get("content") or None
+    if not profile_content:
+        logger.info(
+            "Makeup nudge skipped — no style_profile for user=%s",
+            user_id_hash,
+            extra={"metric": METRIC_NUDGE_NO_PROFILE, "user_id_hash": user_id_hash},
+        )
+        return
+
+    mcp_ctx = McpContext(
+        user_id=UUID(user_id),
+        supabase=supabase,
+        advisor_repo=advisor_repo,
+        logger=logger,
+    )
+
+    image_blocks = await _fetch_makeup_vision_blocks(mcp_ctx)
+    if not image_blocks:
+        logger.info(
+            "Makeup nudge skipped — no image blocks available (user=%s)",
+            user_id_hash,
+        )
+        return
+
+    recent_nudges = await run_sync(
+        advisor_repo.get_recent_nudge_context,
+        user_id,
+        settings.ADVISOR_NUDGE_RECENT_CONTEXT_LIMIT,
+    )
+    prompt_text = build_vision_nudge_prompt(
+        profile=profile_content, recent_nudges=recent_nudges
+    )
+
+    user_content: list[dict[str, Any]] = [
+        {"type": CONTENT_BLOCK_TYPE_TEXT, "text": prompt_text},
+        *image_blocks,
+    ]
+
+    llm = _get_llm_adapter()
+    try:
+        response = await llm.create_message(
+            model=settings.ADVISOR_MODEL_HAIKU,
+            system=SOUL_MD,
+            messages=[{"role": "user", "content": user_content}],
+            max_tokens=MAX_TOKENS_NUDGE,
+        )
+        from app.advisor.payload_logger import log_llm_response
+
+        log_llm_response(
+            None,
+            model=settings.ADVISOR_MODEL_HAIKU,
+            user_id=user_id,
+            conversation_id="-",
+            response=response,
+            purpose="makeup_nudge",
+        )
+        raw = response.content.strip()
+    except Exception as exc:
+        logger.error(
+            "LLM call failed for makeup nudge (user=%s): %s",
+            user_id_hash,
+            exc,
+        )
+        return
+
+    parsed, parse_kind = _parse_nudge_json(raw)
+    if parsed is None:
+        logger.warning(
+            "Makeup nudge dropped — parse failure kind=%s (user=%s)",
+            parse_kind,
+            user_id_hash,
+        )
+        return
+
+    body: str = parsed["body"]
+    next_step_label: str = parsed["next_step_label"]
+    next_step_seed: str = parsed["next_step_seed"]
+
+    body_hash = hashlib.sha256(body.encode()).hexdigest()
+    since = datetime.now(timezone.utc) - timedelta(days=_BODY_DEDUP_DAYS)
+    try:
+        is_dup = await run_sync(
+            advisor_repo.find_duplicate_body, user_id, body_hash, since
+        )
+    except Exception as exc:
+        logger.warning(
+            "Body-hash dedup check failed for user=%s: %s — continuing",
+            user_id_hash,
+            exc,
+        )
+        is_dup = False
+
+    if is_dup:
+        logger.info(
+            "Makeup nudge dropped — duplicate body_hash within %d days (user=%s)",
+            _BODY_DEDUP_DAYS,
+            user_id_hash,
+        )
+        return
+
+    try:
+        advisor_repo.insert_nudge(
+            {
+                "user_id": user_id,
+                "body": body,
+                "next_step_label": next_step_label,
+                "next_step_seed": next_step_seed,
+                "body_hash": body_hash,
+            }
+        )
+    except Exception as exc:
+        logger.error("Failed to save makeup nudge for user=%s: %s", user_id_hash, exc)
+        return
+
+    logger.info(
+        "Makeup nudge saved: user=%s next_step_label=%s",
+        user_id_hash,
+        next_step_label,
+    )

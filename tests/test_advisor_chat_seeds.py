@@ -100,6 +100,13 @@ def _build_mock_repo(
     """Return a mocked AdvisorRepository."""
     repo = MagicMock()
     repo.get_latest_completed_glowup_id.return_value = glowup_id
+    # Unit 10: build_chat_seeds now uses get_latest_completed_job_with_images
+    # to pick the most-recent-of-{glowup, makeup}. Provide a compatible row
+    # using the same glowup_id so the cache key stays consistent with tests
+    # that assert on CACHE_KEY_FMT.format(..., glowup_id=glowup_id).
+    repo.get_latest_completed_job_with_images.return_value = (
+        {"id": glowup_id, "source_type": "glowup_analysis"} if glowup_id else None
+    )
     repo.get_style_profile.return_value = (
         {"content": profile_content} if profile_content else None
     )
