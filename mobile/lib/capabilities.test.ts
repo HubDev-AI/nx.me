@@ -18,10 +18,17 @@ jest.mock("./auth-context", () => ({
   useSession: jest.fn(),
 }));
 
+jest.mock("./hooks/use-subscription-tier", () => ({
+  useSubscriptionTier: jest.fn(),
+}));
+
 const featuresMod = require("./features-context") as {
   useFeatures: jest.Mock;
 };
 const authMod = require("./auth-context") as { useSession: jest.Mock };
+const tierMod = require("./hooks/use-subscription-tier") as {
+  useSubscriptionTier: jest.Mock;
+};
 
 type FlagOverrides = Partial<FeatureFlags>;
 
@@ -31,14 +38,20 @@ const BASE_FEATURES: FeatureFlags = {
   onboarding_enabled: true,
   advisor_enabled: true,
   weekly_free_grant_enabled: true,
+  makeup_enabled: false,
 };
 
-function setInputs(mode: SessionMode, flags: FlagOverrides = {}) {
+function setInputs(
+  mode: SessionMode,
+  flags: FlagOverrides = {},
+  tier: "Free" | "Pro" | null = null,
+) {
   featuresMod.useFeatures.mockReturnValue({
     features: { ...BASE_FEATURES, ...flags },
     isLoading: false,
   });
   authMod.useSession.mockReturnValue(buildSessionState(mode, true));
+  tierMod.useSubscriptionTier.mockReturnValue(tier);
 }
 
 function render() {
@@ -151,5 +164,25 @@ describe("useCapabilities", () => {
   it("canSubscribe is stubbed true until premium tiering adds a flag", () => {
     setInputs("anon");
     expect(render().canSubscribe).toBe(true);
+  });
+
+  // ---------- canUseMakeup: makeup_enabled × tier × session ----------
+
+  it.each([
+    { tier: "Pro" as const, makeup_enabled: true, expected: true },
+    { tier: "Free" as const, makeup_enabled: true, expected: false },
+    { tier: null, makeup_enabled: true, expected: false },
+    { tier: "Pro" as const, makeup_enabled: false, expected: false },
+  ])(
+    "canUseMakeup: makeup_enabled=$makeup_enabled, tier=$tier → $expected",
+    ({ tier, makeup_enabled, expected }) => {
+      setInputs("user", { makeup_enabled }, tier);
+      expect(render().canUseMakeup).toBe(expected);
+    },
+  );
+
+  it("canUseMakeup is false for anon even with Pro tier + makeup_enabled", () => {
+    setInputs("anon", { makeup_enabled: true }, "Pro");
+    expect(render().canUseMakeup).toBe(false);
   });
 });

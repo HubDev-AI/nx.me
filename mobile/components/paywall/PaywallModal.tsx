@@ -43,6 +43,8 @@ interface PaywallModalProps {
   onClose: () => void;
   /** Called after a successful purchase with updated entitlement state. */
   onPurchaseComplete?: (state: EntitlementState) => void;
+  /** When set, the modal heading and preview adapt for the named locked feature. */
+  action?: "makeup";
 }
 
 /** Sheet position offsets for entry/exit animations. */
@@ -59,6 +61,7 @@ export function PaywallModal({
   visible,
   onClose,
   onPurchaseComplete,
+  action,
 }: PaywallModalProps) {
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -226,7 +229,9 @@ export function PaywallModal({
 
         {/* Header */}
         <View style={styles.header}>
-          <Heading size="md">Get More Glow-Ups</Heading>
+          <Heading size="md">
+            {action === "makeup" ? "Unlock AI Makeup" : "Get More Glow-Ups"}
+          </Heading>
           <Pressable
             ref={closeButtonRef}
             onPress={handleClose}

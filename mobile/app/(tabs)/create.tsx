@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,6 +15,9 @@ import { PageBackground } from "../../components/ui/PageBackground";
 import { Body, Caption, Heading, Label } from "../../components/ui/Text";
 import { useTheme } from "../../lib/theme-context";
 import { useEntering } from "../../lib/hooks/use-entering";
+import { useCapabilities } from "../../lib/capabilities";
+import { useFeatures } from "../../lib/features-context";
+import { PaywallModal } from "../../components/paywall/PaywallModal";
 
 /* ------------------------------------------------------------------ */
 /*  Feature definitions                                                */
@@ -32,6 +36,8 @@ interface Feature {
   name: string;
   description: string;
   active: boolean;
+  /** True when feature is active but requires a Pro upgrade to use. */
+  locked?: boolean;
   route?: FeatureRoute;
 }
 
@@ -46,15 +52,7 @@ const INACTIVE_ICON_BG = "rgba(255, 255, 255, 0.04)";
 const CARD_ENTRY_BASE_DELAY_MS = 240;
 const CARD_STAGGER_INCREMENT_MS = 50;
 
-const FEATURES: Feature[] = [
-  {
-    key: "glow-up",
-    icon: "sparkles",
-    name: "Glow Up",
-    description: "Upload a selfie — get an AI glow-up",
-    active: true,
-    route: "/upload",
-  },
+const STATIC_COMING_SOON: Feature[] = [
   {
     key: "style-check",
     icon: "shirt-outline",
@@ -94,6 +92,8 @@ function FeatureCard({
   accent: string;
 }) {
   const isActive = feature.active;
+  const isLocked = feature.locked ?? false;
+  const pressable = isActive || isLocked;
   const scale = useSharedValue(1);
   const pressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -113,15 +113,15 @@ function FeatureCard({
         <Pressable
           onPress={() => onPress(feature)}
           onPressIn={() => {
-            if (isActive) scale.value = withSpring(0.97, THEME.animation.press);
+            if (pressable) scale.value = withSpring(0.97, THEME.animation.press);
           }}
           onPressOut={() => {
             scale.value = withSpring(1, THEME.animation.press);
           }}
-          disabled={!isActive}
+          disabled={!pressable}
           style={[
             styles.box,
-            isActive
+            isActive || isLocked
               ? [
                   {
                     borderColor: accent + THEME.alpha.strong,
@@ -133,17 +133,19 @@ function FeatureCard({
           ]}
           accessibilityRole="button"
           accessibilityLabel={
-            isActive
+            isActive && !isLocked
               ? feature.name
-              : `${feature.name} - coming soon`
+              : isLocked
+                ? `${feature.name} - Pro`
+                : `${feature.name} - coming soon`
           }
-          accessibilityState={{ disabled: !isActive }}
+          accessibilityState={{ disabled: !pressable }}
         >
-          {/* Icon wrapper with accent tint background for active */}
+          {/* Icon wrapper with accent tint background for active/locked */}
           <View
             style={[
               styles.iconWrapper,
-              isActive
+              isActive || isLocked
                 ? { backgroundColor: accent + THEME.alpha.soft }
                 : { backgroundColor: INACTIVE_ICON_BG },
             ]}
@@ -151,29 +153,38 @@ function FeatureCard({
             <Ionicons
               name={feature.icon}
               size={32}
-              color={isActive ? accent : THEME.colors.textMuted}
+              color={isActive || isLocked ? accent : THEME.colors.textMuted}
             />
           </View>
 
           <Body
             weight="semibold"
-            color={isActive ? "primary" : "muted"}
+            color={isActive || isLocked ? "primary" : "muted"}
             style={styles.featureName}
           >
             {feature.name}
           </Body>
 
           <Caption
-            color={isActive ? "secondary" : "disabled"}
+            color={isActive || isLocked ? "secondary" : "disabled"}
             style={styles.featureDesc}
           >
             {feature.description}
           </Caption>
 
-          {!isActive && (
+          {!isActive && !isLocked && (
             <View style={styles.comingSoonBadge}>
               <Label color="muted" style={styles.comingSoonLabel}>
                 Coming soon
+              </Label>
+            </View>
+          )}
+
+          {isLocked && (
+            <View style={styles.proBadge}>
+              <Ionicons name="lock-closed" size={9} color={accent} />
+              <Label style={[styles.proBadgeLabel, { color: accent }]}>
+                Pro
               </Label>
             </View>
           )}
@@ -192,10 +203,48 @@ export default function CreateScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { fadeInDown } = useEntering();
+  const { canUseMakeup } = useCapabilities();
+  const { features } = useFeatures();
+  const [paywallVisible, setPaywallVisible] = useState(false);
+
+  const glowUpFeature: Feature = {
+    key: "glow-up",
+    icon: "sparkles",
+    name: "Glow Up",
+    description: "Upload a selfie — get an AI glow-up",
+    active: true,
+    route: "/upload",
+  };
+
+  const makeupFeature: Feature | null = features.makeup_enabled
+    ? {
+        key: "makeup",
+        icon: "color-palette-outline",
+        name: "AI Makeup",
+        description: "See how makeup looks on you",
+        active: canUseMakeup,
+        locked: !canUseMakeup,
+        route: "/upload",
+      }
+    : null;
+
+  const allFeatures: Feature[] = [
+    glowUpFeature,
+    ...(makeupFeature ? [makeupFeature] : []),
+    ...STATIC_COMING_SOON,
+  ];
 
   const handleFeaturePress = (feature: Feature) => {
+    if (feature.locked) {
+      setPaywallVisible(true);
+      return;
+    }
     if (feature.active && feature.route) {
-      router.push(feature.route);
+      if (feature.key === "makeup") {
+        router.push({ pathname: "/upload", params: { action: "makeup" } });
+      } else {
+        router.push(feature.route);
+      }
     }
   };
 
@@ -229,7 +278,7 @@ export default function CreateScreen() {
 
         {/* 2-column grid */}
         <View style={styles.grid}>
-          {FEATURES.map((feature, index) => (
+          {allFeatures.map((feature, index) => (
             <FeatureCard
               key={feature.key}
               feature={feature}
@@ -240,6 +289,12 @@ export default function CreateScreen() {
           ))}
         </View>
       </ScrollView>
+
+      <PaywallModal
+        visible={paywallVisible}
+        onClose={() => setPaywallVisible(false)}
+        action="makeup"
+      />
     </View>
   );
 }
@@ -328,6 +383,24 @@ const styles = StyleSheet.create({
     paddingVertical: THEME.spacing.xs / 2,
   },
   comingSoonLabel: {
+    fontSize: 9,
+    letterSpacing: 1.2,
+  },
+
+  /* Pro lock badge */
+  proBadge: {
+    marginTop: "auto",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: THEME.spacing.xs / 2,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: THEME.radius.sm,
+    borderCurve: "continuous",
+    paddingHorizontal: THEME.spacing.sm,
+    paddingVertical: THEME.spacing.xs / 2,
+  },
+  proBadgeLabel: {
     fontSize: 9,
     letterSpacing: 1.2,
   },
