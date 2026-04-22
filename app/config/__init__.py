@@ -240,6 +240,18 @@ class Settings(BaseSettings):
     GENERATION_TIMEOUT_SECONDS: int = 180
     CREDIT_COST_ALERT_USD: float = 0.12
 
+    # Staged rollout cohort for makeup feature (0–100, default 0 = locked).
+    # Bump via runbook: 0 → 10 → 50 → 100 over 5 days.
+    # hash(user_id) % 100 < MAKEUP_ROLLOUT_PCT determines cohort membership.
+    # Launch-gate invariants in docs/operational/makeup-rollout-runbook.md
+    # must all be true before bumping above 0.
+    MAKEUP_ROLLOUT_PCT: int = 0
+
+    # Makeup fair-use cap (applies per user per 24h window)
+    MAKEUP_FAIR_USE_DAILY_CAP: int = 10
+    # Per-user malformed-200 circuit-breaker threshold (see Unit 5 plan)
+    MAKEUP_MALFORMED_CIRCUIT_THRESHOLD: int = 3
+
     # Dev-only repro harness for the result screen's latency tolerance.
     # Both default off in production. The mobile result screen relies on
     # these to deterministically reproduce the two known failure shapes —
@@ -414,12 +426,22 @@ class Settings(BaseSettings):
     FEATURE_SOCIAL_ENABLED: bool = False  # post-poned — flip when launching social
     FEATURE_SHARE_ENABLED: bool = True
     FEATURE_ONBOARDING_ENABLED: bool = True
+    FEATURE_MAKEUP_ENABLED: bool = False  # flip when AI Makeup ships to prod
     # Note: the advisor flag is the existing ADVISOR_ENABLED setting above.
+
+    # Registry dispatch — when True the worker validates source_type via
+    # GenerationAction registry and routes raise on unknown types (fail-fast).
+    # Both wiring paths coexist in the build; flip back to False for instant
+    # rollback (no DB change needed).
+    USE_REGISTRY_DISPATCH: bool = False
 
     # Bypass all per-tier `require_feature` gates. Default False (prod-safe).
     # Set to True only in dev/staging to exercise premium-gated endpoints
     # (e.g., POST /v1/advisor/messages) with free-tier accounts.
     FEATURE_PREMIUM_BYPASS: bool = False
+
+    # Sentry error reporting — optional; disabled when empty / unset.
+    SENTRY_DSN: str | None = None
 
     # TikTok OAuth2 credentials (Login Kit v2)
     TIKTOK_CLIENT_KEY: str = ""

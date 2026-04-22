@@ -204,3 +204,40 @@ async def check_delete_glowup_rate_limit(
         return True, 0
     ttl: int = await r.ttl(key)
     return False, max(ttl, 1)
+
+
+# ---------------------------------------------------------------------------
+# Per-user rate limit for POST /uploads/{id}/makeup/analyze (Unit 6)
+# ---------------------------------------------------------------------------
+
+# 10 analyses per minute. Separate from the fair-use cap on /generate so
+# analyze throughput and generate quota stay independent.
+_MAKEUP_ANALYZE_WINDOW_SECONDS = 60
+_MAKEUP_ANALYZE_MAX_ATTEMPTS = 10
+
+
+async def check_makeup_analyze_rate_limit(
+    user_id: str, r: aioredis.Redis
+) -> tuple[bool, int]:
+    """Return ``(allowed, retry_after_seconds)`` for POST .../makeup/analyze.
+
+    Mirrors :func:`check_delete_glowup_rate_limit` — same INCR + EXPIRE NX
+    pattern, separate key namespace. Key: ``makeup_analyze_rate:{user_id}``.
+    """
+    key = f"makeup_analyze_rate:{user_id}"
+    pipe = r.pipeline()
+    pipe.incr(key)
+    pipe.expire(key, _MAKEUP_ANALYZE_WINDOW_SECONDS, nx=True)
+    results = await pipe.execute()
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(
+                "Redis pipeline command %d failed in check_makeup_analyze_rate_limit: %s",
+                i,
+                result,
+            )
+    count: int = results[0]
+    if count <= _MAKEUP_ANALYZE_MAX_ATTEMPTS:
+        return True, 0
+    ttl: int = await r.ttl(key)
+    return False, max(ttl, 1)

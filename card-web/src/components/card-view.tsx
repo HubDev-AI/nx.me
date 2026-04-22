@@ -1,21 +1,21 @@
 import Image from 'next/image';
 
 import { RECOMMENDATIONS_DISPLAY_COUNT } from '@/config/constants';
-import { type CardData } from '@/lib/api';
+import { type CardData, type MakeupCardData } from '@/lib/api';
+
+type AnyCardData = CardData | MakeupCardData;
 
 interface CardViewProps {
-  card: CardData;
+  card: AnyCardData;
+  kind?: 'glowup' | 'makeup';
 }
 
-/**
- * CardView renders the glow-up card:
- * - Before/after image comparison (side-by-side)
- * - Username and display name
- * - Top 5 improvement recommendations
- * - Reaction and comment counts
- */
-export function CardView({ card }: CardViewProps) {
-  const topRecommendations = card.recommendations
+export function CardView({ card, kind = 'glowup' }: CardViewProps) {
+  const isMakeup = kind === 'makeup';
+  const beforeAlt = `${card.display_name} before ${isMakeup ? 'makeup' : 'glow-up'}`;
+  const afterAlt = `${card.display_name} after ${isMakeup ? 'makeup' : 'glow-up'}`;
+
+  const topRecommendations = ('recommendations' in card ? card.recommendations : [])
     .toSorted((a, b) => a.rank - b.rank)
     .slice(0, RECOMMENDATIONS_DISPLAY_COUNT);
 
@@ -40,7 +40,7 @@ export function CardView({ card }: CardViewProps) {
         <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-surface-card">
           <Image
             src={card.before_image_url}
-            alt={`${card.display_name} before glow-up`}
+            alt={beforeAlt}
             fill
             className="object-cover"
             sizes="(max-width: 640px) 47vw, 280px"
@@ -59,7 +59,7 @@ export function CardView({ card }: CardViewProps) {
         <div className="relative rounded-xl overflow-hidden aspect-[3/4] bg-surface-card">
           <Image
             src={card.after_image_url}
-            alt={`${card.display_name} after glow-up`}
+            alt={afterAlt}
             fill
             className="object-cover"
             sizes="(max-width: 640px) 47vw, 280px"

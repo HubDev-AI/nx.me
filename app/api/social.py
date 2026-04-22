@@ -98,6 +98,7 @@ class FeedPostResponse(BaseModel):
     comment_count: int
     created_at: str
     has_reacted: bool = False
+    kind: str = "glowup"
 
 
 class FeedResponse(BaseModel):
@@ -191,6 +192,7 @@ async def get_feed(
             comment_count=p["comment_count"],
             created_at=p["created_at"],
             has_reacted=p["id"] in reacted_post_ids,
+            kind=p.get("kind") or "glowup",
         )
         for p in posts
     ]

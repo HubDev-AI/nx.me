@@ -38,6 +38,7 @@ TABLES_IN_ORDER: list[tuple[str, str | None]] = [
     ("prompt_experiments", None),  # FK via jobs
     ("posts", "user_id"),
     ("credit_reservations", "user_id"),
+    ("makeup_analyses", "user_id"),  # FK: makeup_analyses.job_id → jobs; delete before jobs
     ("jobs", "user_id"),
     ("glowup_analyses", None),  # FK via uploads
     ("uploads", "user_id"),
@@ -68,6 +69,8 @@ NXME_REDIS_PREFIXES = [
     "tier:",
     "advisor:",
     "credit:",
+    "makeup:quota:",
+    "makeup:analyze_rate:",
 ]
 
 

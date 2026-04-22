@@ -29,6 +29,7 @@ STYLE_PROFILE_TYPE = "style_profile"
 # lookup. Named constants rather than inline strings (project rule: no
 # magic strings) so a rename of the canonical value is a single edit.
 _SOURCE_TYPE_GLOWUP_ANALYSIS = "glowup_analysis"
+_SOURCE_TYPE_MAKEUP_SESSION = "makeup_session"
 _JOB_STATUS_COMPLETED = "completed"
 
 
@@ -316,6 +317,23 @@ class AdvisorRepository:
             .select("id")
             .eq("user_id", user_id)
             .eq("source_type", _SOURCE_TYPE_GLOWUP_ANALYSIS)
+            .eq("status", _JOB_STATUS_COMPLETED)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return None
+        return str(rows[0]["id"])
+
+    def get_latest_completed_makeup_id(self, user_id: str) -> str | None:
+        """Return the latest completed makeup job id for a user, or None."""
+        result = (
+            self._sb.table("jobs")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("source_type", _SOURCE_TYPE_MAKEUP_SESSION)
             .eq("status", _JOB_STATUS_COMPLETED)
             .order("updated_at", desc=True)
             .limit(1)
@@ -689,6 +707,35 @@ class AdvisorRepository:
             )
             .eq("user_id", user_id)
             .eq("status", "completed")
+            .not_.is_("before_image_url", "null")
+            .not_.is_("after_image_url", "null")
+            .order("updated_at", desc=True)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+
+    def get_latest_completed_makeup_with_images(
+        self, user_id: str
+    ) -> dict[str, Any] | None:
+        """Return the user's most recent completed makeup job with BOTH URLs.
+
+        Feature-specific sibling of ``get_latest_completed_glowup_with_images``:
+        restricts ``source_type`` to ``makeup_session`` so the
+        ``get_latest_makeup`` tool returns only makeup sessions.
+        """
+        result = (
+            self._sb.table("jobs")
+            .select(
+                "id, status, source_type, created_at, preset_slug, intensity, "
+                "completed_at:updated_at, "
+                "before_image_url, after_image_url"
+            )
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .eq("source_type", _SOURCE_TYPE_MAKEUP_SESSION)
             .not_.is_("before_image_url", "null")
             .not_.is_("after_image_url", "null")
             .order("updated_at", desc=True)

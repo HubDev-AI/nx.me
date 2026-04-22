@@ -30,7 +30,7 @@ class SubscriptionRepository:
             self._sb.table("subscriptions")
             .select("provider_subscription_id, status")
             .eq("user_id", user_id)
-            .eq("status", "active")
+            .in_("status", ("active", "trialing"))
             .limit(1)
             .execute()
         )

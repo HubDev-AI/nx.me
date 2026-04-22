@@ -21,6 +21,7 @@ from app.generation.worker import process_generation_job, watchdog_stuck_jobs
 from app.api.social import reconcile_reaction_counts
 from app.advisor.nudge_scheduler import (
     generate_nudge,
+    generate_nudge_makeup,
     write_analysis_insight_job,
 )
 from app.repositories.image_repo import ImageRepository
@@ -49,6 +50,11 @@ from app.workers.stripe_customer_dlq_reconciler import (
     STRIPE_CUSTOMER_DLQ_CRON_HOUR,
     STRIPE_CUSTOMER_DLQ_CRON_MINUTE,
     reconcile_stripe_customer_dlq,
+)
+from app.workers.makeup_purge import (
+    MAKEUP_PURGE_CRON_HOUR,
+    MAKEUP_PURGE_CRON_MINUTE,
+    run_makeup_purge,
 )
 
 configure_logging()
@@ -144,6 +150,7 @@ class WorkerSettings:
     functions = [
         process_generation_job,
         generate_nudge,
+        generate_nudge_makeup,
         write_analysis_insight_job,
         reconcile_reaction_counts,
         wipe_deleted_user_blobs,
@@ -151,6 +158,7 @@ class WorkerSettings:
         run_fingerprint_purge,
         purge_old_webhook_events,
         reconcile_stripe_customer_dlq,
+        run_makeup_purge,
     ]
 
     on_startup = startup
@@ -190,6 +198,12 @@ class WorkerSettings:
             reconcile_stripe_customer_dlq,
             hour=STRIPE_CUSTOMER_DLQ_CRON_HOUR,
             minute=STRIPE_CUSTOMER_DLQ_CRON_MINUTE,
+        ),
+        # Unit 7c: makeup biometric purge — daily 04:30 UTC
+        cron(
+            run_makeup_purge,
+            hour=MAKEUP_PURGE_CRON_HOUR,
+            minute=MAKEUP_PURGE_CRON_MINUTE,
         ),
     ]
 

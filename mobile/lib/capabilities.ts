@@ -17,6 +17,7 @@ import { useMemo } from "react";
 
 import { useFeatures } from "./features-context";
 import { useSession } from "./auth-context";
+import { useSubscriptionTier } from "./hooks/use-subscription-tier";
 
 export interface Capabilities {
   /** Can view their own profile screen (full view with glowups + menu). */
@@ -59,6 +60,8 @@ export interface Capabilities {
   canSubscribe: boolean;
   /** React to glowups in the feed (tied to social_enabled). */
   canReact: boolean;
+  /** AI Makeup analysis — requires makeup_enabled flag + Pro tier + real user. */
+  canUseMakeup: boolean;
   /**
    * Blocked-users screen reachable — needs social (to have the concept of
    * blocking someone). Without it the screen has nothing to show.
@@ -74,6 +77,7 @@ export interface Capabilities {
 export function useCapabilities(): Capabilities {
   const { features } = useFeatures();
   const session = useSession();
+  const tier = useSubscriptionTier();
 
   return useMemo<Capabilities>(
     () => ({
@@ -92,13 +96,16 @@ export function useCapabilities(): Capabilities {
       canSubscribe: true,
       canReact: features.social_enabled,
       canViewBlockedUsers: features.social_enabled,
+      canUseMakeup: features.makeup_enabled && session.isUser && tier === "Pro",
     }),
     [
       features.social_enabled,
       features.advisor_enabled,
       features.share_enabled,
       features.onboarding_enabled,
+      features.makeup_enabled,
       session.isUser,
+      tier,
     ],
   );
 }

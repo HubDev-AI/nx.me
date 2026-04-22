@@ -138,9 +138,11 @@ export const FeedCard = React.memo(function FeedCard({
   const shareUrl = post.username
     ? `${UNIVERSAL_LINK_ORIGIN}/${post.username}`
     : UNIVERSAL_LINK_ORIGIN;
+  const isMakeup = (post.kind ?? 'glowup') === 'makeup';
+  const kindLabel = isMakeup ? 'Makeup' : 'Glow-Up';
   const shareMessage = post.caption
     ? `${post.caption} — Check it out on NXME ${shareUrl}`
-    : `Check out this glow-up on NXME ${shareUrl}`;
+    : `Check out this ${kindLabel} on NXME ${shareUrl}`;
   const blockLabel = post.display_name
     ? `Block ${post.display_name}`
     : "Block User";
@@ -271,6 +273,11 @@ export const FeedCard = React.memo(function FeedCard({
             <Text style={styles.beforeAfterLabel}>Before</Text>
             <Ionicons name="arrow-forward" size={10} color={theme.accent} />
             <Text style={[styles.beforeAfterLabel, { color: theme.accent }]}>After</Text>
+            {isMakeup ? (
+              <View style={styles.kindBadge}>
+                <Text style={styles.kindBadgeText}>Makeup</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -420,6 +427,20 @@ const styles = StyleSheet.create({
   beforeAfterLabel: {
     fontFamily: FONTS.bodySemiBold,
     fontSize: 11,
+    color: THEME.colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  kindBadge: {
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginLeft: THEME.spacing.xs,
+  },
+  kindBadgeText: {
+    fontFamily: FONTS.bodySemiBold,
+    fontSize: 9,
     color: THEME.colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,

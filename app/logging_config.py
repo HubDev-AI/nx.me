@@ -13,8 +13,42 @@ need to be turned up to follow the advisor flow.
 from __future__ import annotations
 
 import logging
+import re
 
 from app.config import settings
+
+_BIOMETRIC_PATTERN = re.compile(
+    r"\b(mst_bin|undertone|region_anchors)\b\s*[:=]\s*\S+",
+    re.IGNORECASE,
+)
+_BIOMETRIC_REPLACEMENT = r"\1=[REDACTED]"
+
+
+class BiometricFieldFilter(logging.Filter):
+    """Rewrite biometric field values in log records at INFO and above.
+
+    DEBUG records are left untouched so development tracing remains
+    unobstructed.  DEBUG must not be enabled in production — enforced via
+    :func:`app.config.Settings.effective_log_level`.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        if record.levelno <= logging.DEBUG:
+            return True
+        record.msg = _BIOMETRIC_PATTERN.sub(_BIOMETRIC_REPLACEMENT, str(record.msg))
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: _BIOMETRIC_PATTERN.sub(_BIOMETRIC_REPLACEMENT, str(v))
+                    for k, v in record.args.items()
+                }
+            elif isinstance(record.args, tuple):
+                record.args = tuple(
+                    _BIOMETRIC_PATTERN.sub(_BIOMETRIC_REPLACEMENT, str(a))
+                    for a in record.args
+                )
+        return True
+
 
 _CONFIGURED = False
 
@@ -59,6 +93,8 @@ def configure_logging() -> None:
         datefmt=_DATE_FORMAT,
         force=True,
     )
+
+    logging.root.addFilter(BiometricFieldFilter())
 
     if level == logging.DEBUG:
         for name in _ADVISOR_DEBUG_LOGGERS:

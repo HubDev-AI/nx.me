@@ -15,6 +15,7 @@ export interface FeedPost {
   comment_count: number;
   created_at: string;
   has_reacted: boolean;
+  kind?: 'glowup' | 'makeup';
 }
 
 export interface FeedResponse {

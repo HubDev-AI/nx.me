@@ -16,6 +16,7 @@ from app.config import settings
 # Dedup emerges from the model's own access to prior bodies +
 # model-authored ``observation_tag``s in the prompt's "do not repeat" block.
 TRIGGER_POST_GLOWUP = "post_glowup"
+TRIGGER_POST_MAKEUP = "post_makeup"
 
 # A-5: Model sourced from config — single source of truth
 MODEL_HAIKU = settings.ADVISOR_MODEL_HAIKU

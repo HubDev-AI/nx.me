@@ -123,6 +123,9 @@ export const SITEMAP_REVALIDATE_SECONDS = 86400;
 /** Public card listing path on the backend — used by the sitemap generator. */
 export const PUBLIC_CARDS_LIST_PATH = '/v1/public/cards';
 
+/** Public makeup listing path — only opted-in makeup posts. */
+export const PUBLIC_MAKEUP_LIST_PATH = '/v1/public/makeup';
+
 /**
  * Accent palette rotated per-request by `buildTheme()`. Typed as a non-empty
  * tuple so `THEME_ACCENTS[0]` is non-optional and `DEFAULT_ACCENT` can derive

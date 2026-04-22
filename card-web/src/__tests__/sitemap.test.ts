@@ -27,7 +27,8 @@ describe('sitemap', () => {
 
   it('returns only the root URL when backend has no cards', async () => {
     const fetchMock = vi.fn()
-    mockJsonOnce(fetchMock, { items: [], next_cursor: null })
+    mockJsonOnce(fetchMock, { items: [], next_cursor: null }) // glowup
+    mockJsonOnce(fetchMock, { items: [], next_cursor: null }) // makeup
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const { default: sitemap } = await import('@/app/sitemap')
@@ -36,7 +37,7 @@ describe('sitemap', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]?.url).toBe(SITE_URL)
     expect(entries[0]?.priority).toBe(1)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('iterates all pages and emits one entry per username', async () => {
@@ -52,12 +53,13 @@ describe('sitemap', () => {
       items: [{ username: 'carol', updated_at: '2024-03-01T00:00:00Z' }],
       next_cursor: null,
     })
+    mockJsonOnce(fetchMock, { items: [], next_cursor: null }) // makeup
     globalThis.fetch = fetchMock as unknown as typeof fetch
 
     const { default: sitemap } = await import('@/app/sitemap')
     const entries = await sitemap()
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(entries).toHaveLength(4)
     // Root URL first
     expect(entries[0]?.url).toBe(SITE_URL)

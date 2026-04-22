@@ -11,6 +11,7 @@ import {
   Alert,
   Pressable,
   StyleSheet,
+  Text,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -194,6 +195,16 @@ export default function ProfileScreen() {
           ),
     [glowUps, locallyDeletedJobIds],
   );
+
+  const [galleryFilter, setGalleryFilter] = useState<'all' | 'glowup' | 'makeup'>('all');
+
+  const filteredGlowUps = useMemo(() => {
+    if (galleryFilter === 'all') return visibleGlowUps;
+    const targetSourceType = galleryFilter === 'makeup' ? 'makeup_session' : 'glowup_analysis';
+    return visibleGlowUps.filter(
+      (entry) => (entry.source_type ?? 'glowup_analysis') === targetSourceType,
+    );
+  }, [visibleGlowUps, galleryFilter]);
 
   const handleRefresh = useCallback(() => {
     if (profile) {
@@ -653,13 +664,38 @@ export default function ProfileScreen() {
 
   if (!profile) return null;
 
+  const gallerySegments: { key: 'all' | 'glowup' | 'makeup'; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'glowup', label: 'Glow-Up' },
+    { key: 'makeup', label: 'Makeup' },
+  ];
+
   const profileHeader = (
-    <ProfileHeader
-      profile={profile}
-      onEditProfile={handleEditProfile}
-      showStats={caps.canSeeFeed}
-      showShareProfile={caps.canShareProfile}
-    />
+    <>
+      <ProfileHeader
+        profile={profile}
+        onEditProfile={handleEditProfile}
+        showStats={caps.canSeeFeed}
+        showShareProfile={caps.canShareProfile}
+      />
+      {caps.canUseMakeup ? (
+        <View style={styles.segmentedControl}>
+          {gallerySegments.map(({ key, label }) => (
+            <Pressable
+              key={key}
+              style={[styles.segment, galleryFilter === key && styles.segmentActive]}
+              onPress={() => setGalleryFilter(key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: galleryFilter === key }}
+            >
+              <Text style={[styles.segmentLabel, galleryFilter === key && styles.segmentLabelActive]}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </>
   );
 
   return (
@@ -668,7 +704,7 @@ export default function ProfileScreen() {
       {/* Radial menu — button is in headerRight, menu renders here */}
       {/* Single FlatList: profile header + glow-up grid -- no nested ScrollView */}
       <GlowUpGrid
-        items={visibleGlowUps}
+        items={filteredGlowUps}
         isLoadingMore={isLoadingMore}
         hasMore={hasMoreGlowUps}
         onLoadMore={handleLoadMoreGlowUps}
@@ -747,5 +783,31 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: THEME.spacing.md,
+  },
+  segmentedControl: {
+    flexDirection: "row",
+    marginHorizontal: THEME.spacing.lg,
+    marginTop: THEME.spacing.md,
+    marginBottom: THEME.spacing.sm,
+    backgroundColor: THEME.colors.surfaceElevated,
+    borderRadius: 8,
+    padding: 2,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: THEME.spacing.xs + 2,
+    alignItems: "center",
+    borderRadius: 6,
+  },
+  segmentActive: {
+    backgroundColor: THEME.colors.surface,
+  },
+  segmentLabel: {
+    fontSize: 12,
+    fontFamily: "System",
+    color: THEME.colors.textSecondary,
+  },
+  segmentLabelActive: {
+    color: THEME.colors.textPrimary,
   },
 });

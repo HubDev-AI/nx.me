@@ -26,14 +26,24 @@ logger = logging.getLogger(__name__)
 # Columns needed for job status polling. created_at is used by the dev-only
 # DEV_GLOWUP_FORCE_404_FOR_NEW_JOBS_SECONDS gate in app/api/jobs.py to
 # simulate read-after-write replica lag.
+# Makeup-specific columns are included so GET /jobs/{job_id} surfaces them
+# for makeup jobs without a separate query path.
 JOB_STATUS_SELECT = (
     "id, user_id, status, source_type, source_id, created_at, updated_at, "
     "before_image_url, after_image_url, failure_reason, saved_at, "
-    "identity_preserved, credit_reservation_id"
+    "identity_preserved, credit_reservation_id, "
+    "fal_request_id, fal_url, output_key, preset_slug, intensity, "
+    "makeup_failure_reason, user_tier_at_enqueue"
 )
 
-# Source type constant for Glow Up — avoids magic strings in callers.
+# Source type constants — avoid magic strings in callers.
 SOURCE_TYPE_GLOWUP = "glowup_analysis"
+SOURCE_TYPE_MAKEUP = "makeup_session"
+
+# Makeup failure reason codes (distinct from glowup's failure_reason values).
+MAKEUP_FAILURE_REFUSED = "refused"
+MAKEUP_FAILURE_NON_RETRYABLE = "non_retryable"
+MAKEUP_FAILURE_RETRYABLE = "retryable"
 
 
 class JobRepository:
@@ -91,6 +101,40 @@ class JobRepository:
             return None
         return result.data
 
+    def get_makeup_job_by_idempotency_key(
+        self, namespaced_key: str, user_id: str
+    ) -> dict | None:
+        """Replay-check SELECT for makeup /generate — returns body_hash for conflict detection."""
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, idempotency_key_body_hash")
+            .eq("idempotency_key", namespaced_key)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
+    def pre_record_makeup_job(self, job_data: dict) -> dict | None:
+        """INSERT ... ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING *.
+
+        Returns the inserted row dict on success, or None when a concurrent
+        identical-key INSERT won the race (conflict). Callers handle the
+        None path as the concurrent-replay fallback.
+        """
+        result = (
+            self._sb.table("jobs")
+            .upsert(
+                job_data, on_conflict="user_id,idempotency_key", ignore_duplicates=True
+            )
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data[0]
+
     def get_for_status_poll(self, job_id: str) -> dict | None:
         """Fetch job fields needed for GET /jobs/{job_id} status polling."""
         return self._fetch_by_id(job_id, JOB_STATUS_SELECT)
@@ -124,6 +168,93 @@ class JobRepository:
             job_id,
             "id, user_id, status, before_image_url, after_image_url",
         )
+
+    def get_for_makeup_worker(self, job_id: str) -> dict | None:
+        """Fetch fields needed by the makeup worker for processing + terminal writes."""
+        return self._fetch_by_id(
+            job_id,
+            "id, user_id, status, source_id, idempotency_key, "
+            "idempotency_key_body_hash, preset_slug, intensity, "
+            "credit_reservation_id, user_tier_at_enqueue, "
+            "fal_request_id, fal_idempotency_key, fal_url, "
+            "consent_version_at_enqueue",
+        )
+
+    def get_by_fal_idempotency_key(self, fal_key: str) -> dict | None:
+        """Look up a makeup job by the fal-side idempotency key."""
+        result = (
+            self._sb.table("jobs")
+            .select("id, status, output_key, makeup_failure_reason")
+            .eq("fal_idempotency_key", fal_key)
+            .maybe_single()
+            .execute()
+        )
+        if not result or not result.data:
+            return None
+        return result.data
+
+    def pre_write_fal_idempotency_key(self, job_id: str, key: str) -> bool:
+        """Conditionally write fal_idempotency_key before calling fal.
+
+        Only writes when fal_idempotency_key IS NULL (idempotent).
+        Returns True if the row was updated, False if already set (race).
+        """
+        result = (
+            self._sb.table("jobs")
+            .update({"fal_idempotency_key": key})
+            .eq("id", job_id)
+            .is_("fal_idempotency_key", "null")
+            .execute()
+        )
+        return bool(result.data)
+
+    def commit_stage_a(
+        self,
+        job_id: str,
+        fal_request_id: str,
+        fal_url: str,
+        now_utc: str,
+    ) -> None:
+        """Commit Stage A after fal returns: record request ID + output URL."""
+        self._sb.table("jobs").update(
+            {
+                "status": "processing",
+                "fal_request_id": fal_request_id,
+                "fal_url": fal_url,
+                "updated_at": now_utc,
+            }
+        ).eq("id", job_id).execute()
+
+    def update_makeup_job_completed(
+        self,
+        job_id: str,
+        output_key: str,
+        now_utc: str,
+    ) -> None:
+        """Mark a makeup job as completed with its storage output key."""
+        self._sb.table("jobs").update(
+            {
+                "status": "completed",
+                "output_key": output_key,
+                "completed_at": now_utc,
+                "updated_at": now_utc,
+            }
+        ).eq("id", job_id).execute()
+
+    def update_makeup_job_failed(
+        self,
+        job_id: str,
+        makeup_failure_reason: str,
+        now_utc: str,
+    ) -> None:
+        """Mark a makeup job as failed with a typed failure reason."""
+        self._sb.table("jobs").update(
+            {
+                "status": "failed",
+                "makeup_failure_reason": makeup_failure_reason,
+                "updated_at": now_utc,
+            }
+        ).eq("id", job_id).execute()
 
     def get_completed_jobs_for_source(self, source_ids: list[str]) -> list[dict]:
         """Fetch latest completed jobs for a list of source_ids (e.g. for history)."""

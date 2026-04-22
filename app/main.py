@@ -25,6 +25,8 @@ from app.api import (
     glowup,
     health,
     jobs,
+    makeup,
+    makeup_privacy,
     posts,
     public,
     refund,
@@ -49,6 +51,22 @@ from app.db.client import get_supabase_service
 from app.logging_config import configure_logging
 
 configure_logging()
+
+if settings.SENTRY_DSN:
+    try:
+        import sentry_sdk
+
+        from app.observability.sentry_before_send import (
+            before_send as _sentry_before_send,
+        )
+
+        sentry_sdk.init(
+            dsn=settings.SENTRY_DSN,
+            before_send=_sentry_before_send,
+            environment=settings.APP_ENV,
+        )
+    except ImportError:
+        pass  # sentry-sdk not installed; skip
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +166,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("ArcFace preload not available — skipping")
         except Exception as exc:
             logger.warning("ArcFace preload failed (non-fatal): %s", exc)
+
+    # Validate makeup preset YAML at startup — fail-fast on schema violation
+    # so misconfigured presets don't reach production.
+    from app.generation.preset_registry import load_presets
+
+    load_presets()
+    logger.info("Makeup preset registry validated")
 
     # ARQ pool for enqueuing generation jobs
     app.state.arq_pool = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
@@ -249,9 +274,16 @@ def create_app() -> FastAPI:
     v1.include_router(features.router)  # public — no auth required
     v1.include_router(auth.router, prefix="/auth")
     v1.include_router(entitlement.router)
-    # Tier-3 API: uploads + glowup feature namespace + jobs
+    # Tier-3 API: uploads + glowup/makeup feature namespace + jobs
     v1.include_router(uploads.router)
-    v1.include_router(glowup.router)
+    if settings.USE_REGISTRY_DISPATCH:
+        from app.api.actions_router import build_actions_router
+
+        v1.include_router(build_actions_router())
+    else:
+        v1.include_router(glowup.router)
+        v1.include_router(makeup.router)
+    v1.include_router(makeup_privacy.router)
     v1.include_router(jobs.router)
     v1.include_router(user_consent.router)
     # Legacy refund endpoint (/v1/analyses/{job_id}/refund) — still mounted
