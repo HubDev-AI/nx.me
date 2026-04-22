@@ -16,7 +16,7 @@ _POST_COLUMNS = (
     "id, user_id, caption, before_image_url, after_image_url, "
     "reaction_count, comment_count, created_at, "
     "before_image_id, after_image_id, "
-    "username, display_name, avatar_storage_key"
+    "username, display_name, avatar_storage_key, kind"
 )
 
 

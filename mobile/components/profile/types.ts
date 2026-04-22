@@ -52,6 +52,11 @@ export interface GlowUpItem {
    * older backends omit the field, hence the optional marker.
    */
   post_id?: string | null;
+  /**
+   * Discriminator for gallery segmentation. Defaults to "glowup_analysis"
+   * for legacy rows; "makeup_session" for makeup jobs.
+   */
+  source_type?: string;
 }
 
 /** Matches HistoryResponse in app/api/users.py */

@@ -154,6 +154,9 @@ class HistoryEntry(BaseModel):
     # mobile grid renders a small globe overlay on cells whose glow-up
     # has a live post so the user can tell at a glance which are public.
     post_id: str | None = None
+    # Discriminator so mobile can segment the gallery by kind.
+    # Defaults to "glowup_analysis" for all legacy rows.
+    source_type: str = "glowup_analysis"
 
 
 class HistoryResponse(BaseModel):

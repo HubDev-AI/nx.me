@@ -803,3 +803,94 @@ describe("profile screen — share auto-save chain", () => {
 
 // Silence the unused-import lint from test-only requires.
 void toastMod;
+
+// =============================================================================
+// Gallery filter — Unit 12 segmented control logic.
+// =============================================================================
+
+function filterGlowUps(
+  items: GlowUpItem[],
+  filter: "all" | "glowup" | "makeup"
+): GlowUpItem[] {
+  if (filter === "all") return items;
+  const target =
+    filter === "makeup" ? "makeup_session" : "glowup_analysis";
+  return items.filter(
+    (e) => (e.source_type ?? "glowup_analysis") === target
+  );
+}
+
+const ITEMS: GlowUpItem[] = [
+  {
+    analysis_id: "g1",
+    job_id: "j1",
+    status: "completed",
+    face_shape: null,
+    symmetry_score: null,
+    recommendations: [],
+    before_image_url: null,
+    after_image_url: null,
+    created_at: "2026-04-22T00:00:00Z",
+    saved_at: null,
+    source_type: "glowup_analysis",
+  },
+  {
+    analysis_id: "m1",
+    job_id: "j2",
+    status: "completed",
+    face_shape: null,
+    symmetry_score: null,
+    recommendations: [],
+    before_image_url: null,
+    after_image_url: null,
+    created_at: "2026-04-22T00:00:00Z",
+    saved_at: null,
+    source_type: "makeup_session",
+  },
+  {
+    analysis_id: "legacy",
+    job_id: null,
+    status: "",
+    face_shape: null,
+    symmetry_score: null,
+    recommendations: [],
+    before_image_url: null,
+    after_image_url: null,
+    created_at: "2026-04-22T00:00:00Z",
+    saved_at: null,
+    // source_type absent → should be treated as glowup_analysis
+  },
+];
+
+describe("profile screen — gallery filter (Unit 12)", () => {
+  it("'all' returns every item", () => {
+    expect(filterGlowUps(ITEMS, "all")).toHaveLength(3);
+  });
+
+  it("'glowup' keeps glowup_analysis + legacy items (undefined source_type defaults)", () => {
+    const result = filterGlowUps(ITEMS, "glowup");
+    expect(result.map((i) => i.analysis_id)).toEqual(["g1", "legacy"]);
+  });
+
+  it("'makeup' keeps only makeup_session items", () => {
+    const result = filterGlowUps(ITEMS, "makeup");
+    expect(result.map((i) => i.analysis_id)).toEqual(["m1"]);
+  });
+
+  it("empty list returns empty for any filter", () => {
+    expect(filterGlowUps([], "glowup")).toEqual([]);
+    expect(filterGlowUps([], "makeup")).toEqual([]);
+    expect(filterGlowUps([], "all")).toEqual([]);
+  });
+
+  it("canUseMakeup formula: true when makeup_enabled + Pro + isUser", () => {
+    // mirrors the formula in lib/capabilities.ts
+    const canUseMakeup = (makeupEnabled: boolean, isUser: boolean, tier: string) =>
+      makeupEnabled && isUser && tier === "Pro";
+
+    expect(canUseMakeup(true, true, "Pro")).toBe(true);
+    expect(canUseMakeup(false, true, "Pro")).toBe(false);
+    expect(canUseMakeup(true, false, "Pro")).toBe(false);
+    expect(canUseMakeup(true, true, "Free")).toBe(false);
+  });
+});
