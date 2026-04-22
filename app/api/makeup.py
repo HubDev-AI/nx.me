@@ -26,7 +26,7 @@ from app.api.deps import (
     get_redis,
     get_upload_repo,
     require_app_feature,
-    require_tier_feature,
+    require_makeup_access,
 )
 from app.api.middleware.auth import UserClaims
 from app.api.rate_limiters.makeup_fair_use import fair_use_incr
@@ -51,7 +51,7 @@ router = APIRouter(
     tags=["makeup"],
     dependencies=[
         Depends(require_app_feature("makeup_enabled")),
-        Depends(require_tier_feature("makeup_enabled")),
+        Depends(require_makeup_access()),
     ],
 )
 

@@ -240,6 +240,13 @@ class Settings(BaseSettings):
     GENERATION_TIMEOUT_SECONDS: int = 180
     CREDIT_COST_ALERT_USD: float = 0.12
 
+    # Staged rollout cohort for makeup feature (0–100, default 0 = locked).
+    # Bump via runbook: 0 → 10 → 50 → 100 over 5 days.
+    # hash(user_id) % 100 < MAKEUP_ROLLOUT_PCT determines cohort membership.
+    # Launch-gate invariants in docs/operational/makeup-rollout-runbook.md
+    # must all be true before bumping above 0.
+    MAKEUP_ROLLOUT_PCT: int = 0
+
     # Makeup fair-use cap (applies per user per 24h window)
     MAKEUP_FAIR_USE_DAILY_CAP: int = 10
     # Per-user malformed-200 circuit-breaker threshold (see Unit 5 plan)

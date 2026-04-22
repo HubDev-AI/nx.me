@@ -498,6 +498,37 @@ def require_tier_feature(capability: str):
     return _check
 
 
+def require_makeup_access():
+    """FastAPI dependency: Pro tier + makeup rollout cohort.
+
+    Replaces ``require_tier_feature("makeup_enabled")`` on the makeup router
+    so the rollout gate (MAKEUP_ROLLOUT_PCT) is enforced at the entitlement
+    layer alongside the Pro check. Returns 403 TIER_REQUIRED when either
+    condition is false.
+    """
+    from app.entitlement.tier import has_makeup_access
+
+    async def _check(
+        supabase: Client = Depends(get_supabase),
+        claims: dict = Depends(get_current_user),
+    ) -> None:
+        user_id: str = claims["sub"]
+        ok = await run_sync(has_makeup_access, user_id, supabase)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": {
+                        "code": "TIER_REQUIRED",
+                        "message": "This feature requires a Pro subscription.",
+                        "detail": {"capability": "makeup"},
+                    }
+                },
+            )
+
+    return _check
+
+
 def get_stripe_customer_dlq_repo(request: Request) -> "StripeCustomerDLQRepository":
     """Return a StripeCustomerDLQRepository wired to the app's Supabase client."""
     from app.repositories.stripe_customer_dlq import StripeCustomerDLQRepository
